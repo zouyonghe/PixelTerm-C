@@ -24,15 +24,11 @@ jobs:
         sudo apt-get install -y libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential wget jq
         
         # Get latest Chafa release
-        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name')
+        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
         echo "Installing Chafa ${CHAFA_VERSION}"
         
-        # Get the actual download URL
-        DOWNLOAD_URL=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.assets[] | select(.name == "chafa-${CHAFA_VERSION}.tar.xz") | .browser_download_url')
-        echo "Downloading from: ${DOWNLOAD_URL}"
-        
         # Install Chafa from source to get the latest version with all required APIs
-        wget "${DOWNLOAD_URL}"
+        wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz"
         tar -xf chafa-${CHAFA_VERSION}.tar.xz
         cd chafa-${CHAFA_VERSION}
         ./configure --prefix=/usr
