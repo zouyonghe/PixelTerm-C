@@ -26,6 +26,7 @@ typedef struct {
     // Application state
     gboolean running;
     gboolean show_info;
+    gboolean info_visible;  // Track if info is currently displayed
     gboolean preload_enabled;
     gboolean needs_redraw;
     

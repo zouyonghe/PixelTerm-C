@@ -32,6 +32,7 @@ PixelTermApp* app_create(void) {
     app->total_images = 0;
     app->running = TRUE;
     app->show_info = FALSE;
+    app->info_visible = FALSE;
     app->preload_enabled = TRUE;
     app->needs_redraw = TRUE;
     app->term_width = 80;
@@ -123,7 +124,7 @@ ErrorCode app_initialize(PixelTermApp *app) {
     }
 
     // Configure canvas for optimal terminal display
-    chafa_canvas_config_set_geometry(app->canvas_config, app->term_width, app->term_height - 3);
+    chafa_canvas_config_set_geometry(app->canvas_config, app->term_width, app->term_height - 6);
     chafa_canvas_config_set_canvas_mode(app->canvas_config, CHAFA_CANVAS_MODE_TRUECOLOR);
     chafa_canvas_config_set_color_space(app->canvas_config, CHAFA_COLOR_SPACE_RGB);
     chafa_canvas_config_set_pixel_mode(app->canvas_config, CHAFA_PIXEL_MODE_SYMBOLS);
@@ -261,8 +262,13 @@ ErrorCode app_next_image(PixelTermApp *app) {
 
     if (app->current_index < app->total_images - 1) {
         app->current_index++;
-        app->needs_redraw = TRUE;
+    } else {
+        // Wrap around to first image
+        app->current_index = 0;
     }
+    
+    app->needs_redraw = TRUE;
+    app->info_visible = FALSE;  // Reset info visibility when switching images
 
     return ERROR_NONE;
 }
@@ -275,8 +281,13 @@ ErrorCode app_previous_image(PixelTermApp *app) {
 
     if (app->current_index > 0) {
         app->current_index--;
-        app->needs_redraw = TRUE;
+    } else {
+        // Wrap around to last image
+        app->current_index = app->total_images - 1;
     }
+    
+    app->needs_redraw = TRUE;
+    app->info_visible = FALSE;  // Reset info visibility when switching images
 
     return ERROR_NONE;
 }
@@ -290,6 +301,7 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
     if (index >= 0 && index < app->total_images) {
         app->current_index = index;
         app->needs_redraw = TRUE;
+        app->info_visible = FALSE;  // Reset info visibility when switching images
         return ERROR_NONE;
     }
 
@@ -301,6 +313,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    
+    // Reset info visibility when rendering image
+    app->info_visible = FALSE;
 
     const gchar *filepath = app_get_current_filepath(app);
     if (!filepath) {
@@ -316,7 +331,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // Configure renderer
     RendererConfig config = {
         .max_width = app->term_width,
-        .max_height = app->term_height - 3, // Leave space for filename
+        .max_height = app->info_visible ? app->term_height - 10 : app->term_height - 1, // Normal: use almost full height, Info: reserve space
         .preserve_aspect_ratio = TRUE,
         .dither = TRUE,
         .color_space = CHAFA_COLOR_SPACE_RGB,
@@ -337,11 +352,14 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    // Clear screen and move cursor to top-left
-    printf("\033[2J\033[H"); // Clear screen and move cursor to top-left
+    // Clear screen and reset terminal state
+    printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
     printf("%s", rendered->str);
     
-    // Display filename centered below the image
+    // Move cursor to the very bottom of terminal to eliminate extra lines
+    printf("\033[%d;1H", app->term_height); // Move to last line, first column
+    
+    // Display filename centered at the bottom
     if (filepath) {
         gchar *basename = g_path_get_basename(filepath);
         if (basename) {
@@ -349,12 +367,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             gint start_col = (app->term_width - filename_len) / 2;
             if (start_col < 1) start_col = 1;
             
-            printf("\n");
-            // Print spaces to center the filename
+            // Print spaces to center the filename at bottom
             for (gint i = 1; i < start_col; i++) {
                 printf(" ");
             }
-            printf("%s", basename);
+            printf("\033[34m%s\033[0m", basename); // Blue filename with reset
             g_free(basename);
         }
     }
@@ -367,11 +384,19 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
-// Display image information
+// Display image information (toggle mode)
 ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    
+    // If info is already visible, clear it by redrawing the image
+    if (app->info_visible) {
+        app->info_visible = FALSE;
+        return app_render_current_image(app);
+    }
+    
+    app->info_visible = TRUE;
 
     const gchar *filepath = app_get_current_filepath(app);
     if (!filepath) {
@@ -397,24 +422,30 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     gint index = app_get_current_index(app) + 1; // Convert to 1-based
     gint total = app_get_total_images(app);
 
-    // Display information in Python style
-    printf("\n");
-    for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n📸 Image Details\n");
-    for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n");
-    printf("📁 Filename: %s\n", basename);
-    printf("📂 Path: %s\n", dirname);
-    printf("📄 Index: %d/%d\n", index, total);
-    printf("💾 File size: %.1f MB\n", file_size_mb);
-    printf("📐 Dimensions: %d x %d pixels\n", width, height);
-    printf("🎨 Format: %s\n", ext ? ext + 1 : "unknown"); // Skip the dot
-    printf("🎭 Color mode: RGB\n");
-    printf("📏 Aspect ratio: %.2f\n", aspect_ratio);
-    for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n");
+    // Move to next line and ensure cursor is at the beginning
+    printf("\n\033[G"); // New line and move cursor to column 1
     
-    // Ensure cursor is positioned at the beginning of the next line
+    // Display information in Python style
+    for (gint i = 0; i < 60; i++) printf("=");
+    printf("\n\033[G");
+    printf("📸 Image Details");
+    printf("\n\033[G");
+    for (gint i = 0; i < 60; i++) printf("=");
+    printf("\n\033[G");
+    printf("📁 Filename: %s\n\033[G", basename);
+    printf("📂 Path: %s\n\033[G", dirname);
+    printf("📄 Index: %d/%d\n\033[G", index, total);
+    printf("💾 File size: %.1f MB\n\033[G", file_size_mb);
+    printf("📐 Dimensions: %d x %d pixels\n\033[G", width, height);
+    printf("🎨 Format: %s\n\033[G", ext ? ext + 1 : "unknown"); // Skip the dot
+    printf("🎭 Color mode: RGB\n\033[G");
+    printf("📏 Aspect ratio: %.2f\n\033[G", aspect_ratio);
+    for (gint i = 0; i < 60; i++) printf("=");
+    printf("\n\033[G");
+    
+    // Reset terminal attributes to prevent interference with future rendering
+    printf("\033[0m");  // Reset all attributes
+    
     fflush(stdout);
 
     g_free(basename);

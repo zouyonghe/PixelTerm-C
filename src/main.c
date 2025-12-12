@@ -40,7 +40,7 @@ static void print_usage(const char *program_name) {
     printf("\n");
     printf("Key bindings:\n");
     printf("  ←/→ or a/d     Previous/Next image\n");
-    
+    printf("  i              Show image information\n");
     printf("  r              Delete current image\n");
     printf("  q              Quit application\n");
     printf("  Ctrl+C         Force exit\n");
@@ -195,7 +195,9 @@ static ErrorCode run_application(PixelTermApp *app) {
                         app_next_image(app);
                         app_refresh_display(app);
                         break;
-                    
+                    case (KeyCode)'i':
+                        app_display_image_info(app);
+                        break;
                     case (KeyCode)'r':
                         app_delete_current_image(app);
                         app_refresh_display(app);
