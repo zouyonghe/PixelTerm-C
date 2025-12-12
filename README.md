@@ -86,12 +86,6 @@ make
 | q or ESC | Exit program |
 | Ctrl+C | Force exit |
 
-## 🔗 Related Projects
-
-### Python Version
-- **[PixelTerm (Python)](https://github.com/zouyonghe/PixelTerm)** - Original Python implementation with rich feature set
-- **Performance Comparison**: C version offers 5-10x better performance with significantly lower memory usage
-
 ## 📄 License
 
 LGPL-3.0 or later - See LICENSE file for details
