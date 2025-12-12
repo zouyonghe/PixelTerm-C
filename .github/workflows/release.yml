@@ -45,23 +45,18 @@ jobs:
       run: |
         mkdir -p release
         cp bin/pixelterm release/
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          VERSION=${{ github.ref_name }}
-        else
-          VERSION=${{ github.sha }}
-        fi
-        tar -czf release/pixelterm-${VERSION}.tar.gz -C bin pixelterm
+        tar -czf release/pixelterm.tar.gz -C bin pixelterm
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ github.ref_name }}.tar.gz
-        path: release/pixelterm-*.tar.gz
+        name: pixelterm.tar.gz
+        path: release/pixelterm.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ github.ref_name }}
+        name: pixelterm
         path: release/pixelterm
 
   create-release:
@@ -73,7 +68,7 @@ jobs:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: pixelterm-${{ github.ref_name }}*
+        pattern: pixelterm*
         merge-multiple: true
 
     - name: Create Release
@@ -81,5 +76,5 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          pixelterm-${{ github.ref_name }}.tar.gz
-          pixelterm-${{ github.ref_name }}
+          pixelterm.tar.gz
+          pixelterm
