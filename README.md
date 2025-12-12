@@ -6,7 +6,7 @@
 
 ## Overview
 
-PixelTerm-C is a C implementation of the original PixelTerm application, designed to provide significantly better performance while maintaining all the same functionality. By leveraging the Chafa library directly instead of using subprocess calls, we eliminate the overhead of Python interpretation and external process creation.
+PixelTerm-C is a C implementation of the original PixelTerm application, designed to provide significantly better performance than the Python version while maintaining all the same functionality. By leveraging the Chafa library directly instead of using subprocess calls, we eliminate the overhead of Python interpretation and external process creation.
 
 ## 🌟 Features
 
