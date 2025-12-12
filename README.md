@@ -1,10 +1,24 @@
-# PixelTerm-C
+# PixelTerm-C - High Performance Terminal Image Viewer
+
+*English | [中文](README_zh.md)*
 
 🖼️ A high-performance terminal image browser written in C, based on the Chafa library.
 
 ## Overview
 
 PixelTerm-C is a C implementation of the original PixelTerm application, designed to provide significantly better performance while maintaining all the same functionality. By leveraging the Chafa library directly instead of using subprocess calls, we eliminate the overhead of Python interpretation and external process creation.
+
+## 🌟 Features
+
+- 🖼️ **Multi-format Support** - Supports JPG, PNG, GIF, BMP, WebP, TIFF and other mainstream image formats
+- 📁 **Smart Browsing** - Automatically detects image files in directories with directory navigation support
+- ⌨️ **Keyboard Navigation** - Switch between images with arrow keys, supporting various terminal environments
+- 📏 **Adaptive Display** - Automatically adapts to terminal size changes
+- 🎨️ **Minimal Interface** - No redundant information, focused on image browsing experience
+- ⚡️ **High Performance** - 5-10x faster than Python version with significantly lower memory usage
+- 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
+- 📊 **Detailed Information** - Toggle comprehensive image metadata display
+- 🎯 **Blue Filenames** - Color-coded filename display for better visibility
 
 ## Performance Improvements
 
@@ -27,41 +41,44 @@ PixelTerm-C is a C implementation of the original PixelTerm application, designe
 - 📊 **Detailed image information** display with toggle functionality
 - 🎯 **Memory-efficient caching** system for optimal performance
 
-## Installation
+## 🚀 Quick Start
 
-### Dependencies
-
-- GCC or Clang compiler
-- Chafa library development files
-- GLib 2.0 development files
-- GDK-Pixbuf 2.0 development files
-- Make
-
-### Ubuntu/Debian
+### Install Dependencies
 
 ```bash
-sudo apt-get update
-sudo apt-get install build-essential libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config
-```
-
-### Fedora/CentOS/RHEL
-
-```bash
-sudo dnf install gcc gcc-c++ make chafa-devel glib2-devel gdk-pixbuf2-devel pkgconfig
-```
-
-### Arch Linux
-
-```bash
+# 1. Install system dependencies (required)
+# Arch Linux
 sudo pacman -S base-devel chafa glib2 gdk-pixbuf2 pkgconf
-```
 
-### Building from Source
+# Ubuntu/Debian  
+sudo apt-get update
+sudo apt-get install build-essential libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkgconfig
 
-```bash
+# Fedora/CentOS/RHEL
+sudo dnf install gcc gcc-c++ make chafa-devel glib2-devel gdk-pixbuf2-devel pkgconfig
+
+# 2. Clone and build
 git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
+```
+
+**Dependency Notes**:
+- **System Libraries**: Must install chafa, glib2, and gdk-pixbuf2 development files
+- **Build Tools**: GCC or Clang compiler with make utility
+- **Package Manager**: pkg-config for proper library detection
+
+### Basic Usage
+
+```bash
+# Browse images in current directory
+./pixelterm-c
+
+# Browse images in specified directory
+./pixelterm-c /path/to/images
+
+# View single image
+./pixelterm-c image.jpg
 ```
 
 ### Installation
@@ -292,7 +309,33 @@ This project follows the same licensing as the original PixelTerm project.
 - **Original PixelTerm**: For the inspiration and feature design
 - **GLib and GDK-Pixbuf**: For robust image handling and utilities
 
-## Roadmap
+## 🔗 Related Projects
+
+### Python Version
+- **[PixelTerm (Python)](https://github.com/zouyonghe/PixelTerm)** - Original Python implementation with rich feature set
+- **Performance Comparison**: C version offers 5-10x better performance with significantly lower memory usage
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Follow C11 standards
+- Use consistent coding style
+- Add appropriate error handling
+- Include memory management
+- Write tests for new features
+
+## 📄 License
+
+MIT License - See LICENSE file for details
+
+## 🚀 Roadmap
 
 - [ ] Advanced image filters and adjustments
 - [ ] Plugin system for custom extensions
@@ -303,4 +346,4 @@ This project follows the same licensing as the original PixelTerm project.
 
 ---
 
-**PixelTerm-C** - Fast, efficient, and beautiful terminal image browsing.
+**PixelTerm-C** - Making terminals excellent image viewers with lightning speed! 🖼️
