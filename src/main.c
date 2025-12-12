@@ -17,6 +17,10 @@ static PixelTermApp *g_app = NULL;
 // Signal handler for graceful shutdown
 static void signal_handler(int sig) {
     (void)sig; // Suppress unused parameter warning
+    // Reset terminal state on signal
+    printf("\033[2J\033[H\033[0m");
+    fflush(stdout);
+    
     if (g_app) {
         g_app->running = FALSE;
     }
@@ -219,11 +223,14 @@ static ErrorCode run_application(PixelTermApp *app) {
         }
     }
 
-    // Cleanup
+    // Cleanup - Reset terminal state before exiting
+    printf("\033[2J\033[H\033[0m"); // Clear screen and reset attributes
+    fflush(stdout);
+    
     input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
 
-    return ERROR_NONE;
+    return error == ERROR_NONE ? 0 : 1;
 }
 
 int main(int argc, char *argv[]) {
