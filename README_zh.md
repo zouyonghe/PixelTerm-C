@@ -94,7 +94,9 @@ make
 
 ## 📄 许可证
 
-MIT许可证
+LGPL-3.0或更高版本 - 详见LICENSE文件
+
+本项目采用与Chafa相同的许可证（LGPLv3+）。
 
 ---
 

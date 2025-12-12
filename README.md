@@ -94,7 +94,9 @@ make
 
 ## 📄 License
 
-MIT License
+LGPL-3.0 or later - See LICENSE file for details
+
+This project is licensed under the same license as Chafa (LGPLv3+).
 
 ---
 
