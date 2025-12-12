@@ -24,10 +24,10 @@ PixelTerm-C is a C implementation of the original PixelTerm application, designe
 
 | Metric | Python Version | C Version | Improvement |
 |--------|---------------|-----------|-------------|
-| Startup Time | ~1-2s | ~0.2s | 5-10x faster |
-| Image Switching | ~200-500ms | ~50-100ms | 3-5x faster |
-| Memory Usage | ~50-100MB | ~20-30MB | 2-3x reduction |
-| CPU Usage | High (Python + subprocess) | Medium (pure C) | 2-4x reduction |
+| Startup Time | ~1-2s | ~0.1-0.3s | Several times faster |
+| Image Switching | ~200-500ms | ~50-150ms | 2-5x faster |
+| Memory Usage | ~50-100MB | ~15-35MB | 2-3x reduction |
+| CPU Usage | High (Python + subprocess) | Medium (pure C) | Noticeable reduction |
 
 ## 🚀 Quick Start
 
@@ -45,12 +45,12 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 ```bash
 # Download and install the latest binary
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm -O pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
 chmod +x pixelterm
 sudo mv pixelterm /usr/local/bin/
 
 # Or just download to current directory
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm -O pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
 chmod +x pixelterm
 ./pixelterm /path/to/images
 

@@ -24,10 +24,10 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 | 指标 | Python版本 | C版本 | 改进幅度 |
 |--------|---------------|-----------|-------------|
-| 启动时间 | ~1-2s | ~0.2s | 5-10倍更快 |
-| 图像切换 | ~200-500ms | ~50-100ms | 3-5倍更快 |
-| 内存使用 | ~50-100MB | ~20-30MB | 2-3倍减少 |
-| CPU使用 | 高（Python + 子进程） | 中等（纯C） | 2-4倍减少 |
+| 启动时间 | ~1-2s | ~0.1-0.3s | 数倍提升 |
+| 图像切换 | ~200-500ms | ~50-150ms | 2-5倍更快 |
+| 内存使用 | ~50-100MB | ~15-35MB | 2-3倍减少 |
+| CPU使用 | 高（Python + 子进程） | 中等（纯C） | 明显减少 |
 
 ## 🚀 快速开始
 
@@ -45,12 +45,12 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 ```bash
 # 下载并安装最新二进制文件
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm -O pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
 chmod +x pixelterm
 sudo mv pixelterm /usr/local/bin/
 
 # 或者仅下载到当前目录
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm -O pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
 chmod +x pixelterm
 ./pixelterm /path/to/images
 
