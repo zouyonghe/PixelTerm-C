@@ -10,7 +10,7 @@ BINDIR = bin
 # Source files
 SOURCES = $(wildcard $(SRCDIR)/*.c)
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
-TARGET = $(BINDIR)/pixelterm-c
+TARGET = $(BINDIR)/pixelterm
 
 # Default target
 all: $(TARGET)
@@ -40,7 +40,7 @@ clean:
 
 # Install
 install: $(TARGET)
-	install -D $(TARGET) $(DESTDIR)/usr/local/bin/pixelterm-c
+	install -D $(TARGET) $(DESTDIR)/usr/local/bin/pixelterm
 
 # Test
 test: $(TARGET)
