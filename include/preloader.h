@@ -1,0 +1,77 @@
+#ifndef PRELOADER_H
+#define PRELOADER_H
+
+#include "common.h"
+
+// Preload task structure
+typedef struct {
+    gchar *filepath;
+    gint priority;
+    gint64 timestamp;
+} PreloadTask;
+
+// Preloader status
+typedef enum {
+    PRELOADER_IDLE,
+    PRELOADER_ACTIVE,
+    PRELOADER_PAUSED,
+    PRELOADER_STOPPING
+} PreloaderStatus;
+
+// Preloader structure
+typedef struct {
+    GThread *thread;
+    GMutex mutex;
+    GCond condition;
+    GQueue *task_queue;
+    GHashTable *preload_cache;
+    PreloaderStatus status;
+    gboolean enabled;
+    gint max_queue_size;
+    gint max_cache_size;
+    gint active_tasks;
+} ImagePreloader;
+
+// Preloader lifecycle functions
+ImagePreloader* preloader_create(void);
+void preloader_destroy(ImagePreloader *preloader);
+ErrorCode preloader_initialize(ImagePreloader *preloader);
+ErrorCode preloader_start(ImagePreloader *preloader);
+ErrorCode preloader_stop(ImagePreloader *preloader);
+
+// Task management
+ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gint priority);
+ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *files, gint current_index);
+ErrorCode preloader_clear_queue(ImagePreloader *preloader);
+gboolean preloader_has_pending_tasks(const ImagePreloader *preloader);
+
+// Cache management
+GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath);
+void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered);
+void preloader_cache_remove(ImagePreloader *preloader, const char *filepath);
+void preloader_cache_clear(ImagePreloader *preloader);
+void preloader_cache_cleanup(ImagePreloader *preloader);
+
+// Status and control
+void preloader_enable(ImagePreloader *preloader);
+void preloader_disable(ImagePreloader *preloader);
+void preloader_pause(ImagePreloader *preloader);
+void preloader_resume(ImagePreloader *preloader);
+gboolean preloader_is_enabled(const ImagePreloader *preloader);
+PreloaderStatus preloader_get_status(const ImagePreloader *preloader);
+
+// Configuration
+void preloader_set_max_queue_size(ImagePreloader *preloader, gint max_size);
+void preloader_set_max_cache_size(ImagePreloader *preloader, gint max_size);
+gint preloader_get_queue_size(const ImagePreloader *preloader);
+gint preloader_get_cache_size(const ImagePreloader *preloader);
+
+// Statistics
+gint preloader_get_active_tasks(const ImagePreloader *preloader);
+gfloat preloader_get_cache_hit_rate(const ImagePreloader *preloader);
+gint64 preloader_get_total_processed(const ImagePreloader *preloader);
+
+// Worker thread function
+gpointer preloader_worker_thread(gpointer data);
+
+#endif // PRELOADER_H
