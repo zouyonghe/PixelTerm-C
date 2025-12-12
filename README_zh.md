@@ -45,12 +45,14 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 ```bash
 # 下载并安装最新二进制文件
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-c-latest -O pixelterm-c
+LATEST_VERSION=$(curl -s https://api.github.com/repos/zouyonghe/PixelTerm-C/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+wget https://github.com/zouyonghe/PixelTerm-C/releases/download/${LATEST_VERSION}/pixelterm-c-${LATEST_VERSION} -O pixelterm-c
 chmod +x pixelterm-c
 sudo mv pixelterm-c /usr/local/bin/
 
 # 或者仅下载到当前目录
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-c-latest -O pixelterm-c
+LATEST_VERSION=$(curl -s https://api.github.com/repos/zouyonghe/PixelTerm-C/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+wget https://github.com/zouyonghe/PixelTerm-C/releases/download/${LATEST_VERSION}/pixelterm-c-${LATEST_VERSION} -O pixelterm-c
 chmod +x pixelterm-c
 ./pixelterm-c /path/to/images
 ```
