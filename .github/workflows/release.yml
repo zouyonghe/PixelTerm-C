@@ -1,0 +1,67 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential
+
+    - name: Build project
+      run: make clean && make
+
+    - name: Create release package
+      run: |
+        mkdir -p release
+        cp bin/pixelterm-c release/
+        tar -czf pixelterm-c-${{ { matrix.version }}.tar.gz -C bin pixelterm-c
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pixelterm-c-${{ matrix.version }}.tar.gz
+        path: release/pixelterm-c-${{ matrix.version }}.tar.gz
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create Release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: https://uploads.github.com/repos/zouyonghe/PixelTerm-C/releases/${{ github.ref_name }}/assets
+        asset_path: release/pixelterm-c-${{ matrix.version }}.tar.gz
+        asset_name: pixelterm-c-${{ matrix.version }}.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Binary Asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: https://uploads.github.com/repos/zouyonghe/PixelTerm-C/releases/${{ github.ref_name }}/assets
+        asset_path: release/pixelterm-c
+        asset_name: pixelterm-c
+        asset_content_type: application/x-executable
