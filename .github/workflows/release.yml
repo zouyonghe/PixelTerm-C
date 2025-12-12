@@ -51,18 +51,19 @@ jobs:
           VERSION=${{ github.sha }}
         fi
         tar -czf release/pixelterm-c-${VERSION}.tar.gz -C bin pixelterm-c
+        cp bin/pixelterm-c release/pixelterm-c-${VERSION}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-c-${{ github.ref_name }}.tar.gz
+        name: pixelterm-c-${{ github.ref_name }}-package
         path: release/pixelterm-c-*.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-c-${{ github.ref_name }}
-        path: release/pixelterm-c
+        name: pixelterm-c-${{ github.ref_name }}-binary
+        path: release/pixelterm-c-*
 
   create-release:
     needs: build
@@ -73,7 +74,7 @@ jobs:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: pixelterm-c-${{ github.ref_name }}*
+        pattern: pixelterm-c-${{ github.ref_name }}-*
         merge-multiple: true
 
     - name: Create Release
