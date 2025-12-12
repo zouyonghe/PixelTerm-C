@@ -19,7 +19,11 @@ static void signal_handler(int sig) {
     (void)sig; // Suppress unused parameter warning
     // Reset terminal state on signal
     printf("\033[2J\033[H\033[0m");
+    printf("\033[?25h"); // Show cursor
     fflush(stdout);
+    
+    // Force terminal reset
+    system("stty sane 2>/dev/null || true");
     
     if (g_app) {
         g_app->running = FALSE;
@@ -225,10 +229,14 @@ static ErrorCode run_application(PixelTermApp *app) {
 
     // Cleanup - Reset terminal state before exiting
     printf("\033[2J\033[H\033[0m"); // Clear screen and reset attributes
+    printf("\033[?25h"); // Show cursor
     fflush(stdout);
     
     input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
+    
+    // Additional terminal reset
+    system("stty sane 2>/dev/null || true");
 
     return error == ERROR_NONE ? 0 : 1;
 }

@@ -104,6 +104,13 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
         }
     }
 
+    // Show cursor and reset terminal
+    printf("\033[?25h");
+    fflush(stdout);
+    
+    // Force terminal reset using stty
+    system("stty sane 2>/dev/null || true");
+
     handler->raw_mode_enabled = FALSE;
     return ERROR_NONE;
 }
