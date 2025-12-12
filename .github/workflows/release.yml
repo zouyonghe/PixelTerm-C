@@ -82,5 +82,5 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          pixelterm-c-*.tar.gz
-          pixelterm-c-*
+          pixelterm-c-${{ github.ref_name }}.tar.gz
+          pixelterm-c-${{ github.ref_name }}
