@@ -21,18 +21,22 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential wget
+        sudo apt-get install -y libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential wget jq
+        
+        # Get latest Chafa release
+        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name')
+        echo "Installing Chafa ${CHAFA_VERSION}"
         
         # Install Chafa from source to get the latest version with all required APIs
-        wget https://github.com/hpjansson/chafa/releases/download/chafa-1.18.0/chafa-1.18.0.tar.xz
-        tar -xf chafa-1.18.0.tar.xz
-        cd chafa-1.18.0
+        wget https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz
+        tar -xf chafa-${CHAFA_VERSION}.tar.xz
+        cd chafa-${CHAFA_VERSION}
         ./configure --prefix=/usr
         make -j$(nproc)
         sudo make install
         sudo ldconfig
         cd ..
-        rm -rf chafa-1.18.0 chafa-1.18.0.tar.xz
+        rm -rf chafa-${CHAFA_VERSION} chafa-${CHAFA_VERSION}.tar.xz
 
     - name: Build project
       run: make clean && make
