@@ -352,25 +352,31 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    // Get rendered image dimensions
+    gint image_width, image_height;
+    renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+    
     // Clear screen and reset terminal state
     printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
     printf("%s", rendered->str);
     
-    // Move cursor to the very bottom of terminal to eliminate extra lines
-    printf("\033[%d;1H", app->term_height); // Move to last line, first column
-    
-    // Display filename centered at the bottom
+    // Calculate filename position relative to image center
     if (filepath) {
         gchar *basename = g_path_get_basename(filepath);
         if (basename) {
             gint filename_len = strlen(basename);
-            gint start_col = (app->term_width - filename_len) / 2;
-            if (start_col < 1) start_col = 1;
+            // Center filename relative to image width, but ensure it stays within terminal bounds
+            gint image_center_col = image_width / 2;
+            gint filename_start_col = image_center_col - filename_len / 2;
             
-            // Print spaces to center the filename at bottom
-            for (gint i = 1; i < start_col; i++) {
-                printf(" ");
+            // Ensure filename doesn't go beyond terminal bounds
+            if (filename_start_col < 0) filename_start_col = 0;
+            if (filename_start_col + filename_len > app->term_width) {
+                filename_start_col = app->term_width - filename_len;
             }
+            
+            // Move cursor to position just below the image and center the filename
+            printf("\033[%d;%dH", image_height + 1, filename_start_col + 1);
             printf("\033[34m%s\033[0m", basename); // Blue filename with reset
             g_free(basename);
         }

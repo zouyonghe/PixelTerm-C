@@ -53,6 +53,7 @@ ErrorCode renderer_set_color_space(ImageRenderer *renderer, ChafaColorSpace spac
 // Utility functions
 gboolean renderer_is_image_supported(const char *filepath);
 ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint *height);
+void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height);
 void renderer_print_usage_info(void);
 
 // Terminal detection

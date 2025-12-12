@@ -410,3 +410,17 @@ gboolean terminal_supports_kitty(void) {
 
     return g_strstr_len(term, -1, "xterm-kitty") != NULL;
 }
+
+// Get rendered image dimensions
+void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height) {
+    if (!renderer || !width || !height) {
+        return;
+    }
+    
+    if (renderer->canvas) {
+        chafa_canvas_config_get_geometry(renderer->canvas_config, width, height);
+    } else {
+        *width = renderer->config.max_width;
+        *height = renderer->config.max_height;
+    }
+}
