@@ -20,7 +20,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory);
 ErrorCode browser_refresh_directory(FileBrowser *browser);
 
 // File filtering and sorting
-gboolean browser_is_image_file(const char *filename);
+
 GList* browser_filter_image_files(GList *all_files);
 void browser_sort_files(GList **files);
 

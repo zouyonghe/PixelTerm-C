@@ -56,11 +56,7 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
 void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height);
 void renderer_print_usage_info(void);
 
-// Terminal detection
-gboolean terminal_supports_graphics(void);
-gboolean terminal_supports_sixel(void);
-gboolean terminal_supports_kitty(void);
-gint renderer_get_terminal_width(void);
-gint renderer_get_terminal_height(void);
+
+
 
 #endif // RENDERER_H

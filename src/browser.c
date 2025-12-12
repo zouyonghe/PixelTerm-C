@@ -68,7 +68,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         
         // Check if it's a regular file and an image
         if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && 
-            browser_is_image_file(filename)) {
+            is_image_file(filename)) {
             all_files = g_list_prepend(all_files, full_path);
         } else {
             g_free(full_path);
@@ -98,9 +98,7 @@ ErrorCode browser_refresh_directory(FileBrowser *browser) {
 }
 
 // Check if file is an image based on extension
-gboolean browser_is_image_file(const char *filename) {
-    return is_image_file(filename);
-}
+
 
 // Filter image files from a list of all files
 GList* browser_filter_image_files(GList *all_files) {
@@ -109,7 +107,7 @@ GList* browser_filter_image_files(GList *all_files) {
 
     while (current) {
         gchar *filename = (gchar*)current->data;
-        if (browser_is_image_file(filename)) {
+        if (is_image_file(filename)) {
             image_files = g_list_prepend(image_files, g_strdup(filename));
         }
         current = g_list_next(current);

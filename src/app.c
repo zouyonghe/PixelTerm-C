@@ -233,14 +233,14 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     }
 
     // Find the specific file in the list
-    gchar *basename = g_path_get_basename(filepath);
+    gchar *target_basename = g_path_get_basename(filepath);
     gboolean found = FALSE;
     
     for (gint i = 0; i < app->total_images; i++) {
         gchar *current_file = (gchar*)g_list_nth_data(app->image_files, i);
         gchar *current_basename = g_path_get_basename(current_file);
         
-        if (g_strcmp0(current_basename, basename) == 0) {
+        if (g_strcmp0(current_basename, target_basename) == 0) {
             app->current_index = i;
             found = TRUE;
             g_free(current_basename);
@@ -250,7 +250,7 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
         g_free(current_basename);
     }
 
-    g_free(basename);
+    g_free(target_basename);
     return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
 }
 
@@ -467,8 +467,7 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     }
 
     // Update terminal size
-    app->term_width = renderer_get_terminal_width();
-    app->term_height = renderer_get_terminal_height();
+    get_terminal_size(&app->term_width, &app->term_height);
 
     return app_render_current_image(app);
 }

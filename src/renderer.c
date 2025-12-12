@@ -369,47 +369,9 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
     return ERROR_NONE;
 }
 
-// Get terminal width
-gint renderer_get_terminal_width(void) {
-    gint width, height;
-    get_terminal_size(&width, &height);
-    return width;
-}
 
-// Get terminal height
-gint renderer_get_terminal_height(void) {
-    gint width, height;
-    get_terminal_size(&width, &height);
-    return height;
-}
 
-// Check if terminal supports graphics protocols
-gboolean terminal_supports_graphics(void) {
-    return terminal_supports_kitty() || terminal_supports_sixel();
-}
 
-gboolean terminal_supports_sixel(void) {
-    // Check for Sixel support in environment
-    const char *term = g_getenv("TERM");
-    if (!term) {
-        return FALSE;
-    }
-
-    // Common terminals that support Sixel
-    return g_strstr_len(term, -1, "xterm") != NULL ||
-           g_strstr_len(term, -1, "vt340") != NULL ||
-           g_strstr_len(term, -1, "dtterm") != NULL;
-}
-
-gboolean terminal_supports_kitty(void) {
-    // Check for Kitty terminal
-    const char *term = g_getenv("TERM");
-    if (!term) {
-        return FALSE;
-    }
-
-    return g_strstr_len(term, -1, "xterm-kitty") != NULL;
-}
 
 // Get rendered image dimensions
 void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height) {

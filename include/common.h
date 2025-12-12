@@ -24,32 +24,7 @@ static const char* SUPPORTED_EXTENSIONS[] = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
 };
 
-// Application key codes
-#define APP_KEY_ESCAPE 27
-#define APP_KEY_ENTER 10
-#define APP_KEY_TAB 9
-#define APP_KEY_BACKSPACE 127
-#define APP_KEY_DELETE 512
-#define APP_KEY_UP 513
-#define APP_KEY_DOWN 514
-#define APP_KEY_LEFT 515
-#define APP_KEY_RIGHT 516
-#define APP_KEY_HOME 517
-#define APP_KEY_END 518
-#define APP_KEY_PAGE_UP 519
-#define APP_KEY_PAGE_DOWN 520
-#define APP_KEY_F1 521
-#define APP_KEY_F2 522
-#define APP_KEY_F3 523
-#define APP_KEY_F4 524
-#define APP_KEY_F5 525
-#define APP_KEY_F6 526
-#define APP_KEY_F7 527
-#define APP_KEY_F8 528
-#define APP_KEY_F9 529
-#define APP_KEY_F10 530
-#define APP_KEY_F11 531
-#define APP_KEY_F12 532
+// Key codes are defined in input.h as KeyCode enum
 
 // Error codes
 typedef enum {
