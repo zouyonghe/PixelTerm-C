@@ -13,8 +13,31 @@ if [ "$1" = "aarch64" ]; then
     apt-get update
     apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
     
-    # Skip Chafa cross-compilation due to complexity
-    echo "Skipping Chafa cross-compilation - will use system Chafa at runtime"
+    # Get latest Chafa release
+    CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+    if [ -z "$CHAFA_VERSION" ]; then
+      CHAFA_VERSION="v1.14.4"
+    fi
+    echo "Installing Chafa ${CHAFA_VERSION}"
+    
+    # Install Chafa from source to get the latest version with all required APIs
+    wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz" ||
+    wget "https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-v1.14.4.tar.xz"
+    
+    if [ -f "chafa-${CHAFA_VERSION}.tar.xz" ]; then
+      tar -xf chafa-${CHAFA_VERSION}.tar.xz
+      cd chafa-${CHAFA_VERSION}
+    else
+      tar -xf chafa-v1.14.4.tar.xz
+      cd chafa-v1.14.4
+    fi
+    
+    # Cross-compile Chafa for aarch64
+    ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc
+    make -j$(nproc)
+    make install
+    cd ..
+    rm -rf chafa-*
     
     # Cross-compile PixelTerm-C for aarch64
     make clean && make CC=aarch64-linux-gnu-gcc ARCH=aarch64
