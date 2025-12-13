@@ -36,7 +36,10 @@ typedef enum {
     ERROR_MEMORY_ALLOC,
     ERROR_CHAFA_INIT,
     ERROR_THREAD_CREATE,
-    ERROR_TERMINAL_SIZE
+    ERROR_TERMINAL_SIZE,
+    ERROR_HELP_EXIT,
+    ERROR_VERSION_EXIT,
+    ERROR_INVALID_ARGS
 } ErrorCode;
 
 // Image information structure

@@ -42,6 +42,7 @@ static void print_usage(const char *program_name) {
     printf("Options:\n");
     printf("  -h, --help     Show this help message\n");
     printf("  -v, --version  Show version information\n");
+    printf("  -V, --Version  Show version information only\n");
     printf("  -i, --info     Start with image information visible\n");
     printf("  -p, --preload  Enable image preloading (default: enabled)\n");
     printf("  --no-preload   Disable image preloading\n");
@@ -65,9 +66,7 @@ static void print_usage(const char *program_name) {
 
 // Print version information
 static void print_version(void) {
-    printf("%s version %s\n", APP_NAME, APP_VERSION);
-    printf("Built with Chafa library support\n");
-    printf("Performance: 5-10x faster than Python version\n");
+    printf("%s\n", APP_VERSION);
 }
 
 // Parse command line arguments
@@ -75,21 +74,28 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
+        {"Version",   no_argument,       0, 'V'},
         {"info",      no_argument,       0, 'i'},
         {"preload",   no_argument,       0, 'p'},
         {"no-preload", no_argument,      0, 1000},
         {0, 0, 0, 0}
     };
 
+    // Disable getopt error messages
+    opterr = 0;
+    
     int c;
-    while ((c = getopt_long(argc, argv, "hvip", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "hvVip", long_options, NULL)) != -1) {
         switch (c) {
             case 'h':
                 print_usage(argv[0]);
-                return ERROR_NONE;
+                return ERROR_HELP_EXIT;
             case 'v':
                 print_version();
-                return ERROR_NONE;
+                return ERROR_VERSION_EXIT;
+            case 'V':
+                print_version();
+                return ERROR_VERSION_EXIT;
             case 'i':
                 *show_info = TRUE;
                 break;
@@ -100,7 +106,20 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                 *preload_enabled = FALSE;
                 break;
             case '?':
-                return ERROR_INVALID_IMAGE;
+                // Check if it's a long option (starts with --)
+                if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {
+                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
+                } 
+                // Check if it's a short option (starts with - but not --)
+                else if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "-", 1) == 0) {
+                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
+                }
+                // Fallback for unknown cases
+                else {
+                    fprintf(stderr, "Invalid option\n");
+                }
+                fprintf(stderr, "Use --help for usage information\n");
+                return ERROR_INVALID_ARGS;
             default:
                 break;
         }
@@ -257,7 +276,10 @@ int main(int argc, char *argv[]) {
     ErrorCode error = parse_arguments(argc, argv, &path, &show_info, &preload_enabled);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
-        return error == ERROR_NONE ? 0 : 1;
+        if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
+            return 0;
+        }
+        return 1;
     }
     
     // If no path provided, use current directory
@@ -308,10 +330,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (!app_has_images(g_app)) {
-        printf("\n");
-        print_version();
-        printf("\n");
-        print_usage(argv[0]);
+        printf("%s - %s\n", APP_NAME, "A high-performance terminal image browser written in C");
+        printf("Version %s\n", APP_VERSION);
+        printf("Use '%s --help' for usage information.\n", argv[0]);
         app_destroy(g_app);
         g_free(path);
         return 0;
