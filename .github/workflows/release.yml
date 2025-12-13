@@ -49,7 +49,7 @@ jobs:
               
               # Add arm64 architecture and configure sources
               dpkg --add-architecture arm64 &&
-              cat > /etc/apt/sources.list.d/arm64.list <<EOF
+              cat > /etc/apt/sources.list.d/arm64.list << 'EOF'
 deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted
 deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted
 deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
