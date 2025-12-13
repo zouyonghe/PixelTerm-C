@@ -9,19 +9,32 @@ if [ "$1" = "aarch64" ]; then
     # Cross-compile for aarch64
     echo "Setting up cross-compilation for aarch64"
     
-    # Add arm64 architecture and configure sources
-    dpkg --add-architecture arm64
-    cat > /etc/apt/sources.list.d/arm64.list << 'EOF'
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
-EOF
-    
+    # Install cross-compilation tools
     apt-get update
     apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
     
-    # Install cross-compilation dependencies
-    apt-get install -y libglib2.0-dev:arm64 libgdk-pixbuf2.0-dev:arm64 pkg-config:arm64
+    # Download and install arm64 development libraries manually
+    mkdir -p /tmp/arm64-debs
+    cd /tmp/arm64-debs
+    
+    # Download arm64 packages
+    wget http://ports.ubuntu.com/pool/main/g/glib2.0/libglib2.0-0_2.72.4-1_arm64.deb
+    wget http://ports.ubuntu.com/pool/main/g/glib2.0/libglib2.0-dev_2.72.4-1_arm64.deb
+    wget http://ports.ubuntu.com/pool/main/g/gdk-pixbuf2.0/libgdk-pixbuf2.0-0_2.42.8+dfsg-1ubuntu1_arm64.deb
+    wget http://ports.ubuntu.com/pool/main/g/gdk-pixbuf2.0/libgdk-pixbuf2.0-dev_2.42.8+dfsg-1ubuntu1_arm64.deb
+    wget http://ports.ubuntu.com/pool/main/p/pkgconf/pkgconf_1.8.0-1_arm64.deb || wget http://ports.ubuntu.com/pool/main/p/pkg-config/pkg-config_0.29.2-1ubuntu3_arm64.deb
+    
+    # Extract arm64 development files
+    dpkg-deb -x libglib2.0-dev_2.72.4-1_arm64.deb /
+    dpkg-deb -x libgdk-pixbuf2.0-dev_2.42.8+dfsg-1ubuntu1_arm64.deb /
+    if [ -f pkgconf_1.8.0-1_arm64.deb ]; then
+        dpkg-deb -x pkgconf_1.8.0-1_arm64.deb /
+    else
+        dpkg-deb -x pkg-config_0.29.2-1ubuntu3_arm64.deb /
+    fi
+    
+    cd /workspace
+    rm -rf /tmp/arm64-debs
     
     echo "Installing latest Chafa for aarch64"
     wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
