@@ -46,6 +46,15 @@ jobs:
             bash -c "
               cd /workspace &&
               export DEBIAN_FRONTEND=noninteractive &&
+              
+              # Add arm64 architecture and configure sources
+              dpkg --add-architecture arm64 &&
+              cat > /etc/apt/sources.list.d/arm64.list <<EOF
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
+EOF
+              
               apt-get update &&
               apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu &&
               
