@@ -1,8 +1,17 @@
-CC = gcc
+CC ?= gcc
+ARCH ?= amd64
 CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
-LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) -lpthread
-INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0)
+
+# Cross-compilation settings
+ifeq ($(ARCH),aarch64)
+  PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
+  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) -lpthread
+  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0)
+else
+  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) -lpthread
+  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0)
+endif
 SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
@@ -69,5 +78,14 @@ help:
 	@echo "  run       - Show run instructions"
 	@echo "  check-deps- Check dependencies"
 	@echo "  help      - Show this help"
+	@echo ""
+	@echo "Architecture options:"
+	@echo "  ARCH=amd64   - Build for x86_64 (default)"
+	@echo "  ARCH=aarch64 - Cross-compile for ARM64"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                     # Build for x86_64"
+	@echo "  make ARCH=aarch64        # Cross-compile for ARM64"
+	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 
 .PHONY: all debug clean install test run check-deps help
