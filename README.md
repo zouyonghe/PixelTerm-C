@@ -47,37 +47,17 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 ### Quick Install
 
 ```bash
-# Linux amd64
+# Download binary for your architecture
+# AMD64:
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
-chmod +x pixelterm-amd64
-sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
+chmod +x pixelterm-amd64 && sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
 
-# Linux aarch64 (ARM64)
+# ARM64:
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
-chmod +x pixelterm-aarch64
-sudo mv pixelterm-aarch64 /usr/local/bin/pixelterm
+chmod +x pixelterm-aarch64 && sudo mv pixelterm-aarch64 /usr/local/bin/pixelterm
 
-# Or just download to current directory
-# For amd64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
-chmod +x pixelterm-amd64
-./pixelterm-amd64 /path/to/images
-
-# For aarch64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
-chmod +x pixelterm-aarch64
-./pixelterm-aarch64 /path/to/images
-
-# Or download the tarball
-# For amd64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64.tar.gz
-tar -xzf pixelterm-amd64.tar.gz
-./pixelterm /path/to/images
-
-# For aarch64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64.tar.gz
-tar -xzf pixelterm-aarch64.tar.gz
-./pixelterm /path/to/images
+# Or install from package manager:
+# Arch Linux: yay -S pixelterm-git
 ```
 
 ### Building from Source
