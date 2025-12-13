@@ -37,87 +37,17 @@ jobs:
       if: matrix.os == 'linux'
       run: |
         mkdir -p release-${{ matrix.arch }}
-        
-        if [ "${{ matrix.arch }}" = "aarch64" ]; then
-          # Cross-compile for aarch64
-          docker run --rm \
-            -v $(pwd):/workspace \
-            ubuntu:22.04 \
-            bash -c '
-              cd /workspace &&
-              export DEBIAN_FRONTEND=noninteractive &&
-              
-              # Add arm64 architecture and configure sources
-              dpkg --add-architecture arm64 &&
-              cat > /etc/apt/sources.list.d/arm64.list << EOF
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted
-deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
-EOF
-              
-              apt-get update &&
-              apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu &&
-              
-              # Install cross-compilation dependencies
-              apt-get install -y libglib2.0-dev:arm64 libgdk-pixbuf2.0-dev:arm64 pkg-config:arm64 &&
-              
-              echo "Installing latest Chafa" &&
-              wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"'"'browser_download_url'"'"' | grep '"'"'.tar.xz'"'"' | head -1 | cut -d'"'"' -f4) &&
-              
-              tar -xf chafa-*.tar.xz &&
-              cd chafa-* &&
-              
-              # Cross-compile Chafa for aarch64
-              ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc &&
-              make -j$(nproc) &&
-              make install &&
-              cd .. &&
-              rm -rf chafa-* &&
-              
-              # Cross-compile PixelTerm-C for aarch64
-              make clean && make CC=aarch64-linux-gnu-gcc ARCH=aarch64 &&
-              cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
-            '
-        else
-          # Native build for amd64
-          docker run --rm \
-            -v $(pwd):/workspace \
-            ubuntu:22.04 \
-            bash -c '
-              cd /workspace &&
-              export DEBIAN_FRONTEND=noninteractive &&
-              apt-get update &&
-              apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
-              echo "Installing latest Chafa" &&
-              wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"'"'browser_download_url'"'"' | grep '"'"'.tar.xz'"'"' | head -1 | cut -d'"'"' -f4) &&
-              
-              tar -xf chafa-*.tar.xz &&
-              cd chafa-* &&
-              
-              ./configure --prefix=/usr &&
-              make -j$(nproc) &&
-              make install &&
-              ldconfig &&
-              cd .. &&
-              rm -rf chafa-* &&
-              make clean && make &&
-              cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
-            '
-        fi
+        chmod +x scripts/build-linux.sh
+        docker run --rm \
+          -v $(pwd):/workspace \
+          ubuntu:22.04 \
+          bash /workspace/scripts/build-linux.sh ${{ matrix.arch }}
 
     - name: Build on macOS
       if: matrix.os == 'macos'
       run: |
-        mkdir -p release-${{ matrix.arch }}
-        # Install dependencies using Homebrew
-        brew install glib gdk-pixbuf chafa pkg-config wget
-        
-        # Chafa is already installed by Homebrew, no need to build from source
-        echo "Using Homebrew Chafa"
-        
-        # Build PixelTerm-C
-        make clean && make
-        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
+        chmod +x scripts/build-macos.sh
+        ./scripts/build-macos.sh ${{ matrix.arch }}
 
     - name: Create release package
       run: |
