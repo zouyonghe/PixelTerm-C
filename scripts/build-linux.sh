@@ -38,28 +38,28 @@ int main() { printf("Hello World\n"); return 0; }' | aarch64-linux-gnu-gcc -x c 
     # Cross-compile Chafa for aarch64 with minimal dependencies
     echo "Running configure with debug info..."
     
-    # Manually test what configure is trying to do
-    echo "Manual compile test..."
+    # Test basic compilation without glib
+    echo "Testing basic cross-compilation..."
     cat > conftest.c << 'EOF'
 int main() { return 0; }
 EOF
-    aarch64-linux-gnu-gcc -o conftest conftest.c 2>&1
+    aarch64-linux-gnu-gcc -static -o conftest conftest.c 2>&1
     if [ -f conftest ]; then
-        echo "Manual compile test successful"
+        echo "Basic cross-compilation successful"
         rm conftest conftest.c
     else
-        echo "Manual compile test failed"
+        echo "Basic cross-compilation failed"
         rm -f conftest conftest.c
         exit 1
     fi
     
+    # Try to build Chafa without glib dependencies first
+    echo "Attempting to build Chafa without external dependencies..."
     ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc \
         --disable-shared --enable-static \
-        PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
-        CFLAGS="-I/usr/include/glib-2.0" \
-        LDFLAGS="-static" \
-        LIBS="-lglib-2.0 -lm" || {
-        echo "Configure failed. Full config.log:"
+        --without-glib --without-gdk-pixbuf \
+        LDFLAGS="-static" || {
+        echo "Configure failed even without dependencies. Full config.log:"
         if [ -f config.log ]; then
             cat config.log
         fi
