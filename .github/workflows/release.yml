@@ -93,8 +93,17 @@ jobs:
     - name: Build on macOS
       if: matrix.os == 'macos'
       run: |
-        chmod +x scripts/build-macos.sh
-        ./scripts/build-macos.sh ${{ matrix.arch }}
+        mkdir -p release-${{ matrix.arch }}
+        
+        # Install dependencies using Homebrew
+        brew install glib gdk-pixbuf chafa pkg-config wget
+        
+        # Chafa is already installed by Homebrew, no need to build from source
+        echo "Using Homebrew Chafa"
+        
+        # Build PixelTerm-C
+        make clean && make
+        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
 
     - name: Create release package
       run: |
