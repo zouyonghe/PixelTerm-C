@@ -19,13 +19,22 @@ jobs:
         include:
           - arch: amd64
             runs-on: ubuntu-latest
+            os: linux
           - arch: aarch64
             runs-on: ubuntu-latest-4-cores-arm64
+            os: linux
+          - arch: amd64
+            runs-on: macos-latest
+            os: macos
+          - arch: aarch64
+            runs-on: macos-latest
+            os: macos
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build in Docker
+    - name: Build on Linux
+      if: matrix.os == 'linux'
       run: |
         mkdir -p release-${{ matrix.arch }}
         docker run --rm \
@@ -60,23 +69,64 @@ jobs:
             cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
           "
 
+    - name: Build on macOS
+      if: matrix.os == 'macos'
+      run: |
+        mkdir -p release-${{ matrix.arch }}
+        # Install dependencies using Homebrew
+        brew install glib gdk-pixbuf chafa pkg-config wget
+        
+        # Get latest Chafa release
+        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        if [ -z "$CHAFA_VERSION" ]; then
+          CHAFA_VERSION="v1.14.4"
+        fi
+        echo "Installing Chafa ${CHAFA_VERSION}"
+        
+        # Install Chafa from source
+        wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz" ||
+        wget "https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-v1.14.4.tar.xz"
+        
+        if [ -f "chafa-${CHAFA_VERSION}.tar.xz" ]; then
+          tar -xf chafa-${CHAFA_VERSION}.tar.xz
+          cd chafa-${CHAFA_VERSION}
+        else
+          tar -xf chafa-v1.14.4.tar.xz
+          cd chafa-v1.14.4
+        fi
+        
+        ./configure --prefix=/usr/local
+        make -j$(sysctl -n hw.ncpu)
+        make install
+        cd ..
+        rm -rf chafa-*
+        
+        # Build PixelTerm-C
+        make clean && make
+        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
+
     - name: Create release package
       run: |
         mkdir -p release
-        cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }} release/
-        tar -czf release/pixelterm-${{ matrix.arch }}.tar.gz -C release pixelterm-${{ matrix.arch }}
+        if [ "${{ matrix.os }}" = "macos" ]; then
+          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
+          tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
+        else
+          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }} release/
+          tar -czf release/pixelterm-${{ matrix.arch }}.tar.gz -C release pixelterm-${{ matrix.arch }}
+        fi
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}.tar.gz
-        path: release/pixelterm-${{ matrix.arch }}.tar.gz
+        name: pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '' }}.tar.gz
+        path: release/pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '' }}.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}
-        path: release/pixelterm-${{ matrix.arch }}
+        name: pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '' }}
+        path: release/pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '' }}
 
   create-release:
     needs: build
@@ -99,3 +149,7 @@ jobs:
           pixelterm-amd64
           pixelterm-aarch64.tar.gz
           pixelterm-aarch64
+          pixelterm-amd64-macos.tar.gz
+          pixelterm-amd64-macos
+          pixelterm-aarch64-macos.tar.gz
+          pixelterm-aarch64-macos
