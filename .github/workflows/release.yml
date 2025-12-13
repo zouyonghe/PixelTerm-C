@@ -61,13 +61,9 @@ EOF
               # Install cross-compilation dependencies
               apt-get install -y libglib2.0-dev:arm64 libgdk-pixbuf2.0-dev:arm64 pkg-config:arm64 &&
               
-              CHAFA_VERSION=\$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '\"tag_name\"' | cut -d'\"' -f4) &&
-              if [ -z \"\$CHAFA_VERSION\" ]; then
-                CHAFA_VERSION=\"v1.14.4\"
-              fi &&
-              echo \"Installing Chafa \${CHAFA_VERSION}\" &&
-              wget \"https://github.com/hpjansson/chafa/releases/download/\${CHAFA_VERSION}/chafa-\${CHAFA_VERSION}.tar.xz\" ||
-              wget \"https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-v1.14.4.tar.xz\" &&
+              CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4) &&
+              echo "Installing Chafa ${CHAFA_VERSION}" &&
+              wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz" &&
               
               if [ -f \"chafa-\${CHAFA_VERSION}.tar.xz\" ]; then
                 tar -xf chafa-\${CHAFA_VERSION}.tar.xz &&
@@ -98,13 +94,9 @@ EOF
               export DEBIAN_FRONTEND=noninteractive &&
               apt-get update &&
               apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
-              CHAFA_VERSION=\$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '\"tag_name\"' | cut -d'\"' -f4) &&
-              if [ -z \"\$CHAFA_VERSION\" ]; then
-                CHAFA_VERSION=\"v1.14.4\"
-              fi &&
-              echo \"Installing Chafa \${CHAFA_VERSION}\" &&
-              wget \"https://github.com/hpjansson/chafa/releases/download/\${CHAFA_VERSION}/chafa-\${CHAFA_VERSION}.tar.xz\" ||
-              wget \"https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-v1.14.4.tar.xz\" &&
+              CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4) &&
+              echo "Installing Chafa ${CHAFA_VERSION}" &&
+              wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz" &&
               
               if [ -f \"chafa-\${CHAFA_VERSION}.tar.xz\" ]; then
                 tar -xf chafa-\${CHAFA_VERSION}.tar.xz &&
