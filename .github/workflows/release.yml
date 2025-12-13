@@ -82,7 +82,7 @@ jobs:
               cd .. &&
               rm -rf chafa-* &&
               make clean && make &&
-              cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
+              cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
             "
         else
           # Native build for amd64
@@ -120,7 +120,7 @@ jobs:
           
           # Build PixelTerm-C
           make clean && make
-          cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
+          cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
         fi
 
     - name: Build on macOS
