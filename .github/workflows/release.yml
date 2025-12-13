@@ -20,13 +20,13 @@ jobs:
           - arch: amd64
             runs-on: ubuntu-latest
             os: linux
-          - arch: aarch64
+          - arch: arm64
             runs-on: ubuntu-latest
             os: linux
           - arch: amd64
             runs-on: macos-latest
             os: macos
-          - arch: aarch64
+          - arch: arm64
             runs-on: macos-latest
             os: macos
     steps:
@@ -34,7 +34,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up QEMU for cross-compilation
-      if: matrix.os == 'linux' && matrix.arch == 'aarch64'
+      if: matrix.os == 'linux' && matrix.arch == 'arm64'
       uses: docker/setup-qemu-action@v3
       with:
         platforms: arm64
@@ -44,7 +44,7 @@ jobs:
       run: |
         mkdir -p release-${{ matrix.arch }}
         
-        if [ '${{ matrix.arch }}' = 'aarch64' ]; then
+        if [ '${{ matrix.arch }}' = 'arm64' ]; then
           # Use QEMU emulation for aarch64 build (d4c3910 method)
           echo 'Building PixelTerm-C for aarch64 using QEMU emulation'
           
@@ -136,14 +136,14 @@ jobs:
         
         # Build PixelTerm-C
         make clean && make
-        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
+        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-macos-${{ matrix.arch }}
 
     - name: Create release package
       run: |
         mkdir -p release
         if [ "${{ matrix.os }}" = "macos" ]; then
-          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
+          cp release-${{ matrix.arch }}/pixelterm-macos-${{ matrix.arch }} release/
+          tar -czf release/pixelterm-macos-${{ matrix.arch }}.tar.gz -C release pixelterm-macos-${{ matrix.arch }}
         else
           cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
           tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
@@ -152,14 +152,14 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '-linux' }}.tar.gz
-        path: release/pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '-linux' }}.tar.gz
+        name: pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}.tar.gz
+        path: release/pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '-linux' }}
-        path: release/pixelterm-${{ matrix.arch }}${{ matrix.os == 'macos' && '-macos' || '-linux' }}
+        name: pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}
+        path: release/pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}
 
   create-release:
     needs: build
@@ -180,9 +180,9 @@ jobs:
         files: |
           pixelterm-amd64-linux.tar.gz
           pixelterm-amd64-linux
-          pixelterm-aarch64-linux.tar.gz
-          pixelterm-aarch64-linux
-          pixelterm-amd64-macos.tar.gz
-          pixelterm-amd64-macos
-          pixelterm-aarch64-macos.tar.gz
-          pixelterm-aarch64-macos
+          pixelterm-arm64-linux.tar.gz
+          pixelterm-arm64-linux
+          pixelterm-macos-amd64.tar.gz
+          pixelterm-macos-amd64
+          pixelterm-macos-arm64.tar.gz
+          pixelterm-macos-arm64
