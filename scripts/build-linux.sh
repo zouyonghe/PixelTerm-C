@@ -40,7 +40,7 @@ if [ "$1" = "aarch64" ]; then
     wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
     
     tar -xf chafa-*.tar.xz
-    cd chafa-*
+    cd $(ls -d chafa-* | head -1)
     
     # Cross-compile Chafa for aarch64
     ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc
@@ -64,7 +64,7 @@ else
     wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
     
     tar -xf chafa-*.tar.xz
-    cd chafa-*
+    cd $(ls -d chafa-* | head -1)
     
     ./configure --prefix=/usr
     make -j$(nproc)
