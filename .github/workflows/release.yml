@@ -38,10 +38,33 @@ jobs:
       run: |
         mkdir -p release-${{ matrix.arch }}
         chmod +x scripts/build-linux.sh
-        docker run --rm \
-          -v $(pwd):/workspace \
-          ubuntu:22.04 \
-          bash /workspace/scripts/build-linux.sh ${{ matrix.arch }}
+        
+        if [ "${{ matrix.arch }}" = "aarch64" ]; then
+          # Use native aarch64 container for building
+          docker run --rm \
+            --platform linux/arm64 \
+            -v $(pwd):/workspace \
+            ubuntu:22.04 \
+            bash -c "
+              cd /workspace &&
+              export DEBIAN_FRONTEND=noninteractive &&
+              apt-get update &&
+              apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
+              wget \$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'\"' -f4) &&
+              tar -xf chafa-*.tar.xz &&
+              cd \$(ls -d chafa-* | head -1) &&
+              ./configure --prefix=/usr && make -j\$(nproc) && make install && ldconfig &&
+              cd .. && rm -rf chafa-* &&
+              make clean && make &&
+              cp bin/pixelterm /workspace/release-aarch64/pixelterm-aarch64
+            "
+        else
+          # Native build for amd64
+          docker run --rm \
+            -v $(pwd):/workspace \
+            ubuntu:22.04 \
+            bash /workspace/scripts/build-linux.sh ${{ matrix.arch }}
+        fi
 
     - name: Build on macOS
       if: matrix.os == 'macos'
