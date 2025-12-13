@@ -21,7 +21,7 @@ jobs:
             runs-on: ubuntu-latest
             os: linux
           - arch: aarch64
-            runs-on: ubuntu-latest-4-cores-arm64
+            runs-on: ubuntu-latest
             os: linux
           - arch: amd64
             runs-on: macos-latest
@@ -39,16 +39,11 @@ jobs:
         mkdir -p release-${{ matrix.arch }}
         chmod +x scripts/build-linux.sh
         
-        if [ "${{ matrix.arch }}" = "aarch64" ]; then
-          # Build directly on ARM64 runner
-          scripts/build-linux.sh ${{ matrix.arch }}
-        else
-          # Build in Docker for amd64
-          docker run --rm \
-            -v $(pwd):/workspace \
-            ubuntu:22.04 \
-            bash /workspace/scripts/build-linux.sh ${{ matrix.arch }}
-        fi
+        # Build in Docker for both architectures
+        docker run --rm \
+          -v $(pwd):/workspace \
+          ubuntu:22.04 \
+          bash /workspace/scripts/build-linux.sh ${{ matrix.arch }}
 
     - name: Build on macOS
       if: matrix.os == 'macos'

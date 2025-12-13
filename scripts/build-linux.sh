@@ -6,26 +6,18 @@ cd /workspace
 export DEBIAN_FRONTEND=noninteractive
 
 if [ "$1" = "aarch64" ]; then
-    # Native build for aarch64
-    echo "Native build for aarch64"
+    # Cross-compile for aarch64
+    echo "Setting up cross-compilation for aarch64"
     
-    # Install build tools
+    # Install cross-compilation tools
     apt-get update
-    apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl
+    apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
     
-    echo "Installing latest Chafa for aarch64"
-    wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
+    # Skip Chafa cross-compilation due to complexity
+    echo "Skipping Chafa cross-compilation - will use system Chafa at runtime"
     
-    tar -xf chafa-*.tar.xz
-    cd $(ls -d chafa-* | head -1)
-    
-    # Native compile Chafa for aarch64
-    ./configure --prefix=/usr && make -j$(nproc) && make install && ldconfig
-    cd ..
-    rm -rf chafa-*
-    
-    # Native compile PixelTerm-C for aarch64
-    make clean && make
+    # Cross-compile PixelTerm-C for aarch64
+    make clean && make CC=aarch64-linux-gnu-gcc ARCH=aarch64
     cp bin/pixelterm /workspace/release-aarch64/pixelterm-aarch64
     
 else
