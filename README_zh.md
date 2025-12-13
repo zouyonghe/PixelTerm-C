@@ -19,6 +19,9 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 - 🔄 **循环导航** - 在首尾图像间无缝浏览
 - 📊 **详细信息** - 可切换的全面图像元数据显示
 - 🎯 **蓝色文件名** - 彩色编码文件名显示，提高可见性
+- 🏗️ **多架构支持** - 原生支持amd64和aarch64（ARM64）架构
+- 📦 **预加载** - 可选的图像预加载功能，实现更快导航
+- 📋 **智能帮助** - 未找到图像时自动显示版本和帮助信息
 
 ## 性能对比
 
@@ -41,22 +44,39 @@ sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config
 sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 ```
 
-### 快速安装 (Linux amd64)
+### 快速安装
 
 ```bash
-# 下载并安装最新二进制文件
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
-chmod +x pixelterm
-sudo mv pixelterm /usr/local/bin/
+# Linux amd64
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
+chmod +x pixelterm-amd64
+sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
+
+# Linux aarch64 (ARM64)
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
+chmod +x pixelterm-aarch64
+sudo mv pixelterm-aarch64 /usr/local/bin/pixelterm
 
 # 或者仅下载到当前目录
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
-chmod +x pixelterm
-./pixelterm /path/to/images
+# amd64版本：
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
+chmod +x pixelterm-amd64
+./pixelterm-amd64 /path/to/images
+
+# aarch64版本：
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
+chmod +x pixelterm-aarch64
+./pixelterm-aarch64 /path/to/images
 
 # 或者下载压缩包
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm.tar.gz
-tar -xzf pixelterm.tar.gz
+# amd64版本：
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64.tar.gz
+tar -xzf pixelterm-amd64.tar.gz
+./pixelterm /path/to/images
+
+# aarch64版本：
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64.tar.gz
+tar -xzf pixelterm-aarch64.tar.gz
 ./pixelterm /path/to/images
 ```
 
@@ -66,13 +86,34 @@ tar -xzf pixelterm.tar.gz
 git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
+
+# 交叉编译到aarch64
+make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ```
 
 ### 使用
 
 ```bash
-# 浏览图像
+# 浏览目录中的图像
 ./pixelterm /path/to/images
+
+# 查看单个图像
+./pixelterm /path/to/image.jpg
+
+# 在当前目录运行
+./pixelterm
+
+# 显示版本
+./pixelterm --version
+
+# 显示帮助
+./pixelterm --help
+
+# 启动时显示图像信息
+./pixelterm --info /path/to/images
+
+# 禁用预加载
+./pixelterm --no-preload /path/to/images
 ```
 
 ## 🎮 控制
