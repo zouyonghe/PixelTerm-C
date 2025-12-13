@@ -13,26 +13,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, aarch64]
+        include:
+          - arch: amd64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-latest-4-cores-arm64
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Set up QEMU for cross-compilation
-      if: matrix.arch == 'aarch64'
-      uses: docker/setup-qemu-action@v3
-      with:
-        platforms: arm64
 
     - name: Build in Docker
       run: |
         mkdir -p release-${{ matrix.arch }}
         docker run --rm \
           -v $(pwd):/workspace \
-          --platform ${{ matrix.arch == 'aarch64' && 'linux/arm64' || 'linux/amd64' }} \
           ubuntu:22.04 \
           bash -c "
             cd /workspace &&
