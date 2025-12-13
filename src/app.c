@@ -414,11 +414,12 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
         renderer_destroy(renderer);
     } else {
-        // For cached images, we need to estimate dimensions
-        // This is a simplified estimation - in a real implementation, 
-        // you might store dimensions in the cache as well
-        image_width = app->term_width;
-        image_height = app->term_height - 2; // Leave space for filename
+        // For cached images, get the actual dimensions from cache
+        if (!preloader_get_cached_image_dimensions(app->preloader, filepath, &image_width, &image_height)) {
+            // Fallback to estimation if dimensions not available
+            image_width = app->term_width;
+            image_height = app->term_height - 2; // Leave space for filename
+        }
     }
     
     // Clear screen and reset terminal state

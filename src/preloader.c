@@ -1,6 +1,16 @@
 #include "preloader.h"
 #include "renderer.h"
 
+// Destroy cached image data
+void cached_image_data_destroy(CachedImageData *data) {
+    if (data) {
+        if (data->rendered) {
+            g_string_free(data->rendered, TRUE);
+        }
+        g_free(data);
+    }
+}
+
 // Create a new preloader
 ImagePreloader* preloader_create(void) {
     ImagePreloader *preloader = g_new0(ImagePreloader, 1);
@@ -11,7 +21,7 @@ ImagePreloader* preloader_create(void) {
     preloader->thread = NULL;
     preloader->task_queue = g_queue_new();
     preloader->preload_cache = g_hash_table_new_full(g_str_hash, g_str_equal, 
-                                                    g_free, (GDestroyNotify)gstring_destroy);
+                                                    g_free, (GDestroyNotify)cached_image_data_destroy);
     
     g_mutex_init(&preloader->mutex);
     g_cond_init(&preloader->condition);
@@ -243,10 +253,30 @@ GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filep
     }
 
     g_mutex_lock(&preloader->mutex);
-    GString *cached = g_hash_table_lookup(preloader->preload_cache, filepath);
+    CachedImageData *cached_data = g_hash_table_lookup(preloader->preload_cache, filepath);
+    GString *rendered = cached_data ? cached_data->rendered : NULL;
     g_mutex_unlock(&preloader->mutex);
 
-    return cached;
+    return rendered;
+}
+
+// Get cached image dimensions
+gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const char *filepath, gint *width, gint *height) {
+    if (!preloader || !filepath || !width || !height) {
+        return FALSE;
+    }
+
+    g_mutex_lock(&preloader->mutex);
+    CachedImageData *cached_data = g_hash_table_lookup(preloader->preload_cache, filepath);
+    if (cached_data) {
+        *width = cached_data->width;
+        *height = cached_data->height;
+        g_mutex_unlock(&preloader->mutex);
+        return TRUE;
+    }
+    g_mutex_unlock(&preloader->mutex);
+
+    return FALSE;
 }
 
 // Add rendered image to cache
@@ -262,9 +292,16 @@ void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GStrin
         preloader_cache_cleanup(preloader);
     }
 
-    // Add to cache
+    // Add to cache with dimensions
     gchar *key = g_strdup(filepath);
-    GString *value = g_string_new_len(rendered->str, rendered->len);
+    CachedImageData *value = g_new0(CachedImageData, 1);
+    if (value) {
+        value->rendered = g_string_new_len(rendered->str, rendered->len);
+        // For now, we'll use estimated dimensions
+        // In a more complete implementation, we would get actual rendered dimensions
+        value->width = preloader->term_width;
+        value->height = preloader->term_height - 2; // Leave space for filename
+    }
     g_hash_table_insert(preloader->preload_cache, key, value);
 
     g_mutex_unlock(&preloader->mutex);
@@ -531,9 +568,30 @@ gpointer preloader_worker_thread(gpointer data) {
             GString *rendered = renderer_render_image_file(renderer, task->filepath);
             
             if (rendered) {
-                // Add to cache
-                preloader_cache_add(preloader, task->filepath, rendered);
-                // Free the original GString since cache_add makes a copy
+                // Get the actual rendered dimensions
+                gint rendered_width, rendered_height;
+                renderer_get_rendered_dimensions(renderer, &rendered_width, &rendered_height);
+                
+                // Add to cache with dimensions
+                g_mutex_lock(&preloader->mutex);
+                
+                // Check cache size and cleanup if necessary
+                if (g_hash_table_size(preloader->preload_cache) >= preloader->max_cache_size) {
+                    preloader_cache_cleanup(preloader);
+                }
+                
+                gchar *key = g_strdup(task->filepath);
+                CachedImageData *value = g_new0(CachedImageData, 1);
+                if (value) {
+                    value->rendered = g_string_new_len(rendered->str, rendered->len);
+                    value->width = rendered_width;
+                    value->height = rendered_height;
+                }
+                g_hash_table_insert(preloader->preload_cache, key, value);
+                
+                g_mutex_unlock(&preloader->mutex);
+                
+                // Free the original GString
                 g_string_free(rendered, TRUE);
             }
 
