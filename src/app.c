@@ -38,6 +38,7 @@ PixelTermApp* app_create(void) {
     app->preload_enabled = TRUE;
     app->needs_redraw = TRUE;
     app->file_manager_mode = FALSE;
+    app->show_hidden_files = FALSE;
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -889,6 +890,9 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     } else {
         app->file_manager_directory = g_get_current_dir();
     }
+
+    // Always start with hidden files hidden
+    app->show_hidden_files = FALSE;
     
     return app_file_manager_refresh(app);
 }
@@ -1138,6 +1142,12 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
             g_free(full_path);
             continue;
         }
+
+        // Respect hidden-file visibility toggle
+        if (!app->show_hidden_files && name[0] == '.') {
+            g_free(full_path);
+            continue;
+        }
         
         if (g_file_test(full_path, G_FILE_TEST_IS_DIR) || g_file_test(full_path, G_FILE_TEST_IS_REGULAR)) {
             entries = g_list_append(entries, full_path);  // Use full path
@@ -1210,7 +1220,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
 
     gint total_entries = g_list_length(app->directory_entries);
-    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ESC Exit";
+    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   Ctrl+H Hidden   ESC Exit";
     // 2 header lines + 1 footer line -> remaining rows for content
     gint available_rows = app->term_height - 3;
     gint target_row = available_rows / 2;

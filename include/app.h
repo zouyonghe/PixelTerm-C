@@ -34,6 +34,7 @@ typedef struct {
     gboolean preload_enabled;
     gboolean needs_redraw;
     gboolean file_manager_mode;  // Track if file manager is active
+    gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
     
     // Terminal info
     gint term_width;

@@ -311,6 +311,14 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app_refresh_display(app);
                         }
                         break;
+                    case KEY_BACKSPACE:
+                    case 8: // Ctrl+H on many terminals
+                        if (app->file_manager_mode) {
+                            app->show_hidden_files = !app->show_hidden_files;
+                            app_file_manager_refresh(app);
+                            app_render_file_manager(app);
+                        }
+                        break;
                     case KEY_ENTER:
                     case 13:  // Handle both LF (10) and CR (13) for Enter key
                         if (app->file_manager_mode) {
