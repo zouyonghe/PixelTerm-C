@@ -48,7 +48,7 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 ```bash
 # Install from package manager (recommended)
-# Arch Linux: pacman -S pixelterm-git (using paru/yay)
+# Arch Linux: pacman -S pixelterm-c
 
 # Or download binary for your architecture and platform
 # Linux AMD64:
