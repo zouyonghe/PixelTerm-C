@@ -145,8 +145,8 @@ jobs:
           cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
           tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
         else
-          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }} release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}
+          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
+          tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
         fi
 
     - name: Upload artifact
