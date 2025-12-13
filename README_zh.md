@@ -47,7 +47,10 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 ### 快速安装
 
 ```bash
-# 下载对应架构的二进制文件
+# 使用包管理器安装（推荐）
+# Arch Linux: pacman -S pixelterm-git (使用paru/yay)
+
+# 或下载对应架构的二进制文件
 # AMD64:
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
 chmod +x pixelterm-amd64 && sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
@@ -55,9 +58,6 @@ chmod +x pixelterm-amd64 && sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
 # ARM64:
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
 chmod +x pixelterm-aarch64 && sudo mv pixelterm-aarch64 /usr/local/bin/pixelterm
-
-# 或使用包管理器安装：
-# Arch Linux: yay -S pixelterm-git
 ```
 
 ### 源码构建
