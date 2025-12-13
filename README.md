@@ -66,6 +66,9 @@ chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/p
 # macOS ARM64 (Apple Silicon):
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64-macos
 chmod +x pixelterm-aarch64-macos && sudo mv pixelterm-aarch64-macos /usr/local/bin/pixelterm
+
+# Note for macOS users: If the binary fails to start due to security restrictions, run:
+# xattr -dr com.apple.quarantine pixelterm-aarch64-macos
 ```
 
 ### Building from Source
