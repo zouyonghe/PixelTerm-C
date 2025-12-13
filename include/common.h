@@ -14,7 +14,9 @@
 
 // Application constants
 #define APP_NAME "PixelTerm-C"
-#define APP_VERSION "0.1.0"
+#ifndef APP_VERSION
+#define APP_VERSION "unknown"
+#endif
 #define MAX_PATH_LEN 4096
 #define MAX_CACHE_SIZE 50
 #define PRELOAD_QUEUE_SIZE 10

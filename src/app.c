@@ -201,9 +201,8 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
 
     browser_destroy(browser);
 
-    if (app->total_images == 0) {
-        return ERROR_FILE_NOT_FOUND;
-    }
+    // Note: We return ERROR_NONE even if no images are found
+    // The caller should check app_has_images() to handle this case
 
     // Start preloading if enabled
     if (app->preload_enabled) {

@@ -255,9 +255,14 @@ int main(int argc, char *argv[]) {
     gboolean preload_enabled = TRUE;
     
     ErrorCode error = parse_arguments(argc, argv, &path, &show_info, &preload_enabled);
-    if (error != ERROR_NONE || !path) {
+    if (error != ERROR_NONE) {
         if (path) g_free(path);
         return error == ERROR_NONE ? 0 : 1;
+    }
+    
+    // If no path provided, use current directory
+    if (!path) {
+        path = g_get_current_dir();
     }
 
     // Create and initialize application
@@ -305,6 +310,10 @@ int main(int argc, char *argv[]) {
     if (!app_has_images(g_app)) {
         printf("No supported image files found in '%s'\n", path);
         printf("Total images loaded: %d\n", app_get_total_images(g_app));
+        printf("\n");
+        print_version();
+        printf("\n");
+        print_usage(argv[0]);
         app_destroy(g_app);
         g_free(path);
         return 0;

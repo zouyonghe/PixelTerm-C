@@ -1,6 +1,7 @@
 CC ?= gcc
 ARCH ?= amd64
-CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch
+VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 
 # Cross-compilation settings
