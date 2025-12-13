@@ -416,9 +416,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     } else {
         // For cached images, get the actual dimensions from cache
         if (!preloader_get_cached_image_dimensions(app->preloader, filepath, &image_width, &image_height)) {
-            // Fallback to estimation if dimensions not available
+            // Fallback: count lines in the rendered output to get actual height
             image_width = app->term_width;
-            image_height = app->term_height - 2; // Leave space for filename
+            image_height = 1; // Start with 1 for first line
+            
+            for (gsize i = 0; i < rendered->len; i++) {
+                if (rendered->str[i] == '\n') {
+                    image_height++;
+                }
+            }
         }
     }
     

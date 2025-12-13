@@ -297,10 +297,16 @@ void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GStrin
     CachedImageData *value = g_new0(CachedImageData, 1);
     if (value) {
         value->rendered = g_string_new_len(rendered->str, rendered->len);
-        // For now, we'll use estimated dimensions
-        // In a more complete implementation, we would get actual rendered dimensions
+        // Calculate actual rendered height by counting newlines in the output
         value->width = preloader->term_width;
-        value->height = preloader->term_height - 2; // Leave space for filename
+        value->height = 1; // Start with 1 for first line
+        
+        // Count actual lines in the rendered output
+        for (gsize i = 0; i < rendered->len; i++) {
+            if (rendered->str[i] == '\n') {
+                value->height++;
+            }
+        }
     }
     g_hash_table_insert(preloader->preload_cache, key, value);
 
