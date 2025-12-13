@@ -108,8 +108,8 @@ static void app_file_manager_layout(const PixelTermApp *app, gint *col_width, gi
 
     gint column_count = 1;
 
-    // Header + footer help line
-    gint header_lines = 1;
+    // Header (title + path) + footer help line
+    gint header_lines = 2;
     gint help_lines = 1;
     gint vis_rows = app->term_height - header_lines - help_lines;
     if (vis_rows < 1) {
@@ -1237,6 +1237,14 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
 
     gint top_padding = target_row - selected_pos;
     if (top_padding < 0) top_padding = 0;
+
+    // Ensure we don't render past the available rows when centering
+    gint visible_space = MAX(0, available_rows - top_padding);
+    if (rows_to_render > visible_space) {
+        end_row = MIN(total_rows, start_row + visible_space);
+        rows_to_render = end_row - start_row;
+    }
+
     gint bottom_padding = available_rows - rows_to_render - top_padding;
     if (bottom_padding < 0) bottom_padding = 0;
 
