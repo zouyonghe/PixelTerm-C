@@ -128,8 +128,8 @@ jobs:
       run: |
         mkdir -p release-${{ matrix.arch }}
         
-        # Install dependencies using Homebrew
-        brew install glib gdk-pixbuf chafa pkg-config
+        # Install dependencies using Homebrew (only install packages not pre-installed)
+        brew install gdk-pixbuf chafa
         
         # Chafa is already installed by Homebrew, no need to build from source
         echo "Using Homebrew Chafa"
