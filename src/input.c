@@ -375,9 +375,15 @@ gboolean input_is_quit_key(KeyCode key) {
 void input_print_key_bindings(void) {
     printf("\nKey Bindings:\n");
     printf("  ←/→ or a/d     Previous/Next image\n");
+    printf("  TAB            Toggle file manager\n");
     printf("  i              Toggle image information\n");
     printf("  r              Delete current image\n");
     printf("  q              Quit application\n");
     printf("  Ctrl+C         Force exit\n");
-    printf("  ESC            Quit application\n");
+    printf("  ESC            Quit application/Exit file manager\n");
+    printf("\n");
+    printf("File Manager:\n");
+    printf("  ↑/↓            Navigate entries\n");
+    printf("  ←              Go to parent directory\n");
+    printf("  →/Enter        Open directory/file\n");
 }

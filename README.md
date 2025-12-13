@@ -113,10 +113,17 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ←/→ | Previous/Next image |
 | a/d | Alternative left/right keys |
+| TAB | Toggle file manager (or exit when no images are loaded) |
 | i | Toggle image information |
 | r | Delete current image |
-| q or ESC | Exit program |
+| q | Return to previous view (image view exits app) |
+| ESC | Exit program (always) |
 | Ctrl+C | Force exit |
+
+File Manager:
+- ↑/↓ to navigate, Enter/→ to open, ← to go to parent.
+- Any letter key (a–z/A–Z) jumps to the next entry starting with that letter.
+- q returns to previous view (image view exits app); TAB toggles file manager; ESC quits the program.
 
 ## 📄 License
 

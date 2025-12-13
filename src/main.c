@@ -32,9 +32,9 @@ static void signal_handler(int sig) {
 
 // Print usage information
 static void print_usage(const char *program_name) {
-    printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
-    printf("\n");
     printf("A high-performance terminal image browser written in C.\n");
+    printf("\n");
+    printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
     printf("\n");
     printf("Arguments:\n");
     printf("  PATH    Path to an image file or directory containing images\n");
@@ -49,10 +49,16 @@ static void print_usage(const char *program_name) {
     printf("\n");
     printf("Key bindings:\n");
     printf("  ←/→ or a/d     Previous/Next image\n");
+    printf("  TAB            Toggle file manager\n");
     printf("  i              Show image information\n");
     printf("  r              Delete current image\n");
     printf("  q              Quit application\n");
     printf("  Ctrl+C         Force exit\n");
+    printf("\n");
+    printf("File Manager:\n");
+    printf("  ↑/↓            Navigate entries\n");
+    printf("  Enter          Select directory/file\n");
+    printf("  ESC            Exit file manager\n");
     printf("\n");
     printf("Supported formats: ");
     for (int i = 0; SUPPORTED_EXTENSIONS[i] != NULL; i++) {
@@ -167,8 +173,12 @@ static ErrorCode run_application(PixelTermApp *app) {
         return error;
     }
 
-    // Initial render
-    error = app_refresh_display(app);
+    // Initial render: show file manager if already active
+    if (app->file_manager_mode) {
+        error = app_render_file_manager(app);
+    } else {
+        error = app_refresh_display(app);
+    }
     if (error != ERROR_NONE) {
         input_disable_raw_mode(input_handler);
         input_handler_destroy(input_handler);
@@ -182,7 +192,7 @@ static ErrorCode run_application(PixelTermApp *app) {
     // Initialize terminal size tracking
     last_term_width = input_handler->terminal_width;
     last_term_height = input_handler->terminal_height;
-    
+        
     while (app->running && !input_handler->should_exit) {
         // Check for terminal size changes
         input_update_terminal_size(input_handler);
@@ -191,7 +201,12 @@ static ErrorCode run_application(PixelTermApp *app) {
             // Terminal size changed, update tracking and refresh
             last_term_width = input_handler->terminal_width;
             last_term_height = input_handler->terminal_height;
-            app_refresh_display(app);
+            get_terminal_size(&app->term_width, &app->term_height);
+            if (app->file_manager_mode) {
+                app_render_file_manager(app);
+            } else {
+                app_refresh_display(app);
+            }
             usleep(100000); // 100ms delay
             continue;
         }
@@ -211,16 +226,43 @@ static ErrorCode run_application(PixelTermApp *app) {
         // Process input events
         switch (event.type) {
             case INPUT_KEY_PRESS:
+                // In file manager, any letter key acts as jump-to-letter
+                if (app->file_manager_mode &&
+                    ((event.key_code >= 'A' && event.key_code <= 'Z') ||
+                     (event.key_code >= 'a' && event.key_code <= 'z'))) {
+                    app_file_manager_jump_to_letter(app, (char)event.key_code);
+                    app_render_file_manager(app);
+                    break;
+                }
+
                 switch (event.key_code) {
                     case KEY_LEFT:
                     case (KeyCode)'a':
-                        app_previous_image(app);
-                        app_refresh_display(app);
+                        if (app->file_manager_mode) {
+                            ErrorCode err = app_file_manager_left(app);
+                            if (err == ERROR_NONE) {
+                                app_render_file_manager(app);
+                            } else {
+                                app_render_file_manager(app);
+                            }
+                        } else {
+                            app_previous_image(app);
+                            app_refresh_display(app);
+                        }
                         break;
                     case KEY_RIGHT:
                     case (KeyCode)'d':
-                        app_next_image(app);
-                        app_refresh_display(app);
+                        if (app->file_manager_mode) {
+                            ErrorCode err = app_file_manager_right(app);
+                            if (err == ERROR_NONE && app->file_manager_mode) {
+                                app_render_file_manager(app);
+                            } else if (app->file_manager_mode) {
+                                app_render_file_manager(app);
+                            }
+                        } else {
+                            app_next_image(app);
+                            app_refresh_display(app);
+                        }
                         break;
                     case (KeyCode)'i':
                         app_display_image_info(app);
@@ -231,15 +273,84 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case (KeyCode)'q':
                     case KEY_ESCAPE:
+                        // ESC always exits the application
+                        if (event.key_code == KEY_ESCAPE) {
+                            app->running = FALSE;
+                            input_handler->should_exit = TRUE;
+                            break;
+                        }
                         app->running = FALSE;
+                        input_handler->should_exit = TRUE;
+                        break;
+                    case KEY_TAB:
+                        if (app->file_manager_mode) {
+                            if (!app_has_images(app)) {
+                                // In browser-only mode, allow immediate exit
+                                app->running = FALSE;
+                                input_handler->should_exit = TRUE;
+                                break;
+                            }
+                            app_exit_file_manager(app);
+                            app_refresh_display(app);
+                        } else {
+                            app_enter_file_manager(app);
+                            app_render_file_manager(app);
+                        }
+                        break;
+                    case KEY_UP:
+                        if (app->file_manager_mode) {
+                            app_file_manager_up(app);
+                            app_render_file_manager(app);
+                        } else {
+                            app_previous_image(app);
+                            app_refresh_display(app);
+                        }
+                        break;
+                    case KEY_DOWN:
+                        if (app->file_manager_mode) {
+                            app_file_manager_down(app);
+                            app_render_file_manager(app);
+                        } else {
+                            app_next_image(app);
+                            app_refresh_display(app);
+                        }
+                        break;
+                    case KEY_ENTER:
+                    case 13:  // Handle both LF (10) and CR (13) for Enter key
+                        if (app->file_manager_mode) {
+                            // Clear any pending input to avoid multiple triggers
+                            input_flush_buffer(input_handler);
+                            
+                            ErrorCode error = app_file_manager_enter(app);
+                            if (error != ERROR_NONE) {
+                                // Handle error - refresh display
+                                app_render_file_manager(app);
+                            } else if (app->file_manager_mode) {
+                                // If still in file manager (directory entered), redraw immediately
+                                app_render_file_manager(app);
+                            }
+                            // Note: when opening a file, app_file_manager_enter renders the image
+                        }
                         break;
                     default:
+                        if (app->file_manager_mode) {
+                            if ((event.key_code >= 'A' && event.key_code <= 'Z') ||
+                                (event.key_code >= 'a' && event.key_code <= 'z')) {
+                                app_file_manager_jump_to_letter(app, (char)event.key_code);
+                                app_render_file_manager(app);
+                            }
+                        }
                         break;
                 }
                 break;
             case INPUT_RESIZE:
                 input_update_terminal_size(input_handler);
-                app_refresh_display(app);
+                get_terminal_size(&app->term_width, &app->term_height);
+                if (app->file_manager_mode) {
+                    app_render_file_manager(app);
+                } else {
+                    app_refresh_display(app);
+                }
                 break;
             default:
                 break;
@@ -334,10 +445,20 @@ int main(int argc, char *argv[]) {
             // User provided a specific path, tell them no images found
             fprintf(stderr, "No images found in '%s'\n", path);
         } else {
-            // No path provided, show app intro and help
-            printf("%s - %s\n", APP_NAME, "A high-performance terminal image browser written in C");
-            printf("Version %s\n", APP_VERSION);
-            printf("Use '%s --help' for usage information.\n", argv[0]);
+            // No path provided and no images: start in file manager mode for browsing
+            error = app_enter_file_manager(g_app);
+            if (error != ERROR_NONE) {
+                fprintf(stderr, "Failed to start file manager: %d\n", error);
+                app_destroy(g_app);
+                g_free(path);
+                return 1;
+            }
+            // Continue into main loop with file manager active
+            error = run_application(g_app);
+            app_destroy(g_app);
+            g_free(path);
+            g_app = NULL;
+            return error == ERROR_NONE ? 0 : 1;
         }
         app_destroy(g_app);
         g_free(path);

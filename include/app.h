@@ -33,6 +33,7 @@ typedef struct {
     gboolean info_visible;  // Track if info is currently displayed
     gboolean preload_enabled;
     gboolean needs_redraw;
+    gboolean file_manager_mode;  // Track if file manager is active
     
     // Terminal info
     gint term_width;
@@ -41,6 +42,12 @@ typedef struct {
     // Error handling
     ErrorCode last_error;
     GError *gerror;
+    
+    // File manager state
+    gchar *file_manager_directory;
+    GList *directory_entries;
+    gint selected_entry;
+    gint scroll_offset;
 } PixelTermApp;
 
 // Application lifecycle functions
@@ -54,6 +61,22 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath);
 ErrorCode app_next_image(PixelTermApp *app);
 ErrorCode app_previous_image(PixelTermApp *app);
 ErrorCode app_goto_image(PixelTermApp *app, gint index);
+
+// Directory switching functions
+ErrorCode app_switch_to_next_directory(PixelTermApp *app);
+ErrorCode app_switch_to_parent_directory(PixelTermApp *app);
+
+// File manager functions
+ErrorCode app_enter_file_manager(PixelTermApp *app);
+ErrorCode app_exit_file_manager(PixelTermApp *app);
+ErrorCode app_file_manager_up(PixelTermApp *app);
+ErrorCode app_file_manager_down(PixelTermApp *app);
+ErrorCode app_file_manager_left(PixelTermApp *app);
+ErrorCode app_file_manager_right(PixelTermApp *app);
+ErrorCode app_file_manager_enter(PixelTermApp *app);
+ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter);
+ErrorCode app_file_manager_refresh(PixelTermApp *app);
+ErrorCode app_render_file_manager(PixelTermApp *app);
 
 // Display functions
 ErrorCode app_render_current_image(PixelTermApp *app);

@@ -4,6 +4,7 @@
 #include "input.h"
 #include "preloader.h"
 #include <sys/ioctl.h>
+#include <unistd.h>
 
 // Create a new application instance
 PixelTermApp* app_create(void) {
@@ -36,11 +37,177 @@ PixelTermApp* app_create(void) {
     app->info_visible = FALSE;
     app->preload_enabled = TRUE;
     app->needs_redraw = TRUE;
+    app->file_manager_mode = FALSE;
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
+    app->file_manager_directory = NULL;
+    app->directory_entries = NULL;
+    app->selected_entry = 0;
+    app->scroll_offset = 0;
 
     return app;
+}
+
+// Helpers for file manager layout
+static gchar* app_file_manager_display_name(const PixelTermApp *app, const gchar *entry, gboolean *is_directory) {
+    (void)app; // currently unused but kept for potential future context
+    if (is_directory) *is_directory = FALSE;
+
+    gboolean is_dir = g_file_test(entry, G_FILE_TEST_IS_DIR);
+    if (is_directory) *is_directory = is_dir;
+
+    gchar *display_name = NULL;
+    if (is_dir) {
+        gchar *basename = g_path_get_basename(entry);
+        display_name = g_strdup_printf("%s/", basename);
+        g_free(basename);
+    } else {
+        display_name = g_path_get_basename(entry);
+    }
+
+    return display_name;
+}
+
+static gint app_file_manager_max_display_len(const PixelTermApp *app) {
+    gint max_len = 0;
+    for (GList *cur = app->directory_entries; cur; cur = cur->next) {
+        gchar *entry = (gchar*)cur->data;
+        gboolean is_dir = FALSE;
+        gchar *name = app_file_manager_display_name(app, entry, &is_dir);
+        if (name) {
+            gint len = strlen(name);
+            if (len > max_len) {
+                max_len = len;
+            }
+            g_free(name);
+        }
+    }
+    return max_len > 0 ? max_len : 12;
+}
+
+static void app_file_manager_layout(const PixelTermApp *app, gint *col_width, gint *cols, gint *visible_rows, gint *total_rows) {
+    gint max_len = app_file_manager_max_display_len(app);
+    gint width = MAX(app->term_width, max_len + 2);
+
+    gint column_count = 1;
+
+    // Header + footer help line
+    gint header_lines = 1;
+    gint help_lines = 1;
+    gint vis_rows = app->term_height - header_lines - help_lines;
+    if (vis_rows < 1) {
+        vis_rows = 1;
+    }
+
+    gint total_entries = g_list_length(app->directory_entries);
+    gint rows = (total_entries + column_count - 1) / column_count;
+    if (rows < 1) rows = 1;
+
+    if (col_width) *col_width = width;
+    if (cols) *cols = column_count;
+    if (visible_rows) *visible_rows = vis_rows;
+    if (total_rows) *total_rows = rows;
+}
+
+static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint visible_rows) {
+    gint total_entries = g_list_length(app->directory_entries);
+    gint total_rows = (total_entries + cols - 1) / cols;
+    if (total_rows < 1) total_rows = 1;
+
+    gint row = app->selected_entry / cols;
+    gint target_row = visible_rows / 2; // try to keep selection centered
+    gint desired_offset = row - target_row;
+
+    gint max_offset = MAX(0, total_rows - visible_rows);
+    if (desired_offset < 0) desired_offset = 0;
+    if (desired_offset > max_offset) desired_offset = max_offset;
+
+    app->scroll_offset = desired_offset;
+}
+
+// Try to highlight the currently viewed image when opening file manager
+static void app_file_manager_select_current_image(PixelTermApp *app) {
+    if (!app || !app->current_directory || !app->file_manager_directory) {
+        return;
+    }
+
+    if (g_strcmp0(app->current_directory, app->file_manager_directory) != 0) {
+        return;
+    }
+
+    const gchar *current_file = app_get_current_filepath(app);
+    if (!current_file) {
+        return;
+    }
+
+    gchar *current_norm = g_canonicalize_filename(current_file, NULL);
+    if (!current_norm) {
+        return;
+    }
+
+    gint idx = 0;
+    for (GList *cur = app->directory_entries; cur; cur = cur->next, idx++) {
+        gchar *path = (gchar*)cur->data;
+        if (g_strcmp0(path, current_norm) == 0) {
+            app->selected_entry = idx;
+            break;
+        }
+    }
+
+    g_free(current_norm);
+
+    // Adjust scroll so selection is visible
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
+}
+
+// Jump to next entry starting with a letter
+ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    gint total_entries = g_list_length(app->directory_entries);
+    if (total_entries == 0) {
+        return ERROR_NONE;
+    }
+
+    gchar target = g_ascii_tolower(letter);
+    gint start = (app->selected_entry + 1) % total_entries;
+    gint idx = start;
+
+    do {
+        gchar *entry = (gchar*)g_list_nth_data(app->directory_entries, idx);
+        if (entry) {
+            gchar *base = g_path_get_basename(entry);
+            if (base && base[0]) {
+                gchar first = g_ascii_tolower(base[0]);
+                if (first == target) {
+                    app->selected_entry = idx;
+                    g_free(base);
+                    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+                    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+
+                    // Center selection vertically when possible
+                    gint row = app->selected_entry / cols;
+                    gint offset = row - visible_rows / 2;
+                    if (offset < 0) offset = 0;
+                    gint max_offset = MAX(0, total_rows - visible_rows);
+                    if (offset > max_offset) offset = max_offset;
+                    app->scroll_offset = offset;
+
+                    app_file_manager_adjust_scroll(app, cols, visible_rows);
+                    return ERROR_NONE;
+                }
+            }
+            g_free(base);
+        }
+        idx = (idx + 1) % total_entries;
+    } while (idx != start);
+
+    return ERROR_NONE;
 }
 
 // Destroy application and free resources
@@ -88,6 +255,12 @@ void app_destroy(PixelTermApp *app) {
     if (app->preload_queue) {
         g_queue_free(app->preload_queue);
     }
+
+    // Cleanup file manager entries
+    if (app->directory_entries) {
+        g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
+    }
+    g_free(app->file_manager_directory);
 
     // Cleanup render cache
     if (app->render_cache) {
@@ -172,7 +345,9 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     }
 
     g_free(app->current_directory);
-    app->current_directory = g_strdup(directory);
+    // Normalize path to remove trailing slashes and resolve relative components
+    gchar *normalized_dir = g_canonicalize_filename(directory, NULL);
+    app->current_directory = normalized_dir ? normalized_dir : g_strdup(directory);
 
     // Scan directory for image files
     FileBrowser *browser = browser_create();
@@ -270,6 +445,13 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     }
 
     g_free(target_basename);
+    
+    // If file was found and loaded successfully, mark for redraw
+    if (found) {
+        app->needs_redraw = TRUE;
+        app->info_visible = FALSE;
+    }
+    
     return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
 }
 
@@ -543,6 +725,10 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     // Update terminal size
     get_terminal_size(&app->term_width, &app->term_height);
     
+    if (app->file_manager_mode) {
+        return app_render_file_manager(app);
+    }
+
     // Update preloader with new terminal dimensions
     if (app->preloader && app->preload_enabled) {
         preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -660,4 +846,439 @@ const gchar* app_get_current_filepath(const PixelTermApp *app) {
 // Check if application has images
 gboolean app_has_images(const PixelTermApp *app) {
     return app && app->image_files && app->total_images > 0;
+}
+
+// Enter file manager mode
+ErrorCode app_enter_file_manager(PixelTermApp *app) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    app->file_manager_mode = TRUE;
+    app->selected_entry = 0;
+    app->scroll_offset = 0;
+    
+    if (app->file_manager_directory) {
+        g_free(app->file_manager_directory);
+        app->file_manager_directory = NULL;
+    }
+    // Start browsing from current image directory if available, else current working dir
+    if (app->current_directory) {
+        app->file_manager_directory = g_strdup(app->current_directory);
+    } else {
+        app->file_manager_directory = g_get_current_dir();
+    }
+    
+    return app_file_manager_refresh(app);
+}
+
+// Exit file manager mode
+ErrorCode app_exit_file_manager(PixelTermApp *app) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    app->file_manager_mode = FALSE;
+    
+    // Cleanup directory entries
+    if (app->directory_entries) {
+        g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
+        app->directory_entries = NULL;
+    }
+    g_clear_pointer(&app->file_manager_directory, g_free);
+    
+    // Reset info visibility to ensure proper display
+    app->info_visible = FALSE;
+    app->needs_redraw = TRUE;
+    
+    return ERROR_NONE;
+}
+
+// Move selection up in file manager
+ErrorCode app_file_manager_up(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+    gint total_entries = g_list_length(app->directory_entries);
+    if (total_entries <= 0) {
+        return ERROR_NONE;
+    }
+
+    if (app->selected_entry >= cols) {
+        app->selected_entry -= cols;
+    } else {
+        app->selected_entry = 0;
+    }
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
+
+    return ERROR_NONE;
+}
+
+// Move selection down in file manager
+ErrorCode app_file_manager_down(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+
+    gint total_entries = g_list_length(app->directory_entries);
+    if (total_entries <= 0) {
+        return ERROR_NONE;
+    }
+    gint target = app->selected_entry + cols;
+    if (target < total_entries) {
+        app->selected_entry = target;
+    } else {
+        app->selected_entry = total_entries - 1;
+    }
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
+
+    return ERROR_NONE;
+}
+
+// Move selection left in file manager
+ErrorCode app_file_manager_left(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    const gchar *current_dir = app->file_manager_directory;
+    gboolean free_dir = FALSE;
+    if (!current_dir) {
+        current_dir = app->current_directory;
+    }
+    if (!current_dir) {
+        current_dir = g_get_current_dir();
+        free_dir = TRUE;
+    }
+
+    // Remember the directory we came from so we can highlight it in the parent view
+    gchar *child_dir = g_strdup(current_dir);
+
+    gchar *parent = g_path_get_dirname(current_dir);
+    if (parent && g_strcmp0(parent, current_dir) != 0) {
+        g_free(app->file_manager_directory);
+        app->file_manager_directory = g_canonicalize_filename(parent, NULL);
+        if (!app->file_manager_directory) {
+            g_free(parent);
+            g_free(child_dir);
+            if (free_dir) g_free((gchar*)current_dir);
+            return ERROR_FILE_NOT_FOUND;
+        }
+        // Refresh file manager with new directory
+        ErrorCode err = app_file_manager_refresh(app);
+
+        // Highlight the directory we just came from in the parent listing
+        if (err == ERROR_NONE && child_dir) {
+            gint idx = 0;
+            for (GList *cur = app->directory_entries; cur; cur = cur->next, idx++) {
+                gchar *path = (gchar*)cur->data;
+                if (g_strcmp0(path, child_dir) == 0) {
+                    app->selected_entry = idx;
+                    // Recalculate scroll to keep selection visible
+                    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+                    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+                    app_file_manager_adjust_scroll(app, cols, visible_rows);
+                    break;
+                }
+            }
+        }
+
+        g_free(parent);
+        g_free(child_dir);
+        if (free_dir) g_free((gchar*)current_dir);
+        return err;
+    }
+
+    g_free(parent);
+    g_free(child_dir);
+    if (free_dir) g_free((gchar*)current_dir);
+    return ERROR_NONE;
+}
+
+// Move selection right in file manager
+ErrorCode app_file_manager_right(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    return app_file_manager_enter(app);
+}
+
+// Enter selected directory or open file in file manager
+ErrorCode app_file_manager_enter(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    if (app->selected_entry >= g_list_length(app->directory_entries)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    gchar *selected_path = (gchar*)g_list_nth_data(app->directory_entries, app->selected_entry);
+    if (!selected_path) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    // Check if it's a directory
+    if (g_file_test(selected_path, G_FILE_TEST_IS_DIR)) {
+        // Load the selected directory
+        g_free(app->file_manager_directory);
+        app->file_manager_directory = g_canonicalize_filename(selected_path, NULL);
+        if (!app->file_manager_directory) {
+            return ERROR_FILE_NOT_FOUND;
+        }
+        // Reset selection to first entry when changing directory
+        app->selected_entry = 0;
+        app->scroll_offset = 0;
+        // Refresh file manager with new directory
+        return app_file_manager_refresh(app);
+    } else {
+        // It's a file, load the file first
+        ErrorCode error = app_load_single_file(app, selected_path);
+        
+        // Only exit file manager if file was loaded successfully
+        if (error == ERROR_NONE) {
+            // Clear screen before exiting file manager
+            printf("\033[2J\033[H\033[0m");
+            fflush(stdout);
+            
+            // Exit file manager mode
+            app->file_manager_mode = FALSE;
+            // Cleanup directory entries
+            if (app->directory_entries) {
+                g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
+                app->directory_entries = NULL;
+            }
+            g_clear_pointer(&app->file_manager_directory, g_free);
+            // Reset info visibility to ensure proper display
+            app->info_visible = FALSE;
+            app->needs_redraw = TRUE;
+            // Force immediate rendering
+            app_render_current_image(app);
+            fflush(stdout);
+        }
+        return error;
+    }
+}
+
+// Refresh file manager directory listing
+ErrorCode app_file_manager_refresh(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    // Clear existing entries
+    if (app->directory_entries) {
+        g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
+        app->directory_entries = NULL;
+    }
+
+    // Resolve directory to display: prefer file manager dir, then viewer dir, then cwd
+    gchar *base_dir_dup = NULL;
+    if (app->file_manager_directory) {
+        base_dir_dup = g_strdup(app->file_manager_directory);
+    } else if (app->current_directory) {
+        base_dir_dup = g_strdup(app->current_directory);
+    } else {
+        base_dir_dup = g_get_current_dir();
+    }
+
+    gchar *current_dir = g_canonicalize_filename(base_dir_dup, NULL);
+    g_free(base_dir_dup);
+    if (!current_dir) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    // Persist canonical directory for consistent rendering/navigation
+    g_free(app->file_manager_directory);
+    app->file_manager_directory = current_dir;
+
+    // Open directory
+    GDir *dir = g_dir_open(current_dir, 0, NULL);
+    if (!dir) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    // Collect all entries
+    GList *entries = NULL;
+    const gchar *name;
+
+    // Add directories and files (skip current directory entry if encountered)
+    while ((name = g_dir_read_name(dir)) != NULL) {
+        gchar *full_path = g_build_filename(current_dir, name, NULL);
+        
+        if (g_strcmp0(full_path, current_dir) == 0) {
+            g_free(full_path);
+            continue;
+        }
+        
+        if (g_file_test(full_path, G_FILE_TEST_IS_DIR) || g_file_test(full_path, G_FILE_TEST_IS_REGULAR)) {
+            entries = g_list_append(entries, full_path);  // Use full path
+        } else {
+            g_free(full_path);
+        }
+    }
+
+    g_dir_close(dir);
+
+    // Sort entries: directories first, then files; each group alphabetical
+    GList *dirs = NULL;
+    GList *files = NULL;
+    for (GList *cur = entries; cur != NULL; cur = cur->next) {
+        gchar *path = (gchar*)cur->data;
+        if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+            dirs = g_list_prepend(dirs, path);
+        } else {
+            files = g_list_prepend(files, path);
+        }
+    }
+    dirs = g_list_sort(dirs, (GCompareFunc)g_strcmp0);
+    files = g_list_sort(files, (GCompareFunc)g_strcmp0);
+    app->directory_entries = g_list_concat(dirs, files);
+    g_list_free(entries); // pointers moved into dirs/files concatenated list
+    app->selected_entry = 0;
+    app->scroll_offset = 0;
+    app_file_manager_select_current_image(app);
+
+    return ERROR_NONE;
+}
+
+// Render file manager interface
+ErrorCode app_render_file_manager(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    // Update terminal dimensions before layout
+    get_terminal_size(&app->term_width, &app->term_height);
+
+    // Clear screen
+    printf("\033[2J\033[H\033[0m");
+    
+    // Get current directory
+    const gchar *current_dir = app->file_manager_directory;
+    gboolean free_dir = FALSE;
+    if (!current_dir) {
+        current_dir = app->current_directory;
+        if (!current_dir) {
+            current_dir = g_get_current_dir();
+            free_dir = TRUE;
+        }
+    }
+
+    // Header centered: first line app name, second line current directory
+    const char *header_title = "PixelTerm File Manager";
+    gint title_len = strlen(header_title);
+    gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+    for (gint i = 0; i < title_pad; i++) printf(" ");
+    printf("%s\n", header_title);
+
+    gint dir_len = strlen(current_dir);
+    gint dir_pad = (app->term_width > dir_len) ? (app->term_width - dir_len) / 2 : 0;
+    for (gint i = 0; i < dir_pad; i++) printf(" ");
+    printf("%s\n", current_dir);
+
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+
+    gint total_entries = g_list_length(app->directory_entries);
+    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ESC Exit";
+    // 2 header lines + 1 footer line -> remaining rows for content
+    gint available_rows = app->term_height - 3;
+    gint target_row = available_rows / 2;
+
+    // Clamp scroll_offset to valid range
+    gint max_offset = MAX(0, total_rows - available_rows);
+    if (app->scroll_offset > max_offset) {
+        app->scroll_offset = max_offset;
+    }
+    if (app->scroll_offset < 0) {
+        app->scroll_offset = 0;
+    }
+
+    gint start_row = app->scroll_offset;
+    gint end_row = MIN(start_row + available_rows, total_rows);
+    gint rows_to_render = end_row - start_row;
+    if (rows_to_render < 0) rows_to_render = 0;
+
+    // Calculate padding to keep the selected entry roughly centered
+    gint selected_row = app->selected_entry; // single column
+    gint selected_pos = selected_row - start_row; // position within rendered block
+    if (selected_pos < 0) selected_pos = 0;
+    if (selected_pos >= rows_to_render) selected_pos = rows_to_render - 1;
+
+    gint top_padding = target_row - selected_pos;
+    if (top_padding < 0) top_padding = 0;
+    gint bottom_padding = available_rows - rows_to_render - top_padding;
+    if (bottom_padding < 0) bottom_padding = 0;
+
+    // Top padding to keep highlight centered
+    for (gint i = 0; i < top_padding; i++) {
+        printf("\n");
+    }
+
+    for (gint row = start_row; row < end_row && rows_to_render > 0; row++, rows_to_render--) {
+        gint idx = row; // single column
+        if (idx >= total_entries) {
+            break;
+        }
+
+        gchar *entry = (gchar*)g_list_nth_data(app->directory_entries, idx);
+        gboolean is_dir = FALSE;
+        gchar *display_name = app_file_manager_display_name(app, entry, &is_dir);
+
+        gchar *print_name = g_strdup(display_name);
+        gint name_len = strlen(print_name);
+        gboolean is_image = (!is_dir && is_image_file(entry));
+        if (name_len > app->term_width) {
+            // truncate aggressively but keep center alignment
+            gchar *shortened = g_strndup(print_name, MAX(0, app->term_width - 3));
+            g_free(print_name);
+            print_name = g_strdup_printf("%s...", shortened);
+            g_free(shortened);
+            name_len = strlen(print_name);
+        }
+
+        gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+        for (gint i = 0; i < pad; i++) printf(" ");
+
+        gboolean selected = (idx == app->selected_entry);
+        if (selected) {
+            printf("\033[47;30m%s\033[0m", print_name);
+        } else if (is_dir) {
+            printf("\033[34m%s\033[0m", print_name);
+        } else if (is_image) {
+            printf("\033[32m%s\033[0m", print_name);
+        } else {
+            printf("%s", print_name);
+        }
+        printf("\n");
+
+        g_free(print_name);
+        g_free(display_name);
+    }
+
+    // Bottom padding to keep layout stable
+    for (gint i = 0; i < bottom_padding; i++) {
+        printf("\n");
+    }
+
+    // Footer/help centered on last line; keep cursor at line end
+    gint help_len = strlen(help_text);
+    gint help_pad = (app->term_width > help_len) ? (app->term_width - help_len) / 2 : 0;
+    for (gint i = 0; i < help_pad; i++) printf(" ");
+    printf("%s", help_text);
+
+    fflush(stdout);
+
+    if (free_dir) {
+        g_free((gchar*)current_dir);
+    }
+    return ERROR_NONE;
 }
