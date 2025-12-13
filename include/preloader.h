@@ -32,6 +32,7 @@ typedef struct {
     GCond condition;
     GQueue *task_queue;
     GHashTable *preload_cache;
+    GQueue *lru_queue;
     PreloaderStatus status;
     gboolean enabled;
     gint max_queue_size;
@@ -62,7 +63,7 @@ gboolean preloader_has_pending_tasks(const ImagePreloader *preloader);
 // Cache management
 GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath);
 gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const char *filepath, gint *width, gint *height);
-void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered);
+void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered, gint width, gint height);
 void preloader_cache_remove(ImagePreloader *preloader, const char *filepath);
 void preloader_cache_clear(ImagePreloader *preloader);
 void preloader_cache_cleanup(ImagePreloader *preloader);

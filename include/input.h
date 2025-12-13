@@ -2,6 +2,7 @@
 #define INPUT_H
 
 #include "common.h"
+#include <termios.h>
 
 // Input event types
 typedef enum {
@@ -61,6 +62,8 @@ typedef struct {
     gint terminal_width;
     gint terminal_height;
     gboolean should_exit;
+    struct termios orig_termios;
+    gboolean has_orig_termios;
 } InputHandler;
 
 // Input handler lifecycle

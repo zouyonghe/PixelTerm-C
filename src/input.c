@@ -17,6 +17,7 @@ InputHandler* input_handler_create(void) {
     handler->terminal_width = 80;
     handler->terminal_height = 24;
     handler->should_exit = FALSE;
+    handler->has_orig_termios = FALSE;
 
     return handler;
 }
@@ -58,7 +59,6 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
 
     // Check if stdin is a terminal
     if (!isatty(STDIN_FILENO)) {
-        handler->raw_mode_enabled = TRUE; // Pretend it's enabled for non-TTY
         return ERROR_NONE;
     }
 
@@ -68,8 +68,8 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
     }
 
     // Save original settings for restoration
-    static struct termios orig_term;
-    tcgetattr(STDIN_FILENO, &orig_term);
+    handler->orig_termios = term;
+    handler->has_orig_termios = TRUE;
 
     // Modify terminal settings for raw mode but keep ISIG for Ctrl+C
     term.c_lflag &= ~(ICANON | ECHO | IEXTEN);
@@ -97,19 +97,20 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
 
     // Only restore if stdin is a terminal
     if (isatty(STDIN_FILENO)) {
-        struct termios term;
-        if (tcgetattr(STDIN_FILENO, &term) == 0) {
-            term.c_lflag |= (ICANON | ECHO);
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+        if (handler->has_orig_termios) {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &handler->orig_termios);
+        } else {
+            struct termios term;
+            if (tcgetattr(STDIN_FILENO, &term) == 0) {
+                term.c_lflag |= (ICANON | ECHO);
+                tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+            }
         }
     }
 
     // Show cursor and reset terminal
     printf("\033[?25h");
     fflush(stdout);
-    
-    // Force terminal reset using stty
-    system("stty sane 2>/dev/null || true");
 
     handler->raw_mode_enabled = FALSE;
     return ERROR_NONE;

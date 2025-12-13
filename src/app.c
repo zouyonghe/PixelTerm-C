@@ -49,6 +49,22 @@ PixelTermApp* app_create(void) {
     return app;
 }
 
+// Replace control characters to avoid terminal escape injection when printing paths
+static gchar* sanitize_for_terminal(const gchar *text) {
+    if (!text) {
+        return g_strdup("");
+    }
+
+    gchar *safe = g_strdup(text);
+    for (gchar *p = safe; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || c == 0x7f || c == '\033') {
+            *p = '?';
+        }
+    }
+    return safe;
+}
+
 // Helpers for file manager layout
 static gchar* app_file_manager_display_name(const PixelTermApp *app, const gchar *entry, gboolean *is_directory) {
     (void)app; // currently unused but kept for potential future context
@@ -343,6 +359,12 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         g_list_free_full(app->image_files, (GDestroyNotify)g_free);
         app->image_files = NULL;
     }
+    // Reset preloader state to avoid leaking threads or stale cache
+    if (app->preloader) {
+        preloader_stop(app->preloader);
+        preloader_destroy(app->preloader);
+        app->preloader = NULL;
+    }
 
     g_free(app->current_directory);
     // Normalize path to remove trailing slashes and resolve relative components
@@ -544,14 +566,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     // Check if image is already cached
     GString *rendered = NULL;
-    gboolean from_cache = FALSE;
     gint image_width, image_height;
     
     if (app->preloader && app->preload_enabled) {
         rendered = preloader_get_cached_image(app->preloader, filepath);
-        if (rendered) {
-            from_cache = TRUE;
-        }
     }
 
     // If not in cache, render it normally
@@ -591,7 +609,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         
         // Add to cache if preloader is available
         if (app->preloader && app->preload_enabled) {
-            preloader_cache_add(app->preloader, filepath, rendered);
+            preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height);
         }
 
         renderer_destroy(renderer);
@@ -617,8 +635,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // Calculate filename position relative to image center
     if (filepath) {
         gchar *basename = g_path_get_basename(filepath);
-        if (basename) {
-            gint filename_len = strlen(basename);
+        gchar *safe_basename = sanitize_for_terminal(basename);
+        if (safe_basename) {
+            gint filename_len = strlen(safe_basename);
             // Center filename relative to image width, but ensure it stays within terminal bounds
             gint image_center_col = image_width / 2;
             gint filename_start_col = image_center_col - filename_len / 2;
@@ -631,17 +650,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             
             // Move cursor to position just below the image and center the filename
             printf("\033[%d;%dH", image_height + 1, filename_start_col + 1);
-            printf("\033[34m%s\033[0m", basename); // Blue filename with reset
+            printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
+            g_free(safe_basename);
             g_free(basename);
         }
     }
     
     fflush(stdout);
 
-    // Cleanup resources - only free if not from cache
-    if (!from_cache) {
-        g_string_free(rendered, TRUE);
-    }
+    g_string_free(rendered, TRUE);
     
     return ERROR_NONE;
 }
@@ -675,6 +692,8 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     // Get file information
     gchar *basename = g_path_get_basename(filepath);
     gchar *dirname = g_path_get_dirname(filepath);
+    gchar *safe_basename = sanitize_for_terminal(basename);
+    gchar *safe_dirname = sanitize_for_terminal(dirname);
     gint64 file_size = get_file_size(filepath);
     const char *ext = get_file_extension(filepath);
 
@@ -694,8 +713,8 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     printf("\n\033[G");
     for (gint i = 0; i < 60; i++) printf("=");
     printf("\n\033[G");
-    printf("📁 Filename: %s\n\033[G", basename);
-    printf("📂 Path: %s\n\033[G", dirname);
+    printf("📁 Filename: %s\n\033[G", safe_basename);
+    printf("📂 Path: %s\n\033[G", safe_dirname);
     printf("📄 Index: %d/%d\n\033[G", index, total);
     printf("💾 File size: %.1f MB\n\033[G", file_size_mb);
     printf("📐 Dimensions: %d x %d pixels\n\033[G", width, height);
@@ -710,6 +729,8 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     
     fflush(stdout);
 
+    g_free(safe_basename);
+    g_free(safe_dirname);
     g_free(basename);
     g_free(dirname);
 
@@ -1171,6 +1192,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             free_dir = TRUE;
         }
     }
+    gchar *safe_current_dir = sanitize_for_terminal(current_dir);
 
     // Header centered: first line app name, second line current directory
     const char *header_title = "PixelTerm File Manager";
@@ -1179,10 +1201,10 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     for (gint i = 0; i < title_pad; i++) printf(" ");
     printf("%s\n", header_title);
 
-    gint dir_len = strlen(current_dir);
+    gint dir_len = strlen(safe_current_dir);
     gint dir_pad = (app->term_width > dir_len) ? (app->term_width - dir_len) / 2 : 0;
     for (gint i = 0; i < dir_pad; i++) printf(" ");
-    printf("%s\n", current_dir);
+    printf("%s\n", safe_current_dir);
 
     gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
     app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
@@ -1232,8 +1254,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gchar *entry = (gchar*)g_list_nth_data(app->directory_entries, idx);
         gboolean is_dir = FALSE;
         gchar *display_name = app_file_manager_display_name(app, entry, &is_dir);
-
-        gchar *print_name = g_strdup(display_name);
+        gchar *print_name = sanitize_for_terminal(display_name);
         gint name_len = strlen(print_name);
         gboolean is_image = (!is_dir && is_image_file(entry));
         if (name_len > app->term_width) {
@@ -1277,6 +1298,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
 
     fflush(stdout);
 
+    g_free(safe_current_dir);
     if (free_dir) {
         g_free((gchar*)current_dir);
     }

@@ -22,6 +22,7 @@ ImagePreloader* preloader_create(void) {
     preloader->task_queue = g_queue_new();
     preloader->preload_cache = g_hash_table_new_full(g_str_hash, g_str_equal, 
                                                     g_free, (GDestroyNotify)cached_image_data_destroy);
+    preloader->lru_queue = g_queue_new();
     
     g_mutex_init(&preloader->mutex);
     g_cond_init(&preloader->condition);
@@ -62,6 +63,9 @@ void preloader_destroy(ImagePreloader *preloader) {
     // Cleanup cache
     if (preloader->preload_cache) {
         g_hash_table_destroy(preloader->preload_cache);
+    }
+    if (preloader->lru_queue) {
+        g_queue_free(preloader->lru_queue);
     }
 
     // Cleanup synchronization objects
@@ -195,20 +199,21 @@ ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *fi
     }
 
     gint total_files = g_list_length(files);
-    if (total_files <= 1) {
+    if (total_files <= 1 || current_index < 0 || current_index >= total_files) {
         return ERROR_NONE;
     }
 
-    // Add next few images with high priority
-    for (gint i = 1; i <= 3 && (current_index + i) < total_files; i++) {
-        gchar *filepath = (gchar*)g_list_nth_data(files, current_index + i);
-        preloader_add_task(preloader, filepath, 2 - i); // Priority 1, 2, 3...
+    GList *current = g_list_nth(files, current_index);
+    GList *walker = current ? current->next : NULL;
+    for (gint priority = 1; walker && priority <= 3; priority++) {
+        preloader_add_task(preloader, (gchar*)walker->data, priority);
+        walker = walker->next;
     }
 
-    // Add previous images with lower priority
-    for (gint i = 1; i <= 2 && (current_index - i) >= 0; i++) {
-        gchar *filepath = (gchar*)g_list_nth_data(files, current_index - i);
-        preloader_add_task(preloader, filepath, 10 + i); // Lower priority
+    walker = current ? current->prev : NULL;
+    for (gint distance = 1; walker && distance <= 2; distance++) {
+        preloader_add_task(preloader, (gchar*)walker->data, 10 + distance);
+        walker = walker->prev;
     }
 
     return ERROR_NONE;
@@ -253,8 +258,21 @@ GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filep
     }
 
     g_mutex_lock(&preloader->mutex);
-    CachedImageData *cached_data = g_hash_table_lookup(preloader->preload_cache, filepath);
-    GString *rendered = cached_data ? cached_data->rendered : NULL;
+    gpointer stored_key = NULL;
+    gpointer stored_value = NULL;
+    CachedImageData *cached_data = NULL;
+    if (g_hash_table_lookup_extended(preloader->preload_cache, filepath, &stored_key, &stored_value)) {
+        cached_data = (CachedImageData*)stored_value;
+        // Move to front of LRU
+        if (stored_key) {
+            g_queue_remove(preloader->lru_queue, stored_key);
+            g_queue_push_head(preloader->lru_queue, stored_key);
+        }
+    }
+    GString *rendered = NULL;
+    if (cached_data && cached_data->rendered) {
+        rendered = g_string_new_len(cached_data->rendered->str, cached_data->rendered->len);
+    }
     g_mutex_unlock(&preloader->mutex);
 
     return rendered;
@@ -267,7 +285,16 @@ gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const 
     }
 
     g_mutex_lock(&preloader->mutex);
-    CachedImageData *cached_data = g_hash_table_lookup(preloader->preload_cache, filepath);
+    gpointer stored_key = NULL;
+    gpointer stored_value = NULL;
+    CachedImageData *cached_data = NULL;
+    if (g_hash_table_lookup_extended(preloader->preload_cache, filepath, &stored_key, &stored_value)) {
+        cached_data = (CachedImageData*)stored_value;
+        if (stored_key) {
+            g_queue_remove(preloader->lru_queue, stored_key);
+            g_queue_push_head(preloader->lru_queue, stored_key);
+        }
+    }
     if (cached_data) {
         *width = cached_data->width;
         *height = cached_data->height;
@@ -280,14 +307,42 @@ gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const 
 }
 
 // Add rendered image to cache
-void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered) {
+void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered, gint width, gint height) {
     if (!preloader || !filepath || !rendered) {
         return;
     }
 
     g_mutex_lock(&preloader->mutex);
 
-    // Check cache size and cleanup if necessary
+    // If already cached, replace content and move to front
+    gpointer stored_key = NULL;
+    gpointer stored_value = NULL;
+    if (g_hash_table_lookup_extended(preloader->preload_cache, filepath, &stored_key, &stored_value)) {
+        CachedImageData *existing = (CachedImageData*)stored_value;
+        if (existing->rendered) {
+            g_string_free(existing->rendered, TRUE);
+        }
+        existing->rendered = g_string_new_len(rendered->str, rendered->len);
+        existing->width = (width > 0) ? width : preloader->term_width;
+        if (height > 0) {
+            existing->height = height;
+        } else {
+            existing->height = 1;
+            for (gsize i = 0; i < rendered->len; i++) {
+                if (rendered->str[i] == '\n') {
+                    existing->height++;
+                }
+            }
+        }
+        if (stored_key) {
+            g_queue_remove(preloader->lru_queue, stored_key);
+            g_queue_push_head(preloader->lru_queue, stored_key);
+        }
+        g_mutex_unlock(&preloader->mutex);
+        return;
+    }
+
+    // Check cache size and cleanup if necessary before inserting new
     if (g_hash_table_size(preloader->preload_cache) >= preloader->max_cache_size) {
         preloader_cache_cleanup(preloader);
     }
@@ -297,18 +352,21 @@ void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GStrin
     CachedImageData *value = g_new0(CachedImageData, 1);
     if (value) {
         value->rendered = g_string_new_len(rendered->str, rendered->len);
-        // Calculate actual rendered height by counting newlines in the output
-        value->width = preloader->term_width;
-        value->height = 1; // Start with 1 for first line
-        
-        // Count actual lines in the rendered output
-        for (gsize i = 0; i < rendered->len; i++) {
-            if (rendered->str[i] == '\n') {
-                value->height++;
+        value->width = (width > 0) ? width : preloader->term_width;
+        if (height > 0) {
+            value->height = height;
+        } else {
+            value->height = 1;
+            for (gsize i = 0; i < rendered->len; i++) {
+                if (rendered->str[i] == '\n') {
+                    value->height++;
+                }
             }
         }
     }
     g_hash_table_insert(preloader->preload_cache, key, value);
+    g_queue_remove(preloader->lru_queue, key);
+    g_queue_push_head(preloader->lru_queue, key);
 
     g_mutex_unlock(&preloader->mutex);
 }
@@ -320,7 +378,16 @@ void preloader_cache_remove(ImagePreloader *preloader, const char *filepath) {
     }
 
     g_mutex_lock(&preloader->mutex);
-    g_hash_table_remove(preloader->preload_cache, filepath);
+    gpointer stored_key = NULL;
+    gpointer stored_value = NULL;
+    if (g_hash_table_lookup_extended(preloader->preload_cache, filepath, &stored_key, &stored_value)) {
+        if (stored_key) {
+            g_queue_remove(preloader->lru_queue, stored_key);
+            g_hash_table_remove(preloader->preload_cache, stored_key);
+        } else {
+            g_hash_table_remove(preloader->preload_cache, filepath);
+        }
+    }
     g_mutex_unlock(&preloader->mutex);
 }
 
@@ -331,7 +398,10 @@ void preloader_cache_clear(ImagePreloader *preloader) {
     }
 
     g_mutex_lock(&preloader->mutex);
-    g_hash_table_remove_all(preloader->preload_cache);
+    while (!g_queue_is_empty(preloader->lru_queue)) {
+        gpointer key = g_queue_pop_head(preloader->lru_queue);
+        g_hash_table_remove(preloader->preload_cache, key);
+    }
     g_mutex_unlock(&preloader->mutex);
 }
 
@@ -346,18 +416,13 @@ void preloader_cache_cleanup(ImagePreloader *preloader) {
         return;
     }
 
-    // Remove oldest entries to maintain cache size limit
-    guint target_size = preloader->max_cache_size * 3 / 4; // Remove 25% when over limit
-    guint to_remove = size - target_size;
-    
-    GHashTableIter iter;
-    gpointer key, value;
-    guint removed = 0;
-
-    g_hash_table_iter_init(&iter, preloader->preload_cache);
-    while (g_hash_table_iter_next(&iter, &key, &value) && removed < to_remove) {
-        g_hash_table_iter_remove(&iter);
-        removed++;
+    // Remove oldest entries from LRU tail
+    while (g_hash_table_size(preloader->preload_cache) > preloader->max_cache_size) {
+        gpointer key = g_queue_pop_tail(preloader->lru_queue);
+        if (!key) {
+            break;
+        }
+        g_hash_table_remove(preloader->preload_cache, key);
     }
 }
 
@@ -578,25 +643,9 @@ gpointer preloader_worker_thread(gpointer data) {
                 gint rendered_width, rendered_height;
                 renderer_get_rendered_dimensions(renderer, &rendered_width, &rendered_height);
                 
-                // Add to cache with dimensions
-                g_mutex_lock(&preloader->mutex);
-                
-                // Check cache size and cleanup if necessary
-                if (g_hash_table_size(preloader->preload_cache) >= preloader->max_cache_size) {
-                    preloader_cache_cleanup(preloader);
-                }
-                
-                gchar *key = g_strdup(task->filepath);
-                CachedImageData *value = g_new0(CachedImageData, 1);
-                if (value) {
-                    value->rendered = g_string_new_len(rendered->str, rendered->len);
-                    value->width = rendered_width;
-                    value->height = rendered_height;
-                }
-                g_hash_table_insert(preloader->preload_cache, key, value);
-                
-                g_mutex_unlock(&preloader->mutex);
-                
+                // Add to cache with dimensions (makes its own copy)
+                preloader_cache_add(preloader, task->filepath, rendered, rendered_width, rendered_height);
+
                 // Free the original GString
                 g_string_free(rendered, TRUE);
             }
