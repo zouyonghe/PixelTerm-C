@@ -50,14 +50,22 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 # Install from package manager (recommended)
 # Arch Linux: pacman -S pixelterm-git (using paru/yay)
 
-# Or download binary for your architecture
-# AMD64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
-chmod +x pixelterm-amd64 && sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
+# Or download binary for your architecture and platform
+# Linux AMD64:
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
+chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
-# ARM64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64
-chmod +x pixelterm-aarch64 && sudo mv pixelterm-aarch64 /usr/local/bin/pixelterm
+# Linux ARM64:
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64-linux
+chmod +x pixelterm-aarch64-linux && sudo mv pixelterm-aarch64-linux /usr/local/bin/pixelterm
+
+# macOS AMD64:
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
+chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
+
+# macOS ARM64 (Apple Silicon):
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-aarch64-macos
+chmod +x pixelterm-aarch64-macos && sudo mv pixelterm-aarch64-macos /usr/local/bin/pixelterm
 ```
 
 ### Building from Source
