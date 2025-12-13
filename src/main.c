@@ -330,9 +330,15 @@ int main(int argc, char *argv[]) {
     }
 
     if (!app_has_images(g_app)) {
-        printf("%s - %s\n", APP_NAME, "A high-performance terminal image browser written in C");
-        printf("Version %s\n", APP_VERSION);
-        printf("Use '%s --help' for usage information.\n", argv[0]);
+        if (optind < argc) {
+            // User provided a specific path, tell them no images found
+            fprintf(stderr, "No images found in '%s'\n", path);
+        } else {
+            // No path provided, show app intro and help
+            printf("%s - %s\n", APP_NAME, "A high-performance terminal image browser written in C");
+            printf("Version %s\n", APP_VERSION);
+            printf("Use '%s --help' for usage information.\n", argv[0]);
+        }
         app_destroy(g_app);
         g_free(path);
         return 0;
