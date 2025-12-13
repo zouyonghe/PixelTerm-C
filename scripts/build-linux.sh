@@ -36,12 +36,21 @@ int main() { printf("Hello World\n"); return 0; }' | aarch64-linux-gnu-gcc -x c 
     cd $(ls -d chafa-* | head -1)
     
     # Cross-compile Chafa for aarch64 with minimal dependencies
+    echo "Running configure with debug info..."
     ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc \
         --disable-shared --enable-static \
         PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
         CFLAGS="-I/usr/include/glib-2.0" \
         LDFLAGS="-static" \
-        LIBS="-lglib-2.0 -lm"
+        LIBS="-lglib-2.0 -lm" || {
+        echo "Configure failed. Checking config.log..."
+        if [ -f config.log ]; then
+            echo "=== Last 50 lines of config.log ==="
+            tail -50 config.log
+            echo "=== End of config.log ==="
+        fi
+        exit 1
+    }
     make -j$(nproc)
     make install
     cd ..
