@@ -2,7 +2,7 @@
 
 set -e
 
-cd /workspace
+# Use current directory instead of /workspace for macOS
 mkdir -p release-${1}
 
 # Install dependencies using Homebrew
