@@ -77,6 +77,7 @@ ErrorCode app_file_manager_right(PixelTermApp *app);
 ErrorCode app_file_manager_enter(PixelTermApp *app);
 ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter);
 ErrorCode app_file_manager_refresh(PixelTermApp *app);
+ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app);
 ErrorCode app_render_file_manager(PixelTermApp *app);
 
 // Display functions

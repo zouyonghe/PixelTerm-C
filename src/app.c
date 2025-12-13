@@ -1180,6 +1180,49 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+// Toggle hidden files visibility while preserving selection when possible
+ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    // Remember current selection path
+    gchar *prev_selected = NULL;
+    if (app->selected_entry >= 0 && app->selected_entry < g_list_length(app->directory_entries)) {
+        gchar *path = (gchar*)g_list_nth_data(app->directory_entries, app->selected_entry);
+        if (path) {
+            prev_selected = g_strdup(path);
+        }
+    }
+
+    app->show_hidden_files = !app->show_hidden_files;
+    ErrorCode err = app_file_manager_refresh(app);
+    if (err != ERROR_NONE) {
+        g_free(prev_selected);
+        return err;
+    }
+
+    // Restore selection to the same path if still visible
+    if (prev_selected) {
+        gint idx = 0;
+        for (GList *cur = app->directory_entries; cur; cur = cur->next, idx++) {
+            gchar *path = (gchar*)cur->data;
+            if (g_strcmp0(path, prev_selected) == 0) {
+                app->selected_entry = idx;
+                break;
+            }
+        }
+        g_free(prev_selected);
+    }
+
+    // Ensure scroll offset keeps selection visible
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
+
+    return ERROR_NONE;
+}
+
 // Render file manager interface
 ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (!app || !app->file_manager_mode) {

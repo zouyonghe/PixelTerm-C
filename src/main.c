@@ -314,9 +314,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                     case KEY_BACKSPACE:
                     case 8: // Ctrl+H on many terminals
                         if (app->file_manager_mode) {
-                            app->show_hidden_files = !app->show_hidden_files;
-                            app_file_manager_refresh(app);
-                            app_render_file_manager(app);
+                            ErrorCode err = app_file_manager_toggle_hidden(app);
+                            if (err == ERROR_NONE) {
+                                app_render_file_manager(app);
+                            }
                         }
                         break;
                     case KEY_ENTER:
