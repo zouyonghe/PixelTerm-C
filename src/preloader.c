@@ -21,6 +21,10 @@ ImagePreloader* preloader_create(void) {
     preloader->max_queue_size = PRELOAD_QUEUE_SIZE;
     preloader->max_cache_size = MAX_CACHE_SIZE;
     preloader->active_tasks = 0;
+    
+    // Default terminal dimensions
+    preloader->term_width = 80;
+    preloader->term_height = 24;
 
     return preloader;
 }
@@ -453,6 +457,16 @@ gint64 preloader_get_total_processed(const ImagePreloader *preloader) {
     return 0;
 }
 
+// Update terminal dimensions for rendering
+void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint height) {
+    if (preloader && width > 0 && height > 0) {
+        g_mutex_lock(&preloader->mutex);
+        preloader->term_width = width;
+        preloader->term_height = height;
+        g_mutex_unlock(&preloader->mutex);
+    }
+}
+
 // Worker thread function
 gpointer preloader_worker_thread(gpointer data) {
     ImagePreloader *preloader = (ImagePreloader*)data;
@@ -467,9 +481,16 @@ gpointer preloader_worker_thread(gpointer data) {
         return NULL;
     }
 
+    // Get current terminal dimensions
+    gint term_width, term_height;
+    g_mutex_lock(&preloader->mutex);
+    term_width = preloader->term_width;
+    term_height = preloader->term_height;
+    g_mutex_unlock(&preloader->mutex);
+
     RendererConfig config = {
-        .max_width = 80,
-        .max_height = 24,
+        .max_width = term_width,
+        .max_height = term_height - 1, // Leave space for filename
         .preserve_aspect_ratio = TRUE,
         .dither = TRUE,
         .color_space = CHAFA_COLOR_SPACE_RGB,
@@ -512,6 +533,8 @@ gpointer preloader_worker_thread(gpointer data) {
             if (rendered) {
                 // Add to cache
                 preloader_cache_add(preloader, task->filepath, rendered);
+                // Free the original GString since cache_add makes a copy
+                g_string_free(rendered, TRUE);
             }
 
             // Cleanup task

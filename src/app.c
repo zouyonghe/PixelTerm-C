@@ -18,6 +18,7 @@ PixelTermApp* app_create(void) {
     app->term_info = NULL;
     app->image_files = NULL;
     app->current_directory = NULL;
+    app->preloader = NULL;
     app->preload_thread = NULL;
     app->preload_queue = NULL;
     app->render_cache = NULL;
@@ -50,6 +51,14 @@ void app_destroy(PixelTermApp *app) {
 
     // Stop any running threads
     app->running = FALSE;
+    
+    // Stop and destroy preloader
+    if (app->preloader) {
+        preloader_stop(app->preloader);
+        preloader_destroy(app->preloader);
+        app->preloader = NULL;
+    }
+    
     if (app->preload_thread) {
         g_thread_join(app->preload_thread);
     }
@@ -198,7 +207,18 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
 
     // Start preloading if enabled
     if (app->preload_enabled) {
-        // TODO: Initialize preloader and start preloading
+        app->preloader = preloader_create();
+        if (app->preloader) {
+            preloader_initialize(app->preloader);
+            
+            // Set terminal dimensions for preloader
+            preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+            
+            preloader_start(app->preloader);
+            
+            // Add initial preload tasks for current directory
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+        }
     }
 
     return ERROR_NONE;
@@ -270,6 +290,12 @@ ErrorCode app_next_image(PixelTermApp *app) {
     app->needs_redraw = TRUE;
     app->info_visible = FALSE;  // Reset info visibility when switching images
 
+    // Update preload tasks for new position
+    if (app->preloader && app->preload_enabled) {
+        preloader_clear_queue(app->preloader);
+        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+    }
+
     return ERROR_NONE;
 }
 
@@ -289,6 +315,12 @@ ErrorCode app_previous_image(PixelTermApp *app) {
     app->needs_redraw = TRUE;
     app->info_visible = FALSE;  // Reset info visibility when switching images
 
+    // Update preload tasks for new position
+    if (app->preloader && app->preload_enabled) {
+        preloader_clear_queue(app->preloader);
+        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+    }
+
     return ERROR_NONE;
 }
 
@@ -302,6 +334,13 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
         app->current_index = index;
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;  // Reset info visibility when switching images
+        
+        // Update preload tasks for new position
+        if (app->preloader && app->preload_enabled) {
+            preloader_clear_queue(app->preloader);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+        }
+        
         return ERROR_NONE;
     }
 
@@ -322,39 +361,66 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Create renderer
-    ImageRenderer *renderer = renderer_create();
-    if (!renderer) {
-        return ERROR_MEMORY_ALLOC;
-    }
-
-    // Configure renderer
-    RendererConfig config = {
-        .max_width = app->term_width,
-        .max_height = app->info_visible ? app->term_height - 10 : app->term_height - 1, // Normal: use almost full height, Info: reserve space
-        .preserve_aspect_ratio = TRUE,
-        .dither = TRUE,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 1
-    };
-
-    ErrorCode error = renderer_initialize(renderer, &config);
-    if (error != ERROR_NONE) {
-        renderer_destroy(renderer);
-        return error;
-    }
-
-    // Render image
-    GString *rendered = renderer_render_image_file(renderer, filepath);
-    if (!rendered) {
-        renderer_destroy(renderer);
-        return ERROR_INVALID_IMAGE;
-    }
-
-    // Get rendered image dimensions
+    // Check if image is already cached
+    GString *rendered = NULL;
+    gboolean from_cache = FALSE;
     gint image_width, image_height;
-    renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+    
+    if (app->preloader && app->preload_enabled) {
+        rendered = preloader_get_cached_image(app->preloader, filepath);
+        if (rendered) {
+            from_cache = TRUE;
+        }
+    }
+
+    // If not in cache, render it normally
+    if (!rendered) {
+        // Create renderer
+        ImageRenderer *renderer = renderer_create();
+        if (!renderer) {
+            return ERROR_MEMORY_ALLOC;
+        }
+
+        // Configure renderer
+        RendererConfig config = {
+            .max_width = app->term_width,
+            .max_height = app->info_visible ? app->term_height - 10 : app->term_height - 1, // Normal: use almost full height, Info: reserve space
+            .preserve_aspect_ratio = TRUE,
+            .dither = TRUE,
+            .color_space = CHAFA_COLOR_SPACE_RGB,
+            .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
+            .work_factor = 1
+        };
+
+        ErrorCode error = renderer_initialize(renderer, &config);
+        if (error != ERROR_NONE) {
+            renderer_destroy(renderer);
+            return error;
+        }
+
+        // Render image
+        rendered = renderer_render_image_file(renderer, filepath);
+        if (!rendered) {
+            renderer_destroy(renderer);
+            return ERROR_INVALID_IMAGE;
+        }
+
+        // Get rendered image dimensions
+        renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+        
+        // Add to cache if preloader is available
+        if (app->preloader && app->preload_enabled) {
+            preloader_cache_add(app->preloader, filepath, rendered);
+        }
+
+        renderer_destroy(renderer);
+    } else {
+        // For cached images, we need to estimate dimensions
+        // This is a simplified estimation - in a real implementation, 
+        // you might store dimensions in the cache as well
+        image_width = app->term_width;
+        image_height = app->term_height - 2; // Leave space for filename
+    }
     
     // Clear screen and reset terminal state
     printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
@@ -384,9 +450,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     
     fflush(stdout);
 
-    // Cleanup resources
-    g_string_free(rendered, TRUE);
-    renderer_destroy(renderer);
+    // Cleanup resources - only free if not from cache
+    if (!from_cache) {
+        g_string_free(rendered, TRUE);
+    }
+    
     return ERROR_NONE;
 }
 
@@ -468,6 +536,11 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
 
     // Update terminal size
     get_terminal_size(&app->term_width, &app->term_height);
+    
+    // Update preloader with new terminal dimensions
+    if (app->preloader && app->preload_enabled) {
+        preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+    }
 
     return app_render_current_image(app);
 }
@@ -478,7 +551,35 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
 void app_toggle_preload(PixelTermApp *app) {
     if (app) {
         app->preload_enabled = !app->preload_enabled;
-        // TODO: Start/stop preloader thread
+        
+        if (app->preload_enabled) {
+            // Enable preloading
+            if (!app->preloader) {
+                app->preloader = preloader_create();
+                if (app->preloader) {
+                    preloader_initialize(app->preloader);
+                    
+                    // Set terminal dimensions for preloader
+                    preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+                    
+                    preloader_start(app->preloader);
+                    
+                    // Add initial preload tasks
+                    preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+                }
+            } else {
+                // Update terminal dimensions before enabling
+                preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+                preloader_enable(app->preloader);
+                preloader_resume(app->preloader);
+            }
+        } else {
+            // Disable preloading
+            if (app->preloader) {
+                preloader_disable(app->preloader);
+                preloader_clear_queue(app->preloader);
+            }
+        }
     }
 }
 
@@ -506,6 +607,11 @@ ErrorCode app_delete_current_image(PixelTermApp *app) {
     // Remove from file list
     GList *current_link = g_list_nth(app->image_files, app->current_index);
     if (current_link) {
+        // Remove from preload cache
+        if (app->preloader && app->preload_enabled) {
+            preloader_cache_remove(app->preloader, (const char*)current_link->data);
+        }
+        
         g_free(current_link->data);
         app->image_files = g_list_delete_link(app->image_files, current_link);
         app->total_images--;
@@ -513,6 +619,12 @@ ErrorCode app_delete_current_image(PixelTermApp *app) {
         // Adjust index if necessary
         if (app->current_index >= app->total_images && app->current_index > 0) {
             app->current_index--;
+        }
+        
+        // Update preload tasks after deletion
+        if (app->preloader && app->preload_enabled && app_has_images(app)) {
+            preloader_clear_queue(app->preloader);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
         }
     }
 

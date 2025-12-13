@@ -30,6 +30,10 @@ typedef struct {
     gint max_queue_size;
     gint max_cache_size;
     gint active_tasks;
+    
+    // Terminal dimensions for rendering
+    gint term_width;
+    gint term_height;
 } ImagePreloader;
 
 // Preloader lifecycle functions
@@ -38,6 +42,9 @@ void preloader_destroy(ImagePreloader *preloader);
 ErrorCode preloader_initialize(ImagePreloader *preloader);
 ErrorCode preloader_start(ImagePreloader *preloader);
 ErrorCode preloader_stop(ImagePreloader *preloader);
+
+// Configuration
+void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint height);
 
 // Task management
 ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gint priority);

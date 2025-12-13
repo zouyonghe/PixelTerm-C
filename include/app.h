@@ -2,6 +2,7 @@
 #define APP_H
 
 #include "common.h"
+#include "preloader.h"
 
 // Main application structure
 typedef struct {
@@ -16,7 +17,10 @@ typedef struct {
     gint current_index;
     gint total_images;
     
-    // Threading and caching
+    // Preloading
+    ImagePreloader *preloader;
+    
+    // Legacy threading (deprecated)
     GThread *preload_thread;
     GMutex preload_mutex;
     GQueue *preload_queue;
