@@ -16,6 +16,18 @@ if [ "$1" = "aarch64" ]; then
     # Install aarch64 libc and development files
     apt-get install -y libc6-dev-arm64-cross linux-libc-dev-arm64-cross
     
+    # Test cross-compiler
+    echo "Testing aarch64 cross-compiler..."
+    aarch64-linux-gnu-gcc --version
+    echo "Hello test" | aarch64-linux-gnu-gcc -x c - -o /tmp/test-aarch64
+    if [ -f /tmp/test-aarch64 ]; then
+        echo "Cross-compiler test successful"
+        rm /tmp/test-aarch64
+    else
+        echo "Cross-compiler test failed"
+        exit 1
+    fi
+    
     echo "Installing latest Chafa for aarch64"
     wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
     
