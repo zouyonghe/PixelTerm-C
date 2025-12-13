@@ -27,55 +27,38 @@ jobs:
       with:
         platforms: arm64
 
-    - name: Install dependencies
+    - name: Build in Docker
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential wget jq libfreetype6-dev
-        
-        # Install cross-compilation tools for aarch64
-        if [ "${{ matrix.arch }}" = "aarch64" ]; then
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          sudo apt-get install -y libglib2.0-dev:arm64 libgdk-pixbuf2.0-dev:arm64 pkg-config:arm64
-        fi
-        
-        # Get latest Chafa release
-        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-        echo "Installing Chafa ${CHAFA_VERSION}"
-        
-        # Install Chafa from source to get the latest version with all required APIs
-        wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION}.tar.xz"
-        tar -xf chafa-${CHAFA_VERSION}.tar.xz
-        cd chafa-${CHAFA_VERSION}
-        
-        if [ "${{ matrix.arch }}" = "aarch64" ]; then
-          # Cross-compile Chafa for aarch64
-          ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc
-          make -j$(nproc)
-          sudo make install
-        else
-          # Native compilation for amd64
-          ./configure --prefix=/usr
-          make -j$(nproc)
-          sudo make install
-        fi
-        
-        sudo ldconfig
-        cd ..
-        rm -rf chafa-${CHAFA_VERSION} chafa-${CHAFA_VERSION}.tar.xz
-
-    - name: Build project
-      run: |
-        if [ "${{ matrix.arch }}" = "aarch64" ]; then
-          make clean && make CC=aarch64-linux-gnu-gcc ARCH=aarch64
-        else
-          make clean && make
-        fi
+        mkdir -p release-${{ matrix.arch }}
+        docker run --rm \
+          -v $(pwd):/workspace \
+          --platform ${{ matrix.arch == 'aarch64' && 'linux/arm64' || 'linux/amd64' }} \
+          ubuntu:22.04 \
+          bash -c "
+            cd /workspace &&
+            export DEBIAN_FRONTEND=noninteractive &&
+            apt-get update &&
+            apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git &&
+            CHAFA_VERSION=\$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep '\"tag_name\"' | cut -d'\"' -f4) &&
+            echo \"Installing Chafa \${CHAFA_VERSION}\" &&
+            wget \"https://github.com/hpjansson/chafa/releases/download/\${CHAFA_VERSION}/chafa-\${CHAFA_VERSION}.tar.xz\" &&
+            tar -xf chafa-\${CHAFA_VERSION}.tar.xz &&
+            cd chafa-\${CHAFA_VERSION} &&
+            ./configure --prefix=/usr &&
+            make -j\$(nproc) &&
+            make install &&
+            ldconfig &&
+            cd .. &&
+            rm -rf chafa-\${CHAFA_VERSION} chafa-\${CHAFA_VERSION}.tar.xz &&
+            make clean && make &&
+            cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}
+          "
 
     - name: Create release package
       run: |
         mkdir -p release
-        cp bin/pixelterm release/pixelterm-${{ matrix.arch }}
-        tar -czf release/pixelterm-${{ matrix.arch }}.tar.gz -C bin pixelterm
+        cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }} release/
+        tar -czf release/pixelterm-${{ matrix.arch }}.tar.gz -C release pixelterm-${{ matrix.arch }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
