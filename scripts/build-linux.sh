@@ -13,6 +13,9 @@ if [ "$1" = "aarch64" ]; then
     apt-get update
     apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
     
+    # Install aarch64 libc and development files
+    apt-get install -y libc6-dev-arm64-cross linux-libc-dev-arm64-cross
+    
     echo "Installing latest Chafa for aarch64"
     wget $(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | grep 'browser_download_url' | grep '.tar.xz' | head -1 | cut -d'"' -f4)
     
@@ -22,8 +25,6 @@ if [ "$1" = "aarch64" ]; then
     # Cross-compile Chafa for aarch64 with minimal dependencies
     ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc \
         --disable-shared --enable-static \
-        --disable-tools --disable-examples \
-        --without-gdk-pixbuf --without-x11 \
         PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
         CFLAGS="-I/usr/include/glib-2.0" \
         LDFLAGS="-static" \
