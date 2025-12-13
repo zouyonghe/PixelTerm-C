@@ -308,8 +308,6 @@ int main(int argc, char *argv[]) {
     }
 
     if (!app_has_images(g_app)) {
-        printf("No supported image files found in '%s'\n", path);
-        printf("Total images loaded: %d\n", app_get_total_images(g_app));
         printf("\n");
         print_version();
         printf("\n");
