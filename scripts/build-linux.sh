@@ -19,7 +19,8 @@ if [ "$1" = "aarch64" ]; then
     # Test cross-compiler
     echo "Testing aarch64 cross-compiler..."
     aarch64-linux-gnu-gcc --version
-    echo "Hello test" | aarch64-linux-gnu-gcc -x c - -o /tmp/test-aarch64
+    echo '#include <stdio.h>
+int main() { printf("Hello World\n"); return 0; }' | aarch64-linux-gnu-gcc -x c - -o /tmp/test-aarch64
     if [ -f /tmp/test-aarch64 ]; then
         echo "Cross-compiler test successful"
         rm /tmp/test-aarch64
