@@ -19,18 +19,15 @@ if [ "$1" = "aarch64" ]; then
     tar -xf chafa-*.tar.xz
     cd $(ls -d chafa-* | head -1)
     
-    # Create necessary directories and symlinks for cross-compilation
-    mkdir -p /usr/lib/aarch64-linux-gnu/glib-2.0/include
-    ln -sf /usr/lib/x86_64-linux-gnu/glib-2.0/include/glibconfig.h /usr/lib/aarch64-linux-gnu/glib-2.0/include/
-    
-    # Cross-compile Chafa for aarch64
+    # Cross-compile Chafa for aarch64 with minimal dependencies
     ./configure --prefix=/usr/aarch64-linux-gnu --host=aarch64-linux-gnu CC=aarch64-linux-gnu-gcc \
         --disable-shared --enable-static \
+        --disable-tools --disable-examples \
+        --without-gdk-pixbuf --without-x11 \
         PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
-        GLIB_CFLAGS="-I/usr/include/glib-2.0 -I/usr/lib/aarch64-linux-gnu/glib-2.0/include" \
-        GLIB_LIBS="-lglib-2.0" \
-        GDK_PIXBUF_CFLAGS="-I/usr/include/gdk-pixbuf-2.0" \
-        GDK_PIXBUF_LIBS="-lgdk-pixbuf-2.0"
+        CFLAGS="-I/usr/include/glib-2.0" \
+        LDFLAGS="-static" \
+        LIBS="-lglib-2.0 -lm"
     make -j$(nproc)
     make install
     cd ..
