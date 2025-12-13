@@ -60,15 +60,15 @@ wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm
 chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
 
 # macOS AMD64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-macos-amd64
-chmod +x pixelterm-macos-amd64 && sudo mv pixelterm-macos-amd64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
+chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
 
 # macOS ARM64 (Apple Silicon):
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-macos-arm64
-chmod +x pixelterm-macos-arm64 && sudo mv pixelterm-macos-arm64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
+chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
 
 # Note for macOS users: If the binary fails to start due to security restrictions, run:
-# xattr -dr com.apple.quarantine pixelterm-macos-arm64
+# xattr -dr com.apple.quarantine pixelterm-arm64-macos
 ```
 
 ### Building from Source

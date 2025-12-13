@@ -52,23 +52,23 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 # 或下载对应架构的二进制文件
 # AMD64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64
-chmod +x pixelterm-amd64 && sudo mv pixelterm-amd64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
+chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
 # ARM64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64
-chmod +x pixelterm-arm64 && sudo mv pixelterm-arm64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-linux
+chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
 
 # macOS AMD64:
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-macos-amd64
-chmod +x pixelterm-macos-amd64 && sudo mv pixelterm-macos-amd64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
+chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
 
 # macOS ARM64 (Apple Silicon):
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-macos-arm64
-chmod +x pixelterm-macos-arm64 && sudo mv pixelterm-macos-arm64 /usr/local/bin/pixelterm
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
+chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
 
 # 注意：macOS用户如果因安全限制无法启动，请运行：
-# xattr -dr com.apple.quarantine pixelterm-macos-arm64
+# xattr -dr com.apple.quarantine pixelterm-arm64-macos
 ```
 
 ### 源码构建

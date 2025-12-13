@@ -136,14 +136,14 @@ jobs:
         
         # Build PixelTerm-C
         make clean && make
-        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-macos-${{ matrix.arch }}
+        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
 
     - name: Create release package
       run: |
         mkdir -p release
         if [ "${{ matrix.os }}" = "macos" ]; then
-          cp release-${{ matrix.arch }}/pixelterm-macos-${{ matrix.arch }} release/
-          tar -czf release/pixelterm-macos-${{ matrix.arch }}.tar.gz -C release pixelterm-macos-${{ matrix.arch }}
+          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
+          tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
         else
           cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
           tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
@@ -152,14 +152,14 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}.tar.gz
-        path: release/pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}.tar.gz
+        name: pixelterm-${{ matrix.arch }}-${{ matrix.os }}.tar.gz
+        path: release/pixelterm-${{ matrix.arch }}-${{ matrix.os }}.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}
-        path: release/pixelterm-${{ matrix.os == 'macos' && 'macos-' || '' }}${{ matrix.arch }}${{ matrix.os == 'linux' && '-linux' || '' }}
+        name: pixelterm-${{ matrix.arch }}-${{ matrix.os }}
+        path: release/pixelterm-${{ matrix.arch }}-${{ matrix.os }}
 
   create-release:
     needs: build
@@ -182,7 +182,7 @@ jobs:
           pixelterm-amd64-linux
           pixelterm-arm64-linux.tar.gz
           pixelterm-arm64-linux
-          pixelterm-macos-amd64.tar.gz
-          pixelterm-macos-amd64
-          pixelterm-macos-arm64.tar.gz
-          pixelterm-macos-arm64
+          pixelterm-amd64-macos.tar.gz
+          pixelterm-amd64-macos
+          pixelterm-arm64-macos.tar.gz
+          pixelterm-arm64-macos
