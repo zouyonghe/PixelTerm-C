@@ -66,6 +66,27 @@ static gchar* sanitize_for_terminal(const gchar *text) {
     return safe;
 }
 
+static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height) {
+    if (!max_width || !max_height) {
+        return;
+    }
+    gint width = (app && app->term_width > 0) ? app->term_width : 80;
+    gint height = (app && app->term_height > 0) ? app->term_height : 24;
+    if (app && app->info_visible) {
+        height -= 10;
+    } else {
+        height -= 1;
+    }
+    if (height < 1) {
+        height = 1;
+    }
+    if (width < 1) {
+        width = 1;
+    }
+    *max_width = width;
+    *max_height = height;
+}
+
 // Helpers for file manager layout
 static gchar* app_file_manager_display_name(const PixelTermApp *app, const gchar *entry, gboolean *is_directory) {
     (void)app; // currently unused but kept for potential future context
@@ -380,11 +401,13 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
             
             // Set terminal dimensions for preloader
             preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+            gint target_width = 0, target_height = 0;
+            app_get_image_target_dimensions(app, &target_width, &target_height);
             
             ErrorCode preload_err = preloader_start(app->preloader);
             if (preload_err == ERROR_NONE) {
                 // Add initial preload tasks for current directory
-                preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+                preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
             } else {
                 preloader_destroy(app->preloader);
                 app->preloader = NULL;
@@ -467,8 +490,10 @@ ErrorCode app_next_image(PixelTermApp *app) {
 
     // Update preload tasks for new position
     if (app->preloader && app->preload_enabled) {
+        gint target_width = 0, target_height = 0;
+        app_get_image_target_dimensions(app, &target_width, &target_height);
         preloader_clear_queue(app->preloader);
-        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
     }
 
     return ERROR_NONE;
@@ -492,8 +517,10 @@ ErrorCode app_previous_image(PixelTermApp *app) {
 
     // Update preload tasks for new position
     if (app->preloader && app->preload_enabled) {
+        gint target_width = 0, target_height = 0;
+        app_get_image_target_dimensions(app, &target_width, &target_height);
         preloader_clear_queue(app->preloader);
-        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
     }
 
     return ERROR_NONE;
@@ -512,8 +539,10 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
         
         // Update preload tasks for new position
         if (app->preloader && app->preload_enabled) {
+            gint target_width = 0, target_height = 0;
+            app_get_image_target_dimensions(app, &target_width, &target_height);
             preloader_clear_queue(app->preloader);
-            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
         }
         
         return ERROR_NONE;
@@ -539,9 +568,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // Check if image is already cached
     GString *rendered = NULL;
     gint image_width, image_height;
+    gint target_width = 0, target_height = 0;
+    app_get_image_target_dimensions(app, &target_width, &target_height);
     
     if (app->preloader && app->preload_enabled) {
-        rendered = preloader_get_cached_image(app->preloader, filepath);
+        rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
     }
 
     // If not in cache, render it normally
@@ -554,8 +585,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
         // Configure renderer
         RendererConfig config = {
-            .max_width = app->term_width,
-            .max_height = app->info_visible ? app->term_height - 10 : app->term_height - 1, // Normal: use almost full height, Info: reserve space
+            .max_width = target_width,
+            .max_height = target_height, // Normal: use almost full height, Info: reserve space
             .preserve_aspect_ratio = TRUE,
             .dither = TRUE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
@@ -581,13 +612,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         
         // Add to cache if preloader is available
         if (app->preloader && app->preload_enabled) {
-            preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height);
+            preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height, target_width, target_height);
         }
 
         renderer_destroy(renderer);
     } else {
         // For cached images, get the actual dimensions from cache
-        if (!preloader_get_cached_image_dimensions(app->preloader, filepath, &image_width, &image_height)) {
+        if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height, &image_width, &image_height)) {
             // Fallback: count lines in the rendered output to get actual height
             image_width = app->term_width;
             image_height = 1; // Start with 1 for first line
@@ -749,11 +780,13 @@ void app_toggle_preload(PixelTermApp *app) {
                     
                     // Set terminal dimensions for preloader
                     preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
+                    gint target_width = 0, target_height = 0;
+                    app_get_image_target_dimensions(app, &target_width, &target_height);
                     
                     ErrorCode preload_err = preloader_start(app->preloader);
                     if (preload_err == ERROR_NONE) {
                         // Add initial preload tasks
-                        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+                        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
                     } else {
                         preloader_destroy(app->preloader);
                         app->preloader = NULL;
@@ -843,8 +876,10 @@ ErrorCode app_delete_current_image(PixelTermApp *app) {
         
         // Update preload tasks after deletion
         if (app->preloader && app->preload_enabled && app_has_images(app)) {
+            gint target_width = 0, target_height = 0;
+            app_get_image_target_dimensions(app, &target_width, &target_height);
             preloader_clear_queue(app->preloader);
-            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
         }
     }
 
@@ -1318,6 +1353,37 @@ static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *la
     }
 }
 
+// Queue preload tasks for currently visible (and adjacent) preview cells
+static void app_preview_queue_preloads(PixelTermApp *app, const PreviewLayout *layout) {
+    if (!app || !layout || !app->preloader || !app->preload_enabled) {
+        return;
+    }
+
+    gint content_width = MAX(2, layout->cell_width - 2);
+    gint content_height = MAX(2, layout->cell_height - 2);
+
+    // Preload current screen plus one row of lookahead/behind to smooth paging
+    gint start_row = MAX(0, app->preview_scroll - 1);
+    gint end_row = MIN(layout->rows, app->preview_scroll + layout->visible_rows + 1);
+    gint start_index = start_row * layout->cols;
+    GList *cursor = g_list_nth(app->image_files, start_index);
+
+    for (gint row = start_row; row < end_row && cursor; row++) {
+        for (gint col = 0; col < layout->cols && cursor; col++) {
+            gint idx = row * layout->cols + col;
+            if (idx >= app->total_images) {
+                cursor = NULL;
+                break;
+            }
+            const gchar *filepath = (const gchar*)cursor->data;
+            gint distance = ABS(idx - app->preview_selected);
+            gint priority = (distance == 0) ? 0 : (distance <= layout->cols ? 1 : 5 + distance);
+            preloader_add_task(app->preloader, filepath, priority, content_width, content_height);
+            cursor = cursor->next;
+        }
+    }
+}
+
 // Print brief info for the currently selected preview item on the status line
 ErrorCode app_preview_print_info(PixelTermApp *app) {
     if (!app || !app->preview_mode) {
@@ -1478,6 +1544,23 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     return ERROR_NONE;
 }
 
+// Jump a page up/down based on visible rows
+ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    PreviewLayout layout = app_preview_calculate_layout(app);
+    gint delta = direction >= 0 ? layout.visible_rows : -layout.visible_rows;
+    if (delta == 0) {
+        delta = direction >= 0 ? 1 : -1;
+    }
+    return app_preview_move_selection(app, delta, 0);
+}
+
 // Change preview zoom (target cell width) by stepping column count
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
     if (!app || !app->preview_mode) {
@@ -1525,6 +1608,9 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->preview_scroll = 0;
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
+    if (app->preloader && app->preload_enabled) {
+        preloader_clear_queue(app->preloader);
+    }
     return app_render_preview_grid(app);
 }
 
@@ -1546,6 +1632,12 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
     app->preview_mode = FALSE;
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
+    if (app->preloader && app->preload_enabled && app_has_images(app)) {
+        gint target_width = 0, target_height = 0;
+        app_get_image_target_dimensions(app, &target_width, &target_height);
+        preloader_clear_queue(app->preloader);
+        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+    }
     return ERROR_NONE;
 }
 
@@ -1563,6 +1655,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     app_preview_adjust_scroll(app, &layout);
+    app_preview_queue_preloads(app, &layout);
 
     printf("\033[2J\033[H\033[0m"); // Clear screen
 
@@ -1645,9 +1738,28 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
                 }
             }
 
-            GString *rendered = renderer_render_image_file(renderer, filepath);
+            gboolean rendered_from_preload = FALSE;
+            gboolean rendered_from_renderer_cache = FALSE;
+            GString *rendered = NULL;
+            if (app->preloader && app->preload_enabled) {
+                rendered = preloader_get_cached_image(app->preloader, filepath, content_width, content_height);
+                rendered_from_preload = (rendered != NULL);
+            }
+            if (!rendered) {
+                rendered = renderer_render_image_file(renderer, filepath);
+                if (rendered) {
+                    GString *cached_entry = renderer_cache_get(renderer, filepath);
+                    rendered_from_renderer_cache = (cached_entry == rendered);
+                }
+            }
             if (!rendered) {
                 continue;
+            }
+
+            if (!rendered_from_preload && app->preloader && app->preload_enabled) {
+                gint rendered_w = 0, rendered_h = 0;
+                renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
+                preloader_cache_add(app->preloader, filepath, rendered, rendered_w, rendered_h, content_width, content_height);
             }
 
             // Draw image lines within the cell bounds, horizontally centered
@@ -1677,9 +1789,12 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             printf("\033[0m");
 
             // Free only if this buffer is not owned by the renderer cache
-            GString *cached_entry = renderer_cache_get(renderer, filepath);
-            if (cached_entry != rendered) {
+            if (rendered_from_preload) {
                 g_string_free(rendered, TRUE);
+            } else {
+                if (!rendered_from_renderer_cache) {
+                    g_string_free(rendered, TRUE);
+                }
             }
         }
     }
@@ -1726,11 +1841,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         printf("\033[36mp\033[0m exit");
 
         // Page indicator at bottom-right based on items per page
-        gint items_per_page = layout.cols * layout.visible_rows;
-        if (items_per_page < 1) items_per_page = 1;
-        gint total_pages = (app->total_images + items_per_page - 1) / items_per_page;
+        gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+        gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
         if (total_pages < 1) total_pages = 1;
-        gint current_page = (app->preview_selected / items_per_page) + 1;
+        gint current_page = (app->preview_scroll + rows_per_page - 1) / rows_per_page + 1; // ceil division so last page reachable
+        if (current_page < 1) current_page = 1;
         if (current_page > total_pages) current_page = total_pages;
         char page_text[32];
         g_snprintf(page_text, sizeof(page_text), "%d/%d", current_page, total_pages);

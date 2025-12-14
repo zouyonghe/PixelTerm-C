@@ -8,6 +8,8 @@ typedef struct {
     gchar *filepath;
     gint priority;
     gint64 timestamp;
+    gint target_width;
+    gint target_height;
 } PreloadTask;
 
 // Cached image data with dimensions
@@ -55,15 +57,15 @@ ErrorCode preloader_stop(ImagePreloader *preloader);
 void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint height);
 
 // Task management
-ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gint priority);
-ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *files, gint current_index);
+ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gint priority, gint target_width, gint target_height);
+ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *files, gint current_index, gint target_width, gint target_height);
 ErrorCode preloader_clear_queue(ImagePreloader *preloader);
 gboolean preloader_has_pending_tasks(const ImagePreloader *preloader);
 
 // Cache management
-GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath);
-gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const char *filepath, gint *width, gint *height);
-void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered, gint width, gint height);
+GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath, gint target_width, gint target_height);
+gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const char *filepath, gint target_width, gint target_height, gint *width, gint *height);
+void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered, gint rendered_width, gint rendered_height, gint target_width, gint target_height);
 void preloader_cache_remove(ImagePreloader *preloader, const char *filepath);
 void preloader_cache_clear(ImagePreloader *preloader);
 void preloader_cache_cleanup(ImagePreloader *preloader);

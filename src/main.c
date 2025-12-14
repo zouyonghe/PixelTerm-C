@@ -358,13 +358,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case KEY_PAGE_DOWN:
                         if (app->preview_mode) {
-                            app_preview_move_selection(app, app->term_height, 0); // jump a page down
+                            app_preview_page_move(app, 1); // jump a page down
                             app_render_preview_grid(app);
                         }
                         break;
                     case KEY_PAGE_UP:
                         if (app->preview_mode) {
-                            app_preview_move_selection(app, -app->term_height, 0); // jump a page up
+                            app_preview_page_move(app, -1); // jump a page up
                             app_render_preview_grid(app);
                         }
                         break;

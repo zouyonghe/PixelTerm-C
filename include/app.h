@@ -84,6 +84,7 @@ ErrorCode app_enter_preview(PixelTermApp *app);
 ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected);
 ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col);
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta);
+ErrorCode app_preview_page_move(PixelTermApp *app, gint direction);
 ErrorCode app_render_preview_grid(PixelTermApp *app);
 ErrorCode app_preview_print_info(PixelTermApp *app);
 
