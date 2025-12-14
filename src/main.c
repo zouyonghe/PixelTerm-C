@@ -268,7 +268,9 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case (KeyCode)'i':
-                        if (!app->preview_mode) {
+                        if (app->preview_mode) {
+                            app_preview_print_info(app);
+                        } else {
                             app_display_image_info(app);
                         }
                         break;
@@ -390,6 +392,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 app_render_file_manager(app);
                             }
                             // Note: when opening a file, app_file_manager_enter renders the image
+                        } else {
+                            // From normal view, Enter toggles into preview grid
+                            if (app_enter_preview(app) == ERROR_NONE) {
+                                app_render_preview_grid(app);
+                            }
                         }
                         break;
                     default:

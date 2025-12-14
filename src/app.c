@@ -1,4 +1,4 @@
-#define _XOPEN_SOURCE 700
+#define _GNU_SOURCE
 
 #include "app.h"
 #include "browser.h"
@@ -23,14 +23,7 @@ PixelTermApp* app_create(void) {
     app->image_files = NULL;
     app->current_directory = NULL;
     app->preloader = NULL;
-    app->preload_thread = NULL;
-    app->preload_queue = NULL;
-    app->render_cache = NULL;
     app->gerror = NULL;
-
-    // Initialize mutexes
-    g_mutex_init(&app->preload_mutex);
-    g_mutex_init(&app->cache_mutex);
 
     // Set default state
     app->current_index = 0;
@@ -43,7 +36,7 @@ PixelTermApp* app_create(void) {
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
     app->preview_mode = FALSE;
-    app->preview_zoom = 2; // default zoom for comfortable preview grid
+    app->preview_zoom = 2; // legacy default
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -249,10 +242,6 @@ void app_destroy(PixelTermApp *app) {
         preloader_destroy(app->preloader);
         app->preloader = NULL;
     }
-    
-    if (app->preload_thread) {
-        g_thread_join(app->preload_thread);
-    }
 
     // Cleanup Chafa resources
     if (app->canvas) {
@@ -275,30 +264,16 @@ void app_destroy(PixelTermApp *app) {
     // Cleanup directory path
     g_free(app->current_directory);
 
-    // Cleanup preloader queue
-    if (app->preload_queue) {
-        g_queue_free(app->preload_queue);
-    }
-
     // Cleanup file manager entries
     if (app->directory_entries) {
         g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
     }
     g_free(app->file_manager_directory);
 
-    // Cleanup render cache
-    if (app->render_cache) {
-        g_hash_table_destroy(app->render_cache);
-    }
-
     // Cleanup error
     if (app->gerror) {
         g_error_free(app->gerror);
     }
-
-    // Cleanup mutexes
-    g_mutex_clear(&app->preload_mutex);
-    g_mutex_clear(&app->cache_mutex);
 
     g_free(app);
 }
@@ -339,18 +314,6 @@ ErrorCode app_initialize(PixelTermApp *app) {
     app->canvas = chafa_canvas_new(app->canvas_config);
     if (!app->canvas) {
         return ERROR_CHAFA_INIT;
-    }
-
-    // Initialize data structures
-    app->preload_queue = g_queue_new();
-    if (!app->preload_queue) {
-        return ERROR_MEMORY_ALLOC;
-    }
-
-    app->render_cache = g_hash_table_new_full(g_str_hash, g_str_equal, 
-                                             g_free, (GDestroyNotify)gstring_destroy);
-    if (!app->render_cache) {
-        return ERROR_MEMORY_ALLOC;
     }
 
     return ERROR_NONE;
@@ -461,24 +424,20 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
         return error;
     }
 
-    // Find the specific file in the list
+    // Find the specific file in the list (single pass)
     gchar *target_basename = g_path_get_basename(filepath);
     gboolean found = FALSE;
-    
-    for (gint i = 0; i < app->total_images; i++) {
-        gchar *current_file = (gchar*)g_list_nth_data(app->image_files, i);
-        gchar *current_basename = g_path_get_basename(current_file);
-        
+    gint idx = 0;
+    for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
+        gchar *current_basename = g_path_get_basename((gchar*)cur->data);
         if (g_strcmp0(current_basename, target_basename) == 0) {
-            app->current_index = i;
+            app->current_index = idx;
             found = TRUE;
             g_free(current_basename);
             break;
         }
-        
         g_free(current_basename);
     }
-
     g_free(target_basename);
     
     // If file was found and loaded successfully, mark for redraw
@@ -719,21 +678,21 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     // Move to next line and ensure cursor is at the beginning
     printf("\n\033[G"); // New line and move cursor to column 1
     
-    // Display information in Python style
+    // Display information with colored labels
     for (gint i = 0; i < 60; i++) printf("=");
     printf("\n\033[G");
-    printf("📸 Image Details");
+    printf("\033[36m📸 Image Details\033[0m");
     printf("\n\033[G");
     for (gint i = 0; i < 60; i++) printf("=");
     printf("\n\033[G");
-    printf("📁 Filename: %s\n\033[G", safe_basename);
-    printf("📂 Path: %s\n\033[G", safe_dirname);
-    printf("📄 Index: %d/%d\n\033[G", index, total);
-    printf("💾 File size: %.1f MB\n\033[G", file_size_mb);
-    printf("📐 Dimensions: %d x %d pixels\n\033[G", width, height);
-    printf("🎨 Format: %s\n\033[G", ext ? ext + 1 : "unknown"); // Skip the dot
-    printf("🎭 Color mode: RGB\n\033[G");
-    printf("📏 Aspect ratio: %.2f\n\033[G", aspect_ratio);
+    printf("\033[36m📁 Filename:\033[0m %s\n\033[G", safe_basename);
+    printf("\033[36m📂 Path:\033[0m %s\n\033[G", safe_dirname);
+    printf("\033[36m📄 Index:\033[0m %d/%d\n\033[G", index, total);
+    printf("\033[36m💾 File size:\033[0m %.1f MB\n\033[G", file_size_mb);
+    printf("\033[36m📐 Dimensions:\033[0m %d x %d pixels\n\033[G", width, height);
+    printf("\033[36m🎨 Format:\033[0m %s\n\033[G", ext ? ext + 1 : "unknown"); // Skip the dot
+    printf("\033[36m🎭 Color mode:\033[0m RGB\n\033[G");
+    printf("\033[36m📏 Aspect ratio:\033[0m %.2f\n\033[G", aspect_ratio);
     for (gint i = 0; i < 60; i++) printf("=");
     printf("\n\033[G");
     
@@ -1402,6 +1361,82 @@ static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *la
     }
 }
 
+// Print brief info for the currently selected preview item on the status line
+ErrorCode app_preview_print_info(PixelTermApp *app) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    // Use current selection (preview) or current image index if available
+    const gchar *filepath = NULL;
+    gint display_index = 0;
+    if (app->preview_mode) {
+        filepath = (const gchar*)g_list_nth_data(app->image_files, app->preview_selected);
+        display_index = app->preview_selected;
+    } else {
+        filepath = app_get_current_filepath(app);
+        display_index = app_get_current_index(app);
+    }
+    if (!filepath) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    gchar *basename = g_path_get_basename(filepath);
+    gchar *dirname = g_path_get_dirname(filepath);
+    gchar *safe_basename = sanitize_for_terminal(basename);
+    gchar *safe_dirname = sanitize_for_terminal(dirname);
+    gint width = 0, height = 0;
+    renderer_get_image_dimensions(filepath, &width, &height);
+    gint64 file_size = get_file_size(filepath);
+    gdouble file_size_mb = file_size > 0 ? file_size / (1024.0 * 1024.0) : 0.0;
+    const char *ext = get_file_extension(filepath);
+    gdouble aspect = (height > 0) ? (gdouble)width / height : 0.0;
+
+    // Refresh terminal size in case of resize
+    get_terminal_size(&app->term_width, &app->term_height);
+
+    gint start_row = app->term_height - 8;
+    if (start_row < 1) start_row = 1;
+
+    const char *labels[7] = {
+        "📁 Filename:",
+        "📂 Path:",
+        "📄 Index:",
+        "💾 File size:",
+        "📐 Dimensions:",
+        "🎨 Format:",
+        "📏 Aspect ratio:"
+    };
+
+    char values[7][256];
+    g_snprintf(values[0], sizeof(values[0]), "%s", safe_basename ? safe_basename : "");
+    g_snprintf(values[1], sizeof(values[1]), "%s", safe_dirname ? safe_dirname : "");
+    g_snprintf(values[2], sizeof(values[2]), "%d/%d", display_index + 1, app->total_images);
+    g_snprintf(values[3], sizeof(values[3]), "%.1f MB", file_size_mb);
+    g_snprintf(values[4], sizeof(values[4]), "%d x %d pixels", width, height);
+    g_snprintf(values[5], sizeof(values[5]), "%s", ext ? ext + 1 : "unknown");
+    g_snprintf(values[6], sizeof(values[6]), "%.2f", aspect);
+
+    // Clear area and print info block with colored labels
+    for (gint i = 0; i < 7; i++) {
+        gint row = start_row + i;
+        printf("\033[%d;1H", row);
+        for (gint c = 0; c < app->term_width; c++) putchar(' ');
+        printf("\033[%d;1H\033[36m%s\033[0m %s", row, labels[i], values[i]);
+    }
+    printf("\033[0m");
+    fflush(stdout);
+
+    g_free(safe_basename);
+    g_free(safe_dirname);
+    g_free(basename);
+    g_free(dirname);
+    return ERROR_NONE;
+}
+
 // Compute visible width of a line ignoring ANSI escape sequences
 static gint app_preview_visible_width(const char *str, gint len) {
     if (!str || len <= 0) {
@@ -1442,6 +1477,13 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     row += delta_row;
     col += delta_col;
 
+    // Horizontal wrap within current row
+    if (delta_col < 0 && col < 0) {
+        col = cols - 1;
+    } else if (delta_col > 0 && col >= cols) {
+        col = 0;
+    }
+
     // Wrap vertically across pages
     if (delta_row > 0 && row >= rows) {
         row = 0;
@@ -1465,6 +1507,11 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     if (col >= cols) col = cols - 1;
 
     gint new_index = row * cols + col;
+    // Keep selection inside current row bounds when wrapping on incomplete rows
+    gint row_start = row * cols;
+    gint row_end = MIN(app->total_images - 1, row_start + cols - 1);
+    if (new_index < row_start) new_index = row_start;
+    if (new_index > row_end) new_index = row_end;
     if (new_index >= app->total_images) {
         new_index = app->total_images - 1;
     }
@@ -1480,12 +1527,8 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
         return ERROR_MEMORY_ALLOC;
     }
     gint new_zoom = app->preview_zoom + delta;
-    // Skip zoom levels 3 and 4
-    if (delta > 0 && (new_zoom == 3 || new_zoom == 4)) {
-        new_zoom = 5; // jump to max visible tier
-    } else if (delta < 0 && (new_zoom == 3 || new_zoom == 4)) {
-        new_zoom = 2;
-    }
+    if (new_zoom > 5) new_zoom = 5;
+    if (new_zoom < -3) new_zoom = -3;
     app->preview_zoom = new_zoom;
     return app_render_preview_grid(app);
 }
@@ -1569,8 +1612,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         return ERROR_CHAFA_INIT;
     }
 
-    // Header: title + hint + selection info
-    const char *title = "Preview Grid (p to exit, Enter to open)";
+    // Header: title; controls are shown in footer
+    const char *title = "Preview Grid";
     gint title_len = strlen(title);
     gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
     for (gint i = 0; i < pad; i++) printf(" ");
@@ -1580,18 +1623,21 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     gint start_row = app->preview_scroll;
     gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint start_index = start_row * layout.cols;
+    GList *cursor = g_list_nth(app->image_files, start_index);
 
     for (gint row = start_row; row < end_row; row++) {
         for (gint col = 0; col < layout.cols; col++) {
             gint idx = row * layout.cols + col;
-            if (idx >= app->total_images) {
-                continue;
+            if (idx >= app->total_images || !cursor) {
+                break;
             }
 
             gint cell_x = col * layout.cell_width + 1;
             gint cell_y = layout.header_lines + (row - start_row) * layout.cell_height + 1;
 
-            const gchar *filepath = (const gchar*)g_list_nth_data(app->image_files, idx);
+            const gchar *filepath = (const gchar*)cursor->data;
+            cursor = cursor->next;
             gboolean selected = (idx == app->preview_selected);
             gboolean use_border = selected &&
                                   layout.cell_width >= 4 &&
@@ -1661,10 +1707,16 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         }
     }
 
-    // Footer with quick hints at the bottom of the terminal
+    // Footer with quick hints and page indicator at the bottom
     if (app->term_height > 0) {
-        const char *help_text = "Arrow move  PgUp/PgDn page  Enter open  +/- zoom  p exit preview";
-        printf("\033[%d;1H%s", app->term_height, help_text);
+        const char *help_text = "←/→/↑/↓ move  PgUp/PgDn page  Enter open  +/- zoom  i info  p exit";
+        printf("\033[%d;1H", app->term_height);
+        printf("\033[36m←/→/↑/↓\033[0m move  ");
+        printf("\033[36mPgUp/PgDn\033[0m page  ");
+        printf("\033[36mEnter\033[0m open  ");
+        printf("\033[36m+/-\033[0m zoom  ");
+        printf("\033[36mi\033[0m info  ");
+        printf("\033[36mp\033[0m exit");
 
         // Page indicator at bottom-right based on items per page
         gint items_per_page = layout.cols * layout.visible_rows;
@@ -1674,14 +1726,14 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         gint current_page = (app->preview_selected / items_per_page) + 1;
         if (current_page > total_pages) current_page = total_pages;
         char page_text[32];
-        g_snprintf(page_text, sizeof(page_text), "Page %d/%d", current_page, total_pages);
-        gint page_len = strlen(page_text);
+        g_snprintf(page_text, sizeof(page_text), "%d/%d", current_page, total_pages);
+        gint page_len = strlen("Page ") + strlen(page_text);
         gint start_col = app->term_width - page_len + 1;
         if (start_col < (gint)strlen(help_text) + 2) {
             start_col = strlen(help_text) + 2;
         }
         if (start_col < 1) start_col = 1;
-        printf("\033[%d;%dH%s", app->term_height, start_col, page_text);
+        printf("\033[%d;%dH\033[36mPage \033[0m%s", app->term_height, start_col, page_text);
     }
 
     fflush(stdout);
@@ -1817,11 +1869,16 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         printf("\n");
     }
 
-    // Footer/help centered on last line; keep cursor at line end
+    // Footer/help centered on last line; keep cursor at line end (color keys only)
     gint help_len = strlen(help_text);
     gint help_pad = (app->term_width > help_len) ? (app->term_width - help_len) / 2 : 0;
     for (gint i = 0; i < help_pad; i++) printf(" ");
-    printf("%s", help_text);
+    printf("\033[36m↑/↓\033[0m Move   ");
+    printf("\033[36m←\033[0m Parent   ");
+    printf("\033[36m→/Enter\033[0m Open   ");
+    printf("\033[36mTAB\033[0m Toggle   ");
+    printf("\033[36mCtrl+H\033[0m Hidden   ");
+    printf("\033[36mESC\033[0m Exit");
 
     fflush(stdout);
 
