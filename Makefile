@@ -7,11 +7,11 @@ DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
   PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
-  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) -lpthread
-  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0)
+  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gio-2.0) -lpthread
+  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gio-2.0)
 else
-  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) -lpthread
-  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0)
+  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) $(shell pkg-config --libs gio-2.0) -lpthread
+  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0) $(shell pkg-config --cflags gio-2.0)
 endif
 SRCDIR = src
 OBJDIR = obj

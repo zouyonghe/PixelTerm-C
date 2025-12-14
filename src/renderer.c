@@ -1,6 +1,29 @@
 #include "renderer.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gio/gio.h>
 #include <sys/ioctl.h>
+
+// Load pixbuf using a GInputStream to avoid path-length limits in gdk_pixbuf_new_from_file
+static GdkPixbuf* renderer_load_pixbuf_from_stream(const char *filepath, GError **error) {
+    if (!filepath) {
+        return NULL;
+    }
+
+    GFile *file = g_file_new_for_path(filepath);
+    if (!file) {
+        return NULL;
+    }
+
+    GFileInputStream *stream = g_file_read(file, NULL, error);
+    g_object_unref(file);
+    if (!stream) {
+        return NULL;
+    }
+
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(G_INPUT_STREAM(stream), NULL, error);
+    g_object_unref(stream);
+    return pixbuf;
+}
 
 // Create a new renderer
 ImageRenderer* renderer_create(void) {
@@ -128,11 +151,13 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
         return g_string_new_len(cached->str, cached->len);
     }
 
-    // Load image using GdkPixbuf
+    // Load image using stream-based loader to support very long paths
     GError *error = NULL;
-    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(filepath, &error);
+    GdkPixbuf *pixbuf = renderer_load_pixbuf_from_stream(filepath, &error);
     if (!pixbuf) {
-        g_error_free(error);
+        if (error) {
+            g_error_free(error);
+        }
         return NULL;
     }
 
@@ -357,9 +382,11 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
     }
 
     GError *error = NULL;
-    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(filepath, &error);
+    GdkPixbuf *pixbuf = renderer_load_pixbuf_from_stream(filepath, &error);
     if (!pixbuf) {
-        g_error_free(error);
+        if (error) {
+            g_error_free(error);
+        }
         return ERROR_INVALID_IMAGE;
     }
 
