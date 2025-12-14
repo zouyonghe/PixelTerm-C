@@ -1,5 +1,6 @@
 # Changelog
 
+- v1.0.18: Add wrap-around navigation in file manager (up from top jumps to bottom, down from bottom jumps to top), fix preview zoom jumping issues by using floating-point precision and proper rounding, improve terminal geometry fallback and Konsole handling, clamp terminal cell aspect ratio to sane range, and prefer local chafa at runtime.
 - v1.0.16: File manager now sorts entries in AaBb order (uppercase before lowercase within each letter) and skips `$…` system items, matching `ls` ordering while keeping directories grouped ahead of files.
 - v1.0.15: Fix image loading for extremely long file paths by streaming via GIO instead of direct file opens, resolving “Filename too long” errors on deep/UTF-8 paths.
 - v1.0.14: File manager header now truncates and centers long/UTF-8 paths correctly, and long file/folder names use smarter centering-friendly truncation.
