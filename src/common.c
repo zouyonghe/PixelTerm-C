@@ -1,5 +1,6 @@
 #include "common.h"
 #include <sys/ioctl.h>
+#include <fcntl.h>
 
 // Check if a file is an image based on its extension
 gboolean is_image_file(const char *filename) {
@@ -118,21 +119,78 @@ void get_terminal_size_pixels(gint *width, gint *height, gint *pixel_width, gint
         return;
     }
 
+    // Start with safe defaults
+    *width = 80;
+    *height = 24;
+    if (pixel_width) *pixel_width = -1;
+    if (pixel_height) *pixel_height = -1;
+
+    // Upper bounds to filter out clearly bogus ioctl responses
+    const gint pixel_extent_max = 8192 * 3;
+    const gint cell_extent_px_max = 8192;
+
     struct winsize ws;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
-        *width = ws.ws_col > 0 ? ws.ws_col : 80;
-        *height = ws.ws_row > 0 ? ws.ws_row : 24;
-        
-        if (pixel_width && pixel_height) {
-            *pixel_width = ws.ws_xpixel > 0 ? ws.ws_xpixel : -1;
-            *pixel_height = ws.ws_ypixel > 0 ? ws.ws_ypixel : -1;
+    gboolean have_winsz = FALSE;
+
+    // Try stdout, then stderr, then stdin — mirrors chafa's order
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0
+        || ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0
+        || ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) {
+        have_winsz = TRUE;
+    }
+
+    // Fall back to the controlling TTY if all of the above failed (e.g. in pipes)
+    if (!have_winsz) {
+        const char *term_path = ctermid(NULL);
+        if (term_path) {
+            int fd = open(term_path, O_RDONLY);
+            if (fd >= 0) {
+                if (ioctl(fd, TIOCGWINSZ, &ws) == 0) {
+                    have_winsz = TRUE;
+                }
+                close(fd);
+            }
         }
-    } else {
-        *width = 80;
-        *height = 24;
+    }
+
+    if (have_winsz) {
+        if (ws.ws_col > 0) *width = ws.ws_col;
+        if (ws.ws_row > 0) *height = ws.ws_row;
+
         if (pixel_width && pixel_height) {
-            *pixel_width = -1;
-            *pixel_height = -1;
+            gint xpx = ws.ws_xpixel;
+            gint ypx = ws.ws_ypixel;
+
+            // Sanity-check pixel values just like chafa does
+            if (xpx > pixel_extent_max || ypx > pixel_extent_max
+                || xpx <= 0 || ypx <= 0) {
+                xpx = -1;
+                ypx = -1;
+            }
+
+            *pixel_width = xpx;
+            *pixel_height = ypx;
+        }
+    }
+}
+
+// Derive terminal cell geometry; falls back to 10x20 when pixel metrics are unavailable
+void get_terminal_cell_geometry(gint *cell_width, gint *cell_height) {
+    if (cell_width) *cell_width = 10;
+    if (cell_height) *cell_height = 20;
+
+    gint width = 0, height = 0, pixel_width = -1, pixel_height = -1;
+    const gint cell_extent_px_max = 8192;
+
+    get_terminal_size_pixels(&width, &height, &pixel_width, &pixel_height);
+
+    if (pixel_width > 0 && pixel_height > 0 && width > 0 && height > 0) {
+        gint cw = pixel_width / width;
+        gint ch = pixel_height / height;
+
+        if (cw > 0 && ch > 0 && cw < cell_extent_px_max && ch < cell_extent_px_max) {
+            if (cell_width) *cell_width = cw;
+            if (cell_height) *cell_height = ch;
         }
     }
 }
@@ -140,7 +198,9 @@ void get_terminal_size_pixels(gint *width, gint *height, gint *pixel_width, gint
 // Calculate terminal cell aspect ratio from pixel dimensions
 gdouble get_terminal_cell_aspect_ratio(void) {
     gint width, height, pixel_width, pixel_height;
-    const gdouble fallback = 0.5; // Default: width is half the height
+    const gchar *konsole_ver = g_getenv("KONSOLE_VERSION");
+    const gboolean is_konsole = (konsole_ver && *konsole_ver);
+    const gdouble fallback = is_konsole ? 0.55 : 0.5; // Konsole tends to need a slightly wider glyph
 
     get_terminal_size_pixels(&width, &height, &pixel_width, &pixel_height);
     
@@ -156,6 +216,10 @@ gdouble get_terminal_cell_aspect_ratio(void) {
 
             // Only accept reasonable ratios; otherwise fall back
             if (ratio > 0.25 && ratio < 4.0) {
+                // Konsole sometimes reports a noticeably narrow ratio; gently widen it
+                if (is_konsole && ratio < 0.6) {
+                    return fallback;
+                }
                 return ratio;
             }
         }

@@ -268,6 +268,12 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
 
     // Update canvas geometry
     chafa_canvas_config_set_geometry(renderer->canvas_config, output_width, output_height);
+    // Set cell geometry so chafa can respect real pixel sizes when available
+    gint cell_w = 0, cell_h = 0;
+    get_terminal_cell_geometry(&cell_w, &cell_h);
+    if (cell_w > 0 && cell_h > 0) {
+        chafa_canvas_config_set_cell_geometry(renderer->canvas_config, cell_w, cell_h);
+    }
     
     // Re-create canvas with new configuration
     if (renderer->canvas) {

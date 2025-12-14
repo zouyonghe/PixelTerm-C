@@ -78,6 +78,7 @@ void gstring_destroy(gpointer data);
 // Terminal utilities
 void get_terminal_size(gint *width, gint *height);
 void get_terminal_size_pixels(gint *width, gint *height, gint *pixel_width, gint *pixel_height);
+void get_terminal_cell_geometry(gint *cell_width, gint *cell_height);
 gdouble get_terminal_cell_aspect_ratio(void);
 
 // Error handling utilities
