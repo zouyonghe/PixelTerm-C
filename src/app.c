@@ -1611,7 +1611,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     if (app->preloader && app->preload_enabled) {
         preloader_clear_queue(app->preloader);
     }
-    return app_render_preview_grid(app);
+    return ERROR_NONE;
 }
 
 // Exit preview grid mode

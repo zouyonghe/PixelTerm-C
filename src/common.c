@@ -122,6 +122,9 @@ const gchar* error_code_to_string(ErrorCode error) {
         case ERROR_CHAFA_INIT: return "Chafa initialization failed";
         case ERROR_THREAD_CREATE: return "Thread creation failed";
         case ERROR_TERMINAL_SIZE: return "Terminal size error";
+        case ERROR_HELP_EXIT: return "Help requested";
+        case ERROR_VERSION_EXIT: return "Version requested";
+        case ERROR_INVALID_ARGS: return "Invalid arguments";
         default: return "Unknown error";
     }
 }

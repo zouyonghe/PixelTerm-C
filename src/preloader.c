@@ -709,13 +709,20 @@ gpointer preloader_worker_thread(gpointer data) {
     while (TRUE) {
         g_mutex_lock(&preloader->mutex);
 
-        // Wait for work or until re-enabled; avoid busy looping when disabled
-        while (preloader->status == PRELOADER_ACTIVE &&
-               (g_queue_is_empty(preloader->task_queue) || !preloader->enabled)) {
-            g_cond_wait(&preloader->condition, &preloader->mutex);
+        // Wait when paused/disabled or when there is no work; wake on resume/enable/stop
+        while (TRUE) {
+            if (preloader->status == PRELOADER_STOPPING) {
+                break;
+            }
+            if (preloader->status == PRELOADER_PAUSED ||
+                !preloader->enabled ||
+                g_queue_is_empty(preloader->task_queue)) {
+                g_cond_wait(&preloader->condition, &preloader->mutex);
+                continue;
+            }
+            break;
         }
 
-        // Check if we should exit
         if (preloader->status == PRELOADER_STOPPING) {
             g_mutex_unlock(&preloader->mutex);
             break;
@@ -723,7 +730,9 @@ gpointer preloader_worker_thread(gpointer data) {
 
         // Get next task
         PreloadTask *task = NULL;
-        if (!g_queue_is_empty(preloader->task_queue) && preloader->enabled) {
+        if (preloader->status == PRELOADER_ACTIVE &&
+            preloader->enabled &&
+            !g_queue_is_empty(preloader->task_queue)) {
             task = (PreloadTask*)g_queue_pop_head(preloader->task_queue);
             preloader->active_tasks++;
         }

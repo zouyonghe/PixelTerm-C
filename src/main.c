@@ -153,7 +153,9 @@ static ErrorCode run_application(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    ErrorCode error = input_handler_initialize(input_handler);
+    ErrorCode error = ERROR_NONE;
+
+    error = input_handler_initialize(input_handler);
     if (error != ERROR_NONE) {
         input_handler_destroy(input_handler);
         return error;
@@ -288,7 +290,9 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app_exit_preview(app, TRUE);
                             app_refresh_display(app);
                         } else if (!app->file_manager_mode) {
-                            app_enter_preview(app);
+                            if (app_enter_preview(app) == ERROR_NONE) {
+                                app_render_preview_grid(app);
+                            }
                         }
                         break;
                     case (KeyCode)'+':
@@ -438,7 +442,7 @@ static ErrorCode run_application(PixelTermApp *app) {
     // Additional terminal reset
     system("stty sane 2>/dev/null || true");
 
-    return error == ERROR_NONE ? 0 : 1;
+    return error;
 }
 
 int main(int argc, char *argv[]) {
