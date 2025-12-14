@@ -130,7 +130,7 @@ File Manager:
 - q returns to previous view (image view exits app); TAB toggles file manager; ESC quits the program.
 
 ## Changelog (vs. v1.0.12)
-- v1.0.13: Preview grid enters with a single render (less flicker), preloader respects pause/disable without doing extra work, and CLI now reports clearer messages for help/version/argument errors.
+- v1.0.13: Preview grid UX polish (single render on entry, predictable zoom with min 2 columns, better paging/wrap), preloader now truly pauses/disables without burning CPU and fixes cache ownership, and CLI error messages are clearer for help/version/argument cases.
 
 ## 📄 License
 
