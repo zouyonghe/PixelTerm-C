@@ -105,7 +105,14 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 # 禁用预加载
 ./pixelterm --no-preload /path/to/images
+
+# 直接进入预览网格（打开含图片的目录默认如此）
+./pixelterm /path/to/images   # 单图模式下按 Enter 或 p 返回网格
 ```
+
+预览网格基础用法：
+- 打开含图片的目录会默认进入预览网格；单图模式下按 `Enter` 或 `p` 进入网格。
+- 使用方向键/PgUp/PgDn 移动，`+`/`-` 调节缩略图大小（至少 2 列），`Enter` 打开选中图片。
 
 ## 🎮 控制
 

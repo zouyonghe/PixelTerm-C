@@ -105,7 +105,14 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 # Disable preloading
 ./pixelterm --no-preload /path/to/images
+
+# Start directly in preview grid (default when opening a directory with images)
+./pixelterm /path/to/images   # then use Enter or p to leave/return to grid
 ```
+
+Preview grid basics:
+- When opening a directory with images, the app starts in the preview grid by default; from single-image view press `Enter` or `p` to enter the grid.
+- Use arrows/PgUp/PgDn to move, `+`/`-` to change thumbnail size (at least 2 columns), and `Enter` to open the selected image.
 
 ## 🎮 Controls
 
