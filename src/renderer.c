@@ -248,14 +248,8 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
     gint output_height = renderer->config.max_height;
 
     if (renderer->config.preserve_aspect_ratio) {
-        // Calculate font aspect ratio from terminal info if available
-        gdouble font_ratio = 0.5; // Default fallback
-        
-        // Try to get better font ratio from terminal
-        if (renderer->term_info) {
-            // Use a reasonable default for most terminals
-            font_ratio = 0.5;
-        }
+        // Calculate font aspect ratio dynamically based on terminal pixel dimensions
+        gdouble font_ratio = get_terminal_cell_aspect_ratio();
         
         // Calculate geometry that fits within bounds
         chafa_calc_canvas_geometry(width, height, &output_width, &output_height, 

@@ -112,6 +112,52 @@ void get_terminal_size(gint *width, gint *height) {
     }
 }
 
+// Enhanced terminal size detection including pixel dimensions
+void get_terminal_size_pixels(gint *width, gint *height, gint *pixel_width, gint *pixel_height) {
+    if (!width || !height) {
+        return;
+    }
+
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
+        *width = ws.ws_col > 0 ? ws.ws_col : 80;
+        *height = ws.ws_row > 0 ? ws.ws_row : 24;
+        
+        if (pixel_width && pixel_height) {
+            *pixel_width = ws.ws_xpixel > 0 ? ws.ws_xpixel : -1;
+            *pixel_height = ws.ws_ypixel > 0 ? ws.ws_ypixel : -1;
+        }
+    } else {
+        *width = 80;
+        *height = 24;
+        if (pixel_width && pixel_height) {
+            *pixel_width = -1;
+            *pixel_height = -1;
+        }
+    }
+}
+
+// Calculate terminal cell aspect ratio from pixel dimensions
+gdouble get_terminal_cell_aspect_ratio(void) {
+    gint width, height, pixel_width, pixel_height;
+    
+    get_terminal_size_pixels(&width, &height, &pixel_width, &pixel_height);
+    
+    // If pixel dimensions are available and valid, calculate aspect ratio
+    if (pixel_width > 0 && pixel_height > 0 && width > 0 && height > 0) {
+        gdouble pixel_width_per_cell = (gdouble)pixel_width / width;
+        gdouble pixel_height_per_cell = (gdouble)pixel_height / height;
+        
+        if (pixel_height_per_cell > 0) {
+            return pixel_width_per_cell / pixel_height_per_cell;
+        }
+    }
+    
+    // Fallback to default aspect ratio
+    // Most terminals have character cells that are taller than they are wide
+    return 0.5;  // Default: width is half the height
+}
+
 // Error handling utilities
 const gchar* error_code_to_string(ErrorCode error) {
     switch (error) {
