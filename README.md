@@ -129,6 +129,9 @@ File Manager:
 - Any letter key (a–z/A–Z) jumps to the next entry starting with that letter.
 - q returns to previous view (image view exits app); TAB toggles file manager; ESC quits the program.
 
+## Changelog (highlights)
+- v1.0.13: Smoother preview entry (single render when opening grid), preloader honors pause/disable state to avoid extra work, clearer CLI error messages for help/version/arg errors.
+
 ## 📄 License
 
 LGPL-3.0 or later - See LICENSE file for details
