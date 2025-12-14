@@ -2112,7 +2112,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gboolean is_dir = FALSE;
         gchar *display_name = app_file_manager_display_name(app, entry, &is_dir);
         gchar *print_name = sanitize_for_terminal(display_name);
-        gint name_len = strlen(print_name);
+        gint name_len = utf8_display_width(print_name);  // Use display width instead of byte length
         gboolean is_image = (!is_dir && is_image_file(entry));
         // Calculate maximum display width considering terminal boundaries
         // Use a more conservative width to ensure proper display
@@ -2126,19 +2126,70 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
                 gint start_len = max_display / 2;
                 gint end_len = max_display - start_len;
                 
-                // Adjust start_len to avoid cutting UTF-8 characters
-                while (start_len > 0 && (print_name[start_len] & 0xC0) == 0x80) {
-                    start_len--;
+                // For UTF-8 strings, we need to count characters, not bytes
+                gint char_count = 0;
+                const gchar *p = print_name;
+                while (*p) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        // Invalid sequence: treat current byte as a single character
+                        char_count++;
+                        p++;
+                    } else {
+                        char_count++;
+                        p = g_utf8_next_char(p);
+                    }
                 }
                 
-                // Find proper start position for end part
-                gint end_start = name_len - end_len;
-                while (end_start < name_len && (print_name[end_start] & 0xC0) == 0x80) {
-                    end_start++;
+                // Calculate character positions for truncation
+                gint start_chars = start_len;
+                gint end_chars = end_len;
+                
+                // Find byte positions for character positions
+                gint start_byte = 0;
+                gint current_char = 0;
+                p = print_name;
+                while (*p && current_char < start_chars) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        p++;
+                    } else {
+                        p = g_utf8_next_char(p);
+                    }
+                    current_char++;
+                }
+                start_byte = p - print_name;
+                
+                // Find end position
+                current_char = 0;
+                const gchar *end_p = print_name;
+                while (*end_p) {
+                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        end_p++;
+                    } else {
+                        end_p = g_utf8_next_char(end_p);
+                    }
+                    current_char++;
                 }
                 
-                gchar *start_part = g_strndup(print_name, start_len);
-                gchar *end_part = g_strdup(print_name + end_start);
+                // Move backwards from end to find end_chars characters
+                gint end_byte = current_char;
+                current_char = 0;
+                end_p = print_name;
+                while (*end_p && current_char < char_count - end_chars) {
+                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        end_p++;
+                    } else {
+                        end_p = g_utf8_next_char(end_p);
+                    }
+                    current_char++;
+                }
+                end_byte = end_p - print_name;
+                
+                gchar *start_part = g_strndup(print_name, start_byte);
+                gchar *end_part = g_strdup(print_name + end_byte);
                 
                 g_free(print_name);
                 print_name = g_strdup_printf("%s...%s", start_part, end_part);
@@ -2147,16 +2198,34 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             } else {
                 // Fallback to simple truncation for very short display areas
                 gint truncate_len = max_display;
-                // Adjust to avoid cutting UTF-8 characters
-                while (truncate_len > 0 && (print_name[truncate_len] & 0xC0) == 0x80) {
-                    truncate_len--;
+                // For UTF-8, we need to truncate by character display width, not bytes
+                gint display_width = 0;
+                const gchar *p = print_name;
+                const gchar *truncate_pos = print_name;
+                
+                while (*p && display_width < truncate_len) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        display_width++;
+                        truncate_pos = p + 1;
+                        p++;
+                    } else {
+                        gint char_width = g_unichar_iswide(ch) ? 2 : 1;
+                        if (display_width + char_width > truncate_len) {
+                            break;
+                        }
+                        display_width += char_width;
+                        truncate_pos = g_utf8_next_char(p);
+                        p = truncate_pos;
+                    }
                 }
-                gchar *shortened = g_strndup(print_name, MAX(0, truncate_len));
+                
+                gchar *shortened = g_strndup(print_name, truncate_pos - print_name);
                 g_free(print_name);
                 print_name = g_strdup_printf("%s...", shortened);
                 g_free(shortened);
             }
-            name_len = strlen(print_name);
+            name_len = utf8_display_width(print_name);  // Recalculate display width
         }
 
         gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
