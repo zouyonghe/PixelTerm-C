@@ -1064,7 +1064,8 @@ ErrorCode app_file_manager_up(PixelTermApp *app) {
     if (app->selected_entry >= cols) {
         app->selected_entry -= cols;
     } else {
-        app->selected_entry = 0;
+        // Jump to last entry when at the top and pressing up
+        app->selected_entry = total_entries - 1;
     }
     app_file_manager_adjust_scroll(app, cols, visible_rows);
 
@@ -1088,7 +1089,8 @@ ErrorCode app_file_manager_down(PixelTermApp *app) {
     if (target < total_entries) {
         app->selected_entry = target;
     } else {
-        app->selected_entry = total_entries - 1;
+        // Jump to first entry when at the bottom and pressing down
+        app->selected_entry = 0;
     }
     app_file_manager_adjust_scroll(app, cols, visible_rows);
 
@@ -1663,27 +1665,36 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
 
     gint usable_width = app->term_width > 0 ? app->term_width : 80;
 
-    // Initialize if needed (default to ~30 chars/col)
+    // Initialize if needed (default to 4 columns)
     if (app->preview_zoom <= 0) {
-        app->preview_zoom = 30;
+        app->preview_zoom = usable_width / 4; // Start with 4 columns
     }
 
-    // Calculate current implied columns
-    gint current_cols = usable_width / app->preview_zoom;
-    if (current_cols < 1) current_cols = 1;
+    // Calculate current implied columns with proper rounding
+    gint current_cols = (gint)(usable_width / app->preview_zoom + 0.5f);
+    if (current_cols < 2) current_cols = 2;
+    if (current_cols > 12) current_cols = 12;
 
     // Apply delta to columns.
     // +delta means Zoom In -> Larger Images -> Fewer Columns
     // -delta means Zoom Out -> Smaller Images -> More Columns
     gint new_cols = current_cols - delta;
 
+    // Apply limits
     if (new_cols < 2) new_cols = 2;   // Minimum 2 columns
     if (new_cols > 12) new_cols = 12; // Maximum 12 columns
 
+    // Check if we're already at limits and trying to go further
+    if (new_cols == current_cols) {
+        // Already at zoom limit, don't refresh
+        return ERROR_NONE;
+    }
+
     // Update target width based on new column count
-    app->preview_zoom = usable_width / new_cols;
+    app->preview_zoom = (gdouble)usable_width / new_cols;
     if (app->preview_zoom < 1) app->preview_zoom = 1;
 
+    // Only refresh if zoom actually changed
     return app_render_preview_grid(app);
 }
 
