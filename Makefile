@@ -3,6 +3,8 @@ ARCH ?= amd64
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
 CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
+# Prefer the locally installed Chafa when both system and /usr/local versions exist
+LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
@@ -34,7 +36,7 @@ $(BINDIR):
 
 # Build the main executable
 $(TARGET): $(OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Compile source files
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
