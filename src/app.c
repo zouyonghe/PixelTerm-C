@@ -1432,7 +1432,8 @@ static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *la
     if (visible_rows < 1) visible_rows = 1;
 
     // Clamp scroll to valid range
-    gint max_offset = MAX(0, total_rows - visible_rows);
+    // Allow scrolling until the last row is at the top (pagination style)
+    gint max_offset = MAX(0, total_rows - 1);
     if (app->preview_scroll > max_offset) {
         app->preview_scroll = max_offset;
     }
@@ -1611,7 +1612,7 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
         row = rows - 1;
         app->preview_scroll = MAX(rows - layout.visible_rows, 0);
     } else if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
-        gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - layout.visible_rows, 0));
+        gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
         app->preview_scroll = new_scroll;
         row = new_scroll; // first row of next page, keep column
     } else if (delta_row < 0 && row < app->preview_scroll) {
@@ -1805,6 +1806,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         for (gint col = 0; col < layout.cols; col++) {
             gint idx = row * layout.cols + col;
             if (idx >= app->total_images || !cursor) {
+                // Skip remaining columns in this row if we've run out of images
                 break;
             }
 

@@ -702,7 +702,15 @@ gpointer preloader_worker_thread(gpointer data) {
         .work_factor = 1
     };
 
-    renderer_initialize(renderer, &config);
+    ErrorCode init_result = renderer_initialize(renderer, &config);
+    if (init_result != ERROR_NONE) {
+        // Failed to initialize renderer, set status to failed and exit thread
+        g_mutex_lock(&preloader->mutex);
+        preloader->status = PRELOADER_STOPPING;
+        g_mutex_unlock(&preloader->mutex);
+        renderer_destroy(renderer);
+        return NULL;
+    }
     gint current_max_width = config.max_width;
     gint current_max_height = config.max_height;
 

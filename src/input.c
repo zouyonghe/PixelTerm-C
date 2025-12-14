@@ -172,17 +172,21 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (c == '\033') {
         // Check if it's an escape sequence or just ESC key
         if (input_has_pending_input(handler)) {
-            // Read next character
-            gint next = input_read_char(handler);
+            // Read next character with short timeout
+            gint next = input_read_char_with_timeout(handler, 10);
             
             if (next == '[') {
                 // ANSI escape sequence
                 gint seq[3] = {0};
                 gint i = 0;
                 
-                // Read the sequence
-                while (i < 3 && input_has_pending_input(handler)) {
-                    seq[i++] = input_read_char(handler);
+                // Read the sequence with timeout for each character
+                while (i < 3) {
+                    if (input_has_pending_input(handler)) {
+                        seq[i++] = input_read_char_with_timeout(handler, 10);
+                    } else {
+                        break; // No more data available
+                    }
                 }
 
                 // Parse specific sequences
@@ -293,6 +297,34 @@ gchar input_read_char(InputHandler *handler) {
     gchar c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
     return (n == 1) ? c : 0;
+}
+
+// Read a single character with timeout (in milliseconds)
+gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
+    if (!handler) {
+        return 0;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    
+    int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+    if (result <= 0) {
+        return 0; // Timeout or error
+    }
+    
+    if (FD_ISSET(STDIN_FILENO, &fds)) {
+        gchar c;
+        ssize_t n = read(STDIN_FILENO, &c, 1);
+        return (n == 1) ? c : 0;
+    }
+    
+    return 0;
 }
 
 // Update terminal size

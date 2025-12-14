@@ -87,6 +87,7 @@ ErrorCode input_flush_buffer(InputHandler *handler);
 gint input_read_key(InputHandler *handler);
 gboolean input_is_key_pressed(InputHandler *handler, KeyCode key);
 gchar input_read_char(InputHandler *handler);
+gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
 
 // Terminal size handling
 ErrorCode input_update_terminal_size(InputHandler *handler);

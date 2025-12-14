@@ -405,9 +405,6 @@ static ErrorCode run_application(PixelTermApp *app) {
     
     input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
-    
-    // Additional terminal reset
-    system("stty sane 2>/dev/null || true");
 
     return error;
 }

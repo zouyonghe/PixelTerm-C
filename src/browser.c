@@ -68,7 +68,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         
         // Check if it's a regular file and an image
         if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && 
-            is_image_file(filename)) {
+            is_image_file(full_path)) {
             all_files = g_list_prepend(all_files, full_path);
         } else {
             g_free(full_path);
