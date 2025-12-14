@@ -124,7 +124,8 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
     g_mutex_unlock(&renderer->cache_mutex);
     
     if (cached) {
-        return cached;
+        // Return a copy so callers can own/free it without affecting cache
+        return g_string_new_len(cached->str, cached->len);
     }
 
     // Load image using GdkPixbuf

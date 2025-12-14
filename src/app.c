@@ -1788,13 +1788,9 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             // Ensure attributes reset after each cell
             printf("\033[0m");
 
-            // Free only if this buffer is not owned by the renderer cache
-            if (rendered_from_preload) {
+            // Free when we own the buffer (renderer output or preloader copy).
+            if (!rendered_from_renderer_cache) {
                 g_string_free(rendered, TRUE);
-            } else {
-                if (!rendered_from_renderer_cache) {
-                    g_string_free(rendered, TRUE);
-                }
             }
         }
     }
