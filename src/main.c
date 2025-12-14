@@ -268,10 +268,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case (KeyCode)'i':
-                        if (app->preview_mode) {
-                            app_preview_print_info(app);
-                        } else {
-                            app_display_image_info(app);
+                        if (!app->preview_mode) {
+                            if (g_app->info_visible) {
+                                g_app->info_visible = FALSE;
+                                app_render_current_image(app);
+                            } else {
+                                app_display_image_info(app);
+                            }
                         }
                         break;
                     case (KeyCode)'r':

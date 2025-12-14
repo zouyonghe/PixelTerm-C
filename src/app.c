@@ -36,7 +36,7 @@ PixelTermApp* app_create(void) {
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
     app->preview_mode = FALSE;
-    app->preview_zoom = 2; // legacy default
+    app->preview_zoom = 0; // 0 indicates uninitialized target cell width
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -1239,96 +1239,53 @@ typedef struct {
     gint visible_rows;
 } PreviewLayout;
 
-// Calculate preview grid layout trying to balance clarity and density
+// Calculate preview grid layout using preview_zoom as target cell width
 static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, 3, 1};
     if (!app || app->total_images <= 0) {
         return layout;
     }
 
-    // Base minimums to keep previews readable
-    const gint base_min_cell_width = 24;
-    const gint base_min_cell_height = 12;
-    const gint step_w = 4;
-    const gint step_h = 3;
-    const gint min_allowed_w = 12;
-    const gint min_allowed_h = 8;
-    const gint max_zoom = 5;
-    const gint min_zoom = -3;
-
-    if (app->preview_zoom > max_zoom) app->preview_zoom = max_zoom;
-    if (app->preview_zoom < min_zoom) app->preview_zoom = min_zoom;
-
-    gint min_cell_width = base_min_cell_width + app->preview_zoom * step_w;
-    gint min_cell_height = base_min_cell_height + app->preview_zoom * step_h;
-    if (min_cell_width < min_allowed_w) min_cell_width = min_allowed_w;
-    if (min_cell_height < min_allowed_h) min_cell_height = min_allowed_h;
-    const gint header_lines = 3; // title + help + spacing
-
+    const gint header_lines = 3;
     gint usable_width = app->term_width > 0 ? app->term_width : 80;
     gint usable_height = app->term_height > header_lines ? app->term_height - header_lines : 6;
-    if (usable_height < min_cell_height) {
-        usable_height = min_cell_height;
+
+    // If preview_zoom (target cell width) is uninitialized, default to ~30 chars/col
+    if (app->preview_zoom <= 0) {
+        app->preview_zoom = 30;
     }
 
-    gint max_cols = usable_width / min_cell_width;
-    if (max_cols < 1) max_cols = 1;
-    if (max_cols > app->total_images) max_cols = app->total_images;
+    // Calculate columns based on target width
+    gint cols = usable_width / app->preview_zoom;
 
-    gint best_cols = max_cols;
-    gint best_rows = (app->total_images + best_cols - 1) / best_cols;
-    gint best_cell_height = usable_height / best_rows;
-    gboolean found_suitable = FALSE;
+    // Enforce minimum of 2 columns as requested
+    if (cols < 2) cols = 2;
 
-    // Preferred default: aim for 3 columns at default zoom if size allows
-    if (app->preview_zoom == 0 && max_cols >= 1) {
-        gint preferred_cols = MIN(max_cols, 3);
-        gint rows = (app->total_images + preferred_cols - 1) / preferred_cols;
-        gint cell_w = usable_width / preferred_cols;
-        gint cell_h = usable_height / rows;
-        if (cell_w >= min_cell_width && cell_h >= min_cell_height) {
-            best_cols = preferred_cols;
-            best_rows = rows;
-            best_cell_height = cell_h;
-            found_suitable = TRUE;
-        }
+    // Enforce reasonable minimum width per column (e.g. 4 chars) to prevent garbage
+    if (usable_width / cols < 4) {
+        cols = usable_width / 4;
+        if (cols < 2) cols = 2; // Priority to min 2 columns if width allows
     }
 
-    // If not decided yet, prefer the widest grid that meets height constraints
-    if (!found_suitable) {
-        for (gint cols = max_cols; cols >= 1; cols--) {
-            gint rows = (app->total_images + cols - 1) / cols;
-            gint cell_h = usable_height / rows;
-            if (cell_h >= min_cell_height) {
-                best_cols = cols;
-                best_rows = rows;
-                best_cell_height = cell_h;
-                found_suitable = TRUE;
-                break;
-            }
-        }
-    }
+    gint cell_width = usable_width / cols;
 
-    if (!found_suitable) {
-        best_rows = (app->total_images + best_cols - 1) / best_cols;
-        best_cell_height = usable_height / best_rows;
-        if (best_cell_height < min_cell_height) best_cell_height = min_cell_height;
-        if (best_cell_height > usable_height) best_cell_height = usable_height;
-    }
+    // Determine cell height based on aspect ratio (approx 2:1 char aspect)
+    // We add 1 to compensate for the border padding (2 chars) which affects height proportionately more than width
+    // Target: (w-2)/(h-2) = 2  =>  w-2 = 2h-4  =>  2h = w+2  =>  h = w/2 + 1
+    gint cell_height = cell_width / 2 + 1;
+    if (cell_height < 4) cell_height = 4;
 
-    gint cell_width = usable_width / best_cols;
-    if (cell_width < min_cell_width) {
-        cell_width = min_cell_width;
-    }
-    if (best_cell_height < 1) best_cell_height = 1;
+    // Calculate rows
+    gint rows = (app->total_images + cols - 1) / cols;
+    if (rows < 1) rows = 1;
 
-    gint visible_rows = usable_height / best_cell_height;
+    gint visible_rows = usable_height / cell_height;
     if (visible_rows < 1) visible_rows = 1;
 
-    layout.cols = best_cols;
-    layout.rows = best_rows;
+    layout.cols = cols;
+    layout.rows = rows;
     layout.cell_width = cell_width;
-    layout.cell_height = best_cell_height;
+    layout.cell_height = cell_height;
     layout.header_lines = header_lines;
     layout.visible_rows = visible_rows;
     return layout;
@@ -1521,15 +1478,35 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     return ERROR_NONE;
 }
 
-// Change preview zoom level and rerender
+// Change preview zoom (target cell width) by stepping column count
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
     if (!app || !app->preview_mode) {
         return ERROR_MEMORY_ALLOC;
     }
-    gint new_zoom = app->preview_zoom + delta;
-    if (new_zoom > 5) new_zoom = 5;
-    if (new_zoom < -3) new_zoom = -3;
-    app->preview_zoom = new_zoom;
+
+    gint usable_width = app->term_width > 0 ? app->term_width : 80;
+
+    // Initialize if needed (default to ~30 chars/col)
+    if (app->preview_zoom <= 0) {
+        app->preview_zoom = 30;
+    }
+
+    // Calculate current implied columns
+    gint current_cols = usable_width / app->preview_zoom;
+    if (current_cols < 1) current_cols = 1;
+
+    // Apply delta to columns.
+    // +delta means Zoom In -> Larger Images -> Fewer Columns
+    // -delta means Zoom Out -> Smaller Images -> More Columns
+    gint new_cols = current_cols - delta;
+
+    if (new_cols < 2) new_cols = 2;   // Minimum 2 columns
+    if (new_cols > 12) new_cols = 12; // Maximum 12 columns
+
+    // Update target width based on new column count
+    app->preview_zoom = usable_width / new_cols;
+    if (app->preview_zoom < 1) app->preview_zoom = 1;
+
     return app_render_preview_grid(app);
 }
 
@@ -1704,6 +1681,36 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             if (cached_entry != rendered) {
                 g_string_free(rendered, TRUE);
             }
+        }
+    }
+
+    // Centered filename on the second-to-last line
+    if (app->term_height >= 2) {
+        const gchar *sel_path = (const gchar*)g_list_nth_data(app->image_files, app->preview_selected);
+        if (sel_path) {
+            gchar *base = g_path_get_basename(sel_path);
+            gchar *safe = sanitize_for_terminal(base);
+            gint row = app->term_height - 1;
+            gint name_len = strlen(safe);
+            if (name_len > app->term_width) {
+                if (app->term_width > 3) {
+                    safe[app->term_width - 3] = '.';
+                    safe[app->term_width - 2] = '.';
+                    safe[app->term_width - 1] = '\0';
+                    name_len = app->term_width;
+                } else {
+                    safe[0] = '\0';
+                    name_len = 0;
+                }
+            }
+            gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+            printf("\033[%d;1H", row);
+            for (gint i = 0; i < app->term_width; i++) putchar(' ');
+            if (name_len > 0) {
+                printf("\033[%d;%dH\033[34m%s\033[0m", row, pad + 1, safe);
+            }
+            g_free(safe);
+            g_free(base);
         }
     }
 
