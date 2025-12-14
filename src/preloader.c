@@ -611,10 +611,9 @@ gpointer preloader_worker_thread(gpointer data) {
     while (TRUE) {
         g_mutex_lock(&preloader->mutex);
 
-        // Wait for work or stop signal
-        while (g_queue_is_empty(preloader->task_queue) && 
-               preloader->status == PRELOADER_ACTIVE && 
-               preloader->enabled) {
+        // Wait for work or until re-enabled; avoid busy looping when disabled
+        while (preloader->status == PRELOADER_ACTIVE &&
+               (g_queue_is_empty(preloader->task_queue) || !preloader->enabled)) {
             g_cond_wait(&preloader->condition, &preloader->mutex);
         }
 

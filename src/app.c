@@ -1,9 +1,12 @@
+#define _XOPEN_SOURCE 700
+
 #include "app.h"
 #include "browser.h"
 #include "renderer.h"
 #include "input.h"
 #include "preloader.h"
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // Create a new application instance
@@ -415,10 +418,15 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
             // Set terminal dimensions for preloader
             preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
             
-            preloader_start(app->preloader);
-            
-            // Add initial preload tasks for current directory
-            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+            ErrorCode preload_err = preloader_start(app->preloader);
+            if (preload_err == ERROR_NONE) {
+                // Add initial preload tasks for current directory
+                preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+            } else {
+                preloader_destroy(app->preloader);
+                app->preloader = NULL;
+                app->preload_enabled = FALSE;
+            }
         }
     }
 
@@ -783,10 +791,15 @@ void app_toggle_preload(PixelTermApp *app) {
                     // Set terminal dimensions for preloader
                     preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
                     
-                    preloader_start(app->preloader);
-                    
-                    // Add initial preload tasks
-                    preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+                    ErrorCode preload_err = preloader_start(app->preloader);
+                    if (preload_err == ERROR_NONE) {
+                        // Add initial preload tasks
+                        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index);
+                    } else {
+                        preloader_destroy(app->preloader);
+                        app->preloader = NULL;
+                        app->preload_enabled = FALSE;
+                    }
                 }
             } else {
                 // Update terminal dimensions before enabling
@@ -818,6 +831,33 @@ ErrorCode app_delete_current_image(PixelTermApp *app) {
     const gchar *filepath = app_get_current_filepath(app);
     if (!filepath) {
         return ERROR_FILE_NOT_FOUND;
+    }
+
+    // Safety guard: refuse to delete symlinks or files outside current directory
+    struct stat st;
+    if (lstat(filepath, &st) != 0) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+    if (S_ISLNK(st.st_mode)) {
+        return ERROR_INVALID_IMAGE;
+    }
+    gchar *canonical_file = g_canonicalize_filename(filepath, NULL);
+    gchar *canonical_dir = app->current_directory ? g_canonicalize_filename(app->current_directory, NULL)
+                                                  : g_get_current_dir();
+    gboolean allowed = FALSE;
+    if (canonical_file && canonical_dir) {
+        size_t dir_len = strlen(canonical_dir);
+        if (dir_len > 0 && canonical_file && strncmp(canonical_file, canonical_dir, dir_len) == 0) {
+            // Ensure boundary: either exact dir or subpath separator
+            if (canonical_file[dir_len] == '\0' || canonical_file[dir_len] == '/') {
+                allowed = TRUE;
+            }
+        }
+    }
+    g_free(canonical_file);
+    g_free(canonical_dir);
+    if (!allowed) {
+        return ERROR_INVALID_IMAGE;
     }
 
     // Remove file
@@ -1402,16 +1442,21 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     row += delta_row;
     col += delta_col;
 
-    if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
-        gint page_start = MIN(app->preview_scroll + layout.visible_rows, layout.rows - 1);
-        app->preview_scroll = page_start;
-        row = page_start;
-        // keep same column position when jumping pages
+    // Wrap vertically across pages
+    if (delta_row > 0 && row >= rows) {
+        row = 0;
+        app->preview_scroll = 0;
+    } else if (delta_row < 0 && row < 0) {
+        row = rows - 1;
+        app->preview_scroll = MAX(rows - layout.visible_rows, 0);
+    } else if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
+        gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - layout.visible_rows, 0));
+        app->preview_scroll = new_scroll;
+        row = new_scroll; // first row of next page, keep column
     } else if (delta_row < 0 && row < app->preview_scroll) {
-        gint page_start = MAX(app->preview_scroll - layout.visible_rows, 0);
-        app->preview_scroll = page_start;
-        row = page_start;
-        // keep same column position when jumping pages
+        gint new_scroll = MAX(app->preview_scroll - layout.visible_rows, 0);
+        app->preview_scroll = new_scroll;
+        row = MIN(new_scroll + layout.visible_rows - 1, rows - 1); // last row of prev page, keep column
     }
 
     if (row < 0) row = 0;
@@ -1501,6 +1546,29 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     printf("\033[2J\033[H\033[0m"); // Clear screen
 
+    // Renderer reused for all cells to avoid repeated init/decode overhead
+    gint content_width = layout.cell_width - 2;
+    gint content_height = layout.cell_height - 2;
+    if (content_width < 1) content_width = 1;
+    if (content_height < 1) content_height = 1;
+    RendererConfig config = {
+        .max_width = MAX(2, content_width),
+        .max_height = MAX(2, content_height),
+        .preserve_aspect_ratio = TRUE,
+        .dither = TRUE,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
+        .work_factor = 1
+    };
+    ImageRenderer *renderer = renderer_create();
+    if (!renderer) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
+        renderer_destroy(renderer);
+        return ERROR_CHAFA_INIT;
+    }
+
     // Header: title + hint + selection info
     const char *title = "Preview Grid (p to exit, Enter to open)";
     gint title_len = strlen(title);
@@ -1530,22 +1598,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
                                   layout.cell_height >= 4;
 
             // Keep content area constant so selection不改变图像可用空间
-            gint content_width = layout.cell_width - 2;
-            gint content_height = layout.cell_height - 2;
-            if (content_width < 1) content_width = 1;
-            if (content_height < 1) content_height = 1;
             gint content_x = cell_x + 1;
             gint content_y = cell_y + 1;
-
-            RendererConfig config = {
-                .max_width = MAX(2, content_width),
-                .max_height = MAX(2, content_height),
-                .preserve_aspect_ratio = TRUE,
-                .dither = TRUE,
-                .color_space = CHAFA_COLOR_SPACE_RGB,
-                .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-                .work_factor = 1
-            };
 
             // Clear cell and draw border without占用内容区域
             const char *border_style = "\033[34;1m"; // bright blue foreground
@@ -1568,18 +1622,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
                 }
             }
 
-            ImageRenderer *renderer = renderer_create();
-            if (!renderer) {
-                continue;
-            }
-            if (renderer_initialize(renderer, &config) != ERROR_NONE) {
-                renderer_destroy(renderer);
-                continue;
-            }
-
             GString *rendered = renderer_render_image_file(renderer, filepath);
             if (!rendered) {
-                renderer_destroy(renderer);
                 continue;
             }
 
@@ -1609,7 +1653,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             // Ensure attributes reset after each cell
             printf("\033[0m");
 
-            renderer_destroy(renderer);
+            // Free only if this buffer is not owned by the renderer cache
+            GString *cached_entry = renderer_cache_get(renderer, filepath);
+            if (cached_entry != rendered) {
+                g_string_free(rendered, TRUE);
+            }
         }
     }
 
@@ -1637,6 +1685,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
 
     fflush(stdout);
+    renderer_destroy(renderer);
     return ERROR_NONE;
 }
 
