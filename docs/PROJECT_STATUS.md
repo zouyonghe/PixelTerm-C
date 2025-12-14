@@ -16,7 +16,7 @@ PixelTerm-C/
 │   ├── DEVELOPMENT.md  # Development guidelines
 │   ├── ARCHITECTURE.md  # Technical architecture
 │   └── ROADMAP.md       # Development roadmap
-└── tests/              # Test files directory
+└── (tests/)            # Test files directory (not yet present)
 ```
 
 ## Documentation Summary
@@ -92,6 +92,7 @@ PixelTerm-C/
 - ✅ Architecture planned
 - ✅ Roadmap defined
 - ⏳ Core implementation pending
+- ℹ️ Test suite not yet added; no tests/ directory in repository
 
 ## Technical Foundation
 The project has a solid foundation with:
