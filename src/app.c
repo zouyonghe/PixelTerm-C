@@ -66,6 +66,32 @@ static gchar* sanitize_for_terminal(const gchar *text) {
     return safe;
 }
 
+// Calculate display width of a UTF-8 string for proper centering
+static gint utf8_display_width(const gchar *text) {
+    if (!text) {
+        return 0;
+    }
+
+    gint width = 0;
+    const gchar *p = text;
+    while (*p) {
+        gunichar ch = g_utf8_get_char_validated(p, -1);
+        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+            // Invalid sequence: treat current byte as a single-width placeholder
+            width++;
+            p++;
+            continue;
+        }
+
+        if (!g_unichar_iszerowidth(ch)) {
+            width += g_unichar_iswide(ch) ? 2 : 1;
+        }
+        p = g_utf8_next_char(p);
+    }
+
+    return width;
+}
+
 static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height) {
     if (!max_width || !max_height) {
         return;
@@ -1887,13 +1913,66 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     const char *header_title = "PixelTerm File Manager";
     gint title_len = strlen(header_title);
     gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-    for (gint i = 0; i < title_pad; i++) printf(" ");
+    printf("\033[1G"); // Move to beginning of line
+    for (gint i = 0; i < title_pad; i++) printf(" "); // Use spaces for centering
     printf("%s\n", header_title);
 
-    gint dir_len = strlen(safe_current_dir);
+    gint dir_byte_len = strlen(safe_current_dir);
+    gint dir_len = utf8_display_width(safe_current_dir);
+    gchar *display_dir = safe_current_dir;
+    
+    // Truncate directory path if it's too long
+    if (dir_len > app->term_width - 8) { // More conservative threshold
+        gint max_dir_display = app->term_width - 11; // Reserve space for "..." and more padding
+        if (max_dir_display > 20) { // Higher minimum for directory paths
+            gint start_len = (max_dir_display * 2) / 3; // Show more of the beginning
+            gint end_len = max_dir_display - start_len;
+            
+            // Adjust start_len to avoid cutting UTF-8 characters
+            while (start_len > 0 && (safe_current_dir[start_len] & 0xC0) == 0x80) {
+                start_len--;
+            }
+            
+            // Find proper start position for end part
+            gint end_start = dir_byte_len - end_len;
+            while (end_start < dir_byte_len && (safe_current_dir[end_start] & 0xC0) == 0x80) {
+                end_start++;
+            }
+            
+            gchar *start_part = g_strndup(safe_current_dir, start_len);
+            gchar *end_part = g_strdup(safe_current_dir + end_start);
+            
+            display_dir = g_strdup_printf("%s...%s", start_part, end_part);
+            g_free(start_part);
+            g_free(end_part);
+        } else {
+            gint truncate_len = max_dir_display;
+            // Adjust to avoid cutting UTF-8 characters
+            while (truncate_len > 0 && (safe_current_dir[truncate_len] & 0xC0) == 0x80) {
+                truncate_len--;
+            }
+            gchar *shortened = g_strndup(safe_current_dir, MAX(0, truncate_len));
+            display_dir = g_strdup_printf("%s...", shortened);
+            g_free(shortened);
+        }
+        dir_len = utf8_display_width(display_dir);
+    }
+    
+    // Better centering calculation for directory path
     gint dir_pad = (app->term_width > dir_len) ? (app->term_width - dir_len) / 2 : 0;
-    for (gint i = 0; i < dir_pad; i++) printf(" ");
-    printf("%s\n", safe_current_dir);
+    // Ensure the path doesn't exceed terminal bounds
+    if (dir_pad + dir_len > app->term_width) {
+        dir_pad = MAX(0, app->term_width - dir_len);
+    }
+    // Print the centered directory path
+    printf("\033[1G"); // Move to beginning of line
+    for (gint i = 0; i < dir_pad; i++) printf(" "); // Use spaces for centering
+    printf("%s\n", display_dir);
+    
+    // Free the truncated directory path if it was created
+    if (display_dir != safe_current_dir) {
+        g_free(display_dir);
+    }
 
     gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
     app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
@@ -1954,16 +2033,57 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gchar *print_name = sanitize_for_terminal(display_name);
         gint name_len = strlen(print_name);
         gboolean is_image = (!is_dir && is_image_file(entry));
-        if (name_len > app->term_width) {
-            // truncate aggressively but keep center alignment
-            gchar *shortened = g_strndup(print_name, MAX(0, app->term_width - 3));
-            g_free(print_name);
-            print_name = g_strdup_printf("%s...", shortened);
-            g_free(shortened);
+        // Calculate maximum display width considering terminal boundaries
+        // Use a more conservative width to ensure proper display
+        gint max_display_width = (app->term_width / 2) - 2; // Use half terminal width for better centering
+        if (max_display_width < 15) max_display_width = 15; // Minimum width
+        
+        if (name_len > max_display_width) {
+            // Smart truncation: show beginning and end of filename
+            gint max_display = max_display_width - 3; // Reserve space for "..."
+            if (max_display > 8) { // Only use smart truncation if we have enough space
+                gint start_len = max_display / 2;
+                gint end_len = max_display - start_len;
+                
+                // Adjust start_len to avoid cutting UTF-8 characters
+                while (start_len > 0 && (print_name[start_len] & 0xC0) == 0x80) {
+                    start_len--;
+                }
+                
+                // Find proper start position for end part
+                gint end_start = name_len - end_len;
+                while (end_start < name_len && (print_name[end_start] & 0xC0) == 0x80) {
+                    end_start++;
+                }
+                
+                gchar *start_part = g_strndup(print_name, start_len);
+                gchar *end_part = g_strdup(print_name + end_start);
+                
+                g_free(print_name);
+                print_name = g_strdup_printf("%s...%s", start_part, end_part);
+                g_free(start_part);
+                g_free(end_part);
+            } else {
+                // Fallback to simple truncation for very short display areas
+                gint truncate_len = max_display;
+                // Adjust to avoid cutting UTF-8 characters
+                while (truncate_len > 0 && (print_name[truncate_len] & 0xC0) == 0x80) {
+                    truncate_len--;
+                }
+                gchar *shortened = g_strndup(print_name, MAX(0, truncate_len));
+                g_free(print_name);
+                print_name = g_strdup_printf("%s...", shortened);
+                g_free(shortened);
+            }
             name_len = strlen(print_name);
         }
 
         gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+        // Ensure the total width (pad + name_len) doesn't exceed terminal width
+        if (pad + name_len > app->term_width) {
+            pad = MAX(0, app->term_width - name_len);
+        }
+        printf("\033[1G"); // Move to beginning of line for consistent positioning
         for (gint i = 0; i < pad; i++) printf(" ");
 
         gboolean selected = (idx == app->selected_entry);
