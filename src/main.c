@@ -33,32 +33,7 @@ static void print_usage(const char *program_name) {
     printf("Options:\n");
     printf("  -h, --help     Show this help message\n");
     printf("  -v, --version  Show version information\n");
-    printf("  -V, --Version  Show version information only\n");
-    printf("  -i, --info     Start with image information visible\n");
-    printf("  -p, --preload  Enable image preloading (default: enabled)\n");
-    printf("  --no-preload   Disable image preloading\n");
-    printf("\n");
-    printf("Key bindings:\n");
-    printf("  ←/→ or a/d     Previous/Next image\n");
-    printf("  p              Toggle preview grid\n");
-    printf("  TAB            Toggle file manager\n");
-    printf("  i              Show image information\n");
-    printf("  r              Delete current image\n");
-    printf("  q              Quit application\n");
-    printf("  Ctrl+C         Force exit\n");
-    printf("\n");
-    printf("File Manager:\n");
-    printf("  ↑/↓            Navigate entries\n");
-    printf("  Enter          Select directory/file\n");
-    printf("  ESC            Exit file manager\n");
-    printf("\n");
-    printf("Supported formats: ");
-    for (int i = 0; SUPPORTED_EXTENSIONS[i] != NULL; i++) {
-        printf("%s", SUPPORTED_EXTENSIONS[i]);
-        if (SUPPORTED_EXTENSIONS[i + 1] != NULL) {
-            printf(", ");
-        }
-    }
+    printf("  --no-preload   Disable image preloading (default: enabled)\n");
     printf("\n");
 }
 
@@ -68,13 +43,11 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *show_info, gboolean *preload_enabled) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
         {"Version",   no_argument,       0, 'V'},
-        {"info",      no_argument,       0, 'i'},
-        {"preload",   no_argument,       0, 'p'},
         {"no-preload", no_argument,      0, 1000},
         {0, 0, 0, 0}
     };
@@ -83,7 +56,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
     opterr = 0;
     
     int c;
-    while ((c = getopt_long(argc, argv, "hvVip", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "hvV", long_options, NULL)) != -1) {
         switch (c) {
             case 'h':
                 print_usage(argv[0]);
@@ -94,12 +67,6 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
             case 'V':
                 print_version();
                 return ERROR_VERSION_EXIT;
-            case 'i':
-                *show_info = TRUE;
-                break;
-            case 'p':
-                *preload_enabled = TRUE;
-                break;
             case 1000:  // --no-preload
                 *preload_enabled = FALSE;
                 break;
@@ -455,10 +422,9 @@ int main(int argc, char *argv[]) {
 
     // Parse command line arguments
     char *path = NULL;
-    gboolean show_info = FALSE;
     gboolean preload_enabled = TRUE;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &show_info, &preload_enabled);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
@@ -488,7 +454,6 @@ int main(int argc, char *argv[]) {
     }
 
     // Configure application settings
-    g_app->show_info = show_info;
     g_app->preload_enabled = preload_enabled;
 
     // Validate and load path
