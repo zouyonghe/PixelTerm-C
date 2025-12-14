@@ -85,10 +85,10 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ### Usage
 
 ```bash
-# Browse images in directory
+# Browse images in directory (launches directly into preview grid if images exist)
 ./pixelterm /path/to/images
 
-# View single image
+# View single image (opens image viewer)
 ./pixelterm /path/to/image.jpg
 
 # Run in current directory
@@ -113,6 +113,10 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ←/→ | Previous/Next image |
 | a/d | Alternative left/right keys |
+| ↑/↓ | Move selection (preview/file manager) |
+| PgUp/PgDn | Page up/down in preview grid |
+| p | Preview grid (move with arrows/PgUp/PgDn, Enter to open) |
+| +/- | Increase/decrease preview thumbnail size |
 | TAB | Toggle file manager (or exit when no images are loaded) |
 | i | Toggle image information |
 | r | Delete current image |

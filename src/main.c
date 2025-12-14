@@ -40,6 +40,7 @@ static void print_usage(const char *program_name) {
     printf("\n");
     printf("Key bindings:\n");
     printf("  ←/→ or a/d     Previous/Next image\n");
+    printf("  p              Toggle preview grid\n");
     printf("  TAB            Toggle file manager\n");
     printf("  i              Show image information\n");
     printf("  r              Delete current image\n");
@@ -234,7 +235,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                 switch (event.key_code) {
                     case KEY_LEFT:
                     case (KeyCode)'a':
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, 0, -1);
+                            app_render_preview_grid(app);
+                        } else if (app->file_manager_mode) {
                             ErrorCode err = app_file_manager_left(app);
                             if (err == ERROR_NONE) {
                                 app_render_file_manager(app);
@@ -248,7 +252,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case KEY_RIGHT:
                     case (KeyCode)'d':
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, 0, 1);
+                            app_render_preview_grid(app);
+                        } else if (app->file_manager_mode) {
                             ErrorCode err = app_file_manager_right(app);
                             if (err == ERROR_NONE && app->file_manager_mode) {
                                 app_render_file_manager(app);
@@ -261,11 +268,34 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case (KeyCode)'i':
-                        app_display_image_info(app);
+                        if (!app->preview_mode) {
+                            app_display_image_info(app);
+                        }
                         break;
                     case (KeyCode)'r':
-                        app_delete_current_image(app);
-                        app_refresh_display(app);
+                        if (!app->preview_mode) {
+                            app_delete_current_image(app);
+                            app_refresh_display(app);
+                        }
+                        break;
+                    case (KeyCode)'p':
+                        if (app->preview_mode) {
+                            app_exit_preview(app, TRUE);
+                            app_refresh_display(app);
+                        } else if (!app->file_manager_mode) {
+                            app_enter_preview(app);
+                        }
+                        break;
+                    case (KeyCode)'+':
+                    case (KeyCode)'=': // treat '=' as unshifted '+'
+                        if (app->preview_mode) {
+                            app_preview_change_zoom(app, 1);
+                        }
+                        break;
+                    case (KeyCode)'-':
+                        if (app->preview_mode) {
+                            app_preview_change_zoom(app, -1);
+                        }
                         break;
                     case (KeyCode)'q':
                     case KEY_ESCAPE:
@@ -279,7 +309,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                         input_handler->should_exit = TRUE;
                         break;
                     case KEY_TAB:
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_exit_preview(app, TRUE);
+                            app_enter_file_manager(app);
+                            app_render_file_manager(app);
+                        } else if (app->file_manager_mode) {
                             if (!app_has_images(app)) {
                                 // In browser-only mode, allow immediate exit
                                 app->running = FALSE;
@@ -294,7 +328,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case KEY_UP:
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, -1, 0);
+                            app_render_preview_grid(app);
+                        } else if (app->file_manager_mode) {
                             app_file_manager_up(app);
                             app_render_file_manager(app);
                         } else {
@@ -303,12 +340,27 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case KEY_DOWN:
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, 1, 0);
+                            app_render_preview_grid(app);
+                        } else if (app->file_manager_mode) {
                             app_file_manager_down(app);
                             app_render_file_manager(app);
                         } else {
                             app_next_image(app);
                             app_refresh_display(app);
+                        }
+                        break;
+                    case KEY_PAGE_DOWN:
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, app->term_height, 0); // jump a page down
+                            app_render_preview_grid(app);
+                        }
+                        break;
+                    case KEY_PAGE_UP:
+                        if (app->preview_mode) {
+                            app_preview_move_selection(app, -app->term_height, 0); // jump a page up
+                            app_render_preview_grid(app);
                         }
                         break;
                     case KEY_BACKSPACE:
@@ -322,7 +374,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case KEY_ENTER:
                     case 13:  // Handle both LF (10) and CR (13) for Enter key
-                        if (app->file_manager_mode) {
+                        if (app->preview_mode) {
+                            app_exit_preview(app, TRUE);
+                            app_refresh_display(app);
+                        } else if (app->file_manager_mode) {
                             // Clear any pending input to avoid multiple triggers
                             input_flush_buffer(input_handler);
                             
@@ -434,6 +489,18 @@ int main(int argc, char *argv[]) {
 
     if (is_directory) {
         error = app_load_directory(g_app, path);
+        if (error == ERROR_NONE) {
+            if (app_has_images(g_app)) {
+                // Start in preview grid when directory has images
+                error = app_enter_preview(g_app);
+            } else {
+                // No images: fall back to file manager in that directory
+                error = app_enter_file_manager(g_app);
+                if (error == ERROR_NONE) {
+                    app_render_file_manager(g_app);
+                }
+            }
+        }
     } else {
         error = app_load_single_file(g_app, path);
     }
@@ -446,9 +513,21 @@ int main(int argc, char *argv[]) {
     }
 
     if (!app_has_images(g_app)) {
-        if (optind < argc) {
-            // User provided a specific path, tell them no images found
-            fprintf(stderr, "No images found in '%s'\n", path);
+        if (is_directory) {
+            // Directory provided but no images: go to file manager in that directory
+            error = app_enter_file_manager(g_app);
+            if (error != ERROR_NONE) {
+                fprintf(stderr, "Failed to start file manager: %d\n", error);
+                app_destroy(g_app);
+                g_free(path);
+                return 1;
+            }
+            app_render_file_manager(g_app);
+            error = run_application(g_app);
+            app_destroy(g_app);
+            g_free(path);
+            g_app = NULL;
+            return error == ERROR_NONE ? 0 : 1;
         } else {
             // No path provided and no images: start in file manager mode for browsing
             error = app_enter_file_manager(g_app);
@@ -465,9 +544,6 @@ int main(int argc, char *argv[]) {
             g_app = NULL;
             return error == ERROR_NONE ? 0 : 1;
         }
-        app_destroy(g_app);
-        g_free(path);
-        return 0;
     }
 
     // Run main application loop

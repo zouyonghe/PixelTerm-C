@@ -39,6 +39,8 @@ PixelTermApp* app_create(void) {
     app->needs_redraw = TRUE;
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
+    app->preview_mode = FALSE;
+    app->preview_zoom = 2; // default zoom for comfortable preview grid
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -46,6 +48,8 @@ PixelTermApp* app_create(void) {
     app->directory_entries = NULL;
     app->selected_entry = 0;
     app->scroll_offset = 0;
+    app->preview_selected = 0;
+    app->preview_scroll = 0;
 
     return app;
 }
@@ -747,6 +751,9 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     // Update terminal size
     get_terminal_size(&app->term_width, &app->term_height);
     
+    if (app->preview_mode) {
+        return app_render_preview_grid(app);
+    }
     if (app->file_manager_mode) {
         return app_render_file_manager(app);
     }
@@ -1220,6 +1227,416 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
     app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
     app_file_manager_adjust_scroll(app, cols, visible_rows);
 
+    return ERROR_NONE;
+}
+
+// ----- Preview grid helpers -----
+typedef struct {
+    gint cols;
+    gint rows;
+    gint cell_width;
+    gint cell_height;
+    gint header_lines;
+    gint visible_rows;
+} PreviewLayout;
+
+// Calculate preview grid layout trying to balance clarity and density
+static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
+    PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, 3, 1};
+    if (!app || app->total_images <= 0) {
+        return layout;
+    }
+
+    // Base minimums to keep previews readable
+    const gint base_min_cell_width = 24;
+    const gint base_min_cell_height = 12;
+    const gint step_w = 4;
+    const gint step_h = 3;
+    const gint min_allowed_w = 12;
+    const gint min_allowed_h = 8;
+    const gint max_zoom = 5;
+    const gint min_zoom = -3;
+
+    if (app->preview_zoom > max_zoom) app->preview_zoom = max_zoom;
+    if (app->preview_zoom < min_zoom) app->preview_zoom = min_zoom;
+
+    gint min_cell_width = base_min_cell_width + app->preview_zoom * step_w;
+    gint min_cell_height = base_min_cell_height + app->preview_zoom * step_h;
+    if (min_cell_width < min_allowed_w) min_cell_width = min_allowed_w;
+    if (min_cell_height < min_allowed_h) min_cell_height = min_allowed_h;
+    const gint header_lines = 3; // title + help + spacing
+
+    gint usable_width = app->term_width > 0 ? app->term_width : 80;
+    gint usable_height = app->term_height > header_lines ? app->term_height - header_lines : 6;
+    if (usable_height < min_cell_height) {
+        usable_height = min_cell_height;
+    }
+
+    gint max_cols = usable_width / min_cell_width;
+    if (max_cols < 1) max_cols = 1;
+    if (max_cols > app->total_images) max_cols = app->total_images;
+
+    gint best_cols = max_cols;
+    gint best_rows = (app->total_images + best_cols - 1) / best_cols;
+    gint best_cell_height = usable_height / best_rows;
+    gboolean found_suitable = FALSE;
+
+    // Preferred default: aim for 3 columns at default zoom if size allows
+    if (app->preview_zoom == 0 && max_cols >= 1) {
+        gint preferred_cols = MIN(max_cols, 3);
+        gint rows = (app->total_images + preferred_cols - 1) / preferred_cols;
+        gint cell_w = usable_width / preferred_cols;
+        gint cell_h = usable_height / rows;
+        if (cell_w >= min_cell_width && cell_h >= min_cell_height) {
+            best_cols = preferred_cols;
+            best_rows = rows;
+            best_cell_height = cell_h;
+            found_suitable = TRUE;
+        }
+    }
+
+    // If not decided yet, prefer the widest grid that meets height constraints
+    if (!found_suitable) {
+        for (gint cols = max_cols; cols >= 1; cols--) {
+            gint rows = (app->total_images + cols - 1) / cols;
+            gint cell_h = usable_height / rows;
+            if (cell_h >= min_cell_height) {
+                best_cols = cols;
+                best_rows = rows;
+                best_cell_height = cell_h;
+                found_suitable = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (!found_suitable) {
+        best_rows = (app->total_images + best_cols - 1) / best_cols;
+        best_cell_height = usable_height / best_rows;
+        if (best_cell_height < min_cell_height) best_cell_height = min_cell_height;
+        if (best_cell_height > usable_height) best_cell_height = usable_height;
+    }
+
+    gint cell_width = usable_width / best_cols;
+    if (cell_width < min_cell_width) {
+        cell_width = min_cell_width;
+    }
+    if (best_cell_height < 1) best_cell_height = 1;
+
+    gint visible_rows = usable_height / best_cell_height;
+    if (visible_rows < 1) visible_rows = 1;
+
+    layout.cols = best_cols;
+    layout.rows = best_rows;
+    layout.cell_width = cell_width;
+    layout.cell_height = best_cell_height;
+    layout.header_lines = header_lines;
+    layout.visible_rows = visible_rows;
+    return layout;
+}
+
+static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *layout) {
+    if (!app || !layout) {
+        return;
+    }
+
+    gint total_rows = layout->rows;
+    gint visible_rows = layout->visible_rows;
+    if (visible_rows < 1) visible_rows = 1;
+
+    // Clamp scroll to valid range
+    gint max_offset = MAX(0, total_rows - visible_rows);
+    if (app->preview_scroll > max_offset) {
+        app->preview_scroll = max_offset;
+    }
+    if (app->preview_scroll < 0) {
+        app->preview_scroll = 0;
+    }
+
+    // Ensure selection is visible
+    gint row = app->preview_selected / layout->cols;
+    if (row < app->preview_scroll) {
+        app->preview_scroll = row;
+    } else if (row >= app->preview_scroll + visible_rows) {
+        app->preview_scroll = row - visible_rows + 1;
+    }
+}
+
+// Compute visible width of a line ignoring ANSI escape sequences
+static gint app_preview_visible_width(const char *str, gint len) {
+    if (!str || len <= 0) {
+        return 0;
+    }
+    gint width = 0;
+    for (gint i = 0; i < len; i++) {
+        if (str[i] == '\033' && i + 1 < len && str[i + 1] == '[') {
+            // Skip CSI sequence
+            i += 2;
+            while (i < len && str[i] != 'm' && (str[i] < 'A' || str[i] > 'z')) {
+                i++;
+            }
+            continue;
+        }
+        width++;
+    }
+    return width;
+}
+
+// Move selection inside preview grid
+ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    PreviewLayout layout = app_preview_calculate_layout(app);
+    gint cols = layout.cols;
+    gint rows = layout.rows;
+
+    gint row = app->preview_selected / cols;
+    gint col = app->preview_selected % cols;
+
+    // Page-aware movement: if moving past the visible window, jump by a full page and select first item
+    row += delta_row;
+    col += delta_col;
+
+    if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
+        gint page_start = MIN(app->preview_scroll + layout.visible_rows, layout.rows - 1);
+        app->preview_scroll = page_start;
+        row = page_start;
+        // keep same column position when jumping pages
+    } else if (delta_row < 0 && row < app->preview_scroll) {
+        gint page_start = MAX(app->preview_scroll - layout.visible_rows, 0);
+        app->preview_scroll = page_start;
+        row = page_start;
+        // keep same column position when jumping pages
+    }
+
+    if (row < 0) row = 0;
+    if (row >= rows) row = rows - 1;
+    if (col < 0) col = 0;
+    if (col >= cols) col = cols - 1;
+
+    gint new_index = row * cols + col;
+    if (new_index >= app->total_images) {
+        new_index = app->total_images - 1;
+    }
+    app->preview_selected = new_index;
+
+    app_preview_adjust_scroll(app, &layout);
+    return ERROR_NONE;
+}
+
+// Change preview zoom level and rerender
+ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    gint new_zoom = app->preview_zoom + delta;
+    // Skip zoom levels 3 and 4
+    if (delta > 0 && (new_zoom == 3 || new_zoom == 4)) {
+        new_zoom = 5; // jump to max visible tier
+    } else if (delta < 0 && (new_zoom == 3 || new_zoom == 4)) {
+        new_zoom = 2;
+    }
+    app->preview_zoom = new_zoom;
+    return app_render_preview_grid(app);
+}
+
+// Enter preview grid mode
+ErrorCode app_enter_preview(PixelTermApp *app) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    app->preview_mode = TRUE;
+    app->file_manager_mode = FALSE; // ensure we are not in file manager
+    app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
+    app->preview_scroll = 0;
+    app->info_visible = FALSE;
+    app->needs_redraw = TRUE;
+    return app_render_preview_grid(app);
+}
+
+// Exit preview grid mode
+ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app->preview_mode) {
+        return ERROR_NONE;
+    }
+
+    if (open_selected && app_has_images(app)) {
+        if (app->preview_selected >= 0 && app->preview_selected < app->total_images) {
+            app->current_index = app->preview_selected;
+        }
+    }
+
+    app->preview_mode = FALSE;
+    app->info_visible = FALSE;
+    app->needs_redraw = TRUE;
+    return ERROR_NONE;
+}
+
+// Render preview grid of images
+ErrorCode app_render_preview_grid(PixelTermApp *app) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    // Update terminal dimensions
+    get_terminal_size(&app->term_width, &app->term_height);
+
+    PreviewLayout layout = app_preview_calculate_layout(app);
+    app_preview_adjust_scroll(app, &layout);
+
+    printf("\033[2J\033[H\033[0m"); // Clear screen
+
+    // Header: title + hint + selection info
+    const char *title = "Preview Grid (p to exit, Enter to open)";
+    gint title_len = strlen(title);
+    gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+    for (gint i = 0; i < pad; i++) printf(" ");
+    printf("%s\n", title);
+
+    printf("[%d/%d]\n\n", app->preview_selected + 1, app->total_images);
+
+    gint start_row = app->preview_scroll;
+    gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+
+    for (gint row = start_row; row < end_row; row++) {
+        for (gint col = 0; col < layout.cols; col++) {
+            gint idx = row * layout.cols + col;
+            if (idx >= app->total_images) {
+                continue;
+            }
+
+            gint cell_x = col * layout.cell_width + 1;
+            gint cell_y = layout.header_lines + (row - start_row) * layout.cell_height + 1;
+
+            const gchar *filepath = (const gchar*)g_list_nth_data(app->image_files, idx);
+            gboolean selected = (idx == app->preview_selected);
+            gboolean use_border = selected &&
+                                  layout.cell_width >= 4 &&
+                                  layout.cell_height >= 4;
+
+            // Keep content area constant so selection不改变图像可用空间
+            gint content_width = layout.cell_width - 2;
+            gint content_height = layout.cell_height - 2;
+            if (content_width < 1) content_width = 1;
+            if (content_height < 1) content_height = 1;
+            gint content_x = cell_x + 1;
+            gint content_y = cell_y + 1;
+
+            RendererConfig config = {
+                .max_width = MAX(2, content_width),
+                .max_height = MAX(2, content_height),
+                .preserve_aspect_ratio = TRUE,
+                .dither = TRUE,
+                .color_space = CHAFA_COLOR_SPACE_RGB,
+                .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
+                .work_factor = 1
+            };
+
+            // Clear cell and draw border without占用内容区域
+            const char *border_style = "\033[34;1m"; // bright blue foreground
+            for (gint line = 0; line < layout.cell_height; line++) {
+                gint y = cell_y + line;
+                printf("\033[%d;%dH", y, cell_x);
+                for (gint c = 0; c < layout.cell_width; c++) {
+                    putchar(' ');
+                }
+
+                if (use_border) {
+                    if (line == 0 || line == layout.cell_height - 1) {
+                        printf("\033[%d;%dH%s+", y, cell_x, border_style);
+                        for (gint c = 0; c < layout.cell_width - 2; c++) putchar('-');
+                        printf("+\033[0m");
+                    } else {
+                        printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
+                        printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout.cell_width - 1, border_style);
+                    }
+                }
+            }
+
+            ImageRenderer *renderer = renderer_create();
+            if (!renderer) {
+                continue;
+            }
+            if (renderer_initialize(renderer, &config) != ERROR_NONE) {
+                renderer_destroy(renderer);
+                continue;
+            }
+
+            GString *rendered = renderer_render_image_file(renderer, filepath);
+            if (!rendered) {
+                renderer_destroy(renderer);
+                continue;
+            }
+
+            // Draw image lines within the cell bounds, horizontally centered
+            gint line_no = 0;
+            char *cursor = rendered->str;
+            while (cursor && line_no < content_height) {
+                char *newline = strchr(cursor, '\n');
+                gint line_len = newline ? (gint)(newline - cursor) : (gint)strlen(cursor);
+
+                gint visible_len = app_preview_visible_width(cursor, line_len);
+                gint pad_left = 0;
+                if (content_width > visible_len) {
+                    pad_left = (content_width - visible_len) / 2;
+                }
+
+                printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
+                fwrite(cursor, 1, line_len, stdout);
+
+                if (!newline) {
+                    break;
+                }
+                cursor = newline + 1;
+                line_no++;
+            }
+
+            // Ensure attributes reset after each cell
+            printf("\033[0m");
+
+            renderer_destroy(renderer);
+        }
+    }
+
+    // Footer with quick hints at the bottom of the terminal
+    if (app->term_height > 0) {
+        const char *help_text = "Arrow move  PgUp/PgDn page  Enter open  +/- zoom  p exit preview";
+        printf("\033[%d;1H%s", app->term_height, help_text);
+
+        // Page indicator at bottom-right based on items per page
+        gint items_per_page = layout.cols * layout.visible_rows;
+        if (items_per_page < 1) items_per_page = 1;
+        gint total_pages = (app->total_images + items_per_page - 1) / items_per_page;
+        if (total_pages < 1) total_pages = 1;
+        gint current_page = (app->preview_selected / items_per_page) + 1;
+        if (current_page > total_pages) current_page = total_pages;
+        char page_text[32];
+        g_snprintf(page_text, sizeof(page_text), "Page %d/%d", current_page, total_pages);
+        gint page_len = strlen(page_text);
+        gint start_col = app->term_width - page_len + 1;
+        if (start_col < (gint)strlen(help_text) + 2) {
+            start_col = strlen(help_text) + 2;
+        }
+        if (start_col < 1) start_col = 1;
+        printf("\033[%d;%dH%s", app->term_height, start_col, page_text);
+    }
+
+    fflush(stdout);
     return ERROR_NONE;
 }
 

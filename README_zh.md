@@ -85,10 +85,10 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ### 使用
 
 ```bash
-# 浏览目录中的图像
+# 浏览目录中的图像（有图则直接进入预览网格）
 ./pixelterm /path/to/images
 
-# 查看单个图像
+# 查看单个图像（直接进入查看模式）
 ./pixelterm /path/to/image.jpg
 
 # 在当前目录运行
@@ -113,6 +113,10 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|------|
 | ←/→ | 上一张/下一张图像 |
 | a/d | 备用左右键 |
+| ↑/↓ | 移动选中（预览/文件管理器） |
+| PgUp/PgDn | 预览网格翻页 |
+| p | 网格预览模式（方向键/PgUp/PgDn 移动，Enter 打开） |
+| +/- | 放大/缩小预览缩略图 |
 | TAB | 切换文件管理器（无图片时会直接退出） |
 | i | 切换详细信息显示 |
 | r | 删除当前图像 |
