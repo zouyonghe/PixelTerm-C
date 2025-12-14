@@ -10,13 +10,78 @@ gboolean is_image_file(const char *filename) {
 
     const char *ext = get_file_extension(filename);
     if (!ext) {
-        return FALSE;
+        // No extension, check by content
+        return is_image_by_content(filename);
     }
 
     for (int i = 0; SUPPORTED_EXTENSIONS[i] != NULL; i++) {
         if (g_ascii_strcasecmp(ext, SUPPORTED_EXTENSIONS[i]) == 0) {
             return TRUE;
         }
+    }
+
+    return FALSE;
+}
+
+// Check if a file is an image by reading its magic numbers (for files without extensions)
+gboolean is_image_by_content(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return FALSE;
+    }
+
+    unsigned char header[16];
+    size_t bytes_read = fread(header, 1, sizeof(header), file);
+    fclose(file);
+
+    if (bytes_read < 4) {
+        return FALSE;
+    }
+
+    // JPEG (FF D8 FF)
+    if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) {
+        return TRUE;
+    }
+
+    // PNG (89 50 4E 47)
+    if (bytes_read >= 8 && 
+        header[0] == 0x89 && header[1] == 0x50 && 
+        header[2] == 0x4E && header[3] == 0x47) {
+        return TRUE;
+    }
+
+    // GIF (GIF87a or GIF89a)
+    if (bytes_read >= 6 && 
+        header[0] == 'G' && header[1] == 'I' && header[2] == 'F' &&
+        header[3] == '8' && (header[4] == '7' || header[4] == '9') && 
+        header[5] == 'a') {
+        return TRUE;
+    }
+
+    // WebP (RIFF....WEBP)
+    if (bytes_read >= 12 && 
+        header[0] == 'R' && header[1] == 'I' && 
+        header[2] == 'F' && header[3] == 'F' &&
+        header[8] == 'W' && header[9] == 'E' && 
+        header[10] == 'B' && header[11] == 'P') {
+        return TRUE;
+    }
+
+    // BMP (BM)
+    if (header[0] == 'B' && header[1] == 'M') {
+        return TRUE;
+    }
+
+    // TIFF (II*\0 or MM\0*)
+    if (bytes_read >= 4 && (
+        (header[0] == 'I' && header[1] == 'I' && header[2] == '*' && header[3] == '\0') ||
+        (header[0] == 'M' && header[1] == 'M' && header[2] == '\0' && header[3] == '*')
+    )) {
+        return TRUE;
     }
 
     return FALSE;

@@ -63,7 +63,11 @@ typedef struct {
 } CachedImage;
 
 // Function declarations
+// Check if a file is an image based on its extension
 gboolean is_image_file(const char *filename);
+
+// Check if a file is an image by reading its magic numbers (for files without extensions)
+gboolean is_image_by_content(const char *filepath);
 const char* get_file_extension(const char *filename);
 gboolean file_exists(const char *path);
 gint64 get_file_size(const char *path);
