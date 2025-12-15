@@ -168,38 +168,10 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
     gint n_channels = gdk_pixbuf_get_n_channels(pixbuf);
     guchar *pixels = gdk_pixbuf_get_pixels(pixbuf);
 
-    // Always use RGBA format for consistent rendering
-    GdkPixbuf *rgba_pixbuf = NULL;
-    guchar *rgba_pixels = NULL;
-    gint rgba_rowstride = 0;
-    
-    if (n_channels != 4) {
-        // Convert to RGBA if needed
-        rgba_pixbuf = gdk_pixbuf_add_alpha(pixbuf, 0, 0, width, height);
-        if (!rgba_pixbuf) {
-            g_object_unref(pixbuf);
-            return NULL;
-        }
-        
-        rgba_pixels = gdk_pixbuf_get_pixels(rgba_pixbuf);
-        rgba_rowstride = gdk_pixbuf_get_rowstride(rgba_pixbuf);
-        g_object_unref(pixbuf);
-        
-        width = gdk_pixbuf_get_width(rgba_pixbuf);
-        height = gdk_pixbuf_get_height(rgba_pixbuf);
-        rowstride = rgba_rowstride;
-        pixels = rgba_pixels;
-        n_channels = 4;
-    }
-
     // Render the image
-    GString *result = renderer_render_image_data(renderer, pixels, width, height, rowstride);
+    GString *result = renderer_render_image_data(renderer, pixels, width, height, rowstride, n_channels);
     
-    if (rgba_pixbuf) {
-        g_object_unref(rgba_pixbuf);
-    } else {
-        g_object_unref(pixbuf);
-    }
+    g_object_unref(pixbuf);
 
     if (result) {
         // Cache the result
@@ -216,7 +188,8 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
                                    const guint8 *pixel_data, 
                                    gint width, 
                                    gint height, 
-                                   gint rowstride) {
+                                   gint rowstride,
+                                   gint n_channels) {
     if (!renderer || !pixel_data || width <= 0 || height <= 0) {
         return NULL;
     }
@@ -227,8 +200,18 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
         return NULL;
     }
 
+    ChafaPixelType pixel_type;
+    if (n_channels == 4) {
+        pixel_type = CHAFA_PIXEL_RGBA8_UNASSOCIATED;
+    } else if (n_channels == 3) {
+        pixel_type = CHAFA_PIXEL_RGB8;
+    } else {
+        // Unsupported format
+        return NULL;
+    }
+
     // Draw pixels to canvas
-    chafa_canvas_draw_all_pixels(renderer->canvas, CHAFA_PIXEL_RGBA8_UNASSOCIATED, 
+    chafa_canvas_draw_all_pixels(renderer->canvas, pixel_type, 
                                 pixel_data, width, height, rowstride);
 
     // Generate output
@@ -396,10 +379,6 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
     g_object_unref(pixbuf);
     return ERROR_NONE;
 }
-
-
-
-
 
 // Get rendered image dimensions
 void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height) {

@@ -35,7 +35,8 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
                                    const guint8 *pixel_data, 
                                    gint width, 
                                    gint height, 
-                                   gint rowstride);
+                                   gint rowstride,
+                                   gint n_channels);
 ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height);
 
 // Cache management

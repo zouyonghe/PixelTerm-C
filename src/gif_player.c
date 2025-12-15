@@ -149,25 +149,9 @@ static void render_current_frame_internal(GifPlayer *player) {
     gint n_channels = gdk_pixbuf_get_n_channels(frame);
     guchar *pixels = gdk_pixbuf_get_pixels(frame);
 
-    // 确保是 RGBA 格式
-    GdkPixbuf *rgba_frame = NULL;
-    if (n_channels != 4) {
-        rgba_frame = gdk_pixbuf_add_alpha(frame, 0, 0, 0, 0);
-        if (rgba_frame) {
-            pixels = gdk_pixbuf_get_pixels(rgba_frame);
-            rowstride = gdk_pixbuf_get_rowstride(rgba_frame);
-            width = gdk_pixbuf_get_width(rgba_frame);
-            height = gdk_pixbuf_get_height(rgba_frame);
-        }
-    }
-
     // 使用共享渲染器渲染图像数据
-    GString *result = renderer_render_image_data(player->renderer, pixels, width, height, rowstride);
+    GString *result = renderer_render_image_data(player->renderer, pixels, width, height, rowstride, n_channels);
     
-    if (rgba_frame) {
-        g_object_unref(rgba_frame);
-    }
-
     if (result) {
         // 移动光标到顶部，而不是清屏，减少闪烁
         printf("\033[H");
