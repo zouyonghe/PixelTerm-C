@@ -1,5 +1,6 @@
 # Changelog
 
+- v1.1.11: Fix file manager selection jumping on long press of arrow keys by robustly parsing terminal escape sequences, supporting both `^[[` and `^[O` prefixes, and preventing greedy consumption of next sequence headers.
 - v1.1.9: Fix GIF ghosting artifacts during window resize by clearing the screen area after each frame. Resolve Chafa assertion failures by correctly initializing dither_mode and color_extractor in renderer configuration. Fix compilation error in preloader module.
 - v1.1.8: Add high-performance animated GIF support with correct frame timing and TrueColor rendering. Significantly improve image quality by enabling advanced Chafa features (work_factor=9, median color extraction, ordered dither, all optimizations) and removing ASCII symbol restrictions to allow full Unicode block character usage. Fix animation glitches when switching modes and ensure correct terminal resizing behavior during playback.
 - v1.1.7: Unify all comments to English for better maintainability and consistency, standardize comment format throughout the codebase, improve clarity of comments in file manager scrolling functions, and fix minor comment issues in other functions.
