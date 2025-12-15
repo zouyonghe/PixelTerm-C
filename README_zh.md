@@ -105,7 +105,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 ## 🎮 控制
 
-本节按不同的操作模式详细介绍了键绑定和功能。
+
 
 ### 全局控制
 

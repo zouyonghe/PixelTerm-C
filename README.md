@@ -107,7 +107,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 ## 🎮 Controls
 
-This section details the keybindings and functionalities categorized by different modes of operation.
+
 
 ### Global Controls
 
