@@ -221,4 +221,9 @@
 - Stable operation on common platforms
 - Maintainable and extensible codebase
 
+## Future Technical Direction
+
+### Animation Rendering Architecture
+- **Transition from High-Level to Low-Level APIs**: Move away from deprecated high-level animation APIs (such as `gdk-pixbuf animation`) towards using lower-level animation decoding libraries (e.g., `giflib`, `libnsgif`, or `stb_image`) combined with a custom application-level scheduler. This shift is intended to remove dependencies on deprecated components, provide finer control over frame timing and rendering, and ensure long-term maintainability.
+
 This roadmap provides a clear path from initial implementation to production-ready application, with specific targets and timelines for each phase.
