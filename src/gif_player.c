@@ -37,7 +37,9 @@ GifPlayer* gif_player_new(void) {
             .dither = TRUE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-            .work_factor = 1
+            .work_factor = 1,
+            .dither_mode = CHAFA_DITHER_MODE_ORDERED,
+            .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
         };
         renderer_initialize(player->renderer, &config);
     }
@@ -156,6 +158,9 @@ static void render_current_frame_internal(GifPlayer *player) {
         // 移动光标到顶部，而不是清屏，减少闪烁
         printf("\033[H");
         printf("%s", result->str);
+        
+        // 清除图片下方的剩余内容（防止调整大小时出现残影）
+        printf("\033[J");
         
         // 显示文件名
         gint term_w, term_h;

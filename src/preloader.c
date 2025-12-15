@@ -699,7 +699,9 @@ gpointer preloader_worker_thread(gpointer data) {
         .dither = TRUE,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 1
+        .work_factor = 1,
+        .dither_mode = CHAFA_DITHER_MODE_ORDERED,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
     };
 
     ErrorCode init_result = renderer_initialize(renderer, &config);
