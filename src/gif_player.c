@@ -6,6 +6,10 @@
 #include <chafa.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <gio/gio.h>
+
+// Suppress deprecation warnings for GdkPixbufAnimation and GTimeVal
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 // 创建新的 GIF 播放器实例
 GifPlayer* gif_player_new(void) {
@@ -115,7 +119,18 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     
     // 使用 GdkPixbuf 加载动画
     GError *error = NULL;
-    player->animation = gdk_pixbuf_animation_new_from_file(filepath, &error);
+    GFile *file = g_file_new_for_path(filepath);
+    GFileInputStream *stream = g_file_read(file, NULL, &error);
+    g_object_unref(file);
+
+    if (!stream) {
+        if (error) g_error_free(error);
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    player->animation = gdk_pixbuf_animation_new_from_stream(G_INPUT_STREAM(stream), NULL, &error);
+    g_object_unref(stream);
+
     if (error) {
         g_error_free(error);
         return ERROR_INVALID_IMAGE;
@@ -125,9 +140,7 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     player->filepath = g_strdup(filepath);
     
     // 初始化迭代器
-    GTimeVal tv;
-    g_get_current_time(&tv);
-    player->iter = gdk_pixbuf_animation_get_iter(player->animation, &tv);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     
     return ERROR_NONE;
 }
@@ -199,9 +212,7 @@ static gboolean render_next_frame(gpointer user_data) {
     }
     
     // 更新迭代器到当前时间
-    GTimeVal tv;
-    g_get_current_time(&tv);
-    gdk_pixbuf_animation_iter_advance(player->iter, &tv);
+    gdk_pixbuf_animation_iter_advance(player->iter, NULL);
     
     // 渲染新帧
     render_current_frame_internal(player);
@@ -229,9 +240,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
     
     // 确保迭代器存在
     if (!player->iter) {
-        GTimeVal tv;
-        g_get_current_time(&tv);
-        player->iter = gdk_pixbuf_animation_get_iter(player->animation, &tv);
+        player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     }
     
     player->is_playing = TRUE;
