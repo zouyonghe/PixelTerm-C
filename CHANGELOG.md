@@ -1,5 +1,6 @@
 # Changelog
 
+- v1.1.1: 改进文件管理器滚动与渲染逻辑，即使目录项目不足一屏或回到顶部时也能保持高亮条居中，避免选中项贴到屏幕边缘。
 - v1.1.0: 修复文件浏览器中中文文件名居中显示问题，使用正确的UTF-8显示宽度计算替代字节数计算，改进文件名截断逻辑确保多字节字符完整性。
 - v1.0.20: Fix preview grid pagination to allow sparse last pages, improve input handling with timeout for escape sequences, fix image file detection using full paths, and add proper error handling for renderer initialization in preloader.
 - v1.0.19: Add support for image files without extensions by implementing magic number detection for JPEG, PNG, GIF, WebP, BMP, and TIFF formats, automatically detecting image files without file extensions by reading file headers while maintaining backward compatibility with extension-based detection.
