@@ -740,11 +740,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .max_width = target_width,
             .max_height = target_height, // Normal: use almost full height, Info: reserve space
             .preserve_aspect_ratio = TRUE,
-            .dither = TRUE,
+            .dither = FALSE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
             .work_factor = 1,
-            .dither_mode = CHAFA_DITHER_MODE_ORDERED,
+            .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
         };
 
@@ -1930,11 +1930,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         .max_width = MAX(2, content_width),
         .max_height = MAX(2, content_height),
         .preserve_aspect_ratio = TRUE,
-        .dither = TRUE,
+        .dither = FALSE,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
         .work_factor = 1,
-        .dither_mode = CHAFA_DITHER_MODE_ORDERED,
+        .dither_mode = CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
     };
     ImageRenderer *renderer = renderer_create();
