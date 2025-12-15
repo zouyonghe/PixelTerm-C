@@ -124,7 +124,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | a/d | 备用左右键 |
 | ↑/↓ | 移动选中（预览/文件管理器） |
 | PgUp/PgDn | 预览网格翻页 |
-| p | 网格预览模式（方向键/PgUp/PgDn 移动，Enter 打开） |
+| p/Enter | 进入预览网格模式（方向键/PgUp/PgDn 移动，Enter 打开选中项） |
 | +/- | 放大/缩小预览缩略图 |
 | TAB | 切换文件管理器（无图片时会直接退出） |
 | i | 切换详细信息显示 |

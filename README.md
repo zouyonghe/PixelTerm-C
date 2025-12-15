@@ -124,7 +124,7 @@ Preview grid basics:
 | a/d | Alternative left/right keys |
 | ↑/↓ | Move selection (preview/file manager) |
 | PgUp/PgDn | Page up/down in preview grid |
-| p | Preview grid (move with arrows/PgUp/PgDn, Enter to open) |
+| p/Enter | Enter preview grid mode (move with arrows/PgUp/PgDn, Enter to open selected) |
 | +/- | Increase/decrease preview thumbnail size |
 | TAB | Toggle file manager (or exit when no images are loaded) |
 | i | Toggle image information |
