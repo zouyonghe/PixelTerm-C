@@ -12,6 +12,11 @@ typedef struct {
     ChafaColorSpace color_space;
     ChafaPixelMode pixel_mode;
     gint work_factor;
+    
+    // Advanced quality settings
+    ChafaDitherMode dither_mode;
+    ChafaColorExtractor color_extractor;
+    ChafaOptimizations optimizations;
 } RendererConfig;
 
 // Renderer structure

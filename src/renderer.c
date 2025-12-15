@@ -47,7 +47,12 @@ ImageRenderer* renderer_create(void) {
     renderer->config.dither = TRUE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
     renderer->config.pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-    renderer->config.work_factor = 5;
+    
+    // Maximize quality settings
+    renderer->config.work_factor = 9; // High CPU usage for best character matching
+    renderer->config.dither_mode = CHAFA_DITHER_MODE_ORDERED;
+    renderer->config.color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN;
+    renderer->config.optimizations = CHAFA_OPTIMIZATION_ALL;
 
     return renderer;
 }
@@ -128,8 +133,18 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
                                     renderer->config.max_width, 
                                     renderer->config.max_height);
     chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
-
-    // Create canvas
+    
+    // Apply quality settings
+    if (renderer->config.dither) {
+        chafa_canvas_config_set_dither_mode(renderer->canvas_config, renderer->config.dither_mode);
+    } else {
+        chafa_canvas_config_set_dither_mode(renderer->canvas_config, CHAFA_DITHER_MODE_NONE);
+    }
+    chafa_canvas_config_set_color_extractor(renderer->canvas_config, renderer->config.color_extractor);
+    chafa_canvas_config_set_work_factor(renderer->canvas_config, (float)renderer->config.work_factor / 9.0f); // Normalize 0-9 to 0.0-1.0
+    chafa_canvas_config_set_optimizations(renderer->canvas_config, renderer->config.optimizations);
+    
+    // Set symbol map with safe symbols for the terminal
     renderer->canvas = chafa_canvas_new(renderer->canvas_config);
     if (!renderer->canvas) {
         return ERROR_CHAFA_INIT;
@@ -219,34 +234,6 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
 
     // Generate output - use NULL for term_info to force generic ANSI output with RGB
     GString *output = chafa_canvas_print(renderer->canvas, renderer->term_info);
-    
-    // DEBUG: Write detailed info to log file
-    FILE *log = fopen("/tmp/pixelterm_debug.log", "a");
-    if (log) {
-        fprintf(log, "--- Frame Render ---\n");
-        fprintf(log, "Input: width=%d, height=%d, stride=%d, channels=%d\n", width, height, rowstride, n_channels);
-        fprintf(log, "Chafa Config: pixel_mode=%d, color_space=%d (RGB=%d)\n", 
-                chafa_canvas_config_get_pixel_mode(renderer->canvas_config),
-                chafa_canvas_config_get_color_space(renderer->canvas_config),
-                CHAFA_COLOR_SPACE_RGB);
-        
-        if (output && output->len > 0) {
-            fprintf(log, "Output Length: %lu\n", output->len);
-            fprintf(log, "Output Head (hex): ");
-            for (size_t i = 0; i < 50 && i < output->len; i++) {
-                fprintf(log, "%02x ", (unsigned char)output->str[i]);
-            }
-            fprintf(log, "\nOutput Head (text): ");
-            for (size_t i = 0; i < 100 && i < output->len; i++) {
-                char c = output->str[i];
-                fprintf(log, "%c", (c >= 32 && c <= 126) ? c : '.');
-            }
-            fprintf(log, "\n");
-        } else {
-            fprintf(log, "Output is NULL or empty!\n");
-        }
-        fclose(log);
-    }
     
     return output;
 }
