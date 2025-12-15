@@ -343,6 +343,24 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_CHAFA_INIT;
     }
 
+    // Apply best modes from the new terminal info
+    if (renderer->canvas_config) {
+        ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
+        ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
+        
+        chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
+        chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
+        
+        // Ensure color space is maintained
+        chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
+        
+        // Refresh symbol map based on new terminal capabilities
+        ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
+        chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
+        chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
+        chafa_symbol_map_unref(symbol_map);
+    }
+
     // Update canvas configuration with new terminal size
     gint width, height;
     get_terminal_size(&width, &height);

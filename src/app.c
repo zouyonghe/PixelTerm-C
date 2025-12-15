@@ -1082,6 +1082,11 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    // Stop GIF playback if active
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
+    }
+
     app->file_manager_mode = TRUE;
     app->selected_entry = 0;
     app->scroll_offset = 0;
@@ -1845,6 +1850,11 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         // If no valid images remain, return an error
         g_list_free_full(valid_images, (GDestroyNotify)g_free);
         return ERROR_INVALID_IMAGE;
+    }
+
+    // Stop GIF playback if active
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
     }
 
     app->preview_mode = TRUE;
