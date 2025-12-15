@@ -1,7 +1,7 @@
 # Changelog
 
-- v1.1.1: 改进文件管理器滚动与渲染逻辑，即使目录项目不足一屏或回到顶部时也能保持高亮条居中，避免选中项贴到屏幕边缘。
-- v1.1.0: 修复文件浏览器中中文文件名居中显示问题，使用正确的UTF-8显示宽度计算替代字节数计算，改进文件名截断逻辑确保多字节字符完整性。
+- v1.1.1: Improve file manager scrolling/rendering so the highlighted row stays centered even when the directory has fewer rows than the viewport or when wrapping back to the top.
+- v1.1.0: Fix Chinese filename centering in the browser by using UTF-8 display width instead of byte length and improve truncation to respect multibyte characters.
 - v1.0.20: Fix preview grid pagination to allow sparse last pages, improve input handling with timeout for escape sequences, fix image file detection using full paths, and add proper error handling for renderer initialization in preloader.
 - v1.0.19: Add support for image files without extensions by implementing magic number detection for JPEG, PNG, GIF, WebP, BMP, and TIFF formats, automatically detecting image files without file extensions by reading file headers while maintaining backward compatibility with extension-based detection.
 - v1.0.18: Add wrap-around navigation in file manager (up from top jumps to bottom, down from bottom jumps to top), fix preview zoom jumping issues by using floating-point precision and proper rounding, improve terminal geometry fallback and Konsole handling, clamp terminal cell aspect ratio to sane range, and prefer local chafa at runtime.
