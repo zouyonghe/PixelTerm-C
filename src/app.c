@@ -1611,8 +1611,18 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
         row = 0;
         app->preview_scroll = 0;
     } else if (delta_row < 0 && row < 0) {
-        row = rows - 1;
-        app->preview_scroll = MAX(rows - layout.visible_rows, 0);
+        gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
+        gint last_page_scroll = 0;
+        if (rows > 0) {
+            last_page_scroll = ((rows - 1) / visible_rows) * visible_rows;
+            if (last_page_scroll < 0) {
+                last_page_scroll = 0;
+            } else if (last_page_scroll > rows - 1) {
+                last_page_scroll = rows - 1;
+            }
+        }
+        row = last_page_scroll;
+        app->preview_scroll = last_page_scroll;
     } else if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
         gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
         app->preview_scroll = new_scroll;
