@@ -7,6 +7,8 @@
 #include <locale.h>
 #include <unistd.h>
 
+#include <glib.h>
+
 #include "app.h"
 #include "input.h"
 #include "common.h"
@@ -169,6 +171,7 @@ static ErrorCode run_application(PixelTermApp *app) {
             input_handler->should_exit = TRUE;
             break;
         }
+        
         // Check for terminal size changes
         input_update_terminal_size(input_handler);
         if (last_term_width != input_handler->terminal_width || 
@@ -186,10 +189,18 @@ static ErrorCode run_application(PixelTermApp *app) {
             continue;
         }
         
+        // Process any pending GLib events (such as timer callbacks for GIF animation)
+        // Only process these if we're currently displaying an animated GIF
+        if (app->gif_player && gif_player_is_playing(app->gif_player)) {
+            while (g_main_context_pending(NULL)) {
+                g_main_context_iteration(NULL, FALSE);
+            }
+        }
+        
         // Check if we have pending input with timeout to allow signal checking
         if (!input_has_pending_input(input_handler)) {
-            // Small delay to allow signal handling without busy waiting
-            usleep(50000); // 50ms
+            // Use a shorter delay to allow more responsive event processing
+            usleep(10000); // 10ms instead of 50ms for better animation responsiveness
             continue;
         }
         

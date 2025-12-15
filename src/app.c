@@ -23,6 +23,7 @@ PixelTermApp* app_create(void) {
     app->image_files = NULL;
     app->current_directory = NULL;
     app->preloader = NULL;
+    app->gif_player = NULL;
     app->gerror = NULL;
 
     // Set default state
@@ -376,6 +377,13 @@ void app_destroy(PixelTermApp *app) {
         preloader_destroy(app->preloader);
         app->preloader = NULL;
     }
+    
+    // Stop and destroy GIF player
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
+        gif_player_destroy(app->gif_player);
+        app->gif_player = NULL;
+    }
 
     // Cleanup Chafa resources
     if (app->canvas) {
@@ -448,6 +456,12 @@ ErrorCode app_initialize(PixelTermApp *app) {
     app->canvas = chafa_canvas_new(app->canvas_config);
     if (!app->canvas) {
         return ERROR_CHAFA_INIT;
+    }
+
+    // Initialize GIF player
+    app->gif_player = gif_player_new();
+    if (!app->gif_player) {
+        return ERROR_MEMORY_ALLOC;
     }
 
     return ERROR_NONE;
@@ -688,6 +702,21 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_FILE_NOT_FOUND;
     }
 
+    // Check if it's a GIF file and handle animation
+    const char *ext = get_file_extension(filepath);
+    gboolean is_gif = (ext && g_ascii_strcasecmp(ext, ".gif") == 0) ? TRUE : FALSE;
+    
+    if (is_gif && app->gif_player) {
+        // First, check if we need to load the GIF animation
+        if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
+            ErrorCode load_result = gif_player_load(app->gif_player, filepath);
+            if (load_result != ERROR_NONE) {
+                // If GIF loading fails, just treat it as a regular image
+                is_gif = FALSE;
+            }
+        }
+    }
+
     // Check if image is already cached
     GString *rendered = NULL;
     gint image_width, image_height;
@@ -779,6 +808,19 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
             g_free(safe_basename);
             g_free(basename);
+        }
+    }
+    
+    // If it's a GIF and player is available, start playing if animated
+    if (is_gif && app->gif_player && gif_player_is_animated(app->gif_player)) {
+        // For first render, just show the first frame, then start animation
+        gif_player_play(app->gif_player);
+        // Indicate that we are currently displaying an animated GIF
+        app->needs_redraw = FALSE; // Don't immediately redraw since animation will handle updates
+    } else {
+        // For non-animated images, stop any existing animation
+        if (app->gif_player) {
+            gif_player_stop(app->gif_player);
         }
     }
     

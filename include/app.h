@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "preloader.h"
+#include "gif_player.h"
 
 // Main application structure
 typedef struct {
@@ -19,6 +20,9 @@ typedef struct {
     
     // Preloading
     ImagePreloader *preloader;
+    
+    // Animation support
+    GifPlayer *gif_player;
     
     // Application state
     gboolean running;
