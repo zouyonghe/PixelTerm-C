@@ -39,12 +39,12 @@ static void print_usage(const char *program_name) {
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
-    printf("  Enter / p                     Toggle preview grid mode\n");
+    printf("  Enter                         Toggle preview grid mode\n");
     printf("  Tab                           Toggle file manager mode\n");
     printf("  i                             Toggle image information\n");
     printf("  +/-                           Zoom in/out in preview mode\n");
     printf("  PgUp/PgDn                     Page up/down in preview mode\n");
-    printf("  q / Esc                       Quit application\n");
+    printf("  Esc                           Quit application\n");
     printf("\n");
 }
 
@@ -386,16 +386,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app_refresh_display(app);
                         }
                         break;
-                    case (KeyCode)'p':
-                        if (app->preview_mode) {
-                            app_exit_preview(app, TRUE);
-                            app_refresh_display(app);
-                        } else if (!app->file_manager_mode) {
-                            if (app_enter_preview(app) == ERROR_NONE) {
-                                app_render_preview_grid(app);
-                            }
-                        }
-                        break;
+
                     case (KeyCode)'+':
                     case (KeyCode)'=': // treat '=' as unshifted '+'
                         if (app->preview_mode) {
@@ -407,14 +398,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app_preview_change_zoom(app, -1);
                         }
                         break;
-                    case (KeyCode)'q':
                     case KEY_ESCAPE:
-                        // ESC always exits the application
-                        if (event.key_code == KEY_ESCAPE) {
-                            app->running = FALSE;
-                            input_handler->should_exit = TRUE;
-                            break;
-                        }
                         app->running = FALSE;
                         input_handler->should_exit = TRUE;
                         break;

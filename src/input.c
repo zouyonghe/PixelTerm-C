@@ -395,7 +395,7 @@ gboolean input_is_navigation_key(KeyCode key) {
 
 // Check if key is for quit
 gboolean input_is_quit_key(KeyCode key) {
-    return (key == 'q' || key == KEY_ESCAPE);
+    return (key == KEY_ESCAPE);
 }
 
 // Print key bindings help
@@ -405,7 +405,7 @@ void input_print_key_bindings(void) {
     printf("  TAB            Toggle file manager\n");
     printf("  i              Toggle image information\n");
     printf("  r              Delete current image\n");
-    printf("  q              Quit application\n");
+
     printf("  Ctrl+C         Force exit\n");
     printf("  ESC            Quit application/Exit file manager\n");
     printf("\n");
