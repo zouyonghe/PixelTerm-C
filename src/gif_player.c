@@ -290,3 +290,11 @@ gboolean gif_player_is_playing(const GifPlayer *player) {
 gboolean gif_player_is_animated(const GifPlayer *player) {
     return player && player->is_animated;
 }
+
+// Update terminal size for the internal renderer
+ErrorCode gif_player_update_terminal_size(GifPlayer *player) {
+    if (!player || !player->renderer) {
+        return ERROR_INVALID_IMAGE;
+    }
+    return renderer_update_terminal_size(player->renderer);
+}

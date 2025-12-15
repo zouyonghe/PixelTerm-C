@@ -925,6 +925,11 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     if (app->preloader && app->preload_enabled) {
         preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
     }
+    
+    // Update GIF player terminal size if active
+    if (app->gif_player) {
+        gif_player_update_terminal_size(app->gif_player);
+    }
 
     return app_render_current_image(app);
 }

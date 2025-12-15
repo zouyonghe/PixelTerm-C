@@ -36,5 +36,6 @@ ErrorCode gif_player_pause(GifPlayer *player);
 ErrorCode gif_player_stop(GifPlayer *player);
 gboolean gif_player_is_playing(const GifPlayer *player);
 gboolean gif_player_is_animated(const GifPlayer *player);
+ErrorCode gif_player_update_terminal_size(GifPlayer *player);
 
 #endif // GIF_PLAYER_H
