@@ -23,7 +23,7 @@ static void signal_handler(int sig) {
 
 // Print usage information
 static void print_usage(const char *program_name) {
-    printf("A high-performance terminal image browser written in C.\n");
+    printf("PixelTerm-C: A high-performance terminal image browser written in C.\n");
     printf("\n");
     printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
     printf("\n");
@@ -34,6 +34,15 @@ static void print_usage(const char *program_name) {
     printf("  -h, --help     Show this help message\n");
     printf("  -v, --version  Show version information\n");
     printf("  --no-preload   Disable image preloading (default: enabled)\n");
+    printf("\n");
+    printf("Controls:\n");
+    printf("  Arrow Keys / hjkl             Navigate between images\n");
+    printf("  Enter / p                     Toggle preview grid mode\n");
+    printf("  Tab                           Toggle file manager mode\n");
+    printf("  i                             Toggle image information\n");
+    printf("  +/-                           Zoom in/out in preview mode\n");
+    printf("  PgUp/PgDn                     Page up/down in preview mode\n");
+    printf("  q / Esc                       Quit application\n");
     printf("\n");
 }
 
@@ -203,7 +212,7 @@ static ErrorCode run_application(PixelTermApp *app) {
 
                 switch (event.key_code) {
                     case KEY_LEFT:
-                    case (KeyCode)'a':
+                    case (KeyCode)'h':
                         if (app->preview_mode) {
                             app_preview_move_selection(app, 0, -1);
                             app_render_preview_grid(app);
@@ -214,11 +223,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -240,11 +249,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -262,11 +271,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -277,7 +286,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case KEY_RIGHT:
-                    case (KeyCode)'d':
+                    case (KeyCode)'l':
                         if (app->preview_mode) {
                             app_preview_move_selection(app, 0, 1);
                             app_render_preview_grid(app);
@@ -288,11 +297,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -314,11 +323,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -336,11 +345,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -417,6 +426,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app_render_file_manager(app);
                         }
                         break;
+                    case (KeyCode)'k':
                     case KEY_UP:
                         if (app->preview_mode) {
                             app_preview_move_selection(app, -1, 0);
@@ -428,11 +438,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_UP && 
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_DOWN &&
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -450,11 +462,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_UP && 
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_DOWN &&
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -472,11 +486,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_UP && 
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_DOWN &&
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -486,6 +502,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                             }
                         }
                         break;
+                    case (KeyCode)'j':
                     case KEY_DOWN:
                         if (app->preview_mode) {
                             app_preview_move_selection(app, 1, 0);
@@ -497,11 +514,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_DOWN && 
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -519,11 +538,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_DOWN && 
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking
@@ -541,11 +562,13 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 if (skip_error != ERROR_NONE) break;
                                 if (skip_event.type != INPUT_KEY_PRESS) continue;
                                 if (skip_event.key_code != KEY_DOWN && 
+                                    skip_event.key_code != (KeyCode)'j' &&
                                     skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
+                                    skip_event.key_code != (KeyCode)'h' &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'d' &&
+                                    skip_event.key_code != (KeyCode)'l' &&
                                     skip_event.key_code != KEY_UP &&
+                                    skip_event.key_code != (KeyCode)'k' &&
                                     skip_event.key_code != KEY_PAGE_UP &&
                                     skip_event.key_code != KEY_PAGE_DOWN) {
                                     // If we encounter a non-navigation key, put it back by breaking

@@ -114,14 +114,15 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 Preview grid basics:
 - When opening a directory with images, the app starts in the preview grid by default; from single-image view press `Enter` or `p` to enter the grid.
-- Use arrows/PgUp/PgDn to move, `+`/`-` to change thumbnail size (at least 2 columns), and `Enter` to open the selected image.
+- Use arrows/hjkl/PgUp/PgDn to move, `+`/`-` to change thumbnail size (at least 2 columns), and `Enter` to open the selected image.
 
 ## 🎮 Controls
 
 | Key | Function |
 |-----|----------|
 | ←/→ | Previous/Next image |
-| a/d | Alternative left/right keys |
+| h/l | Alternative left/right keys (Vim-style navigation) |
+| j/k | Alternative down/up keys (Vim-style navigation) |
 | ↑/↓ | Move selection (preview/file manager) |
 | PgUp/PgDn | Page up/down in preview grid |
 | p/Enter | Enter preview grid mode (move with arrows/PgUp/PgDn, Enter to open selected) |

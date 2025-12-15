@@ -53,7 +53,7 @@
 **Timeline: 3-4 weeks**
 
 ### Complete Keyboard Support
-- [ ] All navigation keys (a/d, i, r, q)
+- [ ] All navigation keys (hjkl, i, r, q)
 - [ ] Key mapping configuration
 - [ ] Terminal compatibility
 - [ ] Input validation

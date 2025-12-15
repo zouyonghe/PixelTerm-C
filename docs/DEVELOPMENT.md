@@ -57,7 +57,7 @@ typedef struct {
 - [ ] Basic error handling
 
 ### Phase 2: Core Features (3-4 weeks)
-- [ ] Complete keyboard support (a/d, i, r, q)
+- [ ] Complete keyboard support (hjkl, i, r, q)
 - [ ] Preloading system implementation
 - [ ] File management (delete, info display)
 - [ ] Memory optimization
