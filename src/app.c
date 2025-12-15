@@ -1859,6 +1859,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
             gboolean rendered_from_preload = FALSE;
             gboolean rendered_from_renderer_cache = FALSE;
+
             GString *rendered = NULL;
             if (app->preloader && app->preload_enabled) {
                 rendered = preloader_get_cached_image(app->preloader, filepath, content_width, content_height);

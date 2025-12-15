@@ -36,8 +36,6 @@ typedef struct {
     
     // Threading and caching
     GThread *preload_thread;
-    GMutex cache_mutex;
-    GHashTable *render_cache;
     
     // Application state
     gboolean running;
@@ -53,15 +51,7 @@ typedef struct {
 - **Memory Pressure**: Automatic cleanup when memory is low
 - **Thread Safety**: Mutex protection for shared cache
 
-#### Preloading System
-```c
-typedef struct {
-    gchar *filepath;
-    GString *rendered_data;
-    gint64 timestamp;
-    gint access_count;
-} CachedImage;
-```
+
 
 ## Threading Architecture
 

@@ -97,31 +97,7 @@ ErrorCode browser_refresh_directory(FileBrowser *browser) {
     return browser_scan_directory(browser, browser->directory_path);
 }
 
-// Check if file is an image based on extension
 
-
-// Filter image files from a list of all files
-GList* browser_filter_image_files(GList *all_files) {
-    GList *image_files = NULL;
-    GList *current = all_files;
-
-    while (current) {
-        gchar *filename = (gchar*)current->data;
-        if (is_image_file(filename)) {
-            image_files = g_list_prepend(image_files, g_strdup(filename));
-        }
-        current = g_list_next(current);
-    }
-
-    return g_list_sort(image_files, (GCompareFunc)g_strcmp0);
-}
-
-// Sort files alphabetically
-void browser_sort_files(GList **files) {
-    if (files && *files) {
-        *files = g_list_sort(*files, (GCompareFunc)g_strcmp0);
-    }
-}
 
 // Navigate to next file
 ErrorCode browser_next_file(FileBrowser *browser) {

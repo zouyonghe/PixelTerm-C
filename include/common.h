@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 #include <glib.h>
 #include <chafa.h>
-#include <pthread.h>
+
 #include <stdbool.h>
 
 // Application constants
@@ -53,14 +53,7 @@ typedef struct {
     gint64 modification_time;
 } ImageInfo;
 
-// Cached image structure
-typedef struct {
-    gchar *filepath;
-    GString *rendered_data;
-    gint64 timestamp;
-    gint access_count;
-    gboolean is_valid;
-} CachedImage;
+
 
 // Function declarations
 // Check if a file is an image based on its extension

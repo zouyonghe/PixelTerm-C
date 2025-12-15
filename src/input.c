@@ -273,20 +273,7 @@ gint input_read_key(InputHandler *handler) {
     return input_read_char(handler);
 }
 
-// Check if a specific key is pressed
-gboolean input_is_key_pressed(InputHandler *handler, KeyCode key) {
-    if (!handler) {
-        return FALSE;
-    }
 
-    if (!input_has_pending_input(handler)) {
-        return FALSE;
-    }
-
-    InputEvent event;
-    ErrorCode error = input_get_event(handler, &event);
-    return (error == ERROR_NONE && event.key_code == key);
-}
 
 // Read a single character
 gchar input_read_char(InputHandler *handler) {

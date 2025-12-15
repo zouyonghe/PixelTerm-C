@@ -102,14 +102,8 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # 显示帮助
 ./pixelterm --help
 
-# 启动时显示图像信息
-./pixelterm --info /path/to/images
-
 # 禁用预加载
 ./pixelterm --no-preload /path/to/images
-
-# 直接进入预览网格（打开含图片的目录默认如此）
-./pixelterm /path/to/images   # 单图模式下按 Enter 或 p 返回网格
 ```
 
 预览网格基础用法：
@@ -121,9 +115,8 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | 按键 | 功能 |
 |-----|------|
 | ←/→ | 上一张/下一张图像 |
-| h/l | 备用左右键（Vim风格导航） |
-| j/k | 备用上下键（Vim风格导航） |
 | ↑/↓ | 移动选中（预览/文件管理器） |
+| h/j/k/l | Vim风格导航（左/下/上/右） |
 | PgUp/PgDn | 预览网格翻页 |
 | p/Enter | 进入预览网格模式（方向键/PgUp/PgDn 移动，Enter 打开选中项） |
 | +/- | 放大/缩小预览缩略图 |

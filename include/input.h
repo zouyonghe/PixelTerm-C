@@ -8,9 +8,7 @@
 typedef enum {
     INPUT_KEY_PRESS,
     INPUT_KEY_RELEASE,
-    INPUT_MOUSE_PRESS,
-    INPUT_MOUSE_RELEASE,
-    INPUT_MOUSE_MOVE,
+
     INPUT_RESIZE
 } InputEventType;
 
@@ -49,8 +47,7 @@ typedef struct {
     InputEventType type;
     KeyCode key_code;
     guint32 modifiers;  // SHIFT, CTRL, ALT flags
-    gint mouse_x;
-    gint mouse_y;
+
     gint terminal_width;
     gint terminal_height;
 } InputEvent;
@@ -85,7 +82,7 @@ ErrorCode input_flush_buffer(InputHandler *handler);
 
 // Key reading functions
 gint input_read_key(InputHandler *handler);
-gboolean input_is_key_pressed(InputHandler *handler, KeyCode key);
+
 gchar input_read_char(InputHandler *handler);
 gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
 

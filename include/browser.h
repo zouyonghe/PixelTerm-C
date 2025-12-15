@@ -19,10 +19,7 @@ void browser_destroy(FileBrowser *browser);
 ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory);
 ErrorCode browser_refresh_directory(FileBrowser *browser);
 
-// File filtering and sorting
 
-GList* browser_filter_image_files(GList *all_files);
-void browser_sort_files(GList **files);
 
 // Navigation functions
 ErrorCode browser_next_file(FileBrowser *browser);

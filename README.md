@@ -102,14 +102,8 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # Show help
 ./pixelterm --help
 
-# Start with image information visible
-./pixelterm --info /path/to/images
-
 # Disable preloading
 ./pixelterm --no-preload /path/to/images
-
-# Start directly in preview grid (default when opening a directory with images)
-./pixelterm /path/to/images   # then use Enter or p to leave/return to grid
 ```
 
 Preview grid basics:
@@ -121,9 +115,8 @@ Preview grid basics:
 | Key | Function |
 |-----|----------|
 | ←/→ | Previous/Next image |
-| h/l | Alternative left/right keys (Vim-style navigation) |
-| j/k | Alternative down/up keys (Vim-style navigation) |
 | ↑/↓ | Move selection (preview/file manager) |
+| h/j/k/l | Vim-style navigation (left/down/up/right) |
 | PgUp/PgDn | Page up/down in preview grid |
 | p/Enter | Enter preview grid mode (move with arrows/PgUp/PgDn, Enter to open selected) |
 | +/- | Increase/decrease preview thumbnail size |
