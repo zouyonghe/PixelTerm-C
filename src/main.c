@@ -404,19 +404,26 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case KEY_TAB:
                         if (app->preview_mode) {
+                            app->return_to_mode = 1; // Mark return to PREVIEW
                             app_exit_preview(app, TRUE);
                             app_enter_file_manager(app);
                             app_render_file_manager(app);
                         } else if (app->file_manager_mode) {
-                            if (!app_has_images(app)) {
-                                // In browser-only mode, allow immediate exit
-                                app->running = FALSE;
-                                input_handler->should_exit = TRUE;
-                                break;
-                            }
-                            app_exit_file_manager(app);
-                            app_refresh_display(app);
+                            // Check where to return to
+                            if (app->return_to_mode == 1) { // Return to PREVIEW
+                                app_exit_file_manager(app);
+                                if (app_enter_preview(app) == ERROR_NONE) {
+                                    app_render_preview_grid(app);
+                                } else {
+                                    app_refresh_display(app);
+                                }
+                            } else if (app->return_to_mode == 0) { // Return to SINGLE
+                                app_exit_file_manager(app);
+                                app_refresh_display(app);
+                            } 
+                            // If return_to_mode is -1 (direct entry), do nothing (TAB invalid)
                         } else {
+                            app->return_to_mode = 0; // Mark return to SINGLE
                             app_enter_file_manager(app);
                             app_render_file_manager(app);
                         }

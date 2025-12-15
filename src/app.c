@@ -38,6 +38,7 @@ PixelTermApp* app_create(void) {
     app->show_hidden_files = FALSE;
     app->preview_mode = FALSE;
     app->preview_zoom = 0; // 0 indicates uninitialized target cell width
+    app->return_to_mode = -1; // -1 indicates no return mode set
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -2093,13 +2094,13 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     // Footer with quick hints and page indicator at the bottom
     if (app->term_height > 0) {
-        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Toggle  +/- Zoom  q Back";
+        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  +/- Zoom  ESC Exit";
         printf("\033[%d;1H", app->term_height);
         printf("\033[36m←/→/↑/↓\033[0m Move  ");
         printf("\033[36mPgUp/PgDn\033[0m Page  ");
-        printf("\033[36mEnter\033[0m Toggle  ");
+        printf("\033[36mEnter\033[0m Open  ");
         printf("\033[36m+/-\033[0m Zoom  ");
-        printf("\033[36mq\033[0m Back");
+        printf("\033[36mESC\033[0m Exit");
 
         // Page indicator at bottom-right based on items per page
         gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;

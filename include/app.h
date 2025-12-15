@@ -34,6 +34,7 @@ typedef struct {
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
     gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
+    gint return_to_mode;         // Return mode after file manager (0=single, 1=preview, -1=none)
     
     // Terminal info
     gint term_width;
