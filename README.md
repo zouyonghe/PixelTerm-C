@@ -148,14 +148,12 @@ This mode displays multiple image thumbnails in a grid.
 
 ### File Manager Mode
 
-This mode allows browsing through directories and files.
+This mode allows browsing through directories and files. Note that Vim-style navigation (h/j/k/l) is not supported here, as letter keys are reserved for quickly jumping to file entries.
 
 | Key | Function |
 |-----|----------|
 | ←/→ | Go to parent directory / Open selected directory/file |
 | ↑/↓ | Navigate entries up/down |
-| h/l | Vim-style navigation (go to parent directory / open selected directory/file) |
-| j/k | Vim-style navigation (navigate entries down/up) |
 | Enter | Open selected directory or file |
 | TAB | Return to the previous image view or grid preview; no effect if FM was entered directly |
 | Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
