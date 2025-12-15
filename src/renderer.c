@@ -208,8 +208,8 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
     chafa_canvas_draw_all_pixels(renderer->canvas, pixel_type, 
                                 pixel_data, width, height, rowstride);
 
-    // Generate output
-    GString *output = chafa_canvas_print(renderer->canvas, renderer->term_info);
+    // Generate output - use NULL for term_info to force generic ANSI output with RGB
+    GString *output = chafa_canvas_print(renderer->canvas, NULL);
     
     return output;
 }
