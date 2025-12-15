@@ -96,6 +96,15 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
 
     gchar **envp = g_get_environ();
+    
+    // Force TrueColor support detection by injecting/overriding environment variables
+    envp = g_environ_setenv(envp, "COLORTERM", "truecolor", TRUE);
+    // Ensure we have a capable TERM if not already set to something good
+    const gchar *term_env = g_environ_getenv(envp, "TERM");
+    if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
+        envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
+    }
+
     renderer->term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
     
@@ -209,7 +218,35 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
                                 pixel_data, width, height, rowstride);
 
     // Generate output - use NULL for term_info to force generic ANSI output with RGB
-    GString *output = chafa_canvas_print(renderer->canvas, NULL);
+    GString *output = chafa_canvas_print(renderer->canvas, renderer->term_info);
+    
+    // DEBUG: Write detailed info to log file
+    FILE *log = fopen("/tmp/pixelterm_debug.log", "a");
+    if (log) {
+        fprintf(log, "--- Frame Render ---\n");
+        fprintf(log, "Input: width=%d, height=%d, stride=%d, channels=%d\n", width, height, rowstride, n_channels);
+        fprintf(log, "Chafa Config: pixel_mode=%d, color_space=%d (RGB=%d)\n", 
+                chafa_canvas_config_get_pixel_mode(renderer->canvas_config),
+                chafa_canvas_config_get_color_space(renderer->canvas_config),
+                CHAFA_COLOR_SPACE_RGB);
+        
+        if (output && output->len > 0) {
+            fprintf(log, "Output Length: %lu\n", output->len);
+            fprintf(log, "Output Head (hex): ");
+            for (size_t i = 0; i < 50 && i < output->len; i++) {
+                fprintf(log, "%02x ", (unsigned char)output->str[i]);
+            }
+            fprintf(log, "\nOutput Head (text): ");
+            for (size_t i = 0; i < 100 && i < output->len; i++) {
+                char c = output->str[i];
+                fprintf(log, "%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+            fprintf(log, "\n");
+        } else {
+            fprintf(log, "Output is NULL or empty!\n");
+        }
+        fclose(log);
+    }
     
     return output;
 }
@@ -332,7 +369,17 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_CHAFA_INIT;
     }
 
-    renderer->term_info = chafa_term_db_detect(term_db, NULL);
+    // Force TrueColor support detection
+    gchar **envp = g_get_environ();
+    envp = g_environ_setenv(envp, "COLORTERM", "truecolor", TRUE);
+    const gchar *term_env = g_environ_getenv(envp, "TERM");
+    if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
+        envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
+    }
+
+    renderer->term_info = chafa_term_db_detect(term_db, envp);
+    g_strfreev(envp);
+
     if (!renderer->term_info) {
         return ERROR_CHAFA_INIT;
     }
