@@ -13,6 +13,8 @@ Release notes: see `CHANGELOG.md`.
 ## 🌟 Features
 
 - 🖼️ **Multi-format Support** - Supports JPG, PNG, GIF, BMP, WebP, TIFF and other mainstream image formats
+- 🎬 **Animated GIF Support** - Play animated GIFs directly in the terminal with proper timing and high-quality rendering
+- 🎨 **TrueColor Rendering** - Full 24-bit color support with automatic detection and optimization
 - 📁 **Smart Browsing** - Automatically detects image files in directories with directory navigation support
 - ⌨️ **Keyboard Navigation** - Switch between images with arrow keys, supporting various terminal environments
 - 📏 **Adaptive Display** - Automatically adapts to terminal size changes
