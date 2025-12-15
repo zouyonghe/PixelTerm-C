@@ -21,11 +21,8 @@ Release notes: see `CHANGELOG.md`.
 - 🎨️ **Minimal Interface** - No redundant information, focused on image browsing experience
 - ⚡️ **High Performance** - 5-10x faster than Python version with significantly lower memory usage
 - 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
-- 📊 **Detailed Information** - Toggle comprehensive image metadata display
-- 🎯 **Blue Filenames** - Color-coded filename display for better visibility
 - 🏗️ **Multi-architecture Support** - Native support for both amd64 and aarch64 (ARM64) architectures
 - 📦 **Preloading** - Optional image preloading for faster navigation
-- 📋 **Smart Help** - Automatically shows version and help information when no images are found
 
 ## Performance Improvements
 
