@@ -47,7 +47,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.dither = TRUE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
     renderer->config.pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-    renderer->config.work_factor = 1;
+    renderer->config.work_factor = 5;
 
     return renderer;
 }
@@ -119,12 +119,6 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
                                     renderer->config.max_width, 
                                     renderer->config.max_height);
     chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
-    
-    // Set symbol map with safe symbols for the terminal
-    ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-    chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
-    chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
-    chafa_symbol_map_unref(symbol_map);
 
     // Create canvas
     renderer->canvas = chafa_canvas_new(renderer->canvas_config);
@@ -353,12 +347,6 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         
         // Ensure color space is maintained
         chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
-        
-        // Refresh symbol map based on new terminal capabilities
-        ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-        chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
-        chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
-        chafa_symbol_map_unref(symbol_map);
     }
 
     // Update canvas configuration with new terminal size
