@@ -393,11 +393,6 @@ gboolean input_is_navigation_key(KeyCode key) {
             key == 'a' || key == 'd');
 }
 
-// Check if key is for quit
-gboolean input_is_quit_key(KeyCode key) {
-    return (key == KEY_ESCAPE);
-}
-
 // Print key bindings help
 void input_print_key_bindings(void) {
     printf("\nKey Bindings:\n");

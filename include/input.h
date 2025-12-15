@@ -93,8 +93,8 @@ gint input_get_terminal_height(const InputHandler *handler);
 
 // Utility functions
 const gchar* input_key_code_to_string(KeyCode key);
+// Check if key is for navigation
 gboolean input_is_navigation_key(KeyCode key);
-gboolean input_is_quit_key(KeyCode key);
 void input_print_key_bindings(void);
 
 #endif // INPUT_H
