@@ -1,5 +1,6 @@
 # Changelog
 
+- v1.1.4: Reworked code and documentation based on user feedback. Restored ImageRenderer's internal caching for performance, re-confirmed and removed various unused code (e.g., pthread.h, browser file filtering/sorting, input_is_key_pressed, mouse event fields), and synchronized documentation (docs/ARCHITECTURE.md, include/common.h) with current codebase.
 - v1.1.1: Improve file manager scrolling/rendering so the highlighted row stays centered even when the directory has fewer rows than the viewport or when wrapping back to the top.
 - v1.1.0: Fix Chinese filename centering in the browser by using UTF-8 display width instead of byte length and improve truncation to respect multibyte characters.
 - v1.0.20: Fix preview grid pagination to allow sparse last pages, improve input handling with timeout for escape sequences, fix image file detection using full paths, and add proper error handling for renderer initialization in preloader.
