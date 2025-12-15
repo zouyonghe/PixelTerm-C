@@ -171,19 +171,26 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     // Handle escape sequences
     if (c == '\033') {
         // Check if it's an escape sequence or just ESC key
-        if (input_has_pending_input(handler)) {
-            // Read next character with short timeout
-            gint next = input_read_char_with_timeout(handler, 10);
-            
-            if (next == '[') {
-                // ANSI escape sequence
+        // We use a timeout to wait for potential following characters
+        gint next = input_read_char_with_timeout(handler, 50);
+        
+        if (next != 0) {
+            // We have a character following ESC
+            if (next == '[' || next == 'O') {
+                // ANSI escape sequence or Application Cursor Keys
                 gint seq[3] = {0};
                 gint i = 0;
                 
                 // Read the sequence with timeout for each character
                 while (i < 3) {
-                    if (input_has_pending_input(handler)) {
-                        seq[i++] = input_read_char_with_timeout(handler, 10);
+                    // Try to read next char with timeout
+                    gchar ch = input_read_char_with_timeout(handler, 50);
+                    if (ch != 0) {
+                        seq[i++] = ch;
+                        // Stop reading if we hit a terminator (letter or ~)
+                        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~') {
+                            break;
+                        }
                     } else {
                         break; // No more data available
                     }
@@ -221,11 +228,11 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                     }
                 }
             } else {
-                // Other escape sequence
+                // Other escape sequence (ESC + something else)
                 event->key_code = KEY_UNKNOWN;
             }
         } else {
-            // Just ESC key
+            // Just ESC key (timeout reached without new data)
             event->key_code = KEY_ESCAPE;
         }
     } else {
