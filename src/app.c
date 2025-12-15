@@ -245,7 +245,9 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
     gint target_row = visible_rows / 2; // try to keep selection centered
     gint desired_offset = row - target_row;
 
-    gint max_offset = MAX(0, total_rows - visible_rows);
+    // Allow additional offset headroom so highlight can stay centered even when
+    // the directory has fewer rows than the viewport (remaining space becomes padding).
+    gint max_offset = MAX(0, total_rows - 1);
     if (desired_offset < 0) desired_offset = 0;
     if (desired_offset > max_offset) desired_offset = max_offset;
 
@@ -2065,7 +2067,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     gint target_row = available_rows / 2;
 
     // Clamp scroll_offset to valid range
-    gint max_offset = MAX(0, total_rows - available_rows);
+    gint max_offset = MAX(0, total_rows - 1);
     if (app->scroll_offset > max_offset) {
         app->scroll_offset = max_offset;
     }
@@ -2074,18 +2076,49 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     }
 
     gint start_row = app->scroll_offset;
+    if (total_rows <= 0) {
+        start_row = 0;
+    } else if (start_row >= total_rows) {
+        start_row = total_rows - 1;
+    }
+
     gint end_row = MIN(start_row + available_rows, total_rows);
     gint rows_to_render = end_row - start_row;
     if (rows_to_render < 0) rows_to_render = 0;
 
     // Calculate padding to keep the selected entry roughly centered
     gint selected_row = app->selected_entry; // single column
+    if (selected_row < 0) {
+        selected_row = 0;
+    } else if (total_rows > 0 && selected_row >= total_rows) {
+        selected_row = total_rows - 1;
+    } else if (total_rows == 0) {
+        selected_row = 0;
+    }
+
     gint selected_pos = selected_row - start_row; // position within rendered block
     if (selected_pos < 0) selected_pos = 0;
-    if (selected_pos >= rows_to_render) selected_pos = rows_to_render - 1;
+    if (rows_to_render > 0 && selected_pos >= rows_to_render) {
+        selected_pos = rows_to_render - 1;
+    }
 
     gint top_padding = target_row - selected_pos;
-    if (top_padding < 0) top_padding = 0;
+    if (top_padding < 0 && rows_to_render > 0) {
+        // Convert negative padding into additional scroll when there is room below
+        gint more_rows_below = MAX(0, total_rows - end_row);
+        gint scroll_shift = MIN(-top_padding, more_rows_below);
+        if (scroll_shift > 0) {
+            start_row += scroll_shift;
+            end_row = MIN(start_row + available_rows, total_rows);
+            rows_to_render = end_row - start_row;
+            selected_pos = selected_row - start_row;
+            top_padding = target_row - selected_pos;
+        }
+        if (top_padding < 0) {
+            top_padding = 0;
+        }
+    }
+    app->scroll_offset = start_row;
 
     // Ensure we don't render past the available rows when centering
     gint visible_space = MAX(0, available_rows - top_padding);
