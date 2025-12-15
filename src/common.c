@@ -87,6 +87,33 @@ gboolean is_image_by_content(const char *filepath) {
     return FALSE;
 }
 
+// Check if a file is a valid image file (checks size, content, format)
+gboolean is_valid_image_file(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    // Check if file exists and get size
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        return FALSE;
+    }
+
+    // Check if file size is 0 (invalid file)
+    if (st.st_size == 0) {
+        return FALSE;
+    }
+
+    // Check if it's an image file by extension or content
+    if (!is_image_file(filepath)) {
+        return FALSE;
+    }
+
+    // For non-zero files, we'll be more lenient and only check the file header
+    // to avoid rejecting valid images that might have issues with gdk-pixbuf
+    return is_image_by_content(filepath);
+}
+
 // Get file extension
 const char* get_file_extension(const char *filename) {
     if (!filename) {

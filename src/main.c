@@ -767,7 +767,29 @@ int main(int argc, char *argv[]) {
             }
         }
     } else {
-        error = app_load_single_file(g_app, path);
+        // Check if the file is a valid image file first
+        if (!is_valid_image_file(path)) {
+            // If the file is not valid, load the directory to see if there are other valid images
+            gchar *directory = g_path_get_dirname(path);
+            error = app_load_directory(g_app, directory);
+            g_free(directory);
+            
+            if (error == ERROR_NONE) {
+                if (app_has_images(g_app)) {
+                    // If there are other valid images in the directory, start in preview mode
+                    error = app_enter_preview(g_app);
+                } else {
+                    // If no other valid images exist, start in file manager mode
+                    error = app_enter_file_manager(g_app);
+                    if (error == ERROR_NONE) {
+                        app_render_file_manager(g_app);
+                    }
+                }
+            }
+        } else {
+            // Load the single valid file as normal
+            error = app_load_single_file(g_app, path);
+        }
     }
 
     if (error != ERROR_NONE) {

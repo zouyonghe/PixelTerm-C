@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <glib.h>
 #include <chafa.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #include <stdbool.h>
 
@@ -61,6 +62,9 @@ gboolean is_image_file(const char *filename);
 
 // Check if a file is an image by reading its magic numbers (for files without extensions)
 gboolean is_image_by_content(const char *filepath);
+
+// Check if a file is a valid image file (checks size, content, format)
+gboolean is_valid_image_file(const char *filepath);
 const char* get_file_extension(const char *filename);
 gboolean file_exists(const char *path);
 gint64 get_file_size(const char *path);

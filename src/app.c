@@ -465,17 +465,22 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         return error;
     }
 
-    // Copy file list to app
+    // Copy file list to app, filtering out invalid files
     GList *file_list = browser_get_all_files(browser);
     app->image_files = NULL;
+    gint valid_count = 0;
     GList *current = file_list;
     while (current) {
         gchar *filepath = (gchar*)current->data;
-        app->image_files = g_list_prepend(app->image_files, g_strdup(filepath));
+        // Only add valid image files to the app's list
+        if (is_valid_image_file(filepath)) {
+            app->image_files = g_list_prepend(app->image_files, g_strdup(filepath));
+            valid_count++;
+        }
         current = g_list_next(current);
     }
     app->image_files = g_list_reverse(app->image_files);
-    app->total_images = browser_get_total_files(browser);
+    app->total_images = valid_count;
     app->current_index = 0;
 
     browser_destroy(browser);
@@ -520,6 +525,11 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     }
 
     if (!is_image_file(filepath)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    // Additionally check if the file is a valid image file
+    if (!is_valid_image_file(filepath)) {
         return ERROR_INVALID_IMAGE;
     }
 
@@ -1197,7 +1207,12 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         // Refresh file manager with new directory
         return app_file_manager_refresh(app);
     } else {
-        // It's a file, load the file first
+        // It's a file, check if it's a valid image file before loading
+        if (!is_valid_image_file(selected_path)) {
+            // If it's not a valid image file, don't try to load it
+            return ERROR_INVALID_IMAGE;
+        }
+        
         ErrorCode error = app_load_single_file(app, selected_path);
         
         // Only exit file manager if file was loaded successfully
@@ -1717,6 +1732,49 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    // Filter out invalid images before entering preview mode
+    GList *valid_images = NULL;
+    gint valid_count = 0;
+    gint new_current_index = app->current_index;
+    gint valid_current_index = -1;
+    
+    GList *current = app->image_files;
+    gint original_index = 0;
+    while (current) {
+        const gchar *filepath = (const gchar*)current->data;
+        if (is_valid_image_file(filepath)) {
+            valid_images = g_list_append(valid_images, g_strdup(filepath));
+            if (original_index == app->current_index) {
+                valid_current_index = valid_count;
+            }
+            valid_count++;
+        }
+        current = g_list_next(current);
+        original_index++;
+    }
+    
+    // If we found valid images, replace the image list
+    if (valid_images && valid_count > 0) {
+        // Free the old image list
+        if (app->image_files) {
+            g_list_free_full(app->image_files, (GDestroyNotify)g_free);
+        }
+        
+        app->image_files = valid_images;
+        app->total_images = valid_count;
+        
+        // Update current index to the valid image that was selected
+        if (valid_current_index >= 0) {
+            app->current_index = valid_current_index;
+        } else if (app->current_index >= app->total_images) {
+            app->current_index = 0; // fallback to first image
+        }
+    } else {
+        // If no valid images remain, return an error
+        g_list_free_full(valid_images, (GDestroyNotify)g_free);
         return ERROR_INVALID_IMAGE;
     }
 
@@ -2280,8 +2338,18 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         printf("\033[1G"); // Move to beginning of line for consistent positioning
         for (gint i = 0; i < pad; i++) printf(" ");
 
+        gboolean is_valid_image = (!is_dir && is_valid_image_file(entry));
         gboolean selected = (idx == app->selected_entry);
-        if (selected) {
+        if (is_image && !is_valid_image) {
+            // Invalid image files (e.g., 0KB files) are shown with "Invalid" label
+            if (selected) {
+                // Selected invalid file: only filename has highlight, [Invalid] stays as red text
+                printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
+            } else {
+                // Non-selected invalid file: red text
+                printf("\033[31m%s [Invalid]\033[0m", print_name);
+            }
+        } else if (selected) {
             printf("\033[47;30m%s\033[0m", print_name);
         } else if (is_dir) {
             printf("\033[34m%s\033[0m", print_name);
