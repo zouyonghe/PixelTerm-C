@@ -242,16 +242,39 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
     if (total_rows < 1) total_rows = 1;
 
     gint row = app->selected_entry / cols;
-    gint target_row = visible_rows / 2; // try to keep selection centered
-    gint desired_offset = row - target_row;
+    
+    // Calculate appropriate scroll offset considering visible rows to avoid frequent adjustments
+    gint desired_offset = app->scroll_offset;  // Default to current offset
+    
+    // Only adjust scrolling when the selected item is not in the visible range
+    gint start_row = app->scroll_offset;
+    gint end_row = start_row + visible_rows;
+    
+    // If selected item is before the visible range, scroll to make it visible
+    if (row < start_row) {
+        desired_offset = row;
+    }
+    // If selected item is after the visible range, scroll to make it visible
+    else if (row >= end_row) {
+        desired_offset = row - visible_rows + 1;
+    }
+    // If selected item is in visible range but not near center, consider center alignment
+    else {
+        gint target_row = visible_rows / 2; // Target center row
+        desired_offset = row - target_row;
+    }
 
-    // Allow additional offset headroom so highlight can stay centered even when
-    // the directory has fewer rows than the viewport (remaining space becomes padding).
-    gint max_offset = MAX(0, total_rows - 1);
+    // Limit the range of scroll offset
+    gint max_offset = MAX(0, total_rows - visible_rows);
+    if (max_offset < 0) max_offset = 0;
+    
     if (desired_offset < 0) desired_offset = 0;
     if (desired_offset > max_offset) desired_offset = max_offset;
 
-    app->scroll_offset = desired_offset;
+    // Only update scroll offset when necessary to avoid frequent changes
+    if (app->scroll_offset != desired_offset) {
+        app->scroll_offset = desired_offset;
+    }
 }
 
 // Try to highlight the currently viewed image when opening file manager
@@ -1079,6 +1102,8 @@ ErrorCode app_file_manager_up(PixelTermApp *app) {
         // Jump to last entry when at the top and pressing up
         app->selected_entry = total_entries - 1;
     }
+    
+    // Adjust scroll using the improved algorithm
     app_file_manager_adjust_scroll(app, cols, visible_rows);
 
     return ERROR_NONE;
@@ -1104,6 +1129,8 @@ ErrorCode app_file_manager_down(PixelTermApp *app) {
         // Jump to first entry when at the bottom and pressing down
         app->selected_entry = 0;
     }
+    
+    // Adjust scroll using the improved algorithm
     app_file_manager_adjust_scroll(app, cols, visible_rows);
 
     return ERROR_NONE;
@@ -1890,11 +1917,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
                                   layout.cell_width >= 4 &&
                                   layout.cell_height >= 4;
 
-            // Keep content area constant so selection不改变图像可用空间
+            // Keep content area constant so selection doesn't change available image space
             gint content_x = cell_x + 1;
             gint content_y = cell_y + 1;
 
-            // Clear cell and draw border without占用内容区域
+            // Clear cell and draw border without occupying content area
             const char *border_style = "\033[34;1m"; // bright blue foreground
             for (gint line = 0; line < layout.cell_height; line++) {
                 gint y = cell_y + line;
