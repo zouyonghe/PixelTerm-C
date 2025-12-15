@@ -108,31 +108,58 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ./pixelterm --no-preload /path/to/images
 ```
 
-Preview grid basics:
-- When opening a directory with images, the app starts in the preview grid by default; from single-image view press `Enter` or `p` to enter the grid.
-- Use arrows/hjkl/PgUp/PgDn to move, `+`/`-` to change thumbnail size (at least 2 columns), and `Enter` to open the selected image.
-
 ## 🎮 Controls
+
+This section details the keybindings and functionalities categorized by different modes of operation.
+
+### Global Controls
+
+| Key | Function |
+|-----|----------|
+| ESC | Exit application |
+| Ctrl+C | Force exit |
+
+### Image View (Single Image Mode)
+
+This is the default mode when viewing a single image.
 
 | Key | Function |
 |-----|----------|
 | ←/→ | Previous/Next image |
-| ↑/↓ | Move selection (preview/file manager) |
-| h/j/k/l | Vim-style navigation (left/down/up/right) |
-| PgUp/PgDn | Page up/down in preview grid |
-| p/Enter | Enter preview grid mode (move with arrows/PgUp/PgDn, Enter to open selected) |
-| +/- | Increase/decrease preview thumbnail size |
-| TAB | Toggle file manager (or exit when no images are loaded) |
-| i | Toggle image information |
+| h/l | Vim-style navigation (previous/next image) |
+| Enter | Toggle into Grid Preview mode |
+| TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+| i | Toggle image information display |
 | r | Delete current image |
-| q | Return to previous view (image view exits app) |
-| ESC | Exit program (always) |
-| Ctrl+C | Force exit |
 
-File Manager:
-- ↑/↓ to navigate, Enter/→ to open, ← to go to parent.
-- Any letter key (a–z/A–Z) jumps to the next entry starting with that letter.
-- q returns to previous view (image view exits app); TAB toggles file manager; ESC quits the program.
+### Grid Preview (Thumbnail Mode)
+
+This mode displays multiple image thumbnails in a grid.
+
+| Key | Function |
+|-----|----------|
+| ←/→ | Move selection left/right |
+| ↑/↓ | Move selection up/down |
+| h/j/k/l | Vim-style navigation (left/down/up/right) |
+| PgUp/PgDn | Page up/down through the grid |
+| Enter | Open selected image in Image View |
+| +/- | Increase/decrease thumbnail size |
+| TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+
+### File Manager Mode
+
+This mode allows browsing through directories and files.
+
+| Key | Function |
+|-----|----------|
+| ←/→ | Go to parent directory / Open selected directory/file |
+| ↑/↓ | Navigate entries up/down |
+| h/l | Vim-style navigation (go to parent directory / open selected directory/file) |
+| j/k | Vim-style navigation (navigate entries down/up) |
+| Enter | Open selected directory or file |
+| TAB | Return to the previous image view or grid preview; no effect if FM was entered directly |
+| Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
+
 
 ## 📄 License
 
