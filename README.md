@@ -123,7 +123,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ESC | Exit application |
 | Ctrl+C | Force exit |
-| D      | Toggle dithering on/off |
+
 
 ### Image View (Single Image Mode)
 
@@ -137,6 +137,7 @@ This is the default mode when viewing a single image.
 | TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
 | i | Toggle image information display |
 | r | Delete current image |
+| D | Toggle dithering on/off |
 
 ### Grid Preview (Thumbnail Mode)
 
@@ -149,8 +150,8 @@ This mode displays multiple image thumbnails in a grid.
 | h/j/k/l | Vim-style navigation (left/down/up/right) |
 | PgUp/PgDn | Page up/down through the grid |
 | Enter | Open selected image in Image View |
-| +/- | Increase/decrease thumbnail size |
 | TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+| D | Toggle dithering on/off |
 
 ### File Manager Mode
 

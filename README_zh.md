@@ -121,7 +121,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ESC | 退出应用程序 |
 | Ctrl+C | 强制退出 |
-| D      | 切换抖动开/关 |
+
 
 ### 图像视图（单图模式）
 
@@ -135,6 +135,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | TAB | 切换进入文件管理器；再次按TAB返回此视图 |
 | i | 切换图像信息显示 |
 | r | 删除当前图像 |
+| D | 切换抖动开/关 |
 
 ### 网格预览（缩略图模式）
 
@@ -147,8 +148,8 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | h/j/k/l | Vim风格导航（左/下/上/右） |
 | PgUp/PgDn | 在网格中翻页 |
 | Enter | 在图像视图中打开选中图像 |
-| +/- | 增大/减小缩略图尺寸 |
 | TAB | 切换进入文件管理器；再次按TAB返回此视图 |
+| D | 切换抖动开/关 |
 
 ### 文件管理器模式
 
