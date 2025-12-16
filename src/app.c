@@ -1121,6 +1121,10 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     // Always start with hidden files hidden
     app->show_hidden_files = FALSE;
     
+    // Clear screen on mode entry to avoid ghosting
+    printf("\033[2J\033[H\033[0m");
+    fflush(stdout);
+    
     return app_file_manager_refresh(app);
 }
 
@@ -1960,6 +1964,11 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
+    
+    // Clear screen on mode entry to avoid ghosting
+    printf("\033[2J\033[H\033[0m");
+    fflush(stdout);
+
     if (app->preloader && app->preload_enabled) {
         preloader_clear_queue(app->preloader);
     }
@@ -2009,7 +2018,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     app_preview_adjust_scroll(app, &layout);
     app_preview_queue_preloads(app, &layout);
 
-    printf("\033[2J\033[H\033[0m"); // Clear screen
+    printf("\033[H\033[0m"); // Move cursor to top-left (don't clear screen to avoid flicker)
 
     // Renderer reused for all cells to avoid repeated init/decode overhead
     gint content_width = layout.cell_width - 2;
@@ -2223,8 +2232,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     // Update terminal dimensions before layout
     get_terminal_size(&app->term_width, &app->term_height);
 
-    // Clear screen
-    printf("\033[2J\033[H\033[0m");
+    // Reset cursor to top-left (don't clear screen to avoid flicker)
+    printf("\033[H\033[0m");
     
     // Get current directory
     const gchar *current_dir = app->file_manager_directory;

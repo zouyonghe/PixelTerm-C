@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.2.4: Optimize rendering for flicker-free mode transitions and scrolling.
+    - **Rendering**: Removed full screen clears (`\033[2J`) during in-mode navigation (Grid Preview scrolling, File Manager selection).
+    - **UX**: Added explicit full screen clears on entry to Grid Preview and File Manager modes to ensure a clean visual state when switching modes.
+
 - v1.2.3: Enhanced mouse interaction and navigation polish.
     - **Single Image View**: Double-clicking switches to Grid Preview. Implemented a 400ms delay for the single-click "Next Image" action to prevent conflict, ensuring smooth transition to grid without skipping images.
     - **Preview Grid**: Double-clicking opens the image directly. Implemented delayed selection logic to prevent the selection from jumping before opening.
