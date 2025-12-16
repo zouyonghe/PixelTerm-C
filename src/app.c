@@ -246,31 +246,12 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
 
     gint row = app->selected_entry / cols;
     
-    // Calculate appropriate scroll offset considering visible rows to avoid frequent adjustments
-    gint desired_offset = app->scroll_offset;  // Default to current offset
-    
-    // Only adjust scrolling when the selected item is not in the visible range
-    gint start_row = app->scroll_offset;
-    gint end_row = start_row + visible_rows;
-    
-    // If selected item is before the visible range, scroll to make it visible
-    if (row < start_row) {
-        desired_offset = row;
-    }
-    // If selected item is after the visible range, scroll to make it visible
-    else if (row >= end_row) {
-        desired_offset = row - visible_rows + 1;
-    }
-    // If selected item is in visible range but not near center, consider center alignment
-    else {
-        gint target_row = visible_rows / 2; // Target center row
-        desired_offset = row - target_row;
-    }
+    // Always aim to center the selection
+    gint target_row = visible_rows / 2;
+    gint desired_offset = row - target_row;
 
     // Limit the range of scroll offset
     // Allow scrolling past the bottom to keep the last item centered
-    // We want the last item (total_rows - 1) to be at target_row (visible_rows / 2)
-    // So max_offset = (total_rows - 1) - (visible_rows / 2)
     gint max_offset = MAX(0, total_rows - 1 - (visible_rows / 2));
     
     if (desired_offset < 0) desired_offset = 0;
