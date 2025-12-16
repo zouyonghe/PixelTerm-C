@@ -54,6 +54,7 @@ typedef struct {
     // Preview grid state
     gint preview_selected;
     gint preview_scroll;
+    gboolean needs_screen_clear; // Flag to indicate if screen needs full clear
 
     // Input state
     gboolean pending_single_click; // For single image view

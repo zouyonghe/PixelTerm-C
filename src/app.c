@@ -49,6 +49,7 @@ PixelTermApp* app_create(void) {
     app->scroll_offset = 0;
     app->preview_selected = 0;
     app->preview_scroll = 0;
+    app->needs_screen_clear = FALSE;
     app->pending_single_click = FALSE;
     app->pending_click_time = 0;
     app->pending_grid_single_click = FALSE;
@@ -1822,7 +1823,11 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     if (delta == 0) {
         delta = direction >= 0 ? 1 : -1;
     }
-    return app_preview_move_selection(app, delta, 0);
+    ErrorCode result = app_preview_move_selection(app, delta, 0);
+    if (result == ERROR_NONE) {
+        app->needs_screen_clear = TRUE;
+    }
+    return result;
 }
 
 // Change preview zoom (target cell width) by stepping column count
@@ -2023,7 +2028,12 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     app_preview_adjust_scroll(app, &layout);
     app_preview_queue_preloads(app, &layout);
 
-    printf("\033[H\033[0m"); // Move cursor to top-left (don't clear screen to avoid flicker)
+    if (app->needs_screen_clear) {
+        printf("\033[2J\033[H\033[0m"); // Clear screen and move cursor to top-left
+        app->needs_screen_clear = FALSE;
+    } else {
+        printf("\033[H\033[0m"); // Move cursor to top-left (don't clear screen to avoid flicker)
+    }
 
     // Renderer reused for all cells to avoid repeated init/decode overhead
     gint content_width = layout.cell_width - 2;
