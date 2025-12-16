@@ -102,6 +102,12 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 # 禁用预加载
 ./pixelterm --no-preload /path/to/images
+
+# 启用抖动
+./pixelterm -D /path/to/image.jpg
+# 或
+./pixelterm --dither /path/to/image.jpg
+
 ```
 
 ## 🎮 控制
@@ -114,6 +120,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ESC | 退出应用程序 |
 | Ctrl+C | 强制退出 |
+| D      | 切换抖动开/关 |
 
 ### 图像视图（单图模式）
 

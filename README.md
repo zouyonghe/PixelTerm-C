@@ -104,6 +104,12 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 # Disable preloading
 ./pixelterm --no-preload /path/to/images
+
+# Enable dithering
+./pixelterm -D /path/to/image.jpg
+# Or
+./pixelterm --dither /path/to/image.jpg
+
 ```
 
 ## 🎮 Controls
@@ -116,6 +122,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 |-----|----------|
 | ESC | Exit application |
 | Ctrl+C | Force exit |
+| D      | Toggle dithering on/off |
 
 ### Image View (Single Image Mode)
 

@@ -1,5 +1,6 @@
 # Changelog
 
+- v1.1.14: Implement dithering control. Dithering is now disabled by default. Added `--dither` and `-D` command-line arguments to enable it. Implemented 'D' key binding to toggle dithering on/off in single image and preview grid modes. Fixed a bug where dithering setting was not correctly propagated to the preloader's internal renderer, and ensured cache is cleared upon toggling to force re-render.
 - v1.1.13: Enhance TAB key navigation and refine help text. Implemented contextual TAB behavior for file manager entry/exit, allowing return to previous view (single image or preview grid) on TAB from FM, and making TAB invalid if FM was entered directly without a prior view mode. Fixed compilation errors in src/app.c (missing parentheses in printf statements). Refined help text for preview grid mode, changing 'Enter Toggle' to 'Enter Open', replacing 'q Back' with 'ESC Exit', and capitalizing action words for consistency.
 - v1.1.12: Fix mosaic artifacts in Konsole and other terminals by disabling dithering in the renderer configuration for image viewing, preview grid, and GIF playback.
 - v1.1.11: Fix file manager selection jumping on long press of arrow keys by robustly parsing terminal escape sequences, supporting both `^[[` and `^[O` prefixes, and preventing greedy consumption of next sequence headers.
