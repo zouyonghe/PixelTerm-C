@@ -1774,6 +1774,8 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     gint cols = layout.cols;
     gint rows = layout.rows;
 
+    gint old_scroll = app->preview_scroll;
+
     gint row = app->preview_selected / cols;
     gint col = app->preview_selected % cols;
 
@@ -1803,7 +1805,7 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
                 last_page_scroll = rows - 1;
             }
         }
-        row = last_page_scroll;
+        row = rows - 1;
         app->preview_scroll = last_page_scroll;
     } else if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
         gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
@@ -1832,6 +1834,9 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     app->preview_selected = new_index;
 
     app_preview_adjust_scroll(app, &layout);
+    if (app->preview_scroll != old_scroll) {
+        app->needs_screen_clear = TRUE;
+    }
     return ERROR_NONE;
 }
 
