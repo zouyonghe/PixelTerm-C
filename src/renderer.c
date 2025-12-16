@@ -44,7 +44,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.max_width = 80;
     renderer->config.max_height = 24;
     renderer->config.preserve_aspect_ratio = TRUE;
-    renderer->config.dither = TRUE;
+    renderer->config.dither = FALSE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
     renderer->config.pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
     
