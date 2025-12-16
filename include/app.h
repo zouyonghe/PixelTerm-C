@@ -52,12 +52,11 @@ typedef struct {
     gint scroll_offset;
 
     // Preview grid state
-    gint preview_selected;
-    gint preview_scroll;
-
-    // Input state
-    gboolean pending_single_click; // For single image view
-    gint64 pending_click_time;
+    gint preview_selected;     // Index of selected image in preview mode
+    gint preview_scroll;       // Scroll offset (row index) in preview mode
+    gint last_preview_scroll;  // Last scroll offset to detect page changes
+    gboolean pending_single_click; // For distinguishing single/double click
+    gint64 pending_click_time;     // Time of the first click
 
     gboolean pending_grid_single_click; // For preview grid view
     gint64 pending_grid_click_time;

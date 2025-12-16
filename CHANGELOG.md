@@ -1,5 +1,7 @@
 # Changelog
 
+- v1.2.5: Preview grid page navigation now selects the top-left item of the new page.
+
 - v1.2.4: Optimize rendering for flicker-free mode transitions and scrolling.
     - **Rendering**: Eliminated ghosting in File Manager by clearing lines (`\033[2K`) before printing rows. Removed full screen clears (`\033[2J`) during in-mode navigation to prevent flickering.
     - **Performance**: Prevented redundant display refreshes in Single Image View and Preview Grid when the image selection does not change.
