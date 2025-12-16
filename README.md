@@ -131,9 +131,9 @@ Mouse interaction significantly enhances navigation and selection across differe
 
 | Control | Function | Applicable Modes | Notes |
 |---------|----------|------------------|-------|
-| Left Click | Advance to next image | Image View (Single Image Mode) | **(Delayed ~400ms to allow for double-click detection)** |
+| Left Click | Advance to next image | Image View (Single Image Mode) | |
 | Double Left Click | Switch to Grid Preview | Image View (Single Image Mode) | |
-| Left Click | Select image | Grid Preview | Selects the image under the cursor. **(Delayed ~400ms to allow for double-click detection)** |
+| Left Click | Select image | Grid Preview | Selects the image under the cursor. |
 | Double Left Click | Open selected image in Image View | Grid Preview | Opens the image at the cursor position. |
 | Left Click | Select entry | File Manager Mode | Selects the file or directory under the cursor. |
 | Double Left Click | Open selected entry (directory/file) | File Manager Mode | Navigates into a directory or opens an image. |
