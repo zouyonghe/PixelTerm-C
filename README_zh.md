@@ -79,6 +79,7 @@ make
 
 # 交叉编译到aarch64
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
+# 注意：交叉编译是实验性的，需要宿主系统正确安装对应的架构依赖库。
 ```
 
 ### 使用

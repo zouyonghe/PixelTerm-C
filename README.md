@@ -81,6 +81,7 @@ make
 
 # For cross-compilation to aarch64
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
+# Note: Cross-compilation is experimental and requires corresponding architecture-specific dependency libraries to be correctly installed on the host system.
 ```
 
 ### Usage
