@@ -532,7 +532,7 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     if (app->preload_enabled) {
         app->preloader = preloader_create();
         if (app->preloader) {
-            preloader_initialize(app->preloader);
+            preloader_initialize(app->preloader, app->dither_enabled);
             
             // Set terminal dimensions for preloader
             preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -951,7 +951,7 @@ void app_toggle_preload(PixelTermApp *app) {
             if (!app->preloader) {
                 app->preloader = preloader_create();
                 if (app->preloader) {
-                    preloader_initialize(app->preloader);
+                    preloader_initialize(app->preloader, app->dither_enabled);
                     
                     // Set terminal dimensions for preloader
                     preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);

@@ -233,6 +233,9 @@ static ErrorCode run_application(PixelTermApp *app) {
                     case (KeyCode)'d':
                     case (KeyCode)'D':
                         app->dither_enabled = !app->dither_enabled;
+                        if (app->preloader) { // Clear preloader cache to force re-render with new setting
+                            preloader_cache_clear(app->preloader);
+                        }
                         if (app->preview_mode) {
                             app_render_preview_grid(app);
                         } else {

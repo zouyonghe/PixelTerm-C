@@ -129,10 +129,11 @@ void preloader_destroy(ImagePreloader *preloader) {
 }
 
 // Initialize preloader
-ErrorCode preloader_initialize(ImagePreloader *preloader) {
+ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled) {
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
+    preloader->dither_enabled = dither_enabled;
 
     return ERROR_NONE;
 }
@@ -696,11 +697,11 @@ gpointer preloader_worker_thread(gpointer data) {
         .max_width = term_width,
         .max_height = term_height,
         .preserve_aspect_ratio = TRUE,
-        .dither = FALSE,
+        .dither = preloader->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
         .work_factor = 1,
-        .dither_mode = CHAFA_DITHER_MODE_NONE,
+        .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
     };
 

@@ -44,12 +44,15 @@ typedef struct {
     // Terminal dimensions for rendering
     gint term_width;
     gint term_height;
+    
+    // Dithering setting
+    gboolean dither_enabled;
 } ImagePreloader;
 
 // Preloader lifecycle functions
 ImagePreloader* preloader_create(void);
 void preloader_destroy(ImagePreloader *preloader);
-ErrorCode preloader_initialize(ImagePreloader *preloader);
+ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled);
 ErrorCode preloader_start(ImagePreloader *preloader);
 ErrorCode preloader_stop(ImagePreloader *preloader);
 
