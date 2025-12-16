@@ -49,6 +49,7 @@ PixelTermApp* app_create(void) {
     app->scroll_offset = 0;
     app->preview_selected = 0;
     app->preview_scroll = 0;
+    app->last_preview_scroll = -1;
     app->pending_single_click = FALSE;
     app->pending_click_time = 0;
     app->pending_grid_single_click = FALSE;
@@ -1747,67 +1748,76 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     gint cols = layout.cols;
     gint rows = layout.rows;
 
-    gint row = app->preview_selected / cols;
-    gint col = app->preview_selected % cols;
+    // Store original scroll for comparison to handle wrap-around in scroll
+    gint old_preview_scroll = app->preview_scroll; 
+    
+    // Calculate new current row and column based on delta
+    gint current_row = app->preview_selected / cols;
+    gint current_col = app->preview_selected % cols;
 
-    // Page-aware movement: if moving past the visible window, jump by a full page and select first item
-    row += delta_row;
-    col += delta_col;
+    gint target_row = current_row + delta_row;
+    gint target_col = current_col + delta_col;
 
-    // Horizontal wrap within current row
-    if (delta_col < 0 && col < 0) {
-        col = cols - 1;
-    } else if (delta_col > 0 && col >= cols) {
-        col = 0;
-    }
-
-    // Wrap vertically across pages
-    if (delta_row > 0 && row >= rows) {
-        row = 0;
-        app->preview_scroll = 0;
-    } else if (delta_row < 0 && row < 0) {
-        gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
-        gint last_page_scroll = 0;
-        if (rows > 0) {
-            last_page_scroll = ((rows - 1) / visible_rows) * visible_rows;
-            if (last_page_scroll < 0) {
-                last_page_scroll = 0;
-            } else if (last_page_scroll > rows - 1) {
-                last_page_scroll = rows - 1;
+    // --- Handle Page Movements (delta_row != 0) ---
+    if (delta_row != 0) {
+        // Calculate the target scroll position (first row of the new page)
+        gint new_scroll_target_row = app->preview_scroll;
+        if (delta_row > 0) { // Page Down
+            new_scroll_target_row = MIN(rows - layout.visible_rows, app->preview_scroll + layout.visible_rows);
+            // Handle wrap-around from last page to first page
+            if (app->preview_scroll >= rows - layout.visible_rows && rows > layout.visible_rows) {
+                new_scroll_target_row = 0;
+            }
+        } else { // Page Up
+            new_scroll_target_row = MAX(0, app->preview_scroll - layout.visible_rows);
+            // Handle wrap-around from first page to last page
+            if (app->preview_scroll == 0 && rows > layout.visible_rows) {
+                new_scroll_target_row = MAX(0, rows - layout.visible_rows);
             }
         }
-        row = last_page_scroll;
-        app->preview_scroll = last_page_scroll;
-    } else if (delta_row > 0 && row >= app->preview_scroll + layout.visible_rows) {
-        gint new_scroll = MIN(app->preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
-        app->preview_scroll = new_scroll;
-        row = new_scroll; // first row of next page, keep column
-    } else if (delta_row < 0 && row < app->preview_scroll) {
-        gint new_scroll = MAX(app->preview_scroll - layout.visible_rows, 0);
-        app->preview_scroll = new_scroll;
-        row = MIN(new_scroll + layout.visible_rows - 1, rows - 1); // last row of prev page, keep column
+        
+        app->preview_scroll = new_scroll_target_row;
+        // When performing a page movement, always select the first item (top-left) of the new visible page
+        app->preview_selected = app->preview_scroll * cols;
+        
+        // Ensure selected index is within valid range for total images
+        if (app->preview_selected >= app->total_images) {
+            app->preview_selected = app->total_images - 1; 
+            if (app->preview_selected < 0) app->preview_selected = 0; // Handle empty list case
+        }
+
+    } else { // Not a page movement (delta_row is 0), it's a left/right movement within the same page
+        // Handle horizontal wrap within current row
+        if (target_col < 0) { // Wrap left
+            target_col = cols - 1;
+            target_row--; // Move to previous row
+        } else if (target_col >= cols) { // Wrap right
+            target_col = 0;
+            target_row++; // Move to next row
+        }
+        
+        // Ensure target_row/col are within bounds after horizontal wrap
+        if (target_row < 0) target_row = 0;
+        if (target_row >= rows) target_row = rows - 1;
+        if (target_col < 0) target_col = 0;
+        if (target_col >= cols) target_col = cols - 1;
+
+        gint new_index = target_row * cols + target_col;
+        
+        // Clamp new_index to valid range within actual images
+        gint row_start_index = target_row * cols;
+        gint row_end_index = MIN(app->total_images - 1, row_start_index + cols - 1);
+        if (new_index < row_start_index) new_index = row_start_index;
+        if (new_index > row_end_index) new_index = row_end_index;
+        if (new_index >= app->total_images) new_index = app->total_images - 1;
+        if (new_index < 0) new_index = 0; // Ensure it's not negative for empty list or small lists
+
+        app->preview_selected = new_index;
     }
 
-    if (row < 0) row = 0;
-    if (row >= rows) row = rows - 1;
-    if (col < 0) col = 0;
-    if (col >= cols) col = cols - 1;
-
-    gint new_index = row * cols + col;
-    // Keep selection inside current row bounds when wrapping on incomplete rows
-    gint row_start = row * cols;
-    gint row_end = MIN(app->total_images - 1, row_start + cols - 1);
-    if (new_index < row_start) new_index = row_start;
-    if (new_index > row_end) new_index = row_end;
-    if (new_index >= app->total_images) {
-        new_index = app->total_images - 1;
-    }
-    app->preview_selected = new_index;
-
-    app_preview_adjust_scroll(app, &layout);
+    app_preview_adjust_scroll(app, &layout); // Adjust scroll after selected_index is finalized
     return ERROR_NONE;
 }
-
 // Jump a page up/down based on visible rows
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     if (!app || !app->preview_mode) {
@@ -2023,7 +2033,12 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     app_preview_adjust_scroll(app, &layout);
     app_preview_queue_preloads(app, &layout);
 
-    printf("\033[H\033[0m"); // Move cursor to top-left (don't clear screen to avoid flicker)
+    // If we scrolled (changed pages/rows) or forced redraw, clear screen to prevent ghosting
+    // specifically from images remaining in cells that should now be empty or different.
+    if (app->preview_scroll != app->last_preview_scroll) {
+        printf("\033[2J");
+    }
+    printf("\033[H\033[0m"); // Move cursor to top-left
 
     // Renderer reused for all cells to avoid repeated init/decode overhead
     gint content_width = layout.cell_width - 2;
@@ -2225,6 +2240,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     fflush(stdout);
     renderer_destroy(renderer);
+    
+    // Update scroll tracker
+    app->last_preview_scroll = app->preview_scroll;
+    
     return ERROR_NONE;
 }
 
