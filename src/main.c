@@ -35,6 +35,7 @@ static void print_usage(const char *program_name) {
     printf("Options:\n");
     printf("  -h, --help     Show this help message\n");
     printf("  -v, --version  Show version information\n");
+    printf("  -D, --dither   Enable image dithering (default: disabled)\n");
     printf("  --no-preload   Disable image preloading (default: enabled)\n");
     printf("\n");
     printf("Controls:\n");
@@ -54,12 +55,13 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
         {"Version",   no_argument,       0, 'V'},
         {"no-preload", no_argument,      0, 1000},
+        {"dither",     no_argument,      0, 1001},
         {0, 0, 0, 0}
     };
 
@@ -67,7 +69,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
     opterr = 0;
     
     int c;
-    while ((c = getopt_long(argc, argv, "hvV", long_options, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "hvVD", long_options, NULL)) != -1) {
         switch (c) {
             case 'h':
                 print_usage(argv[0]);
@@ -78,8 +80,14 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
             case 'V':
                 print_version();
                 return ERROR_VERSION_EXIT;
+            case 'D': // -D option for dithering
+                *dither_enabled = TRUE;
+                break;
             case 1000:  // --no-preload
                 *preload_enabled = FALSE;
+                break;
+            case 1001: // --dither
+                *dither_enabled = TRUE;
                 break;
             case '?':
                 // Check if it's a long option (starts with --)
@@ -222,6 +230,15 @@ static ErrorCode run_application(PixelTermApp *app) {
                 }
 
                 switch (event.key_code) {
+                    case (KeyCode)'d':
+                    case (KeyCode)'D':
+                        app->dither_enabled = !app->dither_enabled;
+                        if (app->preview_mode) {
+                            app_render_preview_grid(app);
+                        } else {
+                            app_refresh_display(app);
+                        }
+                        break;
                     case KEY_LEFT:
                     case (KeyCode)'h':
                         if (app->preview_mode) {
@@ -596,8 +613,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_LEFT &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
-                                    skip_event.key_code != (KeyCode)'d') {
+                                    skip_event.key_code != (KeyCode)'a') {
                                     // If we encounter a non-navigation key, put it back by breaking
                                     break;
                                 }
@@ -621,8 +637,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                                     skip_event.key_code != KEY_DOWN &&
                                     skip_event.key_code != KEY_LEFT &&
                                     skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'a' &&
-                                    skip_event.key_code != (KeyCode)'d') {
+                                    skip_event.key_code != (KeyCode)'a') {
                                     // If we encounter a non-navigation key, put it back by breaking
                                     break;
                                 }
@@ -711,8 +726,9 @@ int main(int argc, char *argv[]) {
     // Parse command line arguments
     char *path = NULL;
     gboolean preload_enabled = TRUE;
+    gboolean dither_enabled = FALSE;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
@@ -733,7 +749,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    error = app_initialize(g_app);
+    error = app_initialize(g_app, dither_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);
         app_destroy(g_app);

@@ -33,6 +33,7 @@ PixelTermApp* app_create(void) {
     app->show_info = FALSE;
     app->info_visible = FALSE;
     app->preload_enabled = TRUE;
+    app->dither_enabled = FALSE;
     app->needs_redraw = TRUE;
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
@@ -422,10 +423,11 @@ void app_destroy(PixelTermApp *app) {
 }
 
 // Initialize application
-ErrorCode app_initialize(PixelTermApp *app) {
+ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
+    app->dither_enabled = dither_enabled;
 
     // Detect terminal capabilities
     ChafaTermDb *term_db = chafa_term_db_get_default();
@@ -741,11 +743,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .max_width = target_width,
             .max_height = target_height, // Normal: use almost full height, Info: reserve space
             .preserve_aspect_ratio = TRUE,
-            .dither = FALSE,
+            .dither = app->dither_enabled,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
             .work_factor = 1,
-            .dither_mode = CHAFA_DITHER_MODE_NONE,
+            .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
         };
 
@@ -1931,11 +1933,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         .max_width = MAX(2, content_width),
         .max_height = MAX(2, content_height),
         .preserve_aspect_ratio = TRUE,
-        .dither = FALSE,
+        .dither = app->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
         .work_factor = 1,
-        .dither_mode = CHAFA_DITHER_MODE_NONE,
+        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
     };
     ImageRenderer *renderer = renderer_create();

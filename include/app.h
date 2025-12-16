@@ -29,6 +29,7 @@ typedef struct {
     gboolean show_info;
     gboolean info_visible;  // Track if info is currently displayed
     gboolean preload_enabled;
+    gboolean dither_enabled;
     gboolean needs_redraw;
     gboolean file_manager_mode;  // Track if file manager is active
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
@@ -58,7 +59,7 @@ typedef struct {
 // Application lifecycle functions
 PixelTermApp* app_create(void);
 void app_destroy(PixelTermApp *app);
-ErrorCode app_initialize(PixelTermApp *app);
+ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled);
 ErrorCode app_load_directory(PixelTermApp *app, const char *directory);
 ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath);
 
