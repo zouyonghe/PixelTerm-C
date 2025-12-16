@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.2.2: Improve File Manager list centering.
+    - **UX**: Allow scrolling past the bottom of the list to keep the selected item centered even when it is the last entry, ensuring consistent visual alignment.
+
 - v1.2.1: Add mouse scroll support for Preview Grid.
     - **Preview Grid**: Enable mouse wheel to scroll/page through the image grid.
 

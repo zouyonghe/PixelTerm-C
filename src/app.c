@@ -268,8 +268,10 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
     }
 
     // Limit the range of scroll offset
-    gint max_offset = MAX(0, total_rows - visible_rows);
-    if (max_offset < 0) max_offset = 0;
+    // Allow scrolling past the bottom to keep the last item centered
+    // We want the last item (total_rows - 1) to be at target_row (visible_rows / 2)
+    // So max_offset = (total_rows - 1) - (visible_rows / 2)
+    gint max_offset = MAX(0, total_rows - 1 - (visible_rows / 2));
     
     if (desired_offset < 0) desired_offset = 0;
     if (desired_offset > max_offset) desired_offset = max_offset;
