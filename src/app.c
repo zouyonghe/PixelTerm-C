@@ -1872,7 +1872,6 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->preview_mode = TRUE;
     app->file_manager_mode = FALSE; // ensure we are not in file manager
     app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
-    app->preview_scroll = 0;
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
     if (app->preloader && app->preload_enabled) {
