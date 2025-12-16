@@ -1,7 +1,9 @@
 # Changelog
 
-- v1.2.3: Add mouse double-click to enter Preview Grid.
-    - **Single Image View**: Double-clicking now switches to Grid Preview mode, providing a quick way to zoom out and browse thumbnails.
+- v1.2.3: Enhanced mouse interaction and navigation polish.
+    - **Single Image View**: Double-clicking switches to Grid Preview. Implemented a 400ms delay for the single-click "Next Image" action to prevent conflict, ensuring smooth transition to grid without skipping images.
+    - **Preview Grid**: Double-clicking opens the image directly. Implemented delayed selection logic to prevent the selection from jumping before opening.
+    - **File Manager**: Improved list centering to keep the selected item centered even when navigating to the end of the list.
 
 - v1.2.2: Improve File Manager list centering.
     - **UX**: Allow scrolling past the bottom of the list to keep the selected item centered even when it is the last entry, ensuring consistent visual alignment.

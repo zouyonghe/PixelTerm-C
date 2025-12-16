@@ -206,8 +206,31 @@ static ErrorCode run_application(PixelTermApp *app) {
             continue;
         }
         
-        // Process any pending GLib events (such as timer callbacks for GIF animation)
-        // Only process these if we're currently displaying an animated GIF
+                    // Process pending single click action (Single Image Mode)
+                    if (app->pending_single_click) {
+                        gint64 current_time = g_get_monotonic_time();
+                        // Threshold: 400ms (400000 microseconds)
+                        if (current_time - app->pending_click_time > 400000) {
+                            app->pending_single_click = FALSE;
+                            // Execute the deferred "Next Image" action
+                            app_next_image(app);
+                            app_refresh_display(app);
+                        }
+                    }
+        
+                    // Process pending single click action (Preview Grid Mode)
+                    if (app->pending_grid_single_click) {
+                        gint64 current_time = g_get_monotonic_time();
+                        // Threshold: 400ms (400000 microseconds)
+                        if (current_time - app->pending_grid_click_time > 400000) {
+                            app->pending_grid_single_click = FALSE;
+                            // Execute the deferred "Select image" action
+                            app_handle_mouse_click_preview(app, app->pending_grid_click_x, app->pending_grid_click_y);
+                            app_render_preview_grid(app);
+                        }
+                    }
+                    
+                    // Process any pending GLib events (such as timer callbacks for GIF animation)        // Only process these if we're currently displaying an animated GIF
         if (app->gif_player && gif_player_is_playing(app->gif_player)) {
             while (g_main_context_pending(NULL)) {
                 g_main_context_iteration(NULL, FALSE);
@@ -230,23 +253,28 @@ static ErrorCode run_application(PixelTermApp *app) {
         switch (event.type) {
             case INPUT_MOUSE_PRESS:
                 if (app->preview_mode) {
-                    // Handle mouse click in preview grid mode
-                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y);
-                    app_render_preview_grid(app);
+                    // In preview grid mode, defer click action to wait for potential double click
+                    app->pending_grid_single_click = TRUE;
+                    app->pending_grid_click_time = g_get_monotonic_time();
+                    app->pending_grid_click_x = event.mouse_x;
+                    app->pending_grid_click_y = event.mouse_y;
                 } else if (app->file_manager_mode) {
                     // Handle mouse click in file manager
                     app_handle_mouse_file_manager(app, event.mouse_x, event.mouse_y);
                     app_render_file_manager(app);
                 } else {
-                    // In single image mode, click to next image
-                    app_next_image(app);
-                    app_refresh_display(app);
+                    // In single image mode, defer click action to wait for potential double click
+                    app->pending_single_click = TRUE;
+                    app->pending_click_time = g_get_monotonic_time();
                 }
                 break;
             case INPUT_MOUSE_DOUBLE_CLICK:
                 if (app->preview_mode) {
                     // Handle double click: Enter single view
-                    // First ensure we are on the clicked image (redundant if click happened first, but safe)
+                    // Cancel any pending grid single click action
+                    app->pending_grid_single_click = FALSE;
+                    
+                    // Ensure selection is on the clicked image
                     app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y);
                     
                     app->preview_mode = FALSE;
@@ -257,6 +285,9 @@ static ErrorCode run_application(PixelTermApp *app) {
                     app_file_manager_enter(app);
                 } else {
                     // Handle double click in single image mode: Enter preview grid
+                    // Cancel any pending single click action
+                    app->pending_single_click = FALSE;
+                    
                     if (app_enter_preview(app) == ERROR_NONE) {
                         app_render_preview_grid(app);
                     }

@@ -47,10 +47,16 @@ PixelTermApp* app_create(void) {
     app->directory_entries = NULL;
     app->selected_entry = 0;
     app->scroll_offset = 0;
-        app->preview_selected = 0;
-        app->preview_scroll = 0;
+    app->preview_selected = 0;
+    app->preview_scroll = 0;
+    app->pending_single_click = FALSE;
+    app->pending_click_time = 0;
+    app->pending_grid_single_click = FALSE;
+    app->pending_grid_click_time = 0;
+    app->pending_grid_click_x = 0;
+    app->pending_grid_click_y = 0;
     
-        return app;
+    return app;
 }
 
 // Replace control characters to avoid terminal escape injection when printing paths

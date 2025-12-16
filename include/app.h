@@ -54,6 +54,15 @@ typedef struct {
     // Preview grid state
     gint preview_selected;
     gint preview_scroll;
+
+    // Input state
+    gboolean pending_single_click; // For single image view
+    gint64 pending_click_time;
+
+    gboolean pending_grid_single_click; // For preview grid view
+    gint64 pending_grid_click_time;
+    gint pending_grid_click_x;
+    gint pending_grid_click_y;
 } PixelTermApp;
 
 // Application lifecycle functions
