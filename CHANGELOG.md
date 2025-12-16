@@ -1,5 +1,7 @@
 # Changelog
 
+- v1.1.17: Optimize navigation performance by avoiding unnecessary redraws. Added index change detection in image navigation functions (app_next_image, app_previous_image, app_goto_image) and in main input handling. The system now only triggers screen refreshes and preloader updates when the image index actually changes, eliminating unnecessary redraws when navigating to the same image (e.g., single-image directories or wrap-around scenarios). This improves responsiveness and reduces CPU usage.
+
 - v1.1.16: Preserve preview grid scroll position. Fixes a bug where the preview grid's scroll position was reset to the top when re-entering preview mode (from single image view via Enter, or from file manager via Tab). The `app->preview_scroll = 0;` line was removed from `app_enter_preview` to ensure scroll context is maintained, improving user experience.
 
 - v1.1.15: Align image preview order with file manager. This update ensures that image files displayed in the preview pane are sorted identically to how they appear in the file manager, using the custom AaBb… ordering. It also includes a critical fix for a segmentation fault that occurred when loading directories, caused by improper memory management during file list processing. Additionally, redundant code for `is_valid_image_file` checks has been removed for improved code clarity and minor performance gains.
