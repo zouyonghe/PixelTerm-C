@@ -296,8 +296,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 // Skip this navigation event
                             }
                         } else {
+                            gint old_index = app_get_current_index(app);
                             app_previous_image(app);
-                            app_refresh_display(app);
+                            if (old_index != app_get_current_index(app)) {
+                                app_refresh_display(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -370,8 +373,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 // Skip this navigation event
                             }
                         } else {
+                            gint old_index = app_get_current_index(app);
                             app_next_image(app);
-                            app_refresh_display(app);
+                            if (old_index != app_get_current_index(app)) {
+                                app_refresh_display(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -502,8 +508,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 // Skip this navigation event
                             }
                         } else {
+                            gint old_index = app_get_current_index(app);
                             app_previous_image(app);
-                            app_refresh_display(app);
+                            if (old_index != app_get_current_index(app)) {
+                                app_refresh_display(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -578,8 +587,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                                 // Skip this navigation event
                             }
                         } else {
+                            gint old_index = app_get_current_index(app);
                             app_next_image(app);
-                            app_refresh_display(app);
+                            if (old_index != app_get_current_index(app)) {
+                                app_refresh_display(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {

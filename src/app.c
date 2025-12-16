@@ -620,6 +620,9 @@ ErrorCode app_next_image(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    // Store the old index to check if it actually changes
+    gint old_index = app->current_index;
+
     if (app->current_index < app->total_images - 1) {
         app->current_index++;
     } else {
@@ -627,15 +630,18 @@ ErrorCode app_next_image(PixelTermApp *app) {
         app->current_index = 0;
     }
     
-    app->needs_redraw = TRUE;
-    app->info_visible = FALSE;  // Reset info visibility when switching images
+    // Only redraw if the index actually changed
+    if (old_index != app->current_index) {
+        app->needs_redraw = TRUE;
+        app->info_visible = FALSE;  // Reset info visibility when switching images
 
-    // Update preload tasks for new position
-    if (app->preloader && app->preload_enabled) {
-        gint target_width = 0, target_height = 0;
-        app_get_image_target_dimensions(app, &target_width, &target_height);
-        preloader_clear_queue(app->preloader);
-        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+        // Update preload tasks for new position
+        if (app->preloader && app->preload_enabled) {
+            gint target_width = 0, target_height = 0;
+            app_get_image_target_dimensions(app, &target_width, &target_height);
+            preloader_clear_queue(app->preloader);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+        }
     }
 
     return ERROR_NONE;
@@ -647,6 +653,9 @@ ErrorCode app_previous_image(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    // Store the old index to check if it actually changes
+    gint old_index = app->current_index;
+
     if (app->current_index > 0) {
         app->current_index--;
     } else {
@@ -654,15 +663,18 @@ ErrorCode app_previous_image(PixelTermApp *app) {
         app->current_index = app->total_images - 1;
     }
     
-    app->needs_redraw = TRUE;
-    app->info_visible = FALSE;  // Reset info visibility when switching images
+    // Only redraw if the index actually changed
+    if (old_index != app->current_index) {
+        app->needs_redraw = TRUE;
+        app->info_visible = FALSE;  // Reset info visibility when switching images
 
-    // Update preload tasks for new position
-    if (app->preloader && app->preload_enabled) {
-        gint target_width = 0, target_height = 0;
-        app_get_image_target_dimensions(app, &target_width, &target_height);
-        preloader_clear_queue(app->preloader);
-        preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+        // Update preload tasks for new position
+        if (app->preloader && app->preload_enabled) {
+            gint target_width = 0, target_height = 0;
+            app_get_image_target_dimensions(app, &target_width, &target_height);
+            preloader_clear_queue(app->preloader);
+            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+        }
     }
 
     return ERROR_NONE;
@@ -675,16 +687,19 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
     }
 
     if (index >= 0 && index < app->total_images) {
-        app->current_index = index;
-        app->needs_redraw = TRUE;
-        app->info_visible = FALSE;  // Reset info visibility when switching images
-        
-        // Update preload tasks for new position
-        if (app->preloader && app->preload_enabled) {
-            gint target_width = 0, target_height = 0;
-            app_get_image_target_dimensions(app, &target_width, &target_height);
-            preloader_clear_queue(app->preloader);
-            preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+        // Only redraw if the index actually changes
+        if (app->current_index != index) {
+            app->current_index = index;
+            app->needs_redraw = TRUE;
+            app->info_visible = FALSE;  // Reset info visibility when switching images
+            
+            // Update preload tasks for new position
+            if (app->preloader && app->preload_enabled) {
+                gint target_width = 0, target_height = 0;
+                app_get_image_target_dimensions(app, &target_width, &target_height);
+                preloader_clear_queue(app->preloader);
+                preloader_add_tasks_for_directory(app->preloader, app->image_files, app->current_index, target_width, target_height);
+            }
         }
         
         return ERROR_NONE;
