@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.2.3: Add mouse double-click to enter Preview Grid.
+    - **Single Image View**: Double-clicking now switches to Grid Preview mode, providing a quick way to zoom out and browse thumbnails.
+
 - v1.2.2: Improve File Manager list centering.
     - **UX**: Allow scrolling past the bottom of the list to keep the selected item centered even when it is the last entry, ensuring consistent visual alignment.
 

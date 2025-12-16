@@ -255,6 +255,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                     // Handle double click: Enter directory/file
                     app_handle_mouse_file_manager(app, event.mouse_x, event.mouse_y);
                     app_file_manager_enter(app);
+                } else {
+                    // Handle double click in single image mode: Enter preview grid
+                    if (app_enter_preview(app) == ERROR_NONE) {
+                        app_render_preview_grid(app);
+                    }
                 }
                 break;
             case INPUT_MOUSE_SCROLL:
