@@ -23,6 +23,7 @@ Release notes: see `CHANGELOG.md`.
 - 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
 - 🏗️ **Multi-architecture Support** - Native support for both amd64 and aarch64 (ARM64) architectures
 - 📦 **Preloading** - Optional image preloading for faster navigation
+- 🎨 **Dithering** - Improves visual quality in color-limited terminals, disabled by default.
 
 ## Performance Improvements
 
