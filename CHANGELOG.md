@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.2.6: Enhanced navigation and visual improvements.
+    - **Navigation**: Implement enhanced file manager and preview navigation logic with improved startup behavior (enter file manager by default for directories), yellow border preview mode for non-image selections, blue border preview mode for image selections, and fixed Tab key navigation between modes.
+    - **UX**: Add visual enhancement to highlight directories containing images in yellow for better visual distinction, while directories without images remain blue and images stay green.
+    - **Performance**: Optimize preview grid rendering by clearing screen only on page changes to remove afterimage without flicker, and fix preview grid scrolling refresh and selection positioning artifacts.
+    - **Navigation Logic**: Ensure proper image selection synchronization across modes and add functions for image detection and index mapping with improved return_to_mode logic for different navigation states.
+
 - v1.2.4: Optimize rendering for flicker-free mode transitions and scrolling.
     - **Rendering**: Eliminated ghosting in File Manager by clearing lines (`\033[2K`) before printing rows. Removed full screen clears (`\033[2J`) during in-mode navigation to prevent flickering.
     - **Performance**: Prevented redundant display refreshes in Single Image View and Preview Grid when the image selection does not change.
