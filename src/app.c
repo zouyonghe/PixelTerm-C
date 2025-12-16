@@ -505,22 +505,24 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         return error;
     }
 
-    // Copy file list to app, filtering out invalid files
-    GList *file_list = browser_get_all_files(browser);
-    app->image_files = NULL;
-    gint valid_count = 0;
-    GList *current = file_list;
-    while (current) {
-        gchar *filepath = (gchar*)current->data;
-        // Only add valid image files to the app's list
-        if (is_valid_image_file(filepath)) {
-            app->image_files = g_list_prepend(app->image_files, g_strdup(filepath));
-            valid_count++;
-        }
-        current = g_list_next(current);
+    GList *file_list_from_browser = browser_get_all_files(browser);
+
+    // Clear existing app->image_files and prepare for new entries
+    if (app->image_files) {
+        g_list_free_full(app->image_files, (GDestroyNotify)g_free);
+        app->image_files = NULL;
     }
-    app->image_files = g_list_reverse(app->image_files);
-    app->total_images = valid_count;
+    app->total_images = 0; // Reset count
+
+    // Copy and duplicate file paths from browser's list to app's list
+    for (GList *current_node = file_list_from_browser; current_node; current_node = g_list_next(current_node)) {
+        gchar *filepath = (gchar*)current_node->data;
+        app->image_files = g_list_append(app->image_files, g_strdup(filepath));
+    }
+    
+    // Now sort app->image_files using the custom comparison function
+    app->image_files = g_list_sort(app->image_files, (GCompareFunc)app_file_manager_compare_names);
+    app->total_images = g_list_length(app->image_files);
     app->current_index = 0;
 
     browser_destroy(browser);
