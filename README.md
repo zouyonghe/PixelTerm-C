@@ -22,7 +22,7 @@ Release notes: see `CHANGELOG.md`.
 - ⚡️ **High Performance** - 5-10x faster than Python version with significantly lower memory usage
 - 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
 - 🏗️ **Multi-architecture Support** - Native support for both amd64 and aarch64 (ARM64) architectures
-- 📦 **Preloading** - Optional image preloading for faster navigation
+- 📦 **Preloading** - Image preloading for faster navigation (enabled by default).
 - 🎨 **Dithering** - Improves visual quality in color-limited terminals, disabled by default.
 
 ## Performance Improvements
