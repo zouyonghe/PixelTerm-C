@@ -1478,6 +1478,52 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+// Handle mouse click in file manager
+ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    (void)mouse_x; // Currently unused as we have single column layout
+
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+
+    // Header is 2 lines (Title + Path)
+    gint header_lines = 2;
+
+    // Check if click is in the list area
+    if (mouse_y <= header_lines) {
+        return ERROR_NONE; // Ignore header clicks
+    }
+    
+    // Calculate row index relative to visible area
+    gint row_idx = mouse_y - header_lines - 1; // 0-based index
+    
+    if (row_idx < 0 || row_idx >= visible_rows) {
+        return ERROR_NONE; // Click outside visible list
+    }
+
+    // Calculate absolute row index
+    gint absolute_row = app->scroll_offset + row_idx;
+
+    // Currently only 1 column is supported in file manager layout
+    // But if cols > 1 logic changes, we should account for it.
+    // For now assuming cols=1 or logic matches linear list
+    
+    gint selected_idx = absolute_row * cols; // simplified for single column
+
+    // Check bounds
+    gint total_entries = g_list_length(app->directory_entries);
+    if (selected_idx >= 0 && selected_idx < total_entries) {
+        app->selected_entry = selected_idx;
+        
+        // Ensure selection is centered or visible
+        app_file_manager_adjust_scroll(app, cols, visible_rows);
+    }
+
+    return ERROR_NONE;
+}
+
 // ----- Preview grid helpers -----
 typedef struct {
     gint cols;
@@ -1825,6 +1871,42 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
 
     // Only refresh if zoom actually changed
     return app_render_preview_grid(app);
+}
+
+// Handle mouse click in preview grid mode
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+    if (!app || !app->preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    PreviewLayout layout = app_preview_calculate_layout(app);
+    gint start_row = app->preview_scroll;
+
+    // Check if click is in header area
+    if (mouse_y < layout.header_lines + 1) {
+        return ERROR_NONE; // Ignore clicks in header
+    }
+
+    // Calculate clicked cell position
+    gint col = (mouse_x - 1) / layout.cell_width;
+    gint row_in_visible = (mouse_y - layout.header_lines - 1) / layout.cell_height;
+    gint absolute_row = start_row + row_in_visible;
+
+    // Check bounds
+    if (col < 0 || col >= layout.cols || row_in_visible < 0 || row_in_visible >= layout.visible_rows) {
+        return ERROR_NONE; // Out of bounds
+    }
+
+    // Calculate image index
+    gint index = absolute_row * layout.cols + col;
+
+    // Check if index is valid
+    if (index >= 0 && index < app->total_images) {
+        app->preview_selected = index;
+        app->current_index = index; // Also update current index for consistency
+    }
+
+    return ERROR_NONE;
 }
 
 // Enter preview grid mode

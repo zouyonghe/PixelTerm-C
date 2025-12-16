@@ -45,6 +45,8 @@ static void print_usage(const char *program_name) {
     printf("  i                             Toggle image information\n");
     printf("  +/-                           Zoom in/out in preview mode\n");
     printf("  PgUp/PgDn                     Page up/down in preview mode\n");
+    printf("  Mouse Click                   Select image in preview grid\n");
+    printf("  Mouse Wheel                   Navigate images in single view\n");
     printf("  Esc                           Quit application\n");
     printf("\n");
 }
@@ -153,6 +155,13 @@ static ErrorCode run_application(PixelTermApp *app) {
         return error;
     }
 
+    error = input_enable_mouse(input_handler);
+    if (error != ERROR_NONE) {
+        input_disable_raw_mode(input_handler);
+        input_handler_destroy(input_handler);
+        return error;
+    }
+
     // Initial render: show file manager if already active
     if (app->file_manager_mode) {
         error = app_render_file_manager(app);
@@ -219,6 +228,54 @@ static ErrorCode run_application(PixelTermApp *app) {
 
         // Process input events
         switch (event.type) {
+            case INPUT_MOUSE_PRESS:
+                if (app->preview_mode) {
+                    // Handle mouse click in preview grid mode
+                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y);
+                    app_render_preview_grid(app);
+                } else if (app->file_manager_mode) {
+                    // Handle mouse click in file manager
+                    app_handle_mouse_file_manager(app, event.mouse_x, event.mouse_y);
+                    app_render_file_manager(app);
+                } else {
+                    // In single image mode, click to next image
+                    app_next_image(app);
+                    app_refresh_display(app);
+                }
+                break;
+            case INPUT_MOUSE_DOUBLE_CLICK:
+                if (app->preview_mode) {
+                    // Handle double click: Enter single view
+                    // First ensure we are on the clicked image (redundant if click happened first, but safe)
+                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y);
+                    
+                    app->preview_mode = FALSE;
+                    app_render_current_image(app);
+                } else if (app->file_manager_mode) {
+                    // Handle double click: Enter directory/file
+                    app_handle_mouse_file_manager(app, event.mouse_x, event.mouse_y);
+                    app_file_manager_enter(app);
+                }
+                break;
+            case INPUT_MOUSE_SCROLL:
+                if (app->file_manager_mode) {
+                    // Handle scroll in file manager
+                    if (event.mouse_button == MOUSE_SCROLL_UP) {
+                        app_file_manager_up(app);
+                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
+                        app_file_manager_down(app);
+                    }
+                    app_render_file_manager(app);
+                } else if (!app->preview_mode) {
+                    // Handle mouse scroll in single image mode
+                    if (event.mouse_button == MOUSE_SCROLL_UP) {
+                        app_previous_image(app);
+                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
+                        app_next_image(app);
+                    }
+                    app_refresh_display(app);
+                }
+                break;
             case INPUT_KEY_PRESS:
                 // In file manager, any letter key acts as jump-to-letter
                 if (app->file_manager_mode &&
@@ -726,7 +783,8 @@ static ErrorCode run_application(PixelTermApp *app) {
     printf("\033[2J\033[H\033[0m"); // Clear screen and reset attributes
     printf("\033[?25h"); // Show cursor
     fflush(stdout);
-    
+
+    input_disable_mouse(input_handler);
     input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
 

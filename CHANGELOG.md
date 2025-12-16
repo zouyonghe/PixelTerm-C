@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.2.0: Comprehensive mouse support for enhanced navigation and interaction.
+    - **Single Image View**: Left-click to next image, scroll wheel to navigate images.
+    - **Preview Grid**: Left-click to select, double-click to open image.
+    - **File Manager**: Left-click to select, double-click to open/enter, scroll wheel to navigate list.
+    - **Technical**: Enabled SGR mouse mode (1006) for precise coordinates and scroll support. Implemented double-click detection and scroll event debouncing (100ms) for smoother experience.
+
 - v1.1.17: Optimize navigation performance by avoiding unnecessary redraws. Added index change detection in image navigation functions (app_next_image, app_previous_image, app_goto_image) and in main input handling. The system now only triggers screen refreshes and preloader updates when the image index actually changes, eliminating unnecessary redraws when navigating to the same image (e.g., single-image directories or wrap-around scenarios). This improves responsiveness and reduces CPU usage.
 
 - v1.1.16: Preserve preview grid scroll position. Fixes a bug where the preview grid's scroll position was reset to the top when re-entering preview mode (from single image view via Enter, or from file manager via Tab). The `app->preview_scroll = 0;` line was removed from `app_enter_preview` to ensure scroll context is maintained, improving user experience.

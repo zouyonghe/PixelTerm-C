@@ -84,6 +84,7 @@ ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter);
 ErrorCode app_file_manager_refresh(PixelTermApp *app);
 ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app);
 ErrorCode app_render_file_manager(PixelTermApp *app);
+ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mouse_y);
 
 // Preview grid functions
 ErrorCode app_enter_preview(PixelTermApp *app);
@@ -93,6 +94,7 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta);
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction);
 ErrorCode app_render_preview_grid(PixelTermApp *app);
 ErrorCode app_preview_print_info(PixelTermApp *app);
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y);
 
 // Display functions
 ErrorCode app_render_current_image(PixelTermApp *app);

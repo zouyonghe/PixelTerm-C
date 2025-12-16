@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <string.h>
+#include <stdlib.h>
 
 // Create a new input handler
 InputHandler* input_handler_create(void) {
@@ -122,10 +124,10 @@ ErrorCode input_enable_mouse(InputHandler *handler) {
         return ERROR_NONE;
     }
 
-    // Enable mouse tracking (X11 style)
-    printf("\033[?1000h");
+    // Enable mouse tracking with button event tracking (supports scroll wheel)
+    printf("\033[?1002;1006h");
     fflush(stdout);
-    
+
     handler->mouse_enabled = TRUE;
     return ERROR_NONE;
 }
@@ -137,9 +139,9 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
     }
 
     // Disable mouse tracking
-    printf("\033[?1000l");
+    printf("\033[?1002;1006l");
     fflush(stdout);
-    
+
     handler->mouse_enabled = FALSE;
     return ERROR_NONE;
 }
@@ -173,22 +175,23 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         // Check if it's an escape sequence or just ESC key
         // We use a timeout to wait for potential following characters
         gint next = input_read_char_with_timeout(handler, 50);
-        
+
         if (next != 0) {
             // We have a character following ESC
             if (next == '[' || next == 'O') {
                 // ANSI escape sequence or Application Cursor Keys
-                gint seq[3] = {0};
-                gint i = 0;
-                
-                // Read the sequence with timeout for each character
-                while (i < 3) {
-                    // Try to read next char with timeout
+                gchar buffer[32] = {0};
+                gint buf_idx = 0;
+                gchar terminator = 0;
+
+                // Read the sequence until we hit a terminator
+                while (buf_idx < sizeof(buffer) - 1) {
                     gchar ch = input_read_char_with_timeout(handler, 50);
                     if (ch != 0) {
-                        seq[i++] = ch;
-                        // Stop reading if we hit a terminator (letter or ~)
-                        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~') {
+                        buffer[buf_idx++] = ch;
+                        // Stop reading if we hit a terminator (letter, ~, M, m)
+                        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~' || ch == 'M' || ch == 'm') {
+                            terminator = ch;
                             break;
                         }
                     } else {
@@ -196,35 +199,129 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                     }
                 }
 
-                // Parse specific sequences
-                if (i == 1) {
-                    switch (seq[0]) {
-                        case 'A': event->key_code = KEY_UP; break;
-                        case 'B': event->key_code = KEY_DOWN; break;
-                        case 'C': event->key_code = KEY_RIGHT; break;
-                        case 'D': event->key_code = KEY_LEFT; break;
-                        case 'H': event->key_code = KEY_HOME; break;
-                        case 'F': event->key_code = KEY_END; break;
-                        default: event->key_code = KEY_UNKNOWN; break;
+                // Parse mouse events first (terminator M or m)
+                if (terminator == 'M' || terminator == 'm') {
+                    // Mouse event: \033[<button>;<x>;<y>M or \033[<button>;<x>;<y>m (SGR)
+                    // Or older format: \033[M... (but we look for terminator M/m so likely SGR or URXVT)
+                    
+                    gchar *params[3] = {0};
+                    gint param_count = 0;
+                    gchar *token = strtok(buffer, ";");
+
+                    while (token && param_count < 3) {
+                        params[param_count++] = token;
+                        token = strtok(NULL, ";");
                     }
-                } else if (i == 2 && seq[0] == '5' && seq[1] == '~') {
-                    event->key_code = KEY_PAGE_UP;
-                } else if (i == 2 && seq[0] == '6' && seq[1] == '~') {
-                    event->key_code = KEY_PAGE_DOWN;
-                } else if (i == 3 && seq[0] == '1' && seq[1] == '5' && seq[2] == '~') {
-                    event->key_code = KEY_F5;
-                } else if (i == 3 && seq[2] >= 'A' && seq[2] <= 'D') {
-                    // Arrow keys with modifiers
-                    switch (seq[2]) {
-                        case 'A': event->key_code = KEY_UP; break;
-                        case 'B': event->key_code = KEY_DOWN; break;
-                        case 'C': event->key_code = KEY_RIGHT; break;
-                        case 'D': event->key_code = KEY_LEFT; break;
-                        default: event->key_code = KEY_UNKNOWN; break;
+
+                    if (param_count >= 3) {
+                        // Skip '<' if present in first parameter (SGR format)
+                        gchar *btn_str = params[0];
+                        if (btn_str[0] == '<') btn_str++;
+                        
+                        gint button = atoi(btn_str);
+                        gint x = atoi(params[1]);
+                        gint y = atoi(params[2]);
+
+                        event->mouse_button = (MouseButton)button;
+                        event->mouse_x = x;
+                        event->mouse_y = y;
+
+                        if (button >= 64) {
+                            // Scroll event
+                            // Only handle Press ('M'), ignore Release ('m') for scroll
+                            if (terminator == 'M') {
+                                struct timeval now;
+                                gettimeofday(&now, NULL);
+                                glong diff_ms = (now.tv_sec - handler->last_scroll_time.tv_sec) * 1000 + 
+                                              (now.tv_usec - handler->last_scroll_time.tv_usec) / 1000;
+
+                                // Debounce: 100ms
+                                if (diff_ms > 100) {
+                                    event->type = INPUT_MOUSE_SCROLL;
+                                    handler->last_scroll_time = now;
+                                } else {
+                                    // Treat as ignored/release to avoid double processing
+                                    event->type = INPUT_MOUSE_RELEASE;
+                                }
+                            } else {
+                                event->type = INPUT_MOUSE_RELEASE;
+                            }
+                        } else if (terminator == 'M') {
+                            // Press event
+                            event->type = INPUT_MOUSE_PRESS;
+                            
+                            // Check for double click
+                            struct timeval now;
+                            gettimeofday(&now, NULL);
+                            
+                            glong diff_ms = (now.tv_sec - handler->last_click_time.tv_sec) * 1000 + 
+                                          (now.tv_usec - handler->last_click_time.tv_usec) / 1000;
+                            
+                            // Threshold: 400ms and same position (or very close)
+                            if (diff_ms < 400 && 
+                                abs(x - handler->last_click_x) <= 1 && 
+                                abs(y - handler->last_click_y) <= 0 &&
+                                button == handler->last_click_button) {
+                                
+                                event->type = INPUT_MOUSE_DOUBLE_CLICK;
+                                // Reset last click to avoid triple->double
+                                handler->last_click_time.tv_sec = 0;
+                            } else {
+                                // Update last click
+                                handler->last_click_time = now;
+                                handler->last_click_x = x;
+                                handler->last_click_y = y;
+                                handler->last_click_button = (MouseButton)button;
+                            }
+                        } else {
+                            // Release event
+                            event->type = INPUT_MOUSE_RELEASE;
+                        }
+                    } else {
+                        event->type = INPUT_KEY_PRESS;
+                        event->key_code = KEY_UNKNOWN;
                     }
-                    // Parse modifiers from seq[1]
-                    if (seq[1] >= '2' && seq[1] <= '8') {
-                        event->modifiers = seq[1] - '1';
+                } else {
+                    // Handle other ANSI sequences
+                    // Parse the buffer as before
+                    gint seq[3] = {0};
+                    gint i = 0;
+                    for (gint j = 0; j < buf_idx && i < 3; j++) {
+                        if (buffer[j] != ';') {
+                            seq[i++] = buffer[j];
+                        }
+                    }
+
+                    // Parse specific sequences
+                    if (i == 1) {
+                        switch (seq[0]) {
+                            case 'A': event->key_code = KEY_UP; break;
+                            case 'B': event->key_code = KEY_DOWN; break;
+                            case 'C': event->key_code = KEY_RIGHT; break;
+                            case 'D': event->key_code = KEY_LEFT; break;
+                            case 'H': event->key_code = KEY_HOME; break;
+                            case 'F': event->key_code = KEY_END; break;
+                            default: event->key_code = KEY_UNKNOWN; break;
+                        }
+                    } else if (i == 2 && seq[0] == '5' && seq[1] == '~') {
+                        event->key_code = KEY_PAGE_UP;
+                    } else if (i == 2 && seq[0] == '6' && seq[1] == '~') {
+                        event->key_code = KEY_PAGE_DOWN;
+                    } else if (i == 3 && seq[0] == '1' && seq[1] == '5' && seq[2] == '~') {
+                        event->key_code = KEY_F5;
+                    } else if (i == 3 && seq[2] >= 'A' && seq[2] <= 'D') {
+                        // Arrow keys with modifiers
+                        switch (seq[2]) {
+                            case 'A': event->key_code = KEY_UP; break;
+                            case 'B': event->key_code = KEY_DOWN; break;
+                            case 'C': event->key_code = KEY_RIGHT; break;
+                            case 'D': event->key_code = KEY_LEFT; break;
+                            default: event->key_code = KEY_UNKNOWN; break;
+                        }
+                        // Parse modifiers from seq[1]
+                        if (seq[1] >= '2' && seq[1] <= '8') {
+                            event->modifiers = seq[1] - '1';
+                        }
                     }
                 }
             } else {

@@ -3,14 +3,29 @@
 
 #include "common.h"
 #include <termios.h>
+#include <sys/time.h>
 
 // Input event types
 typedef enum {
     INPUT_KEY_PRESS,
     INPUT_KEY_RELEASE,
 
+    INPUT_MOUSE_PRESS,
+    INPUT_MOUSE_RELEASE,
+    INPUT_MOUSE_DOUBLE_CLICK,
+    INPUT_MOUSE_SCROLL,
+
     INPUT_RESIZE
 } InputEventType;
+
+// Mouse buttons
+typedef enum {
+    MOUSE_BUTTON_LEFT = 0,
+    MOUSE_BUTTON_MIDDLE = 1,
+    MOUSE_BUTTON_RIGHT = 2,
+    MOUSE_SCROLL_UP = 64,
+    MOUSE_SCROLL_DOWN = 65
+} MouseButton;
 
 // Key codes
 typedef enum {
@@ -48,6 +63,11 @@ typedef struct {
     KeyCode key_code;
     guint32 modifiers;  // SHIFT, CTRL, ALT flags
 
+    // Mouse data
+    MouseButton mouse_button;
+    gint mouse_x;
+    gint mouse_y;
+
     gint terminal_width;
     gint terminal_height;
 } InputEvent;
@@ -61,6 +81,15 @@ typedef struct {
     gboolean should_exit;
     struct termios orig_termios;
     gboolean has_orig_termios;
+
+    // Double-click tracking
+    struct timeval last_click_time;
+    gint last_click_x;
+    gint last_click_y;
+    MouseButton last_click_button;
+
+    // Scroll debouncing
+    struct timeval last_scroll_time;
 } InputHandler;
 
 // Input handler lifecycle

@@ -22,6 +22,7 @@ Release notes: see `CHANGELOG.md`.
 - ⚡️ **High Performance** - 5-10x faster than Python version with significantly lower memory usage
 - 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
 - 🏗️ **Multi-architecture Support** - Native support for both amd64 and aarch64 (ARM64) architectures
+- 🖱️ **Mouse Support** - Intuitive mouse navigation, selection, and scrolling across all modes
 - 📦 **Preloading** - Image preloading for faster navigation (enabled by default).
 - 🎨 **Dithering** - Improves visual quality in color-limited terminals (disabled by default).
 
@@ -124,6 +125,21 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | ESC | Exit application |
 | Ctrl+C | Force exit |
 
+### Mouse Controls
+
+Mouse interaction significantly enhances navigation and selection across different modes.
+
+| Control | Function | Applicable Modes | Notes |
+|---------|----------|------------------|-------|
+| Left Click | Advance to next image | Image View (Single Image Mode) | |
+| Left Click | Select image | Grid Preview | Selects the image under the cursor. |
+| Double Left Click | Open selected image in Image View | Grid Preview | Opens the image at the cursor position. |
+| Left Click | Select entry | File Manager Mode | Selects the file or directory under the cursor. |
+| Double Left Click | Open selected entry (directory/file) | File Manager Mode | Navigates into a directory or opens an image. |
+| Mouse Scroll Up/Down | Previous/Next image | Image View (Single Image Mode) | Smoothly navigate through images. |
+| Mouse Scroll Up/Down | Navigate entries up/down | File Manager Mode | Scroll through the list of files and directories. |
+
+*Note: Mouse scroll events are debounced with a 100ms delay to prevent over-sensitive scrolling.*
 
 ### Image View (Single Image Mode)
 
