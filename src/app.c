@@ -1867,10 +1867,12 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
 }
 
 // Handle mouse click in preview grid mode
-ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y, gboolean *redraw_needed) {
     if (!app || !app->preview_mode) {
+        if (redraw_needed) *redraw_needed = FALSE;
         return ERROR_MEMORY_ALLOC;
     }
+    if (redraw_needed) *redraw_needed = FALSE; // Default to no redraw
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     gint start_row = app->preview_scroll;
@@ -1895,8 +1897,11 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint m
 
     // Check if index is valid
     if (index >= 0 && index < app->total_images) {
-        app->preview_selected = index;
-        app->current_index = index; // Also update current index for consistency
+        if (app->preview_selected != index) { // Check if selection actually changed
+            app->preview_selected = index;
+            app->current_index = index; // Also update current index for consistency
+            if (redraw_needed) *redraw_needed = TRUE;
+        }
     }
 
     return ERROR_NONE;
@@ -2251,7 +2256,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     const char *header_title = "PixelTerm File Manager";
     gint title_len = strlen(header_title);
     gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-    printf("\033[1G"); // Move to beginning of line
+    printf("\033[2K\033[1G"); // Clear line and move to beginning
     for (gint i = 0; i < title_pad; i++) printf(" "); // Use spaces for centering
     printf("%s\n", header_title);
 
@@ -2303,7 +2308,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         dir_pad = MAX(0, app->term_width - dir_len);
     }
     // Print the centered directory path
-    printf("\033[1G"); // Move to beginning of line
+    printf("\033[2K\033[1G"); // Clear line and move to beginning
     for (gint i = 0; i < dir_pad; i++) printf(" "); // Use spaces for centering
     printf("%s\n", display_dir);
     
@@ -2387,7 +2392,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
 
     // Top padding to keep highlight centered
     for (gint i = 0; i < top_padding; i++) {
-        printf("\n");
+        printf("\033[2K\n");
     }
 
     if (total_entries == 0) {
@@ -2395,7 +2400,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         const char *empty_msg = "（No items）";
         gint msg_len = strlen(empty_msg);
         gint center_pad = (app->term_width > msg_len) ? (app->term_width - msg_len) / 2 : 0;
-        printf("\033[1G"); // Move to beginning of line
+        printf("\033[2K\033[1G"); // Clear line and move to beginning
         for (gint i = 0; i < center_pad; i++) printf(" ");
         printf("\033[33m%s\033[0m", empty_msg); // Yellow text for visibility
         printf("\n");
@@ -2531,7 +2536,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             if (pad + name_len > app->term_width) {
                 pad = MAX(0, app->term_width - name_len);
             }
-            printf("\033[1G"); // Move to beginning of line for consistent positioning
+            printf("\033[2K\033[1G"); // Clear line and move to beginning for consistent positioning
             for (gint i = 0; i < pad; i++) printf(" ");
 
             gboolean is_valid_image = (!is_dir && is_valid_image_file(entry));
@@ -2563,12 +2568,13 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
 
     // Bottom padding to keep layout stable
     for (gint i = 0; i < bottom_padding; i++) {
-        printf("\n");
+        printf("\033[2K\n");
     }
 
     // Footer/help centered on last line; keep cursor at line end (color keys only)
     gint help_len = strlen(help_text);
     gint help_pad = (app->term_width > help_len) ? (app->term_width - help_len) / 2 : 0;
+    printf("\033[2K\033[1G"); // Clear line and move to beginning
     for (gint i = 0; i < help_pad; i++) printf(" ");
     printf("\033[36m↑/↓\033[0m Move   ");
     printf("\033[36m←\033[0m Parent   ");

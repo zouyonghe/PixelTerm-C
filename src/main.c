@@ -214,7 +214,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                             app->pending_single_click = FALSE;
                             // Execute the deferred "Next Image" action
                             app_next_image(app);
-                            app_refresh_display(app);
+                            if (app->needs_redraw) { // Only refresh if the image actually changed
+                                app_refresh_display(app);
+                                app->needs_redraw = FALSE;
+                            }
                         }
                     }
         
@@ -225,8 +228,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                         if (current_time - app->pending_grid_click_time > 400000) {
                             app->pending_grid_single_click = FALSE;
                             // Execute the deferred "Select image" action
-                            app_handle_mouse_click_preview(app, app->pending_grid_click_x, app->pending_grid_click_y);
-                            app_render_preview_grid(app);
+                            gboolean redraw_needed = FALSE;
+                            app_handle_mouse_click_preview(app, app->pending_grid_click_x, app->pending_grid_click_y, &redraw_needed);
+                            if (redraw_needed) {
+                                app_render_preview_grid(app);
+                            }
                         }
                     }
                     
@@ -275,7 +281,8 @@ static ErrorCode run_application(PixelTermApp *app) {
                     app->pending_grid_single_click = FALSE;
                     
                     // Ensure selection is on the clicked image
-                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y);
+                    gboolean redraw_needed = FALSE;
+                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y, &redraw_needed);
                     
                     app->preview_mode = FALSE;
                     app_render_current_image(app);
@@ -312,12 +319,24 @@ static ErrorCode run_application(PixelTermApp *app) {
                     app_render_preview_grid(app);
                 } else {
                     // Handle mouse scroll in single image mode
+                    gboolean redraw_needed = FALSE;
                     if (event.mouse_button == MOUSE_SCROLL_UP) {
+                        gint old_index = app_get_current_index(app);
                         app_previous_image(app);
+                        if (old_index != app_get_current_index(app)) {
+                            redraw_needed = TRUE;
+                        }
                     } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
+                        gint old_index = app_get_current_index(app);
                         app_next_image(app);
+                        if (old_index != app_get_current_index(app)) {
+                            redraw_needed = TRUE;
+                        }
                     }
-                    app_refresh_display(app);
+                    if (redraw_needed) {
+                        app_refresh_display(app);
+                        app->needs_redraw = FALSE; // Reset after refresh
+                    }
                 }
                 break;
             case INPUT_KEY_PRESS:

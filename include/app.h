@@ -103,7 +103,8 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta);
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction);
 ErrorCode app_render_preview_grid(PixelTermApp *app);
 ErrorCode app_preview_print_info(PixelTermApp *app);
-ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y);
+// Handle mouse click in preview grid mode
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y, gboolean *redraw_needed);
 
 // Display functions
 ErrorCode app_render_current_image(PixelTermApp *app);
