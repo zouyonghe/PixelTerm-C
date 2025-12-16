@@ -137,6 +137,7 @@ Mouse interaction significantly enhances navigation and selection across differe
 | Left Click | Select entry | File Manager Mode | Selects the file or directory under the cursor. |
 | Double Left Click | Open selected entry (directory/file) | File Manager Mode | Navigates into a directory or opens an image. |
 | Mouse Scroll Up/Down | Previous/Next image | Image View (Single Image Mode) | Smoothly navigate through images. |
+| Mouse Scroll Up/Down | Page Up/Down | Grid Preview | Scroll through pages of images. |
 | Mouse Scroll Up/Down | Navigate entries up/down | File Manager Mode | Scroll through the list of files and directories. |
 
 *Note: Mouse scroll events are debounced with a 100ms delay to prevent over-sensitive scrolling.*

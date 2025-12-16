@@ -46,7 +46,7 @@ static void print_usage(const char *program_name) {
     printf("  +/-                           Zoom in/out in preview mode\n");
     printf("  PgUp/PgDn                     Page up/down in preview mode\n");
     printf("  Mouse Click                   Select image in preview grid\n");
-    printf("  Mouse Wheel                   Navigate images in single view\n");
+    printf("  Mouse Wheel                   Navigate/Scroll in all modes\n");
     printf("  Esc                           Quit application\n");
     printf("\n");
 }
@@ -266,7 +266,15 @@ static ErrorCode run_application(PixelTermApp *app) {
                         app_file_manager_down(app);
                     }
                     app_render_file_manager(app);
-                } else if (!app->preview_mode) {
+                } else if (app->preview_mode) {
+                    // Handle scroll in preview grid mode
+                    if (event.mouse_button == MOUSE_SCROLL_UP) {
+                        app_preview_page_move(app, -1);
+                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
+                        app_preview_page_move(app, 1);
+                    }
+                    app_render_preview_grid(app);
+                } else {
                     // Handle mouse scroll in single image mode
                     if (event.mouse_button == MOUSE_SCROLL_UP) {
                         app_previous_image(app);

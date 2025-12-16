@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.2.1: Add mouse scroll support for Preview Grid.
+    - **Preview Grid**: Enable mouse wheel to scroll/page through the image grid.
+
 - v1.2.0: Comprehensive mouse support for enhanced navigation and interaction.
     - **Single Image View**: Left-click to next image, scroll wheel to navigate images.
     - **Preview Grid**: Left-click to select, double-click to open image.
