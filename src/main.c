@@ -553,25 +553,69 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case KEY_TAB:
                         if (app->preview_mode) {
-                            app->return_to_mode = 1; // Mark return to PREVIEW
-                            app_exit_preview(app, TRUE);
-                            app_enter_file_manager(app);
-                            app_render_file_manager(app);
+                            // From preview mode, behavior depends on how we entered
+                            if (app->return_to_mode == 1) {
+                                // Blue border mode (entered from file manager with image selected)
+                                // Tab should enter single image view
+                                app_exit_preview(app, TRUE);
+                                app_refresh_display(app);
+                            } else {
+                                // Yellow border mode or other modes: return to file manager
+                                gint saved_return_mode = app->return_to_mode;
+                                app->return_to_mode = 1; // Mark return to PREVIEW
+                                app_exit_preview(app, TRUE);
+                                app_enter_file_manager(app);
+                                // If returning from yellow preview mode, restore the previous file manager selection
+                                if (saved_return_mode == 2 && app->previous_selected_entry >= 0) {
+                                    app->selected_entry = app->previous_selected_entry;
+                                    app->previous_selected_entry = -1; // Reset
+                                }
+                                app_render_file_manager(app);
+                            }
                         } else if (app->file_manager_mode) {
-                            // Check where to return to
-                            if (app->return_to_mode == 1) { // Return to PREVIEW
+                            // From file manager, check if directory has images
+                            if (!app_file_manager_has_images(app)) {
+                                // No images in directory, TAB invalid
+                                break;
+                            }
+
+                            // Load images from current file manager directory
+                            ErrorCode load_error = app_load_directory(app, app->file_manager_directory);
+                            if (load_error != ERROR_NONE) {
+                                // If loading fails, stay in file manager
+                                app_render_file_manager(app);
+                                break;
+                            }
+
+                            // Check if current selection is an image
+                            if (app_file_manager_selection_is_image(app)) {
+                                // Selected item is an image: enter preview with blue border (actual selection)
+                                app->return_to_mode = 1; // Mark return to PREVIEW
+                                // Set current_index to the selected image's index in the image list
+                                gint selected_image_index = app_file_manager_get_selected_image_index(app);
+                                if (selected_image_index >= 0) {
+                                    app->current_index = selected_image_index;
+                                }
                                 app_exit_file_manager(app);
                                 if (app_enter_preview(app) == ERROR_NONE) {
                                     app_render_preview_grid(app);
                                 } else {
                                     app_refresh_display(app);
                                 }
-                            } else if (app->return_to_mode == 0) { // Return to SINGLE
+                            } else {
+                                // Selected item is not an image: enter preview with yellow border (virtual selection)
+                                app->return_to_mode = 2; // Mark return to YELLOW PREVIEW
+                                app->previous_selected_entry = app->selected_entry; // Remember the file manager selection
                                 app_exit_file_manager(app);
-                                app_refresh_display(app);
-                            } 
-                            // If return_to_mode is -1 (direct entry), do nothing (TAB invalid)
+                                if (app_enter_preview(app) == ERROR_NONE) {
+                                    app->preview_selected = 0; // Always select first image in yellow border mode
+                                    app_render_preview_grid(app);
+                                } else {
+                                    app_refresh_display(app);
+                                }
+                            }
                         } else {
+                            // From single image view, enter file manager
                             app->return_to_mode = 0; // Mark return to SINGLE
                             app_enter_file_manager(app);
                             app_render_file_manager(app);
@@ -795,6 +839,10 @@ static ErrorCode run_application(PixelTermApp *app) {
                     case KEY_ENTER:
                     case 13:  // Handle both LF (10) and CR (13) for Enter key
                         if (app->preview_mode) {
+                            // If entering from yellow border mode, change to actual selection mode
+                            if (app->return_to_mode == 2) {
+                                app->return_to_mode = 1; // Change to actual selection
+                            }
                             app_exit_preview(app, TRUE);
                             app_refresh_display(app);
                         } else if (app->file_manager_mode) {
@@ -912,35 +960,25 @@ int main(int argc, char *argv[]) {
     if (is_directory) {
         error = app_load_directory(g_app, path);
         if (error == ERROR_NONE) {
-            if (app_has_images(g_app)) {
-                // Start in preview grid when directory has images
-                error = app_enter_preview(g_app);
-            } else {
-                // No images: fall back to file manager in that directory
-                error = app_enter_file_manager(g_app);
-                if (error == ERROR_NONE) {
-                    app_render_file_manager(g_app);
-                }
+            // Always start in file manager for directories
+            error = app_enter_file_manager(g_app);
+            if (error == ERROR_NONE) {
+                app_render_file_manager(g_app);
             }
         }
     } else {
         // Check if the file is a valid image file first
         if (!is_valid_image_file(path)) {
-            // If the file is not valid, load the directory to see if there are other valid images
+            // If the file is not valid, load the directory and enter file manager
             gchar *directory = g_path_get_dirname(path);
             error = app_load_directory(g_app, directory);
             g_free(directory);
-            
+
             if (error == ERROR_NONE) {
-                if (app_has_images(g_app)) {
-                    // If there are other valid images in the directory, start in preview mode
-                    error = app_enter_preview(g_app);
-                } else {
-                    // If no other valid images exist, start in file manager mode
-                    error = app_enter_file_manager(g_app);
-                    if (error == ERROR_NONE) {
-                        app_render_file_manager(g_app);
-                    }
+                // Always start in file manager
+                error = app_enter_file_manager(g_app);
+                if (error == ERROR_NONE) {
+                    app_render_file_manager(g_app);
                 }
             }
         } else {

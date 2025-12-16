@@ -296,8 +296,15 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
     }
 }
 
-// Try to highlight the currently viewed image when opening file manager
+// Select the current image in file manager (only when appropriate)
 static void app_file_manager_select_current_image(PixelTermApp *app) {
+    // Only select current image if we're returning from image view (return_to_mode != -1)
+    // For initial file manager entry (return_to_mode == -1), keep selected_entry = 0
+    // Also select when returning from single image view (return_to_mode == 0)
+    if (app->return_to_mode == -1) {
+        return;
+    }
+
     if (!app || !app->current_directory || !app->file_manager_directory) {
         return;
     }
@@ -1455,6 +1462,68 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+// Check if current file manager directory contains any images
+gboolean app_file_manager_has_images(PixelTermApp *app) {
+    if (!app || !app->directory_entries) {
+        return FALSE;
+    }
+
+    // Check if any entry in the current directory listing is an image file
+    for (GList *cur = app->directory_entries; cur; cur = cur->next) {
+        gchar *path = (gchar*)cur->data;
+        if (g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_image_file(path)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+// Check if current file manager selection is an image file
+gboolean app_file_manager_selection_is_image(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode || !app->directory_entries) {
+        return FALSE;
+    }
+
+    if (app->selected_entry < 0 || app->selected_entry >= g_list_length(app->directory_entries)) {
+        return FALSE;
+    }
+
+    gchar *path = (gchar*)g_list_nth_data(app->directory_entries, app->selected_entry);
+    if (!path) {
+        return FALSE;
+    }
+
+    return g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_image_file(path);
+}
+
+// Get the image index of the currently selected file in file manager
+gint app_file_manager_get_selected_image_index(PixelTermApp *app) {
+    if (!app || !app->file_manager_mode || !app->directory_entries || !app->image_files) {
+        return -1;
+    }
+
+    if (app->selected_entry < 0 || app->selected_entry >= g_list_length(app->directory_entries)) {
+        return -1;
+    }
+
+    gchar *selected_path = (gchar*)g_list_nth_data(app->directory_entries, app->selected_entry);
+    if (!selected_path) {
+        return -1;
+    }
+
+    // Find the index of this file in the image list
+    gint image_index = 0;
+    for (GList *cur = app->image_files; cur; cur = cur->next, image_index++) {
+        const gchar *image_path = (const gchar*)cur->data;
+        if (g_strcmp0(selected_path, image_path) == 0) {
+            return image_index;
+        }
+    }
+
+    return -1; // Not found
+}
+
 // Toggle hidden files visibility while preserving selection when possible
 ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
     if (!app || !app->file_manager_mode) {
@@ -2003,6 +2072,12 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->preview_mode = TRUE;
     app->file_manager_mode = FALSE; // ensure we are not in file manager
     app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
+
+    // For yellow border mode (return_to_mode == 2), always select first image
+    if (app->return_to_mode == 2) {
+        app->preview_selected = 0;
+    }
+
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
     
@@ -2128,7 +2203,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             gint content_y = cell_y + 1;
 
             // Clear cell and draw border without occupying content area
-            const char *border_style = "\033[34;1m"; // bright blue foreground
+            const char *border_style = (app->return_to_mode == 2) ? "\033[33;1m" : "\033[34;1m"; // yellow for virtual selection, blue for actual
             for (gint line = 0; line < layout.cell_height; line++) {
                 gint y = cell_y + line;
                 printf("\033[%d;%dH", y, cell_x);

@@ -35,7 +35,7 @@ typedef struct {
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
     gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
-    gint return_to_mode;         // Return mode after file manager (0=single, 1=preview, -1=none)
+    gint return_to_mode;         // Return mode after file manager (0=single, 1=preview, 2=yellow preview, -1=none)
     
     // Terminal info
     gint term_width;
@@ -50,6 +50,7 @@ typedef struct {
     GList *directory_entries;
     gint selected_entry;
     gint scroll_offset;
+    gint previous_selected_entry; // Remember previous selection when entering yellow preview mode
 
     // Preview grid state
     gint preview_selected;
@@ -93,6 +94,9 @@ ErrorCode app_file_manager_enter(PixelTermApp *app);
 ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter);
 ErrorCode app_file_manager_refresh(PixelTermApp *app);
 ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app);
+gboolean app_file_manager_selection_is_image(PixelTermApp *app);
+gint app_file_manager_get_selected_image_index(PixelTermApp *app);
+gboolean app_file_manager_has_images(PixelTermApp *app);
 ErrorCode app_render_file_manager(PixelTermApp *app);
 ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mouse_y);
 
