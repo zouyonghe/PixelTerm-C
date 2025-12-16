@@ -102,6 +102,32 @@ static gint utf8_display_width(const gchar *text) {
     return width;
 }
 
+// Check if a directory contains image files
+static gboolean directory_contains_images(const gchar *dir_path) {
+    if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
+        return FALSE;
+    }
+
+    GDir *dir = g_dir_open(dir_path, 0, NULL);
+    if (!dir) {
+        return FALSE;
+    }
+
+    const gchar *filename;
+    while ((filename = g_dir_read_name(dir))) {
+        gchar *full_path = g_build_filename(dir_path, filename, NULL);
+        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_image_file(full_path)) {
+            g_free(full_path);
+            g_dir_close(dir);
+            return TRUE;
+        }
+        g_free(full_path);
+    }
+
+    g_dir_close(dir);
+    return FALSE;
+}
+
 static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height) {
     if (!max_width || !max_height) {
         return;
@@ -2427,6 +2453,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             gchar *print_name = sanitize_for_terminal(display_name);
             gint name_len = utf8_display_width(print_name);  // Use display width instead of byte length
             gboolean is_image = (!is_dir && is_image_file(entry));
+            gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
             // Calculate maximum display width considering terminal boundaries
             // Use a more conservative width to ensure proper display
             gint max_display_width = (app->term_width / 2) - 2; // Use half terminal width for better centering
@@ -2562,6 +2589,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
                 }
             } else if (selected) {
                 printf("\033[47;30m%s\033[0m", print_name);
+            } else if (is_dir_with_images) {
+                printf("\033[33m%s\033[0m", print_name); // Yellow for directories with images
             } else if (is_dir) {
                 printf("\033[34m%s\033[0m", print_name);
             } else if (is_image) {
