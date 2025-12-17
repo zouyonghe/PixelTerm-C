@@ -2314,11 +2314,12 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     // Footer with quick hints and page indicator at the bottom
     if (app->term_height > 0) {
-        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  +/- Zoom  ESC Exit";
+        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  TAB Toggle  +/- Zoom  ESC Exit";
         printf("\033[%d;1H", app->term_height);
         printf("\033[36m←/→/↑/↓\033[0m Move  ");
         printf("\033[36mPgUp/PgDn\033[0m Page  ");
         printf("\033[36mEnter\033[0m Open  ");
+        printf("\033[36mTAB\033[0m Toggle  ");
         printf("\033[36m+/-\033[0m Zoom  ");
         printf("\033[36mESC\033[0m Exit");
 
