@@ -1326,6 +1326,7 @@ ErrorCode app_exit_file_manager(PixelTermApp *app) {
     }
 
     app->file_manager_mode = FALSE;
+    app->pending_file_manager_single_click = FALSE;
     
     // Cleanup directory entries
     if (app->directory_entries) {

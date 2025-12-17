@@ -236,6 +236,20 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                     }
                     
+                    // Process pending single click action (File Manager Mode)
+                    if (app->file_manager_mode && app->pending_file_manager_single_click) {
+                        gint64 current_time = g_get_monotonic_time();
+                        if (current_time - app->pending_file_manager_click_time > 400000) {
+                            app->pending_file_manager_single_click = FALSE;
+                            app_handle_mouse_file_manager(app,
+                                                          app->pending_file_manager_click_x,
+                                                          app->pending_file_manager_click_y);
+                            app_render_file_manager(app);
+                        }
+                    } else if (!app->file_manager_mode && app->pending_file_manager_single_click) {
+                        app->pending_file_manager_single_click = FALSE;
+                    }
+                    
                     // Process any pending GLib events (such as timer callbacks for GIF animation)        // Only process these if we're currently displaying an animated GIF
         if (app->gif_player && gif_player_is_playing(app->gif_player)) {
             while (g_main_context_pending(NULL)) {
@@ -265,9 +279,11 @@ static ErrorCode run_application(PixelTermApp *app) {
                     app->pending_grid_click_x = event.mouse_x;
                     app->pending_grid_click_y = event.mouse_y;
                 } else if (app->file_manager_mode) {
-                    // Handle mouse click in file manager
-                    app_handle_mouse_file_manager(app, event.mouse_x, event.mouse_y);
-                    app_render_file_manager(app);
+                    // Defer file manager single click to distinguish from double click
+                    app->pending_file_manager_single_click = TRUE;
+                    app->pending_file_manager_click_time = g_get_monotonic_time();
+                    app->pending_file_manager_click_x = event.mouse_x;
+                    app->pending_file_manager_click_y = event.mouse_y;
                 } else {
                     // In single image mode, defer click action to wait for potential double click
                     app->pending_single_click = TRUE;
@@ -289,6 +305,7 @@ static ErrorCode run_application(PixelTermApp *app) {
                     app_render_current_image(app);
                 } else if (app->file_manager_mode) {
                     // Handle double click: open entry directly without extra selection jumps
+                    app->pending_file_manager_single_click = FALSE;
                     ErrorCode err = app_file_manager_enter_at_position(app, event.mouse_x, event.mouse_y);
                     if (err == ERROR_NONE && app->file_manager_mode) {
                         app_render_file_manager(app);

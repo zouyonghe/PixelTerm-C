@@ -65,6 +65,11 @@ typedef struct {
     gint64 pending_grid_click_time;
     gint pending_grid_click_x;
     gint pending_grid_click_y;
+
+    gboolean pending_file_manager_single_click;
+    gint64 pending_file_manager_click_time;
+    gint pending_file_manager_click_x;
+    gint pending_file_manager_click_y;
 } PixelTermApp;
 
 // Application lifecycle functions
