@@ -632,6 +632,7 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     if (found) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;
+        app->return_to_mode = 0; // Actual selection
     }
     
     return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
