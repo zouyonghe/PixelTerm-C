@@ -1566,6 +1566,15 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
 
     // Collect all entries
     GList *entries = NULL;
+    gchar *parent_entry = NULL;
+    gchar *parent_dir = g_path_get_dirname(current_dir);
+    if (parent_dir) {
+        if (g_strcmp0(parent_dir, current_dir) != 0) {
+            parent_entry = g_build_filename(current_dir, "..", NULL);
+            entries = g_list_append(entries, parent_entry);
+        }
+        g_free(parent_dir);
+    }
     const gchar *name;
 
     // Add directories and files (skip current directory entry if encountered)
@@ -1610,6 +1619,10 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
         }
     }
     dirs = g_list_sort(dirs, (GCompareFunc)app_file_manager_compare_names);
+    if (parent_entry) {
+        dirs = g_list_remove(dirs, parent_entry);
+        dirs = g_list_prepend(dirs, parent_entry);
+    }
     files = g_list_sort(files, (GCompareFunc)app_file_manager_compare_names);
     app->directory_entries = g_list_concat(dirs, files);
     g_list_free(entries); // pointers moved into dirs/files concatenated list
