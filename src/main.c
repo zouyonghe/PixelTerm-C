@@ -197,7 +197,11 @@ static ErrorCode run_application(PixelTermApp *app) {
             last_term_width = input_handler->terminal_width;
             last_term_height = input_handler->terminal_height;
             get_terminal_size(&app->term_width, &app->term_height);
-            if (app->file_manager_mode) {
+
+            if (app->preview_mode) {
+                app->needs_screen_clear = TRUE;
+                app_render_preview_grid(app);
+            } else if (app->file_manager_mode) {
                 app_render_file_manager(app);
             } else {
                 app_refresh_display(app);

@@ -2298,8 +2298,14 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    // Update terminal dimensions
+    // Update terminal dimensions and force full clear if size changed
+    gint prev_width = app->term_width;
+    gint prev_height = app->term_height;
     get_terminal_size(&app->term_width, &app->term_height);
+    if ((prev_width > 0 && prev_width != app->term_width) ||
+        (prev_height > 0 && prev_height != app->term_height)) {
+        app->needs_screen_clear = TRUE;
+    }
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     app_preview_adjust_scroll(app, &layout);
