@@ -985,9 +985,45 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
     
+    // Determine effective width for centering
+    gint effective_width = image_width > 0 ? image_width : target_width;
+    if (effective_width > app->term_width) {
+        effective_width = app->term_width;
+    }
+    if (effective_width < 0) {
+        effective_width = 0;
+    }
+    gint left_pad = (app->term_width > effective_width) ? (app->term_width - effective_width) / 2 : 0;
+    if (left_pad < 0) left_pad = 0;
+
     // Clear screen and reset terminal state
     printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
-    printf("%s", rendered->str);
+
+    gchar *pad_buffer = NULL;
+    if (left_pad > 0) {
+        pad_buffer = g_malloc(left_pad);
+        memset(pad_buffer, ' ', left_pad);
+    }
+
+    const gchar *line_ptr = rendered->str;
+    gint row = 1;
+    while (line_ptr && *line_ptr) {
+        const gchar *newline = strchr(line_ptr, '\n');
+        gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
+        printf("\033[%d;1H", row);
+        if (left_pad > 0) {
+            fwrite(pad_buffer, 1, left_pad, stdout);
+        }
+        if (line_len > 0) {
+            fwrite(line_ptr, 1, line_len, stdout);
+        }
+        if (!newline) {
+            break;
+        }
+        line_ptr = newline + 1;
+        row++;
+    }
+    g_free(pad_buffer);
     
     // Calculate filename position relative to image center
     if (filepath) {
@@ -996,8 +1032,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (safe_basename) {
             gint filename_len = strlen(safe_basename);
             // Center filename relative to image width, but ensure it stays within terminal bounds
-            gint image_center_col = image_width / 2;
-            gint filename_start_col = image_center_col - filename_len / 2;
+            gint image_center_col = effective_width / 2;
+            gint filename_start_col = left_pad + image_center_col - filename_len / 2;
             
             // Ensure filename doesn't go beyond terminal bounds
             if (filename_start_col < 0) filename_start_col = 0;
