@@ -1968,6 +1968,9 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
     app->preview_zoom = (gdouble)usable_width / new_cols;
     if (app->preview_zoom < 1) app->preview_zoom = 1;
 
+    // Mark for screen clear since layout changed
+    app->needs_screen_clear = TRUE;
+
     // Only refresh if zoom actually changed
     return app_render_preview_grid(app);
 }
@@ -2355,8 +2358,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     // Update terminal dimensions before layout
     get_terminal_size(&app->term_width, &app->term_height);
 
-    // Reset cursor to top-left (don't clear screen to avoid flicker)
-    printf("\033[H\033[0m");
+    // Clear screen and reset cursor to top-left
+    printf("\033[2J\033[H\033[0m");
     
     // Get current directory
     const gchar *current_dir = app->file_manager_directory;

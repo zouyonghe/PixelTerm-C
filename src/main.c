@@ -883,6 +883,8 @@ static ErrorCode run_application(PixelTermApp *app) {
             case INPUT_RESIZE:
                 input_update_terminal_size(input_handler);
                 get_terminal_size(&app->term_width, &app->term_height);
+                printf("\033[2J\033[H\033[0m"); // Clear screen to avoid artifacts
+                fflush(stdout);
                 if (app->file_manager_mode) {
                     app_render_file_manager(app);
                 } else {
