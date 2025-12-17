@@ -141,16 +141,16 @@ Mouse interaction significantly enhances navigation and selection across differe
 | Mouse Scroll Up/Down | Page Up/Down | Grid Preview | Scroll through pages of images. |
 | Mouse Scroll Up/Down | Navigate entries up/down | File Manager Mode | Scroll through the list of files and directories. |
 
-*Note: Mouse scroll events are debounced with a 100ms delay to prevent over-sensitive scrolling.*
-
 ### Image View (Single Image Mode)
 
 This is the default mode when viewing a single image.
 
 | Key | Function |
 |-----|----------|
-| ←/→ | Previous/Next image |
-| h/l | Vim-style navigation (previous/next image) |
+| ←/↑ | Previous image |
+| →/↓ | Next image |
+| h/k | Vim-style navigation (previous image) |
+| l/j | Vim-style navigation (next image) |
 | Enter | Toggle into Grid Preview mode |
 | TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
 | i | Toggle image information display |
@@ -180,7 +180,6 @@ This mode allows browsing through directories and files. Note that Vim-style nav
 | ←/→ | Go to parent directory / Open selected directory/file |
 | ↑/↓ | Navigate entries up/down |
 | Enter | Open selected directory or file |
-| TAB | Return to the previous image view or grid preview; no effect if FM was entered directly |
 | Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
 
 
