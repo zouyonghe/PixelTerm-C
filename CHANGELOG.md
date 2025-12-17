@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.2.8: File manager mouse interaction and navigation improvements.
+    - **Mouse Handling**: Refactored file manager mouse handling with dedicated hit-test function for accurate position-to-entry mapping. Implemented deferred single-click handling (400ms delay) to distinguish between single and double-click actions.
+    - **Navigation**: Added parent directory (..) entry at the top of file manager list for easier upward navigation. Improved preview mode navigation with proper return_to_mode state tracking for virtual and actual selections.
+    - **Rendering**: Fixed screen clearing on zoom changes and terminal resize to eliminate visual artifacts. Added TAB key hint to preview grid help text.
+    - **UX**: Double-click now opens entries directly without intermediate selection jumps. Centralized viewport calculation logic for better maintainability and consistent scrolling behavior.
+
 - v1.2.6: Enhanced navigation and visual improvements.
     - **Navigation**: Implement enhanced file manager and preview navigation logic with improved startup behavior (enter file manager by default for directories), yellow border preview mode for non-image selections, blue border preview mode for image selections, and fixed Tab key navigation between modes.
     - **UX**: Add visual enhancement to highlight directories containing images in yellow for better visual distinction, while directories without images remain blue and images stay green.
