@@ -272,6 +272,162 @@ static void app_file_manager_layout(const PixelTermApp *app, gint *col_width, gi
     if (total_rows) *total_rows = rows;
 }
 
+typedef struct {
+    gint col_width;
+    gint cols;
+    gint visible_rows;
+    gint total_rows;
+    gint total_entries;
+    gint start_row;
+    gint end_row;
+    gint rows_to_render;
+    gint top_padding;
+    gint bottom_padding;
+} FileManagerViewport;
+
+static FileManagerViewport app_file_manager_compute_viewport(PixelTermApp *app) {
+    FileManagerViewport viewport = {0};
+    if (!app) {
+        return viewport;
+    }
+
+    app_file_manager_layout(app, &viewport.col_width, &viewport.cols,
+                            &viewport.visible_rows, &viewport.total_rows);
+    viewport.total_entries = g_list_length(app->directory_entries);
+
+    gint available_rows = viewport.visible_rows;
+    if (available_rows < 0) {
+        available_rows = 0;
+    }
+
+    gint max_offset = MAX(0, viewport.total_rows - 1);
+    gint scroll_offset = app->scroll_offset;
+    if (scroll_offset > max_offset) {
+        scroll_offset = max_offset;
+    }
+    if (scroll_offset < 0) {
+        scroll_offset = 0;
+    }
+
+    gint start_row = scroll_offset;
+    if (viewport.total_rows <= 0) {
+        start_row = 0;
+    } else if (start_row >= viewport.total_rows) {
+        start_row = viewport.total_rows - 1;
+    }
+
+    gint end_row = MIN(start_row + available_rows, viewport.total_rows);
+    gint rows_to_render = end_row - start_row;
+    if (rows_to_render < 0) {
+        rows_to_render = 0;
+    }
+
+    gint selected_row = app->selected_entry;
+    if (selected_row < 0) {
+        selected_row = 0;
+    } else if (viewport.total_rows > 0 && selected_row >= viewport.total_rows) {
+        selected_row = viewport.total_rows - 1;
+    } else if (viewport.total_rows == 0) {
+        selected_row = 0;
+    }
+
+    gint selected_pos = selected_row - start_row;
+    if (selected_pos < 0) {
+        selected_pos = 0;
+    }
+    if (rows_to_render > 0 && selected_pos >= rows_to_render) {
+        selected_pos = rows_to_render - 1;
+    }
+
+    gint target_row = available_rows / 2;
+    gint top_padding = target_row - selected_pos;
+    if (top_padding < 0) {
+        gint more_rows_below = MAX(0, viewport.total_rows - end_row);
+        gint scroll_shift = MIN(-top_padding, more_rows_below);
+        if (scroll_shift > 0) {
+            start_row += scroll_shift;
+            end_row = MIN(start_row + available_rows, viewport.total_rows);
+            rows_to_render = end_row - start_row;
+            if (rows_to_render < 0) {
+                rows_to_render = 0;
+            }
+            selected_pos = selected_row - start_row;
+            if (selected_pos < 0) {
+                selected_pos = 0;
+            }
+            if (rows_to_render > 0 && selected_pos >= rows_to_render) {
+                selected_pos = rows_to_render - 1;
+            }
+            top_padding = target_row - selected_pos;
+        }
+        if (top_padding < 0) {
+            top_padding = 0;
+        }
+    }
+
+    gint visible_space = MAX(0, available_rows - top_padding);
+    if (rows_to_render > visible_space) {
+        end_row = MIN(viewport.total_rows, start_row + visible_space);
+        rows_to_render = end_row - start_row;
+        if (rows_to_render < 0) {
+            rows_to_render = 0;
+        }
+    }
+
+    gint bottom_padding = available_rows - rows_to_render - top_padding;
+    if (bottom_padding < 0) {
+        bottom_padding = 0;
+    }
+
+    viewport.start_row = start_row;
+    viewport.end_row = end_row;
+    viewport.rows_to_render = rows_to_render;
+    viewport.top_padding = top_padding;
+    viewport.bottom_padding = bottom_padding;
+    return viewport;
+}
+
+static gboolean app_file_manager_hit_test(PixelTermApp *app, gint mouse_x, gint mouse_y, gint *out_index) {
+    (void)mouse_x; // Currently unused because layout is single column
+    if (!app || !app->file_manager_mode) {
+        return FALSE;
+    }
+
+    get_terminal_size(&app->term_width, &app->term_height);
+    FileManagerViewport viewport = app_file_manager_compute_viewport(app);
+
+    // Header (title + path) occupies two rows
+    gint header_lines = 2;
+    if (mouse_y <= header_lines) {
+        return FALSE;
+    }
+
+    gint row_idx = mouse_y - header_lines - 1;
+    if (row_idx < 0 || row_idx >= viewport.visible_rows) {
+        return FALSE;
+    }
+
+    if (row_idx < viewport.top_padding) {
+        return FALSE;
+    }
+
+    gint relative_row = row_idx - viewport.top_padding;
+    if (relative_row >= viewport.rows_to_render) {
+        return FALSE;
+    }
+
+    gint absolute_row = viewport.start_row + relative_row;
+    gint selected_idx = absolute_row * viewport.cols;
+    if (selected_idx < 0 || selected_idx >= viewport.total_entries) {
+        return FALSE;
+    }
+
+    if (out_index) {
+        *out_index = selected_idx;
+    }
+    return TRUE;
+}
+
 static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint visible_rows) {
     gint total_entries = g_list_length(app->directory_entries);
     gint total_rows = (total_entries + cols - 1) / cols;
@@ -1573,45 +1729,42 @@ ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mo
     if (!app || !app->file_manager_mode) {
         return ERROR_MEMORY_ALLOC;
     }
-    (void)mouse_x; // Currently unused as we have single column layout
+
+    gint hit_index = -1;
+    if (!app_file_manager_hit_test(app, mouse_x, mouse_y, &hit_index)) {
+        return ERROR_NONE;
+    }
+
+    app->selected_entry = hit_index;
 
     gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
     app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
-
-    // Header is 2 lines (Title + Path)
-    gint header_lines = 2;
-
-    // Check if click is in the list area
-    if (mouse_y <= header_lines) {
-        return ERROR_NONE; // Ignore header clicks
-    }
-    
-    // Calculate row index relative to visible area
-    gint row_idx = mouse_y - header_lines - 1; // 0-based index
-    
-    if (row_idx < 0 || row_idx >= visible_rows) {
-        return ERROR_NONE; // Click outside visible list
-    }
-
-    // Calculate absolute row index
-    gint absolute_row = app->scroll_offset + row_idx;
-
-    // Currently only 1 column is supported in file manager layout
-    // But if cols > 1 logic changes, we should account for it.
-    // For now assuming cols=1 or logic matches linear list
-    
-    gint selected_idx = absolute_row * cols; // simplified for single column
-
-    // Check bounds
-    gint total_entries = g_list_length(app->directory_entries);
-    if (selected_idx >= 0 && selected_idx < total_entries) {
-        app->selected_entry = selected_idx;
-        
-        // Ensure selection is centered or visible
-        app_file_manager_adjust_scroll(app, cols, visible_rows);
-    }
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
 
     return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    gint hit_index = -1;
+    if (!app_file_manager_hit_test(app, mouse_x, mouse_y, &hit_index)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    gint prev_selected = app->selected_entry;
+    gint prev_scroll = app->scroll_offset;
+    app->selected_entry = hit_index;
+    ErrorCode err = app_file_manager_enter(app);
+
+    if (err != ERROR_NONE && app->file_manager_mode) {
+        app->selected_entry = prev_selected;
+        app->scroll_offset = prev_scroll;
+    }
+
+    return err;
 }
 
 // ----- Preview grid helpers -----
@@ -2438,78 +2591,15 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         g_free(display_dir);
     }
 
-    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
-    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
-
-    gint total_entries = g_list_length(app->directory_entries);
+    FileManagerViewport viewport = app_file_manager_compute_viewport(app);
+    app->scroll_offset = viewport.start_row;
+    gint total_entries = viewport.total_entries;
     const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   Ctrl+H Hidden   ESC Exit";
-    // 2 header lines + 1 footer line -> remaining rows for content
-    gint available_rows = app->term_height - 3;
-    gint target_row = available_rows / 2;
-
-    // Clamp scroll_offset to valid range
-    gint max_offset = MAX(0, total_rows - 1);
-    if (app->scroll_offset > max_offset) {
-        app->scroll_offset = max_offset;
-    }
-    if (app->scroll_offset < 0) {
-        app->scroll_offset = 0;
-    }
-
-    gint start_row = app->scroll_offset;
-    if (total_rows <= 0) {
-        start_row = 0;
-    } else if (start_row >= total_rows) {
-        start_row = total_rows - 1;
-    }
-
-    gint end_row = MIN(start_row + available_rows, total_rows);
-    gint rows_to_render = end_row - start_row;
-    if (rows_to_render < 0) rows_to_render = 0;
-
-    // Calculate padding to keep the selected entry roughly centered
-    gint selected_row = app->selected_entry; // single column
-    if (selected_row < 0) {
-        selected_row = 0;
-    } else if (total_rows > 0 && selected_row >= total_rows) {
-        selected_row = total_rows - 1;
-    } else if (total_rows == 0) {
-        selected_row = 0;
-    }
-
-    gint selected_pos = selected_row - start_row; // position within rendered block
-    if (selected_pos < 0) selected_pos = 0;
-    if (rows_to_render > 0 && selected_pos >= rows_to_render) {
-        selected_pos = rows_to_render - 1;
-    }
-
-    gint top_padding = target_row - selected_pos;
-    if (top_padding < 0 && rows_to_render > 0) {
-        // Convert negative padding into additional scroll when there is room below
-        gint more_rows_below = MAX(0, total_rows - end_row);
-        gint scroll_shift = MIN(-top_padding, more_rows_below);
-        if (scroll_shift > 0) {
-            start_row += scroll_shift;
-            end_row = MIN(start_row + available_rows, total_rows);
-            rows_to_render = end_row - start_row;
-            selected_pos = selected_row - start_row;
-            top_padding = target_row - selected_pos;
-        }
-        if (top_padding < 0) {
-            top_padding = 0;
-        }
-    }
-    app->scroll_offset = start_row;
-
-    // Ensure we don't render past the available rows when centering
-    gint visible_space = MAX(0, available_rows - top_padding);
-    if (rows_to_render > visible_space) {
-        end_row = MIN(total_rows, start_row + visible_space);
-        rows_to_render = end_row - start_row;
-    }
-
-    gint bottom_padding = available_rows - rows_to_render - top_padding;
-    if (bottom_padding < 0) bottom_padding = 0;
+    gint start_row = viewport.start_row;
+    gint end_row = viewport.end_row;
+    gint rows_to_render = viewport.rows_to_render;
+    gint top_padding = viewport.top_padding;
+    gint bottom_padding = viewport.bottom_padding;
 
     // Top padding to keep highlight centered
     for (gint i = 0; i < top_padding; i++) {

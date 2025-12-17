@@ -373,6 +373,21 @@ ErrorCode app_render_file_manager(PixelTermApp *app);
  *         is NULL or not in file manager mode.
  */
 ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mouse_y);
+/**
+ * @brief Opens the file manager entry located at the specified mouse position.
+ * 
+ * Performs the same hit-test logic as a single click but immediately
+ * invokes `app_file_manager_enter()` without altering the current selection
+ * if the operation fails. This is intended for double-click scenarios where
+ * the entry should be opened directly.
+ * 
+ * @param app A pointer to the `PixelTermApp` instance.
+ * @param mouse_x The X-coordinate of the mouse double click.
+ * @param mouse_y The Y-coordinate of the mouse double click.
+ * @return `ERROR_NONE` if the entry was opened, or an `ErrorCode`
+ *         describing why the action failed.
+ */
+ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y);
 
 // Preview grid functions
 /**
