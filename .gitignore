@@ -30,3 +30,6 @@ Thumbs.db
 
 # Other
 .grok/
+
+# Local zsh completion (generated/managed outside repo)
+_pixelterm
