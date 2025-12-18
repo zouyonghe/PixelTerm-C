@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.3.1: Fix preview selection on double-click; improve install portability.
+    - **Preview Grid**: Double-click switching between Single Image View and Grid Preview now preserves the selected image and avoids unintended yellow (virtual) selection state.
+    - **Build/Install**: Make `make install` portable across GNU/BSD `install` by removing GNU-only `-D` usage and supporting `PREFIX`/`DESTDIR`.
+
 - v1.3.0: UI/UX improvements, Zen mode, and compatibility options.
     - **Zen Mode**: Add `~` / `` ` `` to hide/show all on-screen text in Image View and Grid Preview.
     - **Single Image View**: Add file-manager-style hints, show the current image index within the folder, and improve header layout.
