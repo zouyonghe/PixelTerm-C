@@ -163,9 +163,13 @@ static void app_clear_screen_for_refresh(const PixelTermApp *app) {
     }
 
     // Some terminals can leave stale content artifacts after clears/mode switches.
-    // Optional workaround: clear -> print 2 blank lines at bottom -> clear again.
+    // Optional workaround: clear -> print blank lines at bottom -> clear again.
     printf("\033[2J\033[H\033[0m");
-    printf("\033[%d;1H\033[2K\n\033[2K\n", app->term_height);
+    const gint blank_lines = 10;
+    printf("\033[%d;1H", app->term_height);
+    for (gint i = 0; i < blank_lines; i++) {
+        printf("\033[2K\n");
+    }
     printf("\033[2J\033[H\033[0m");
 }
 
@@ -1173,7 +1177,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         const HelpSegment segments[] = {
             {"←/→", "Prev/Next"},
             {"Enter", "Preview"},
-            {"TAB", "Files"},
+            {"TAB", "Toggle"},
             {"i", "Info"},
             {"r", "Delete"},
             {"~", "Zen"},
