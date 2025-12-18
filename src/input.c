@@ -16,6 +16,8 @@ InputHandler* input_handler_create(void) {
 
     handler->raw_mode_enabled = FALSE;
     handler->mouse_enabled = FALSE;
+    handler->use_alt_screen = TRUE;
+    handler->alt_screen_enabled = FALSE;
     handler->terminal_width = 80;
     handler->terminal_height = 24;
     handler->should_exit = FALSE;
@@ -90,6 +92,14 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
         return ERROR_TERMINAL_SIZE;
     }
 
+    // Use alternate screen to avoid polluting scrollback / showing stale lines on some terminals.
+    // Only enable when stdout is a terminal and user didn't disable it.
+    if (handler->use_alt_screen && isatty(STDOUT_FILENO)) {
+        printf("\033[?1049h\033[?25l");
+        fflush(stdout);
+        handler->alt_screen_enabled = TRUE;
+    }
+
     handler->raw_mode_enabled = TRUE;
     return ERROR_NONE;
 }
@@ -113,8 +123,12 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
         }
     }
 
-    // Show cursor and reset terminal
-    printf("\033[?25h");
+    // Restore main screen (if we switched), then show cursor
+    if (handler->alt_screen_enabled && isatty(STDOUT_FILENO)) {
+        printf("\033[?1049l");
+        handler->alt_screen_enabled = FALSE;
+    }
+    printf("\033[0m\033[?25h");
     fflush(stdout);
 
     handler->raw_mode_enabled = FALSE;

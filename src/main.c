@@ -16,11 +16,13 @@
 // Global application instance
 static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
+static volatile sig_atomic_t g_last_signal = 0;
 
 // Signal handler for graceful shutdown
 static void signal_handler(int sig) {
     (void)sig; // Suppress unused parameter warning
     g_terminate_requested = 1;
+    g_last_signal = sig;
 }
 
 // Print usage information
@@ -37,6 +39,7 @@ static void print_usage(const char *program_name) {
     printf("  -v, --version  Show version information\n");
     printf("  -D, --dither   Enable image dithering (default: disabled)\n");
     printf("  --no-preload   Disable image preloading (default: enabled)\n");
+    printf("  --no-alt-screen  Disable alternate screen buffer (default: enabled)\n");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -57,13 +60,14 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
         {"Version",   no_argument,       0, 'V'},
         {"no-preload", no_argument,      0, 1000},
         {"dither",     no_argument,      0, 1001},
+        {"no-alt-screen", no_argument,   0, 1002},
         {0, 0, 0, 0}
     };
 
@@ -90,6 +94,9 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                 break;
             case 1001: // --dither
                 *dither_enabled = TRUE;
+                break;
+            case 1002: // --no-alt-screen
+                *alt_screen_enabled = FALSE;
                 break;
             case '?':
                 // Check if it's a long option (starts with --)
@@ -135,11 +142,12 @@ static ErrorCode validate_path(const char *path, gboolean *is_directory) {
 }
 
 // Main application loop
-static ErrorCode run_application(PixelTermApp *app) {
+static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
         return ERROR_MEMORY_ALLOC;
     }
+    input_handler->use_alt_screen = alt_screen_enabled;
 
     ErrorCode error = ERROR_NONE;
 
@@ -161,6 +169,10 @@ static ErrorCode run_application(PixelTermApp *app) {
         input_handler_destroy(input_handler);
         return error;
     }
+
+    // Drop any pending bytes (some terminals can leave an ESC or other bytes queued)
+    // which would otherwise immediately trigger an action like exit.
+    input_flush_buffer(input_handler);
 
     // Initial render: show file manager if already active
     if (app->file_manager_mode) {
@@ -977,8 +989,9 @@ int main(int argc, char *argv[]) {
     char *path = NULL;
     gboolean preload_enabled = TRUE;
     gboolean dither_enabled = FALSE;
+    gboolean alt_screen_enabled = TRUE;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
@@ -1068,10 +1081,15 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             app_render_file_manager(g_app);
-            error = run_application(g_app);
+            error = run_application(g_app, alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
             g_app = NULL;
+            if (g_terminate_requested) {
+                if (g_last_signal == SIGINT) return 130;
+                if (g_last_signal == SIGTERM) return 143;
+                return 1;
+            }
             return error == ERROR_NONE ? 0 : 1;
         } else {
             // No path provided and no images: start in file manager mode for browsing
@@ -1083,16 +1101,21 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             // Continue into main loop with file manager active
-            error = run_application(g_app);
+            error = run_application(g_app, alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
             g_app = NULL;
+            if (g_terminate_requested) {
+                if (g_last_signal == SIGINT) return 130;
+                if (g_last_signal == SIGTERM) return 143;
+                return 1;
+            }
             return error == ERROR_NONE ? 0 : 1;
         }
     }
 
     // Run main application loop
-    error = run_application(g_app);
+    error = run_application(g_app, alt_screen_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Application error: %d (%s)\n", error, 
                 error_code_to_string(error));
@@ -1103,5 +1126,10 @@ int main(int argc, char *argv[]) {
     g_free(path);
     g_app = NULL;
 
+    if (g_terminate_requested) {
+        if (g_last_signal == SIGINT) return 130;
+        if (g_last_signal == SIGTERM) return 143;
+        return 1;
+    }
     return error == ERROR_NONE ? 0 : 1;
 }

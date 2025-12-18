@@ -76,6 +76,8 @@ typedef struct {
 typedef struct {
     gboolean raw_mode_enabled;
     gboolean mouse_enabled;
+    gboolean use_alt_screen;     // Whether to enter alternate screen (requested)
+    gboolean alt_screen_enabled;
     gint terminal_width;
     gint terminal_height;
     gboolean should_exit;
