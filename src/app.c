@@ -32,6 +32,7 @@ PixelTermApp* app_create(void) {
     app->running = TRUE;
     app->show_info = FALSE;
     app->info_visible = FALSE;
+    app->ui_text_hidden = FALSE;
     app->preload_enabled = TRUE;
     app->dither_enabled = FALSE;
     app->needs_redraw = TRUE;
@@ -136,8 +137,11 @@ static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_w
     gint height = (app && app->term_height > 0) ? app->term_height : 24;
     if (app && app->info_visible) {
         height -= 10;
-    } else {
+    } else if (app && !app->ui_text_hidden) {
         // Reserve one line for filename and one for footer hints in single-image view
+        height -= 2;
+    } else {
+        // Keep image position/size stable when toggling UI text visibility
         height -= 2;
     }
     if (height < 1) {
@@ -1027,7 +1031,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     g_free(pad_buffer);
     
     // Calculate filename position relative to image center
-    if (filepath) {
+    if (filepath && !app->ui_text_hidden) {
         gchar *basename = g_path_get_basename(filepath);
         gchar *safe_basename = sanitize_for_terminal(basename);
         if (safe_basename) {
@@ -1058,14 +1062,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // Footer hints (single image view) + bottom-right file index indicator
-    if (app->term_height > 0) {
-        const char *help_text = "←/→ Prev/Next  Enter Preview  TAB Files  i Info  r Delete  ESC Exit";
+    if (app->term_height > 0 && !app->ui_text_hidden) {
+        const char *help_text = "←/→ Prev/Next  Enter Preview  TAB Files  i Info  r Delete  ~ Zen  ESC Exit";
         printf("\033[%d;1H\033[2K", app->term_height); // Move to last line and clear it
         printf("\033[36m←/→\033[0m Prev/Next  ");
         printf("\033[36mEnter\033[0m Preview  ");
         printf("\033[36mTAB\033[0m Files  ");
         printf("\033[36mi\033[0m Info  ");
         printf("\033[36mr\033[0m Delete  ");
+        printf("\033[36m~\033[0m Zen  ");
         printf("\033[36mESC\033[0m Exit");
 
         gint current = app_get_current_index(app) + 1;
@@ -1075,13 +1080,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
         char idx_text[32];
         g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
-        gint idx_len = strlen(idx_text);
+        const char *idx_prefix = "Index ";
+        gint idx_len = strlen(idx_prefix) + strlen(idx_text);
         gint start_col = app->term_width - idx_len + 1;
         if (start_col < (gint)strlen(help_text) + 2) {
             start_col = strlen(help_text) + 2;
         }
         if (start_col < 1) start_col = 1;
-        printf("\033[%d;%dH\033[36m%s\033[0m", app->term_height, start_col, idx_text);
+        // Prefix in cyan, numbers in default (white)
+        printf("\033[%d;%dH\033[36m%s\033[0m%s", app->term_height, start_col, idx_prefix, idx_text);
     }
     
     // If it's a GIF and player is available, start playing if animated
@@ -1869,6 +1876,7 @@ static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
         return layout;
     }
 
+    // Keep layout stable even when UI text is hidden
     const gint header_lines = 3;
     gint usable_width = app->term_width > 0 ? app->term_width : 80;
     gint usable_height = app->term_height > header_lines ? app->term_height - header_lines : 6;
@@ -2414,14 +2422,16 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         return ERROR_CHAFA_INIT;
     }
 
-    // Header: title; controls are shown in footer
-    const char *title = "Preview Grid";
-    gint title_len = strlen(title);
-    gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-    for (gint i = 0; i < pad; i++) printf(" ");
-    printf("%s\n", title);
+    if (!app->ui_text_hidden) {
+        // Header: title; controls are shown in footer
+        const char *title = "Preview Grid";
+        gint title_len = strlen(title);
+        gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+        for (gint i = 0; i < pad; i++) printf(" ");
+        printf("%s\n", title);
 
-    printf("[%d/%d]\n\n", app->preview_selected + 1, app->total_images);
+        printf("[%d/%d]\n\n", app->preview_selected + 1, app->total_images);
+    }
 
     gint start_row = app->preview_scroll;
     gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
@@ -2530,7 +2540,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
 
     // Centered filename on the second-to-last line
-    if (app->term_height >= 2) {
+    if (app->term_height >= 2 && !app->ui_text_hidden) {
         const gchar *sel_path = (const gchar*)g_list_nth_data(app->image_files, app->preview_selected);
         if (sel_path) {
             gchar *base = g_path_get_basename(sel_path);
@@ -2560,14 +2570,15 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
 
     // Footer with quick hints and page indicator at the bottom
-    if (app->term_height > 0) {
-        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  TAB Toggle  +/- Zoom  ESC Exit";
+    if (app->term_height > 0 && !app->ui_text_hidden) {
+        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  TAB Toggle  +/- Zoom  ~ Zen  ESC Exit";
         printf("\033[%d;1H", app->term_height);
         printf("\033[36m←/→/↑/↓\033[0m Move  ");
         printf("\033[36mPgUp/PgDn\033[0m Page  ");
         printf("\033[36mEnter\033[0m Open  ");
         printf("\033[36mTAB\033[0m Toggle  ");
         printf("\033[36m+/-\033[0m Zoom  ");
+        printf("\033[36m~\033[0m Zen  ");
         printf("\033[36mESC\033[0m Exit");
 
         // Page indicator at bottom-right based on items per page

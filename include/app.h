@@ -28,6 +28,7 @@ typedef struct {
     gboolean running;
     gboolean show_info;
     gboolean info_visible;  // Track if info is currently displayed
+    gboolean ui_text_hidden; // Hide all UI text overlays (single/preview)
     gboolean preload_enabled;
     gboolean dither_enabled;
     gboolean needs_redraw;

@@ -545,12 +545,26 @@ static ErrorCode run_application(PixelTermApp *app) {
                         break;
                     case (KeyCode)'i':
                         if (!app->preview_mode) {
+                            if (app->ui_text_hidden) {
+                                break;
+                            }
                             if (g_app->info_visible) {
                                 g_app->info_visible = FALSE;
                                 app_render_current_image(app);
                             } else {
                                 app_display_image_info(app);
                             }
+                        }
+                        break;
+                    case (KeyCode)'~':
+                    case (KeyCode)'`':
+                        if (!app->file_manager_mode) {
+                            app->ui_text_hidden = !app->ui_text_hidden;
+                            if (app->ui_text_hidden) {
+                                app->info_visible = FALSE;
+                            }
+                            app->needs_screen_clear = TRUE;
+                            app_refresh_display(app);
                         }
                         break;
                     case (KeyCode)'r':

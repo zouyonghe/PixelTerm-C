@@ -164,8 +164,11 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->type = INPUT_KEY_PRESS;
     event->key_code = KEY_UNKNOWN;
 
-    // Read first character
+    // Read first character (treat as unsigned byte to avoid sign-extension issues)
     gint c = input_read_key(handler);
+    if (c < 0) {
+        c = (unsigned char)c;
+    }
     if (c < 0) {
         return ERROR_TERMINAL_SIZE;
     }
@@ -333,8 +336,21 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
             event->key_code = KEY_ESCAPE;
         }
     } else {
-        // Regular character
-        event->key_code = (KeyCode)c;
+        // Regular character (including basic UTF-8 punctuation we care about)
+        // Some IMEs/terminals send a fullwidth tilde '～' (U+FF5E) which is UTF-8: EF BD 9E.
+        if (c == 0xEF) {
+            gint b2 = input_read_char_with_timeout(handler, 5);
+            if (b2 < 0) b2 = (unsigned char)b2;
+            gint b3 = input_read_char_with_timeout(handler, 5);
+            if (b3 < 0) b3 = (unsigned char)b3;
+            if (b2 == 0xBD && b3 == 0x9E) {
+                event->key_code = (KeyCode)'~';
+            } else {
+                event->key_code = KEY_UNKNOWN;
+            }
+        } else {
+            event->key_code = (KeyCode)c;
+        }
     }
 
     // Update terminal size in event
@@ -496,6 +512,7 @@ void input_print_key_bindings(void) {
     printf("  ←/→ or a/d     Previous/Next image\n");
     printf("  TAB            Toggle file manager\n");
     printf("  i              Toggle image information\n");
+    printf("  ~              Toggle UI text (single/preview)\n");
     printf("  r              Delete current image\n");
 
     printf("  Ctrl+C         Force exit\n");
