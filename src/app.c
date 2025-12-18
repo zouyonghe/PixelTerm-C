@@ -33,6 +33,7 @@ PixelTermApp* app_create(void) {
     app->show_info = FALSE;
     app->info_visible = FALSE;
     app->ui_text_hidden = FALSE;
+    app->clear_workaround_enabled = FALSE;
     app->preload_enabled = TRUE;
     app->dither_enabled = FALSE;
     app->needs_redraw = TRUE;
@@ -148,6 +149,24 @@ static void print_centered_help_line(gint row, gint term_width, const HelpSegmen
             col += 2;
         }
     }
+}
+
+static void app_clear_screen_for_refresh(const PixelTermApp *app) {
+    if (!app) {
+        printf("\033[2J\033[H\033[0m");
+        return;
+    }
+
+    if (!app->clear_workaround_enabled || app->term_height <= 0) {
+        printf("\033[2J\033[H\033[0m");
+        return;
+    }
+
+    // Some terminals can leave stale content artifacts after clears/mode switches.
+    // Optional workaround: clear -> print 2 blank lines at bottom -> clear again.
+    printf("\033[2J\033[H\033[0m");
+    printf("\033[%d;1H\033[2K\n\033[2K\n", app->term_height);
+    printf("\033[2J\033[H\033[0m");
 }
 
 // Check if a directory contains image files
@@ -304,9 +323,15 @@ static void app_file_manager_layout(const PixelTermApp *app, gint *col_width, gi
 
     gint column_count = 1;
 
-    // Header (title + path) + footer help line
-    gint header_lines = 2;
-    gint help_lines = 1;
+    // Layout:
+    //   Row 1: title
+    //   Row 2: blank
+    //   Row 3: current directory
+    //   Row 4: blank
+    //   Rows 5 .. (term_height - 4): file list (centered)
+    //   Last 4 rows: footer area (only last row used for help)
+    gint header_lines = 4;
+    gint help_lines = 4;
     gint vis_rows = app->term_height - header_lines - help_lines;
     if (vis_rows < 1) {
         vis_rows = 1;
@@ -446,13 +471,18 @@ static gboolean app_file_manager_hit_test(PixelTermApp *app, gint mouse_x, gint 
     get_terminal_size(&app->term_width, &app->term_height);
     FileManagerViewport viewport = app_file_manager_compute_viewport(app);
 
-    // Header (title + path) occupies two rows
-    gint header_lines = 2;
-    if (mouse_y <= header_lines) {
+    // Header occupies four rows; list starts at row 5 and ends at row (term_height - 4)
+    const gint header_lines = 4;
+    const gint list_top_row = header_lines + 1;
+    gint list_bottom_row = app->term_height - 4;
+    if (list_bottom_row < list_top_row) {
+        list_bottom_row = list_top_row;
+    }
+    if (mouse_y < list_top_row || mouse_y > list_bottom_row) {
         return FALSE;
     }
 
-    gint row_idx = mouse_y - header_lines - 1;
+    gint row_idx = mouse_y - list_top_row;
     if (row_idx < 0 || row_idx >= viewport.visible_rows) {
         return FALSE;
     }
@@ -1047,7 +1077,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (left_pad < 0) left_pad = 0;
 
     // Clear screen and reset terminal state
-    printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
+    app_clear_screen_for_refresh(app);
 
     // Title + index area (single image view)
     const gint image_area_top_row = 3; // Keep layout stable even in Zen (UI hidden)
@@ -1769,6 +1799,19 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     app->scroll_offset = 0;
     app_file_manager_select_current_image(app);
 
+    // Default: avoid selecting ".." when entering a directory; pick the first real entry.
+    if (app->directory_entries && app->selected_entry == 0 && g_list_length(app->directory_entries) > 1) {
+        const gchar *first = (const gchar*)g_list_nth_data(app->directory_entries, 0);
+        if (first) {
+            gchar *base = g_path_get_basename(first);
+            gboolean is_parent = (base && g_strcmp0(base, "..") == 0);
+            g_free(base);
+            if (is_parent) {
+                app->selected_entry = 1;
+            }
+        }
+    }
+
     return ERROR_NONE;
 }
 
@@ -2433,7 +2476,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->needs_redraw = TRUE;
     
     // Clear screen on mode entry to avoid ghosting
-    printf("\033[2J\033[H\033[0m");
+    app_clear_screen_for_refresh(app);
     fflush(stdout);
 
     if (app->preloader && app->preload_enabled) {
@@ -2492,6 +2535,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     app_preview_queue_preloads(app, &layout);
 
     if (app->needs_screen_clear) {
+        // Inside preview mode, prefer a normal clear to avoid extra terminal work.
         printf("\033[2J\033[H\033[0m"); // Clear screen and move cursor to top-left
         app->needs_screen_clear = FALSE;
     } else {
@@ -2717,8 +2761,9 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     // Update terminal dimensions before layout
     get_terminal_size(&app->term_width, &app->term_height);
 
-    // Clear screen and reset cursor to top-left
-    printf("\033[2J\033[H\033[0m");
+    // Don't do a full-screen clear on every navigation step; we explicitly clear/redraw
+    // the rows we touch to keep movement smooth and avoid extra terminal workarounds.
+    printf("\033[H\033[0m");
     
     // Get current directory
     const gchar *current_dir = app->file_manager_directory;
@@ -2732,13 +2777,14 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     }
     gchar *safe_current_dir = sanitize_for_terminal(current_dir);
 
-    // Header centered: first line app name, second line current directory
+    // Header centered: row 1 app name, row 3 current directory (row 2/4 blank)
     const char *header_title = "PixelTerm File Manager";
     gint title_len = strlen(header_title);
     gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-    printf("\033[2K\033[1G"); // Clear line and move to beginning
-    for (gint i = 0; i < title_pad; i++) printf(" "); // Use spaces for centering
-    printf("%s\n", header_title);
+    printf("\033[1;1H\033[2K");
+    for (gint i = 0; i < title_pad; i++) putchar(' ');
+    printf("%s", header_title);
+    printf("\033[2;1H\033[2K"); // blank line for symmetry
 
     gint dir_byte_len = strlen(safe_current_dir);
     gint dir_len = utf8_display_width(safe_current_dir);
@@ -2787,10 +2833,11 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (dir_pad + dir_len > app->term_width) {
         dir_pad = MAX(0, app->term_width - dir_len);
     }
-    // Print the centered directory path
-    printf("\033[2K\033[1G"); // Clear line and move to beginning
-    for (gint i = 0; i < dir_pad; i++) printf(" "); // Use spaces for centering
-    printf("%s\n", display_dir);
+    // Print the centered directory path on row 3
+    printf("\033[3;1H\033[2K");
+    for (gint i = 0; i < dir_pad; i++) putchar(' ');
+    printf("%s", display_dir);
+    printf("\033[4;1H\033[2K"); // blank line for symmetry
     
     // Free the truncated directory path if it was created
     if (display_dir != safe_current_dir) {
@@ -2807,195 +2854,186 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     gint top_padding = viewport.top_padding;
     gint bottom_padding = viewport.bottom_padding;
 
-    // Top padding to keep highlight centered
-    for (gint i = 0; i < top_padding; i++) {
-        printf("\033[2K\n");
+    // Render list within fixed rows [5 .. term_height-4] to keep symmetry and avoid scrolling
+    const gint list_top_row = 5;
+    gint list_bottom_row = app->term_height - 4;
+    if (list_bottom_row < list_top_row) {
+        list_bottom_row = list_top_row;
     }
+    gint list_visible_rows = list_bottom_row - list_top_row + 1;
 
-    if (total_entries == 0) {
-        // Empty directory: show centered message
-        const char *empty_msg = "（No items）";
-        gint msg_len = strlen(empty_msg);
-        gint center_pad = (app->term_width > msg_len) ? (app->term_width - msg_len) / 2 : 0;
-        printf("\033[2K\033[1G"); // Clear line and move to beginning
-        for (gint i = 0; i < center_pad; i++) printf(" ");
-        printf("\033[33m%s\033[0m", empty_msg); // Yellow text for visibility
-        printf("\n");
-    } else {
-        for (gint row = start_row; row < end_row && rows_to_render > 0; row++, rows_to_render--) {
-            gint idx = row; // single column
-            if (idx >= total_entries) {
-                break;
+    for (gint i = 0; i < list_visible_rows; i++) {
+        gint y = list_top_row + i;
+        printf("\033[%d;1H\033[2K", y);
+
+        if (total_entries == 0) {
+            if (i == list_visible_rows / 2) {
+                const char *empty_msg = "（No items）";
+                gint msg_len = utf8_display_width(empty_msg);
+                gint center_pad = (app->term_width > msg_len) ? (app->term_width - msg_len) / 2 : 0;
+                for (gint s = 0; s < center_pad; s++) putchar(' ');
+                printf("\033[33m%s\033[0m", empty_msg);
             }
-
-            gchar *entry = (gchar*)g_list_nth_data(app->directory_entries, idx);
-            gboolean is_dir = FALSE;
-            gchar *display_name = app_file_manager_display_name(app, entry, &is_dir);
-            gchar *print_name = sanitize_for_terminal(display_name);
-            gint name_len = utf8_display_width(print_name);  // Use display width instead of byte length
-            gboolean is_image = (!is_dir && is_image_file(entry));
-            gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
-            // Calculate maximum display width considering terminal boundaries
-            // Use a more conservative width to ensure proper display
-            gint max_display_width = (app->term_width / 2) - 2; // Use half terminal width for better centering
-            if (max_display_width < 15) max_display_width = 15; // Minimum width
-            
-            if (name_len > max_display_width) {
-                // Smart truncation: show beginning and end of filename
-                gint max_display = max_display_width - 3; // Reserve space for "..."
-                if (max_display > 8) { // Only use smart truncation if we have enough space
-                    gint start_len = max_display / 2;
-                    gint end_len = max_display - start_len;
-                    
-                    // For UTF-8 strings, we need to count characters, not bytes
-                    gint char_count = 0;
-                    const gchar *p = print_name;
-                    while (*p) {
-                        gunichar ch = g_utf8_get_char_validated(p, -1);
-                        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                            // Invalid sequence: treat current byte as a single character
-                            char_count++;
-                            p++;
-                        } else {
-                            char_count++;
-                            p = g_utf8_next_char(p);
-                        }
-                    }
-                    
-                    // Calculate character positions for truncation
-                    gint start_chars = start_len;
-                    gint end_chars = end_len;
-                    
-                    // Find byte positions for character positions
-                    gint start_byte = 0;
-                    gint current_char = 0;
-                    p = print_name;
-                    while (*p && current_char < start_chars) {
-                        gunichar ch = g_utf8_get_char_validated(p, -1);
-                        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                            p++;
-                        } else {
-                            p = g_utf8_next_char(p);
-                        }
-                        current_char++;
-                    }
-                    start_byte = p - print_name;
-                    
-                    // Find end position
-                    current_char = 0;
-                    const gchar *end_p = print_name;
-                    while (*end_p) {
-                        gunichar ch = g_utf8_get_char_validated(end_p, -1);
-                        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                            end_p++;
-                        } else {
-                            end_p = g_utf8_next_char(end_p);
-                        }
-                        current_char++;
-                    }
-                    
-                    // Move backwards from end to find end_chars characters
-                    gint end_byte = current_char;
-                    current_char = 0;
-                    end_p = print_name;
-                    while (*end_p && current_char < char_count - end_chars) {
-                        gunichar ch = g_utf8_get_char_validated(end_p, -1);
-                        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                            end_p++;
-                        } else {
-                            end_p = g_utf8_next_char(end_p);
-                        }
-                        current_char++;
-                    }
-                    end_byte = end_p - print_name;
-                    
-                    gchar *start_part = g_strndup(print_name, start_byte);
-                    gchar *end_part = g_strdup(print_name + end_byte);
-                    
-                    g_free(print_name);
-                    print_name = g_strdup_printf("%s...%s", start_part, end_part);
-                    g_free(start_part);
-                    g_free(end_part);
-                } else {
-                    // Fallback to simple truncation for very short display areas
-                    gint truncate_len = max_display;
-                    // For UTF-8, we need to truncate by character display width, not bytes
-                    gint display_width = 0;
-                    const gchar *p = print_name;
-                    const gchar *truncate_pos = print_name;
-                    
-                    while (*p && display_width < truncate_len) {
-                        gunichar ch = g_utf8_get_char_validated(p, -1);
-                        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                            display_width++;
-                            truncate_pos = p + 1;
-                            p++;
-                        } else {
-                            gint char_width = g_unichar_iswide(ch) ? 2 : 1;
-                            if (display_width + char_width > truncate_len) {
-                                break;
-                            }
-                            display_width += char_width;
-                            truncate_pos = g_utf8_next_char(p);
-                            p = truncate_pos;
-                        }
-                    }
-                    
-                    gchar *shortened = g_strndup(print_name, truncate_pos - print_name);
-                    g_free(print_name);
-                    print_name = g_strdup_printf("%s...", shortened);
-                    g_free(shortened);
-                }
-                name_len = utf8_display_width(print_name);  // Recalculate display width
-            }
-
-            gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
-            // Ensure the total width (pad + name_len) doesn't exceed terminal width
-            if (pad + name_len > app->term_width) {
-                pad = MAX(0, app->term_width - name_len);
-            }
-            printf("\033[2K\033[1G"); // Clear line and move to beginning for consistent positioning
-            for (gint i = 0; i < pad; i++) printf(" ");
-
-            gboolean is_valid_image = (!is_dir && is_valid_image_file(entry));
-            gboolean selected = (idx == app->selected_entry);
-            if (is_image && !is_valid_image) {
-                // Invalid image files (e.g., 0KB files) are shown with "Invalid" label
-                if (selected) {
-                    // Selected invalid file: only filename has highlight, [Invalid] stays as red text
-                    printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
-                } else {
-                    // Non-selected invalid file: red text
-                    printf("\033[31m%s [Invalid]\033[0m", print_name);
-                }
-            } else if (selected) {
-                printf("\033[47;30m%s\033[0m", print_name);
-            } else if (is_dir_with_images) {
-                printf("\033[33m%s\033[0m", print_name); // Yellow for directories with images
-            } else if (is_dir) {
-                printf("\033[34m%s\033[0m", print_name);
-            } else if (is_image) {
-                printf("\033[32m%s\033[0m", print_name);
-            } else {
-                printf("%s", print_name);
-            }
-            printf("\n");
-
-            g_free(print_name);
-            g_free(display_name);
+            continue;
         }
+
+        if (i < top_padding) {
+            continue;
+        }
+        gint relative_row = i - top_padding;
+        if (relative_row < 0 || relative_row >= (end_row - start_row)) {
+            continue;
+        }
+        gint idx = start_row + relative_row; // single column
+        if (idx < 0 || idx >= total_entries) {
+            continue;
+        }
+
+        gchar *entry = (gchar*)g_list_nth_data(app->directory_entries, idx);
+        gboolean is_dir = FALSE;
+        gchar *display_name = app_file_manager_display_name(app, entry, &is_dir);
+        gchar *print_name = sanitize_for_terminal(display_name);
+        gint name_len = utf8_display_width(print_name);
+        gboolean is_image = (!is_dir && is_image_file(entry));
+        gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
+
+        gint max_display_width = (app->term_width / 2) - 2;
+        if (max_display_width < 15) max_display_width = 15;
+
+        if (name_len > max_display_width) {
+            gint max_display = max_display_width - 3;
+            if (max_display > 8) {
+                gint start_len = max_display / 2;
+                gint end_len = max_display - start_len;
+
+                gint char_count = 0;
+                const gchar *p = print_name;
+                while (*p) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        char_count++;
+                        p++;
+                    } else {
+                        char_count++;
+                        p = g_utf8_next_char(p);
+                    }
+                }
+
+                gint start_byte = 0;
+                gint current_char = 0;
+                p = print_name;
+                while (*p && current_char < start_len) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        p++;
+                    } else {
+                        p = g_utf8_next_char(p);
+                    }
+                    current_char++;
+                }
+                start_byte = p - print_name;
+
+                current_char = 0;
+                const gchar *end_p = print_name;
+                while (*end_p) {
+                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        end_p++;
+                    } else {
+                        end_p = g_utf8_next_char(end_p);
+                    }
+                    current_char++;
+                }
+
+                current_char = 0;
+                end_p = print_name;
+                while (*end_p && current_char < char_count - end_len) {
+                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        end_p++;
+                    } else {
+                        end_p = g_utf8_next_char(end_p);
+                    }
+                    current_char++;
+                }
+                gint end_byte = end_p - print_name;
+
+                gchar *start_part = g_strndup(print_name, start_byte);
+                gchar *end_part = g_strdup(print_name + end_byte);
+                g_free(print_name);
+                print_name = g_strdup_printf("%s...%s", start_part, end_part);
+                g_free(start_part);
+                g_free(end_part);
+            } else {
+                gint truncate_len = max_display;
+                gint display_width = 0;
+                const gchar *p = print_name;
+                const gchar *truncate_pos = print_name;
+
+                while (*p && display_width < truncate_len) {
+                    gunichar ch = g_utf8_get_char_validated(p, -1);
+                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+                        display_width++;
+                        truncate_pos = p + 1;
+                        p++;
+                    } else {
+                        gint char_width = g_unichar_iswide(ch) ? 2 : 1;
+                        if (display_width + char_width > truncate_len) {
+                            break;
+                        }
+                        display_width += char_width;
+                        truncate_pos = g_utf8_next_char(p);
+                        p = truncate_pos;
+                    }
+                }
+
+                gchar *shortened = g_strndup(print_name, truncate_pos - print_name);
+                g_free(print_name);
+                print_name = g_strdup_printf("%s...", shortened);
+                g_free(shortened);
+            }
+            name_len = utf8_display_width(print_name);
+        }
+
+        gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+        if (pad + name_len > app->term_width) {
+            pad = MAX(0, app->term_width - name_len);
+        }
+        for (gint s = 0; s < pad; s++) putchar(' ');
+
+        gboolean is_valid_image = (!is_dir && is_valid_image_file(entry));
+        gboolean selected = (idx == app->selected_entry);
+        if (is_image && !is_valid_image) {
+            if (selected) {
+                printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
+            } else {
+                printf("\033[31m%s [Invalid]\033[0m", print_name);
+            }
+        } else if (selected) {
+            printf("\033[47;30m%s\033[0m", print_name);
+        } else if (is_dir_with_images) {
+            printf("\033[33m%s\033[0m", print_name);
+        } else if (is_dir) {
+            printf("\033[34m%s\033[0m", print_name);
+        } else if (is_image) {
+            printf("\033[32m%s\033[0m", print_name);
+        } else {
+            printf("%s", print_name);
+        }
+
+        g_free(print_name);
+        g_free(display_name);
     }
 
-    // Bottom padding to keep layout stable
-    for (gint i = 0; i < bottom_padding; i++) {
-        printf("\033[2K\n");
+    // Footer area: keep symmetry (rows term_height-3 .. term_height-1 blank) and help on last line
+    for (gint y = MAX(1, app->term_height - 3); y <= app->term_height - 1; y++) {
+        printf("\033[%d;1H\033[2K", y);
     }
 
-    // Footer/help centered on last line; keep cursor at line end (color keys only)
     gint help_len = strlen(help_text);
     gint help_pad = (app->term_width > help_len) ? (app->term_width - help_len) / 2 : 0;
-    printf("\033[2K\033[1G"); // Clear line and move to beginning
-    for (gint i = 0; i < help_pad; i++) printf(" ");
+    printf("\033[%d;1H\033[2K", app->term_height);
+    for (gint i = 0; i < help_pad; i++) putchar(' ');
     printf("\033[36m↑/↓\033[0m Move   ");
     printf("\033[36m←\033[0m Parent   ");
     printf("\033[36m→/Enter\033[0m Open   ");

@@ -35,11 +35,12 @@ static void print_usage(const char *program_name) {
     printf("  PATH    Path to an image file or directory containing images\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help     Show this help message\n");
-    printf("  -v, --version  Show version information\n");
-    printf("  -D, --dither   Enable image dithering (default: disabled)\n");
-    printf("  --no-preload   Disable image preloading (default: enabled)\n");
-    printf("  --no-alt-screen  Disable alternate screen buffer (default: enabled)\n");
+    printf("  %-29s %s\n", "-h, --help", "Show this help message");
+    printf("  %-29s %s\n", "-v, --version", "Show version information");
+    printf("  %-29s %s\n", "-D, --dither", "Enable image dithering (default: disabled)");
+    printf("  %-29s %s\n", "--no-preload", "Disable image preloading (default: enabled)");
+    printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
+    printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -60,7 +61,7 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
@@ -68,6 +69,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
         {"no-preload", no_argument,      0, 1000},
         {"dither",     no_argument,      0, 1001},
         {"no-alt-screen", no_argument,   0, 1002},
+        {"clear-workaround", no_argument, 0, 1003},
         {0, 0, 0, 0}
     };
 
@@ -97,6 +99,9 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                 break;
             case 1002: // --no-alt-screen
                 *alt_screen_enabled = FALSE;
+                break;
+            case 1003: // --clear-workaround
+                *clear_workaround_enabled = TRUE;
                 break;
             case '?':
                 // Check if it's a long option (starts with --)
@@ -990,8 +995,9 @@ int main(int argc, char *argv[]) {
     gboolean preload_enabled = TRUE;
     gboolean dither_enabled = FALSE;
     gboolean alt_screen_enabled = TRUE;
+    gboolean clear_workaround_enabled = FALSE;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
@@ -1022,6 +1028,7 @@ int main(int argc, char *argv[]) {
 
     // Configure application settings
     g_app->preload_enabled = preload_enabled;
+    g_app->clear_workaround_enabled = clear_workaround_enabled;
 
     // Validate and load path
     gboolean is_directory;

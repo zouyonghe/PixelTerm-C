@@ -92,12 +92,14 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
         return ERROR_TERMINAL_SIZE;
     }
 
-    // Use alternate screen to avoid polluting scrollback / showing stale lines on some terminals.
-    // Only enable when stdout is a terminal and user didn't disable it.
-    if (handler->use_alt_screen && isatty(STDOUT_FILENO)) {
-        printf("\033[?1049h\033[?25l");
+    // Hide cursor for TUI; optionally enter alternate screen (if enabled).
+    if (isatty(STDOUT_FILENO)) {
+        if (handler->use_alt_screen) {
+            printf("\033[?1049h");
+            handler->alt_screen_enabled = TRUE;
+        }
+        printf("\033[?25l");
         fflush(stdout);
-        handler->alt_screen_enabled = TRUE;
     }
 
     handler->raw_mode_enabled = TRUE;
