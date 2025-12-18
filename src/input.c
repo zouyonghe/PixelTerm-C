@@ -20,6 +20,9 @@ InputHandler* input_handler_create(void) {
     handler->terminal_height = 24;
     handler->should_exit = FALSE;
     handler->has_orig_termios = FALSE;
+    handler->last_scroll_button = (MouseButton)0;
+    handler->last_scroll_x = 0;
+    handler->last_scroll_y = 0;
 
     return handler;
 }
@@ -238,10 +241,17 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                                 glong diff_ms = (now.tv_sec - handler->last_scroll_time.tv_sec) * 1000 + 
                                               (now.tv_usec - handler->last_scroll_time.tv_usec) / 1000;
 
-                                // Debounce: 100ms
-                                if (diff_ms > 100) {
+                                // Debounce: many terminals emit multiple scroll events per wheel notch.
+                                // Filter very fast duplicates (especially for preview page scrolling).
+                                const glong debounce_ms = 150;
+                                gboolean is_fast_duplicate = (diff_ms >= 0 && diff_ms < debounce_ms &&
+                                                             handler->last_scroll_button == (MouseButton)button);
+                                if (!is_fast_duplicate) {
                                     event->type = INPUT_MOUSE_SCROLL;
                                     handler->last_scroll_time = now;
+                                    handler->last_scroll_button = (MouseButton)button;
+                                    handler->last_scroll_x = x;
+                                    handler->last_scroll_y = y;
                                 } else {
                                     // Treat as ignored/release to avoid double processing
                                     event->type = INPUT_MOUSE_RELEASE;

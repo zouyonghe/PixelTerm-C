@@ -90,6 +90,9 @@ typedef struct {
 
     // Scroll debouncing
     struct timeval last_scroll_time;
+    MouseButton last_scroll_button;
+    gint last_scroll_x;
+    gint last_scroll_y;
 } InputHandler;
 
 // Input handler lifecycle
