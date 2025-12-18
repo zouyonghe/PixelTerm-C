@@ -1,5 +1,13 @@
 # Changelog
 
+- v1.3.0: UI/UX improvements, Zen mode, and compatibility options.
+    - **Zen Mode**: Add `~` / `` ` `` to hide/show all on-screen text in Image View and Grid Preview.
+    - **Single Image View**: Add file-manager-style hints, show the current image index within the folder, and improve header layout.
+    - **Grid Preview**: Add `r` to delete the selected image and reflow the grid; refine overlay layout and keep hints colorized and centered.
+    - **File Manager**: Improve layout symmetry and default selection behavior when entering directories.
+    - **Input**: Debounce mouse wheel paging to reduce accidental multi-page jumps.
+    - **CLI**: Add `--no-alt-screen` and `--clear-workaround` for improved terminal compatibility.
+
 - v1.2.8: File manager mouse interaction and navigation improvements.
     - **Mouse Handling**: Refactored file manager mouse handling with dedicated hit-test function for accurate position-to-entry mapping. Implemented deferred single-click handling (400ms delay) to distinguish between single and double-click actions.
     - **Navigation**: Added parent directory (..) entry at the top of file manager list for easier upward navigation. Improved preview mode navigation with proper return_to_mode state tracking for virtual and actual selections.

@@ -105,6 +105,12 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # 禁用预加载
 ./pixelterm --no-preload /path/to/images
 
+# 禁用备用屏幕缓冲区
+./pixelterm --no-alt-screen /path/to/images
+
+# 改善部分终端的界面显示（可能降低性能）
+./pixelterm --clear-workaround /path/to/images
+
 # 启用抖动
 ./pixelterm -D /path/to/image.jpg
 # 或
@@ -152,6 +158,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | Enter | 切换进入网格预览模式 |
 | TAB | 切换进入文件管理器；再次按TAB返回此视图 |
 | i | 切换图像信息显示 |
+| `~` / `` ` `` | 切换Zen模式（隐藏/显示所有文字信息） |
 | r | 删除当前图像 |
 | D | 切换抖动开/关 |
 
@@ -167,6 +174,8 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | PgUp/PgDn | 在网格中翻页 |
 | Enter | 在图像视图中打开选中图像 |
 | TAB | 切换进入文件管理器；再次按TAB返回此视图 |
+| `~` / `` ` `` | 切换Zen模式（隐藏/显示所有文字信息） |
+| r | 删除选中图像 |
 | D | 切换抖动开/关 |
 
 ### 文件管理器模式

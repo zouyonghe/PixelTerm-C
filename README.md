@@ -107,6 +107,12 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # Disable preloading
 ./pixelterm --no-preload /path/to/images
 
+# Disable alternate screen buffer
+./pixelterm --no-alt-screen /path/to/images
+
+# Improve UI appearance on some terminals (may reduce performance)
+./pixelterm --clear-workaround /path/to/images
+
 # Enable dithering
 ./pixelterm -D /path/to/image.jpg
 # Or
@@ -154,6 +160,7 @@ This is the default mode when viewing a single image.
 | Enter | Toggle into Grid Preview mode |
 | TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
 | i | Toggle image information display |
+| `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete current image |
 | D | Toggle dithering on/off |
 
@@ -169,6 +176,8 @@ This mode displays multiple image thumbnails in a grid.
 | PgUp/PgDn | Page up/down through the grid |
 | Enter | Open selected image in Image View |
 | TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+| `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
+| r | Delete selected image |
 | D | Toggle dithering on/off |
 
 ### File Manager Mode
