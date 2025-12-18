@@ -321,7 +321,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     gboolean redraw_needed = FALSE;
                     app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y, &redraw_needed);
 
-                    app->return_to_mode = 2; // Virtual selection for return to preview
+                    // A double click is an explicit selection/open action; if we were in
+                    // yellow (virtual selection) preview mode, switch to actual selection.
+                    if (app->return_to_mode == 2) {
+                        app->return_to_mode = 1;
+                    }
                     app->preview_mode = FALSE;
                     app_render_current_image(app);
                 } else if (app->file_manager_mode) {
@@ -336,6 +340,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     // Cancel any pending single click action
                     app->pending_single_click = FALSE;
                     
+                    // If we previously came from yellow (virtual selection) preview mode,
+                    // entering preview from single view should keep an actual selection.
+                    if (app->return_to_mode == 2) {
+                        app->return_to_mode = 1;
+                    }
                     if (app_enter_preview(app) == ERROR_NONE) {
                         app_render_preview_grid(app);
                     }
