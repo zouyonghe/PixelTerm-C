@@ -1,5 +1,7 @@
 CC ?= gcc
 ARCH ?= amd64
+PREFIX ?= /usr/local
+INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
 CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
@@ -52,7 +54,8 @@ clean:
 
 # Install
 install: $(TARGET)
-	install -D $(TARGET) $(DESTDIR)/usr/local/bin/pixelterm
+	$(INSTALL) -d "$(DESTDIR)$(PREFIX)/bin"
+	$(INSTALL) -m 0755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/pixelterm"
 
 # Test
 test: $(TARGET)
