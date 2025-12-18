@@ -103,6 +103,53 @@ static gint utf8_display_width(const gchar *text) {
     return width;
 }
 
+typedef struct {
+    const char *key;
+    const char *label;
+} HelpSegment;
+
+static gint help_segments_visible_width(const HelpSegment *segments, gsize n) {
+    if (!segments || n == 0) {
+        return 0;
+    }
+    gint width = 0;
+    for (gsize i = 0; i < n; i++) {
+        width += utf8_display_width(segments[i].key);
+        width += 1;
+        width += utf8_display_width(segments[i].label);
+        if (i + 1 < n) {
+            width += 2;
+        }
+    }
+    return width;
+}
+
+static void print_centered_help_line(gint row, gint term_width, const HelpSegment *segments, gsize n) {
+    if (term_width <= 0 || row <= 0) {
+        return;
+    }
+    printf("\033[%d;1H\033[2K", row);
+
+    gint help_w = help_segments_visible_width(segments, n);
+    gint pad = (help_w > 0 && term_width > help_w) ? (term_width - help_w) / 2 : 0;
+    for (gint i = 0; i < pad; i++) putchar(' ');
+
+    gint col = 1 + pad;
+    for (gsize i = 0; i < n; i++) {
+        gint seg_w = utf8_display_width(segments[i].key) + 1 + utf8_display_width(segments[i].label);
+        gint trailing = (i + 1 < n) ? 2 : 0;
+        if (col + seg_w + trailing - 1 > term_width) {
+            break;
+        }
+        printf("\033[36m%s\033[0m %s", segments[i].key, segments[i].label);
+        col += seg_w;
+        if (i + 1 < n) {
+            printf("  ");
+            col += 2;
+        }
+    }
+}
+
 // Check if a directory contains image files
 static gboolean directory_contains_images(const gchar *dir_path) {
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
@@ -137,12 +184,10 @@ static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_w
     gint height = (app && app->term_height > 0) ? app->term_height : 24;
     if (app && app->info_visible) {
         height -= 10;
-    } else if (app && !app->ui_text_hidden) {
-        // Reserve one line for filename and one for footer hints in single-image view
-        height -= 2;
     } else {
-        // Keep image position/size stable when toggling UI text visibility
-        height -= 2;
+        // Single view reserves: title (row 1), index (row 2), filename (row -1), footer (row -0)
+        // Keep image position/size stable even when Zen hides UI text.
+        height -= 4;
     }
     if (height < 1) {
         height = 1;
@@ -1004,6 +1049,38 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // Clear screen and reset terminal state
     printf("\033[2J\033[H\033[0m"); // Clear screen, move to top-left, and reset attributes
 
+    // Title + index area (single image view)
+    const gint image_area_top_row = 3; // Keep layout stable even in Zen (UI hidden)
+    if (!app->ui_text_hidden && app->term_height > 0) {
+        const char *title = "Image View";
+        gint title_len = strlen(title);
+        gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+        printf("\033[1;1H\033[2K");
+        for (gint i = 0; i < title_pad; i++) putchar(' ');
+        printf("%s", title);
+
+        // Row 3: Index indicator centered (numbers only)
+        gint current = app_get_current_index(app) + 1;
+        gint total = app_get_total_images(app);
+        if (current < 1) current = 1;
+        if (total < 1) total = 1;
+        char idx_text[32];
+        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        gint idx_len = (gint)strlen(idx_text);
+        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+        printf("\033[3;1H\033[2K");
+        for (gint i = 0; i < idx_pad; i++) putchar(' ');
+        printf("%s", idx_text);
+    }
+
+    // Vertically center the rendered image inside the image area
+    gint image_top_row = image_area_top_row;
+    if (target_height > 0 && image_height > 0 && image_height < target_height) {
+        gint vpad = (target_height - image_height) / 2;
+        if (vpad < 0) vpad = 0;
+        image_top_row = image_area_top_row + vpad;
+    }
+
     gchar *pad_buffer = NULL;
     if (left_pad > 0) {
         pad_buffer = g_malloc(left_pad);
@@ -1011,7 +1088,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     const gchar *line_ptr = rendered->str;
-    gint row = 1;
+    gint row = image_top_row;
     while (line_ptr && *line_ptr) {
         const gchar *newline = strchr(line_ptr, '\n');
         gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
@@ -1047,7 +1124,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             }
             
             // Move cursor to position just below the image and center the filename
-            gint filename_row = image_height + 1;
+            gint filename_row = image_top_row + image_height;
             if (app->term_height >= 2) {
                 // Keep filename on the second-to-last line to leave the last line for footer hints
                 filename_row = MIN(filename_row, app->term_height - 1);
@@ -1061,34 +1138,18 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
-    // Footer hints (single image view) + bottom-right file index indicator
+    // Footer hints (single image view) centered on last line
     if (app->term_height > 0 && !app->ui_text_hidden) {
-        const char *help_text = "←/→ Prev/Next  Enter Preview  TAB Files  i Info  r Delete  ~ Zen  ESC Exit";
-        printf("\033[%d;1H\033[2K", app->term_height); // Move to last line and clear it
-        printf("\033[36m←/→\033[0m Prev/Next  ");
-        printf("\033[36mEnter\033[0m Preview  ");
-        printf("\033[36mTAB\033[0m Files  ");
-        printf("\033[36mi\033[0m Info  ");
-        printf("\033[36mr\033[0m Delete  ");
-        printf("\033[36m~\033[0m Zen  ");
-        printf("\033[36mESC\033[0m Exit");
-
-        gint current = app_get_current_index(app) + 1;
-        gint total = app_get_total_images(app);
-        if (current < 1) current = 1;
-        if (total < 1) total = 1;
-
-        char idx_text[32];
-        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
-        const char *idx_prefix = "Index ";
-        gint idx_len = strlen(idx_prefix) + strlen(idx_text);
-        gint start_col = app->term_width - idx_len + 1;
-        if (start_col < (gint)strlen(help_text) + 2) {
-            start_col = strlen(help_text) + 2;
-        }
-        if (start_col < 1) start_col = 1;
-        // Prefix in cyan, numbers in default (white)
-        printf("\033[%d;%dH\033[36m%s\033[0m%s", app->term_height, start_col, idx_prefix, idx_text);
+        const HelpSegment segments[] = {
+            {"←/→", "Prev/Next"},
+            {"Enter", "Preview"},
+            {"TAB", "Files"},
+            {"i", "Info"},
+            {"r", "Delete"},
+            {"~", "Zen"},
+            {"ESC", "Exit"}
+        };
+        print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
     
     // If it's a GIF and player is available, start playing if animated
@@ -1170,7 +1231,7 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     printf("\033[36m🎭 Color mode:\033[0m RGB\n\033[G");
     printf("\033[36m📏 Aspect ratio:\033[0m %.2f\n\033[G", aspect_ratio);
     for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n\033[G");
+    // Keep cursor on the last line (do not append a newline)
     
     // Reset terminal attributes to prevent interference with future rendering
     printf("\033[0m");  // Reset all attributes
@@ -1869,6 +1930,12 @@ typedef struct {
     gint visible_rows;
 } PreviewLayout;
 
+static gint app_preview_bottom_reserved_lines(const PixelTermApp *app);
+static gint app_preview_compute_vertical_offset(const PixelTermApp *app,
+                                               const PreviewLayout *layout,
+                                               gint start_row,
+                                               gint end_row);
+
 // Calculate preview grid layout using preview_zoom as target cell width
 static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, 3, 1};
@@ -1879,7 +1946,10 @@ static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     // Keep layout stable even when UI text is hidden
     const gint header_lines = 3;
     gint usable_width = app->term_width > 0 ? app->term_width : 80;
-    gint usable_height = app->term_height > header_lines ? app->term_height - header_lines : 6;
+    gint bottom_reserved = app_preview_bottom_reserved_lines(app);
+    gint usable_height = app->term_height > header_lines + bottom_reserved
+                             ? app->term_height - header_lines - bottom_reserved
+                             : 6;
 
     // If preview_zoom (target cell width) is uninitialized, default to ~30 chars/col
     if (app->preview_zoom <= 0) {
@@ -1979,6 +2049,33 @@ static void app_preview_queue_preloads(PixelTermApp *app, const PreviewLayout *l
             cursor = cursor->next;
         }
     }
+}
+
+static gint app_preview_bottom_reserved_lines(const PixelTermApp *app) {
+    (void)app;
+    // Keep preview layout stable even when Zen hides UI text.
+    // Row -1: filename, Row -0: footer hints (not drawn in Zen).
+    return 2;
+}
+
+static gint app_preview_compute_vertical_offset(const PixelTermApp *app,
+                                               const PreviewLayout *layout,
+                                               gint start_row,
+                                               gint end_row) {
+    if (!app || !layout) {
+        return 0;
+    }
+    gint bottom_reserved = app_preview_bottom_reserved_lines(app);
+    gint available = app->term_height - layout->header_lines - bottom_reserved;
+    if (available < 0) {
+        available = 0;
+    }
+    gint rows_drawn = MAX(0, end_row - start_row);
+    gint grid_h = rows_drawn * layout->cell_height;
+    if (grid_h >= available) {
+        return 0;
+    }
+    return (available - grid_h) / 2;
 }
 
 // Print brief info for the currently selected preview item on the status line
@@ -2231,19 +2328,23 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint m
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     gint start_row = app->preview_scroll;
+    gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
+    gint grid_top_y = layout.header_lines + 1 + vertical_offset;
 
     // Check if click is in header area
-    if (mouse_y < layout.header_lines + 1) {
+    if (mouse_y < grid_top_y) {
         return ERROR_NONE; // Ignore clicks in header
     }
 
     // Calculate clicked cell position
     gint col = (mouse_x - 1) / layout.cell_width;
-    gint row_in_visible = (mouse_y - layout.header_lines - 1) / layout.cell_height;
+    gint row_in_visible = (mouse_y - grid_top_y) / layout.cell_height;
     gint absolute_row = start_row + row_in_visible;
 
     // Check bounds
-    if (col < 0 || col >= layout.cols || row_in_visible < 0 || row_in_visible >= layout.visible_rows) {
+    gint rows_drawn = MAX(0, end_row - start_row);
+    if (col < 0 || col >= layout.cols || row_in_visible < 0 || row_in_visible >= rows_drawn) {
         return ERROR_NONE; // Out of bounds
     }
 
@@ -2423,18 +2524,36 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
 
     if (!app->ui_text_hidden) {
-        // Header: title; controls are shown in footer
+        // Header: title + page indicator on row 2; keep 3 header lines total
         const char *title = "Preview Grid";
         gint title_len = strlen(title);
         gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-        for (gint i = 0; i < pad; i++) printf(" ");
-        printf("%s\n", title);
+        printf("\033[1;1H\033[2K");
+        for (gint i = 0; i < pad; i++) putchar(' ');
+        printf("%s", title);
 
-        printf("[%d/%d]\n\n", app->preview_selected + 1, app->total_images);
+        // Row 3: Page indicator centered (numbers only)
+        gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+        gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
+        if (total_pages < 1) total_pages = 1;
+        gint current_page = (app->preview_scroll + rows_per_page - 1) / rows_per_page + 1;
+        if (current_page < 1) current_page = 1;
+        if (current_page > total_pages) current_page = total_pages;
+        char page_text[32];
+        g_snprintf(page_text, sizeof(page_text), "%d/%d", current_page, total_pages);
+        gint page_len = (gint)strlen(page_text);
+        gint page_pad = (app->term_width > page_len) ? (app->term_width - page_len) / 2 : 0;
+        printf("\033[3;1H\033[2K");
+        for (gint i = 0; i < page_pad; i++) putchar(' ');
+        printf("%s", page_text);
+
+        // Row 2: spacer
+        printf("\033[2;1H\033[2K");
     }
 
     gint start_row = app->preview_scroll;
     gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
     gint start_index = start_row * layout.cols;
     GList *cursor = g_list_nth(app->image_files, start_index);
 
@@ -2447,7 +2566,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             }
 
             gint cell_x = col * layout.cell_width + 1;
-            gint cell_y = layout.header_lines + (row - start_row) * layout.cell_height + 1;
+            gint cell_y = layout.header_lines + vertical_offset + (row - start_row) * layout.cell_height + 1;
 
             const gchar *filepath = (const gchar*)cursor->data;
             cursor = cursor->next;
@@ -2569,34 +2688,19 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         }
     }
 
-    // Footer with quick hints and page indicator at the bottom
+    // Footer hints centered on last line
     if (app->term_height > 0 && !app->ui_text_hidden) {
-        const char *help_text = "←/→/↑/↓ Move  PgUp/PgDn Page  Enter Open  TAB Toggle  +/- Zoom  ~ Zen  ESC Exit";
-        printf("\033[%d;1H", app->term_height);
-        printf("\033[36m←/→/↑/↓\033[0m Move  ");
-        printf("\033[36mPgUp/PgDn\033[0m Page  ");
-        printf("\033[36mEnter\033[0m Open  ");
-        printf("\033[36mTAB\033[0m Toggle  ");
-        printf("\033[36m+/-\033[0m Zoom  ");
-        printf("\033[36m~\033[0m Zen  ");
-        printf("\033[36mESC\033[0m Exit");
-
-        // Page indicator at bottom-right based on items per page
-        gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
-        gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
-        if (total_pages < 1) total_pages = 1;
-        gint current_page = (app->preview_scroll + rows_per_page - 1) / rows_per_page + 1; // ceil division so last page reachable
-        if (current_page < 1) current_page = 1;
-        if (current_page > total_pages) current_page = total_pages;
-        char page_text[32];
-        g_snprintf(page_text, sizeof(page_text), "%d/%d", current_page, total_pages);
-        gint page_len = strlen("Page ") + strlen(page_text);
-        gint start_col = app->term_width - page_len + 1;
-        if (start_col < (gint)strlen(help_text) + 2) {
-            start_col = strlen(help_text) + 2;
-        }
-        if (start_col < 1) start_col = 1;
-        printf("\033[%d;%dH\033[36mPage \033[0m%s", app->term_height, start_col, page_text);
+        const HelpSegment segments[] = {
+            {"←/→/↑/↓", "Move"},
+            {"PgUp/PgDn", "Page"},
+            {"Enter", "Open"},
+            {"TAB", "Toggle"},
+            {"+/-", "Zoom"},
+            {"r", "Delete"},
+            {"~", "Zen"},
+            {"ESC", "Exit"}
+        };
+        print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
     fflush(stdout);

@@ -568,7 +568,27 @@ static ErrorCode run_application(PixelTermApp *app) {
                         }
                         break;
                     case (KeyCode)'r':
-                        if (!app->preview_mode) {
+                        if (app->preview_mode) {
+                            if (app_has_images(app)) {
+                                // Delete the currently selected preview item
+                                app->current_index = app->preview_selected;
+                                app_delete_current_image(app);
+                            }
+
+                            if (app_has_images(app)) {
+                                // Keep preview selection aligned with current_index after deletion
+                                if (app->current_index < 0) app->current_index = 0;
+                                if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
+                                app->preview_selected = app->current_index;
+                                app->needs_screen_clear = TRUE;
+                                app_render_preview_grid(app);
+                            } else {
+                                // No images left: leave preview mode
+                                app->preview_mode = FALSE;
+                                app->needs_screen_clear = TRUE;
+                                app_refresh_display(app);
+                            }
+                        } else {
                             app_delete_current_image(app);
                             app_refresh_display(app);
                         }

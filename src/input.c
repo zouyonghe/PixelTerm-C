@@ -513,7 +513,7 @@ void input_print_key_bindings(void) {
     printf("  TAB            Toggle file manager\n");
     printf("  i              Toggle image information\n");
     printf("  ~              Toggle UI text (single/preview)\n");
-    printf("  r              Delete current image\n");
+    printf("  r              Delete current image (single/preview)\n");
 
     printf("  Ctrl+C         Force exit\n");
     printf("  ESC            Quit application/Exit file manager\n");
