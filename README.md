@@ -89,13 +89,13 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ### Usage
 
 ```bash
-# Browse images in directory (launches directly into preview grid if images exist)
-./pixelterm /path/to/images
-
-# View single image (opens image viewer)
+# View single image (opens image viewer directly)
 ./pixelterm /path/to/image.jpg
 
-# Run in current directory
+# Browse directory (launches file manager mode)
+./pixelterm /path/to/directory
+
+# Run in current directory (launches file manager mode)
 ./pixelterm
 
 # Show version

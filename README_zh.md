@@ -87,13 +87,13 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ### 使用
 
 ```bash
-# 浏览目录中的图像（有图则直接进入预览网格）
-./pixelterm /path/to/images
-
-# 查看单个图像（直接进入查看模式）
+# 查看单个图像（直接进入图像查看器）
 ./pixelterm /path/to/image.jpg
 
-# 在当前目录运行
+# 浏览目录（进入文件管理器模式）
+./pixelterm /path/to/directory
+
+# 在当前目录运行（进入文件管理器模式）
 ./pixelterm
 
 # 显示版本
