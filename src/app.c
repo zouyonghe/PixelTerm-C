@@ -137,7 +137,8 @@ static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_w
     if (app && app->info_visible) {
         height -= 10;
     } else {
-        height -= 1;
+        // Reserve one line for filename and one for footer hints in single-image view
+        height -= 2;
     }
     if (height < 1) {
         height = 1;
@@ -1042,11 +1043,45 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             }
             
             // Move cursor to position just below the image and center the filename
-            printf("\033[%d;%dH", image_height + 1, filename_start_col + 1);
+            gint filename_row = image_height + 1;
+            if (app->term_height >= 2) {
+                // Keep filename on the second-to-last line to leave the last line for footer hints
+                filename_row = MIN(filename_row, app->term_height - 1);
+            } else if (app->term_height == 1) {
+                filename_row = 1;
+            }
+            printf("\033[%d;%dH", filename_row, filename_start_col + 1);
             printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
             g_free(safe_basename);
             g_free(basename);
         }
+    }
+
+    // Footer hints (single image view) + bottom-right file index indicator
+    if (app->term_height > 0) {
+        const char *help_text = "←/→ Prev/Next  Enter Preview  TAB Files  i Info  r Delete  ESC Exit";
+        printf("\033[%d;1H\033[2K", app->term_height); // Move to last line and clear it
+        printf("\033[36m←/→\033[0m Prev/Next  ");
+        printf("\033[36mEnter\033[0m Preview  ");
+        printf("\033[36mTAB\033[0m Files  ");
+        printf("\033[36mi\033[0m Info  ");
+        printf("\033[36mr\033[0m Delete  ");
+        printf("\033[36mESC\033[0m Exit");
+
+        gint current = app_get_current_index(app) + 1;
+        gint total = app_get_total_images(app);
+        if (current < 1) current = 1;
+        if (total < 1) total = 1;
+
+        char idx_text[32];
+        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        gint idx_len = strlen(idx_text);
+        gint start_col = app->term_width - idx_len + 1;
+        if (start_col < (gint)strlen(help_text) + 2) {
+            start_col = strlen(help_text) + 2;
+        }
+        if (start_col < 1) start_col = 1;
+        printf("\033[%d;%dH\033[36m%s\033[0m", app->term_height, start_col, idx_text);
     }
     
     // If it's a GIF and player is available, start playing if animated
