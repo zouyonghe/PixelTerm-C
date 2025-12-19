@@ -35,21 +35,11 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 ## 📸 截图展示
 
-以下是一些展示PixelTerm-C实际运行效果的截图：
+以下是一张展示PixelTerm-C实际运行效果的截图：
 
-<table>
-  <tr>
-    <td><img src="screenshots/1.png" alt="截图 1"></td>
-    <td><img src="screenshots/2.png" alt="截图 2"></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/3.png" alt="截图 3"></td>
-    <td><img src="screenshots/4.png" alt="截图 4"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="screenshots/5.png" alt="截图 5"></td>
-  </tr>
-</table>
+<img src="screenshots/2.png" alt="PixelTerm-C 截图">
+
+*图片由zimage生成，终端使用：Warp*
 
 ## 🚀 快速开始
 
