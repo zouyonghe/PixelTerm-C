@@ -33,6 +33,16 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 | 内存使用 | ~50-100MB | ~15-35MB | 2-3倍减少 |
 | CPU使用 | 高（Python + 子进程） | 中等（纯C） | 明显减少 |
 
+## 📸 截图展示
+
+以下是一些展示PixelTerm-C实际运行效果的截图：
+
+![截图 1](screenshots/1.png)
+![截图 2](screenshots/2.png)
+![截图 3](screenshots/3.png)
+![截图 4](screenshots/4.png)
+![截图 5](screenshots/5.png)
+
 ## 🚀 快速开始
 
 ### 安装依赖

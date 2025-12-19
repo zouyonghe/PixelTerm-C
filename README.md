@@ -35,6 +35,16 @@ Release notes: see [CHANGELOG.md](CHANGELOG.md).
 | Memory Usage | ~50-100MB | ~15-35MB | 2-3x reduction |
 | CPU Usage | High (Python + subprocess) | Medium (pure C) | Noticeable reduction |
 
+## 📸 Screenshots
+
+Here are some screenshots demonstrating PixelTerm-C in action:
+
+![Screenshot 1](screenshots/1.png)
+![Screenshot 2](screenshots/2.png)
+![Screenshot 3](screenshots/3.png)
+![Screenshot 4](screenshots/4.png)
+![Screenshot 5](screenshots/5.png)
+
 ## 🚀 Quick Start
 
 ### Install Dependencies
