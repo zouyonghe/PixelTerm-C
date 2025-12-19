@@ -37,11 +37,11 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 以下是一些展示PixelTerm-C实际运行效果的截图：
 
-![截图 1](screenshots/1.png)
-![截图 2](screenshots/2.png)
-![截图 3](screenshots/3.png)
-![截图 4](screenshots/4.png)
-![截图 5](screenshots/5.png)
+<img src="screenshots/1.png" alt="截图 1" width="600">
+<img src="screenshots/2.png" alt="截图 2" width="600">
+<img src="screenshots/3.png" alt="截图 3" width="600">
+<img src="screenshots/4.png" alt="截图 4" width="600">
+<img src="screenshots/5.png" alt="截图 5" width="600">
 
 ## 🚀 快速开始
 

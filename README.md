@@ -39,11 +39,11 @@ Release notes: see [CHANGELOG.md](CHANGELOG.md).
 
 Here are some screenshots demonstrating PixelTerm-C in action:
 
-![Screenshot 1](screenshots/1.png)
-![Screenshot 2](screenshots/2.png)
-![Screenshot 3](screenshots/3.png)
-![Screenshot 4](screenshots/4.png)
-![Screenshot 5](screenshots/5.png)
+<img src="screenshots/1.png" alt="Screenshot 1" width="600">
+<img src="screenshots/2.png" alt="Screenshot 2" width="600">
+<img src="screenshots/3.png" alt="Screenshot 3" width="600">
+<img src="screenshots/4.png" alt="Screenshot 4" width="600">
+<img src="screenshots/5.png" alt="Screenshot 5" width="600">
 
 ## 🚀 Quick Start
 
