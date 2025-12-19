@@ -166,7 +166,7 @@ This is the default mode when viewing a single image.
 | h/k | Vim-style navigation (previous image) |
 | l/j | Vim-style navigation (next image) |
 | Enter | Toggle into Grid Preview mode |
-| TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+| TAB | Cycle between Image View / Grid Preview / File Manager |
 | i | Toggle image information display |
 | `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete current image |
@@ -183,7 +183,7 @@ This mode displays multiple image thumbnails in a grid.
 | h/j/k/l | Vim-style navigation (left/down/up/right) |
 | PgUp/PgDn | Page up/down through the grid |
 | Enter | Open selected image in Image View |
-| TAB | Toggle into File Manager mode; returns to this view on subsequent TAB |
+| TAB | Cycle between Image View / Grid Preview / File Manager |
 | `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete selected image |
 | D | Toggle dithering on/off |
@@ -197,6 +197,7 @@ This mode allows browsing through directories and files. Note that Vim-style nav
 | ←/→ | Go to parent directory / Open selected directory/file |
 | ↑/↓ | Navigate entries up/down |
 | Enter | Open selected directory or file |
+| TAB | Cycle between Image View / Grid Preview / File Manager |
 | Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
 
 
