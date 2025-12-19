@@ -2,7 +2,7 @@
 
 *English | [中文](README_zh.md)*
 
-🖼️ A high-performance terminal image browser written in C, based on the Chafa library.
+🖼️ A high-performance terminal image browser written in C, based on the [Chafa](https://github.com/hpjansson/chafa) library.
 
 ## Overview
 
@@ -196,7 +196,7 @@ This mode allows browsing through directories and files. Note that Vim-style nav
 
 LGPL-3.0 or later - See LICENSE file for details
 
-This project is licensed under the same license as Chafa (LGPLv3+).
+This project is licensed under the same license as [Chafa](https://github.com/hpjansson/chafa) (LGPLv3+).
 
 ---
 

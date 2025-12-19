@@ -2,7 +2,7 @@
 
 *[English](README.md) | 中文*
 
-🖼️ 基于Chafa库编写的C语言高性能终端图像浏览器。
+🖼️ 基于[Chafa](https://github.com/hpjansson/chafa)库编写的C语言高性能终端图像浏览器。
 
 ## 概述
 
@@ -193,7 +193,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 LGPL-3.0或更高版本 - 详见LICENSE文件
 
-本项目采用与Chafa相同的许可证（LGPLv3+）。
+本项目采用与[Chafa](https://github.com/hpjansson/chafa)相同的许可证（LGPLv3+）。
 
 ---
 
