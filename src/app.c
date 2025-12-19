@@ -1935,6 +1935,10 @@ ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mo
         return ERROR_NONE;
     }
 
+    if (hit_index == app->selected_entry) {
+        return ERROR_NONE;
+    }
+
     app->selected_entry = hit_index;
 
     gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
@@ -2310,13 +2314,28 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     }
 
     PreviewLayout layout = app_preview_calculate_layout(app);
+    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+    gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
+    if (total_pages <= 1) {
+        // Page scrolling is a no-op when everything fits on one page.
+        return ERROR_NONE;
+    }
+
+    gint old_selected = app->preview_selected;
+    gint old_scroll = app->preview_scroll;
     gint delta = direction >= 0 ? layout.visible_rows : -layout.visible_rows;
     if (delta == 0) {
         delta = direction >= 0 ? 1 : -1;
     }
     ErrorCode result = app_preview_move_selection(app, delta, 0);
     if (result == ERROR_NONE) {
-        app->needs_screen_clear = TRUE;
+        // Avoid forcing a refresh when selection/scroll didn't change.
+        if (app->preview_scroll != old_scroll) {
+            app->needs_screen_clear = TRUE;
+        }
+        if (app->preview_selected == old_selected && app->preview_scroll == old_scroll) {
+            return ERROR_NONE;
+        }
     }
     return result;
 }

@@ -262,10 +262,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                         gint64 current_time = g_get_monotonic_time();
                         if (current_time - app->pending_file_manager_click_time > 400000) {
                             app->pending_file_manager_single_click = FALSE;
+                            gint old_selected = app->selected_entry;
+                            gint old_scroll = app->scroll_offset;
                             app_handle_mouse_file_manager(app,
                                                           app->pending_file_manager_click_x,
                                                           app->pending_file_manager_click_y);
-                            app_render_file_manager(app);
+                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                                app_render_file_manager(app);
+                            }
                         }
                     } else if (!app->file_manager_mode && app->pending_file_manager_single_click) {
                         app->pending_file_manager_single_click = FALSE;
@@ -353,20 +357,28 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             case INPUT_MOUSE_SCROLL:
                 if (app->file_manager_mode) {
                     // Handle scroll in file manager
+                    gint old_selected = app->selected_entry;
+                    gint old_scroll = app->scroll_offset;
                     if (event.mouse_button == MOUSE_SCROLL_UP) {
                         app_file_manager_up(app);
                     } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
                         app_file_manager_down(app);
                     }
-                    app_render_file_manager(app);
+                    if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                        app_render_file_manager(app);
+                    }
                 } else if (app->preview_mode) {
                     // Handle scroll in preview grid mode
+                    gint old_selected = app->preview_selected;
+                    gint old_scroll = app->preview_scroll;
                     if (event.mouse_button == MOUSE_SCROLL_UP) {
                         app_preview_page_move(app, -1);
                     } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
                         app_preview_page_move(app, 1);
                     }
-                    app_render_preview_grid(app);
+                    if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                        app_render_preview_grid(app);
+                    }
                 } else {
                     // Handle mouse scroll in single image mode
                     gboolean redraw_needed = FALSE;
@@ -394,8 +406,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                 if (app->file_manager_mode &&
                     ((event.key_code >= 'A' && event.key_code <= 'Z') ||
                      (event.key_code >= 'a' && event.key_code <= 'z'))) {
+                    gint old_selected = app->selected_entry;
+                    gint old_scroll = app->scroll_offset;
                     app_file_manager_jump_to_letter(app, (char)event.key_code);
-                    app_render_file_manager(app);
+                    if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                        app_render_file_manager(app);
+                    }
                     break;
                 }
 
@@ -418,8 +434,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     case KEY_LEFT:
                     case (KeyCode)'h':
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 0, -1);
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -440,10 +460,18 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                                 // Skip this navigation event
                             }
                         } else if (app->file_manager_mode) {
+                            gint old_selected = app->selected_entry;
+                            gint old_scroll = app->scroll_offset;
+                            GList *old_entries = app->directory_entries;
+                            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
                             ErrorCode err = app_file_manager_left(app);
-                            if (err == ERROR_NONE) {
-                                app_render_file_manager(app);
-                            } else {
+                            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
+                            gboolean state_changed = dir_changed ||
+                                                     (app->directory_entries != old_entries) ||
+                                                     (app->selected_entry != old_selected) ||
+                                                     (app->scroll_offset != old_scroll);
+                            g_free(old_dir);
+                            if (err == ERROR_NONE && state_changed) {
                                 app_render_file_manager(app);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
@@ -495,8 +523,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     case KEY_RIGHT:
                     case (KeyCode)'l':
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 0, 1);
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -517,10 +549,23 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                                 // Skip this navigation event
                             }
                         } else if (app->file_manager_mode) {
+                            gint old_selected = app->selected_entry;
+                            gint old_scroll = app->scroll_offset;
+                            GList *old_entries = app->directory_entries;
+                            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
                             ErrorCode err = app_file_manager_right(app);
+                            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
+                            gboolean state_changed = dir_changed ||
+                                                     (app->directory_entries != old_entries) ||
+                                                     (app->selected_entry != old_selected) ||
+                                                     (app->scroll_offset != old_scroll);
+                            g_free(old_dir);
                             if (err == ERROR_NONE && app->file_manager_mode) {
-                                app_render_file_manager(app);
+                                if (state_changed) {
+                                    app_render_file_manager(app);
+                                }
                             } else if (app->file_manager_mode) {
+                                // Keep previous behavior for errors while staying in file manager.
                                 app_render_file_manager(app);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
@@ -708,8 +753,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     case (KeyCode)'k':
                     case KEY_UP:
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, -1, 0);
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -732,8 +781,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                                 // Skip this navigation event
                             }
                         } else if (app->file_manager_mode) {
+                            gint old_selected = app->selected_entry;
+                            gint old_scroll = app->scroll_offset;
                             app_file_manager_up(app);
-                            app_render_file_manager(app);
+                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                                app_render_file_manager(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -787,8 +840,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     case (KeyCode)'j':
                     case KEY_DOWN:
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 1, 0);
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -811,8 +868,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                                 // Skip this navigation event
                             }
                         } else if (app->file_manager_mode) {
+                            gint old_selected = app->selected_entry;
+                            gint old_scroll = app->scroll_offset;
                             app_file_manager_down(app);
-                            app_render_file_manager(app);
+                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                                app_render_file_manager(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -865,8 +926,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                         break;
                     case KEY_PAGE_DOWN:
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_page_move(app, 1); // jump a page down
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
@@ -889,8 +954,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                         break;
                     case KEY_PAGE_UP:
                         if (app->preview_mode) {
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_preview_page_move(app, -1); // jump a page up
-                            app_render_preview_grid(app);
+                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                                app_render_preview_grid(app);
+                            }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
                             while (input_has_pending_input(input_handler)) {
