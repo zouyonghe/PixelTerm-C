@@ -3,13 +3,13 @@
 _pixelterm() {
     local -a options
     options=(
-        '(-h --help)'{-h,--help}'[显示帮助信息]'
-        '(-v --version -V --Version)'{-V,--version}'[显示版本信息]'
-        '(-D --dither)'{-D,--dither}'[启用图像抖动（默认：禁用）]'
-        '--no-preload[禁用图像预加载（默认：启用）]'
-        '--no-alt-screen[禁用备用屏幕缓冲区（默认：启用）]'
-        '--clear-workaround[改善某些终端的UI外观但可能降低性能（默认：禁用）]'
-        '::文件或目录:_files'
+        '(-h --help)'{-h,--help}'[Show help]'
+        '(-v --version -V --Version)'{-V,--version}'[Show version]'
+        '(-D --dither)'{-D,--dither}'[Enable dithering (default: off)]'
+        '--no-preload[Disable preloading (default: on)]'
+        '--no-alt-screen[Disable alternate screen buffer (default: on)]'
+        '--clear-workaround[Improve UI rendering on some terminals but may reduce performance (default: off)]'
+        '::File or directory:_files'
     )
 
     _arguments -s -S "${options[@]}"
