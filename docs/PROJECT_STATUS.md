@@ -3,7 +3,7 @@
 ## Repository Information
 - **Location**: /home/buding/Git/PixelTerm-C
 - **Git Status**: Active development (c1712a2)
-- **Current Version**: v0.1.0 (Core Implementation)
+- **Current Version**: v1.3.3 (Stable Release)
 
 ## Project Structure Implemented
 ```
