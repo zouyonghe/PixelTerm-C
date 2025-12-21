@@ -1,0 +1,8 @@
+complete -c pixelterm -s h -l help -d "Show help"
+complete -c pixelterm -s v -l version -d "Show version (recommended: --version)"
+complete -c pixelterm -s V -l Version -d "Show version"
+complete -c pixelterm -s D -l dither -d "Enable dithering"
+complete -c pixelterm -l no-preload -d "Disable preloading"
+complete -c pixelterm -l no-alt-screen -d "Disable alternate screen"
+complete -c pixelterm -l clear-workaround -d "Enable clear workaround"
+complete -c pixelterm -a "(__fish_complete_path)" -d "Image file or directory"

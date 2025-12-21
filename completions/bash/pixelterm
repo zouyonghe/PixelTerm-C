@@ -1,0 +1,15 @@
+_pixelterm() {
+    local cur opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    opts="-h --help --version -v -V --Version -D --dither --no-preload --no-alt-screen --clear-workaround"
+
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+
+    COMPREPLY=( $(compgen -f -- "$cur") )
+}
+
+complete -F _pixelterm pixelterm
