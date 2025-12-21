@@ -1,0 +1,18 @@
+#compdef pixelterm
+
+_pixelterm() {
+    local -a options
+    options=(
+        '(-h --help)'{-h,--help}'[显示帮助信息]'
+        '(-v --version -V --Version)'--version'[显示版本信息（推荐）]'
+        '(-v --version -V --Version)'-v'[显示版本信息]'
+        '(-v --version -V --Version)'{-V,--Version}'[显示版本信息]'
+        '(-D --dither)'{-D,--dither}'[启用图像抖动（默认：禁用）]'
+        '--no-preload[禁用图像预加载（默认：启用）]'
+        '--no-alt-screen[禁用备用屏幕缓冲区（默认：启用）]'
+        '--clear-workaround[改善某些终端的UI外观但可能降低性能（默认：禁用）]'
+        '::文件或目录:_files'
+    )
+
+    _arguments -s -S "${options[@]}"
+}

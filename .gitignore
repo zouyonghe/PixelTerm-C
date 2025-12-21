@@ -34,3 +34,4 @@ Thumbs.db
 
 # Local zsh completion (generated/managed outside repo)
 _pixelterm
+!completions/zsh/_pixelterm
