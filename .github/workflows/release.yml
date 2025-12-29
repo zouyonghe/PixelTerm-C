@@ -21,7 +21,7 @@ jobs:
             runs-on: ubuntu-latest
             os: linux
           - arch: arm64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04-arm
             os: linux
           - arch: amd64
             runs-on: macos-latest
@@ -33,99 +33,48 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up QEMU for cross-compilation
-      if: matrix.os == 'linux' && matrix.arch == 'arm64'
-      uses: docker/setup-qemu-action@v3
-      with:
-        platforms: arm64
-
     - name: Build on Linux
       if: matrix.os == 'linux'
       run: |
         mkdir -p release-${{ matrix.arch }}
         
-        if [ '${{ matrix.arch }}' = 'arm64' ]; then
-          # Use QEMU emulation for aarch64 build (d4c3910 method)
-          echo 'Building PixelTerm-C for aarch64 using QEMU emulation'
-          
-          docker run --rm \
-            -v $(pwd):/workspace \
-            --platform linux/arm64 \
-            ubuntu:22.04 \
-            bash -c "
-              cd /workspace &&
-              export DEBIAN_FRONTEND=noninteractive &&
-              apt-get update &&
-              apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
-              git config --global --add safe.directory /workspace &&
-              
-              CHAFA_VERSION=\$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name') &&
-              if [ -z \"\$CHAFA_VERSION\" ] || [ \"\$CHAFA_VERSION\" = \"null\" ]; then
-                CHAFA_VERSION='v1.14.4'
-              fi &&
-              CHAFA_VERSION_NO_V=\${CHAFA_VERSION#v} &&
-              echo \"Installing Chafa \${CHAFA_VERSION_NO_V}\" &&
-              
-              wget \"https://github.com/hpjansson/chafa/releases/download/\${CHAFA_VERSION}/chafa-\${CHAFA_VERSION_NO_V}.tar.xz\" ||
-              wget \"https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-1.14.4.tar.xz\" &&
-              
-              if [ -f \"chafa-\${CHAFA_VERSION_NO_V}.tar.xz\" ]; then
-                tar -xf chafa-\${CHAFA_VERSION_NO_V}.tar.xz &&
-                cd chafa-\${CHAFA_VERSION_NO_V}
-              else
-                tar -xf chafa-1.14.4.tar.xz &&
-                cd chafa-1.14.4
-              fi &&
-              
-              ./configure --prefix=/usr &&
-              make -j\$(nproc) &&
-              make install &&
-              cd .. &&
-              rm -rf chafa-* &&
-              VERSION=\$(git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2-) &&
-              if [ -z \"\$VERSION\" ]; then VERSION=\"unknown\"; fi &&
-              make clean && make VERSION=\$VERSION &&
-              cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
-            "
-        else
-          # Native build for amd64
-          echo 'Native build for amd64'
-          
-          # Install dependencies
-          sudo apt-get update
-          sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl
-          
-          # Get Chafa version
-          CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name')
-          if [ -z "$CHAFA_VERSION" ] || [ "$CHAFA_VERSION" = "null" ]; then
-            CHAFA_VERSION='v1.14.4'
-          fi
-          CHAFA_VERSION_NO_V=${CHAFA_VERSION#v}
-          echo "Installing Chafa ${CHAFA_VERSION_NO_V}"
-          
-          # Download and build Chafa
-          wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION_NO_V}.tar.xz" ||
-          wget "https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-1.14.4.tar.xz"
-          
-          if [ -f "chafa-${CHAFA_VERSION_NO_V}.tar.xz" ]; then
-            tar -xf chafa-${CHAFA_VERSION_NO_V}.tar.xz
-            cd chafa-${CHAFA_VERSION_NO_V}
-          else
-            tar -xf chafa-1.14.4.tar.xz
-            cd chafa-1.14.4
-          fi
-          
-          ./configure --prefix=/usr
-          make -j$(nproc)
-          sudo make install
-          sudo ldconfig
-          cd ..
-          rm -rf chafa-*
-          
-          # Build PixelTerm-C
-          make clean && make
-          cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
+        # Native build for Linux (amd64/arm64)
+        echo "Native build for ${{ matrix.arch }}"
+        
+        # Install dependencies
+        sudo apt-get update
+        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl
+        
+        # Get Chafa version
+        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name')
+        if [ -z "$CHAFA_VERSION" ] || [ "$CHAFA_VERSION" = "null" ]; then
+          CHAFA_VERSION='v1.14.4'
         fi
+        CHAFA_VERSION_NO_V=${CHAFA_VERSION#v}
+        echo "Installing Chafa ${CHAFA_VERSION_NO_V}"
+        
+        # Download and build Chafa
+        wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION_NO_V}.tar.xz" ||
+        wget "https://github.com/hpjansson/chafa/releases/download/v1.14.4/chafa-1.14.4.tar.xz"
+        
+        if [ -f "chafa-${CHAFA_VERSION_NO_V}.tar.xz" ]; then
+          tar -xf chafa-${CHAFA_VERSION_NO_V}.tar.xz
+          cd chafa-${CHAFA_VERSION_NO_V}
+        else
+          tar -xf chafa-1.14.4.tar.xz
+          cd chafa-1.14.4
+        fi
+        
+        ./configure --prefix=/usr
+        make -j$(nproc)
+        sudo make install
+        sudo ldconfig
+        cd ..
+        rm -rf chafa-*
+        
+        # Build PixelTerm-C
+        make clean && make
+        cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
 
     - name: Build on macOS
       if: matrix.os == 'macos'
