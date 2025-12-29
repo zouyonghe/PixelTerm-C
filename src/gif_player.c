@@ -41,9 +41,10 @@ GifPlayer* gif_player_new(void) {
             .dither = FALSE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-            .work_factor = 1,
+            .work_factor = 9,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
-            .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
+            .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+            .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
         };
         renderer_initialize(player->renderer, &config);
     }

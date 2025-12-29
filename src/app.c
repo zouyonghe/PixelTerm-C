@@ -1027,9 +1027,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .dither = app->dither_enabled,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-            .work_factor = 1,
+            .work_factor = 9,
             .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-            .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
+            .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+            .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
         };
 
         ErrorCode error = renderer_initialize(renderer, &config);
@@ -2577,9 +2578,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         .dither = app->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 1,
+        .work_factor = 9,
         .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
     };
     ImageRenderer *renderer = renderer_create();
     if (!renderer) {

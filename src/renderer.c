@@ -50,9 +50,9 @@ ImageRenderer* renderer_create(void) {
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
-    renderer->config.dither_mode = CHAFA_DITHER_MODE_ORDERED;
-    renderer->config.color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN;
-    renderer->config.optimizations = CHAFA_OPTIMIZATION_ALL;
+    renderer->config.dither_mode = CHAFA_DITHER_MODE_NONE;
+    renderer->config.color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE;
+    renderer->config.optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES;
 
     return renderer;
 }
@@ -126,6 +126,9 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     // Configure canvas with terminal-adaptive settings
     ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
     ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
+    if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+        mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    }
     
     chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
     chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
@@ -141,10 +144,15 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     chafa_symbol_map_unref(symbol_map);
     
     // Apply quality settings
+    ChafaDitherMode dither_mode = CHAFA_DITHER_MODE_NONE;
     if (renderer->config.dither) {
-        chafa_canvas_config_set_dither_mode(renderer->canvas_config, renderer->config.dither_mode);
-    } else {
-        chafa_canvas_config_set_dither_mode(renderer->canvas_config, CHAFA_DITHER_MODE_NONE);
+        dither_mode = renderer->config.dither_mode;
+    } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
+        dither_mode = CHAFA_DITHER_MODE_NOISE;
+    }
+    chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
+    if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+        chafa_canvas_config_set_dither_grain_size(renderer->canvas_config, 1, 1);
     }
     chafa_canvas_config_set_color_extractor(renderer->canvas_config, renderer->config.color_extractor);
     chafa_canvas_config_set_work_factor(renderer->canvas_config, (float)renderer->config.work_factor / 9.0f); // Normalize 0-9 to 0.0-1.0
@@ -381,6 +389,9 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (renderer->canvas_config) {
         ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
+        if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+            mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+        }
         
         chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
         chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
@@ -393,6 +404,17 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
         chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
         chafa_symbol_map_unref(symbol_map);
+
+        ChafaDitherMode dither_mode = CHAFA_DITHER_MODE_NONE;
+        if (renderer->config.dither) {
+            dither_mode = renderer->config.dither_mode;
+        } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
+            dither_mode = CHAFA_DITHER_MODE_NOISE;
+        }
+        chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
+        if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+            chafa_canvas_config_set_dither_grain_size(renderer->canvas_config, 1, 1);
+        }
     }
 
     // Update canvas configuration with new terminal size

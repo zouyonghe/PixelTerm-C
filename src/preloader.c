@@ -700,9 +700,10 @@ gpointer preloader_worker_thread(gpointer data) {
         .dither = preloader->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 1,
+        .work_factor = 9,
         .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_MEDIAN
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
     };
 
     ErrorCode init_result = renderer_initialize(renderer, &config);
