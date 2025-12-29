@@ -173,16 +173,6 @@ ErrorCode input_enable_mouse(InputHandler *handler);
  * @return `ERROR_NONE` on success.
  */
 ErrorCode input_disable_mouse(InputHandler *handler);
-/**
- * @brief Clears the terminal screen.
- * 
- * Sends an ANSI escape code to clear the entire terminal screen and moves
- * the cursor to the home position (top-left).
- * 
- * @return `ERROR_NONE` on success.
- */
-ErrorCode input_clear_screen(void);
-
 // Input processing
 /**
  * @brief Reads the next available input event from the terminal.
@@ -305,12 +295,5 @@ const gchar* input_key_code_to_string(KeyCode key);
  * @return `TRUE` if the key is a navigation key, `FALSE` otherwise.
  */
 gboolean input_is_navigation_key(KeyCode key);
-/**
- * @brief Prints a list of key bindings and their corresponding actions to standard output.
- * 
- * This function provides a user-friendly overview of available keyboard shortcuts
- * and mouse controls within the application.
- */
-void input_print_key_bindings(void);
 
 #endif // INPUT_H

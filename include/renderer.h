@@ -10,7 +10,6 @@ typedef struct {
     gboolean preserve_aspect_ratio;
     gboolean dither;
     ChafaColorSpace color_space;
-    ChafaPixelMode pixel_mode;
     gint work_factor;
     
     // Advanced quality settings

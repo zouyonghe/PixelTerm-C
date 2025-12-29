@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - All major phases completed, version v1.3.3 released with comprehensive features including mouse support, animated GIF playback, dithering control, and advanced navigation modes.
+**Current Status**: ✅ **PRODUCTION READY** - v1.3.8 with mouse support, animated GIF playback, dithering control, and advanced navigation modes.
 
 ## Technical Architecture
 
@@ -83,9 +83,8 @@ GString *output = chafa_canvas_print(canvas, term_info);
 ```
 
 ### 2. Memory Management Strategy
-- Use GLib memory management (g_malloc, g_free)
-- Implement reference counting for shared objects
-- Preallocate buffers to reduce allocation overhead
+- Use GLib memory management (g_malloc, g_free) and GObject reference counting
+- Free render results deterministically and cache only needed content
 
 ### 3. Threading Model
 - Main thread: UI and input handling
@@ -95,14 +94,13 @@ GString *output = chafa_canvas_print(canvas, term_info);
 ### 4. Error Handling
 - Use GLib error handling (GError)
 - Graceful degradation for unsupported features
-- Comprehensive logging system
+- Clear, user-facing error messages where needed
 
 ## Performance Optimizations
 
 ### 1. Zero-Copy Rendering
-- Avoid unnecessary data copying
-- Use in-place operations where possible
-- Minimize memory allocations
+- Avoid unnecessary data copying where possible
+- Minimize allocations in hot rendering paths
 
 ### 2. Smart Caching
 - LRU cache for rendered images
@@ -110,9 +108,7 @@ GString *output = chafa_canvas_print(canvas, term_info);
 - Memory pressure handling
 
 ### 3. Efficient I/O
-- Memory-mapped file access for large images
-- Asynchronous I/O operations
-- Batch processing where applicable
+- Stream-based image loading for long paths and robust error handling
 
 ## Development Environment Setup
 
@@ -140,14 +136,11 @@ clean:
 ## Testing Strategy
 
 ### Unit Tests
-- Component isolation testing
-- Memory leak detection
-- Performance benchmarks
+- Manual spot checks for core workflows
+- Targeted testing when adding new rendering logic
 
 ### Integration Tests
-- End-to-end functionality testing
-- Cross-platform compatibility
-- Real-world usage scenarios
+- Manual end-to-end testing in supported terminals
 
 ### Performance Tests
 - Startup time measurement

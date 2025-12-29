@@ -46,7 +46,6 @@ GifPlayer* gif_player_new(gint work_factor) {
             .preserve_aspect_ratio = TRUE,
             .dither = FALSE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
-            .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
             .work_factor = work_factor,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,

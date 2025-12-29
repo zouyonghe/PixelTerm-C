@@ -66,9 +66,8 @@ typedef struct {
 - Memory optimization
 
 ### Thread Communication
-- **Lock-free queues** for high-performance communication
-- **Atomic operations** for simple state changes
-- **Condition variables** for complex synchronization
+- **Mutex-protected queues** for task handoff
+- **Condition variables** for pause/resume and work notification
 
 ## Rendering Pipeline
 
@@ -80,23 +79,14 @@ typedef struct {
 5. **Display**: Output to terminal
 
 ### Optimization Techniques
-- **SIMD Instructions**: Use AVX2/SSE4.1 where available
-- **Memory Mapping**: Direct file access for large images
-- **Batch Processing**: Process multiple images in parallel
 - **Predictive Caching**: Preload adjacent images
+- **Selective Redraws**: Avoid re-rendering when selection doesn't change
 
 ## Terminal Integration
 
 ### Terminal Capability Detection
-```c
-typedef struct {
-    gboolean supports_sixel;
-    gboolean supports_kitty;
-    gboolean supports_iterm2;
-    gint width, height;
-    gint colors;
-} TerminalInfo;
-```
+- Use Chafa's terminal database to select the best canvas and pixel mode.
+- Query terminal size (cells and pixels) to derive cell geometry and aspect ratio.
 
 ### Adaptive Rendering
 - **Fallback Modes**: Graceful degradation for limited terminals

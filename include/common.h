@@ -203,15 +203,6 @@ void get_terminal_cell_geometry(gint *cell_width, gint *cell_height);
  * @return The aspect ratio (width / height) of a terminal character cell.
  */
 gdouble get_terminal_cell_aspect_ratio(void);
-/**
- * @brief Clears the terminal screen and resets all display attributes.
- * 
- * This function sends ANSI escape codes to clear the entire screen,
- * move the cursor to the top-left corner, and reset all text
- * formatting (colors, styles) to default. It also flushes `stdout`.
- */
-void terminal_reset_screen(void);
-
 // Error handling utilities
 /**
  * @brief Converts an `ErrorCode` enum value to a human-readable string.

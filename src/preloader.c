@@ -655,20 +655,6 @@ gint preloader_get_active_tasks(const ImagePreloader *preloader) {
     return active;
 }
 
-// Get cache hit rate (simplified implementation)
-gfloat preloader_get_cache_hit_rate(const ImagePreloader *preloader) {
-    // This would need more sophisticated tracking for accurate results
-    (void)preloader; // Suppress unused parameter warning
-    return 0.0f;
-}
-
-// Get total processed images
-gint64 preloader_get_total_processed(const ImagePreloader *preloader) {
-    // This would need a counter to track processed images
-    (void)preloader; // Suppress unused parameter warning
-    return 0;
-}
-
 // Update terminal dimensions for rendering
 void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint height) {
     if (preloader && width > 0 && height > 0) {
@@ -706,7 +692,6 @@ gpointer preloader_worker_thread(gpointer data) {
         .preserve_aspect_ratio = TRUE,
         .dither = preloader->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
-        .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
         .work_factor = preloader->work_factor,
         .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,

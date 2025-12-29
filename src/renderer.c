@@ -46,7 +46,6 @@ ImageRenderer* renderer_create(void) {
     renderer->config.preserve_aspect_ratio = TRUE;
     renderer->config.dither = FALSE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
-    renderer->config.pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -154,10 +153,17 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         chafa_canvas_config_set_dither_grain_size(renderer->canvas_config, 1, 1);
     }
     chafa_canvas_config_set_color_extractor(renderer->canvas_config, renderer->config.color_extractor);
-    chafa_canvas_config_set_work_factor(renderer->canvas_config, (float)renderer->config.work_factor / 9.0f); // Normalize 0-9 to 0.0-1.0
+    gint work_factor = renderer->config.work_factor;
+    if (work_factor < 1) {
+        work_factor = 1;
+    } else if (work_factor > 9) {
+        work_factor = 9;
+    }
+    // Normalize 1-9 input to chafa's 0.0-1.0 scale.
+    chafa_canvas_config_set_work_factor(renderer->canvas_config, (float)(work_factor - 1) / 8.0f);
     chafa_canvas_config_set_optimizations(renderer->canvas_config, renderer->config.optimizations);
-    
-    // Set symbol map with safe symbols for the terminal
+
+    // Create canvas from the configured settings
     renderer->canvas = chafa_canvas_new(renderer->canvas_config);
     if (!renderer->canvas) {
         return ERROR_CHAFA_INIT;

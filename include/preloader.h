@@ -343,21 +343,6 @@ gint preloader_get_cache_size(const ImagePreloader *preloader);
  * @return The count of active (in-progress) preload tasks.
  */
 gint preloader_get_active_tasks(const ImagePreloader *preloader);
-/**
- * @brief Calculates the cache hit rate for the preloader.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The cache hit rate as a floating-point number (e.g., 0.85 for 85%),
- *         or 0.0 if no cache requests have been made.
- */
-gfloat preloader_get_cache_hit_rate(const ImagePreloader *preloader);
-/**
- * @brief Retrieves the total number of images processed (rendered and cached) by the preloader.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The cumulative count of processed images.
- */
-gint64 preloader_get_total_processed(const ImagePreloader *preloader);
 
 // Worker thread function
 /**

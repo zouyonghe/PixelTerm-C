@@ -165,13 +165,6 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
     return ERROR_NONE;
 }
 
-// Clear screen
-ErrorCode input_clear_screen(void) {
-    printf("\033[2J\033[H");
-    fflush(stdout);
-    return ERROR_NONE;
-}
-
 // Read and parse input event
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (!handler || !event) {
@@ -530,22 +523,4 @@ gboolean input_is_navigation_key(KeyCode key) {
     return (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_UP || key == KEY_DOWN ||
             key == KEY_HOME || key == KEY_END || key == KEY_PAGE_UP || key == KEY_PAGE_DOWN ||
             key == 'a' || key == 'd');
-}
-
-// Print key bindings help
-void input_print_key_bindings(void) {
-    printf("\nKey Bindings:\n");
-    printf("  ←/→ or a/d     Previous/Next image\n");
-    printf("  TAB            Toggle file manager\n");
-    printf("  i              Toggle image information\n");
-    printf("  ~              Toggle UI text (single/preview)\n");
-    printf("  r              Delete current image (single/preview)\n");
-
-    printf("  Ctrl+C         Force exit\n");
-    printf("  ESC            Quit application/Exit file manager\n");
-    printf("\n");
-    printf("File Manager:\n");
-    printf("  ↑/↓            Navigate entries\n");
-    printf("  ←              Go to parent directory\n");
-    printf("  →/Enter        Open directory/file\n");
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.3.9: Codebase cleanup and documentation alignment.
+    - **Rendering**: Clamp and normalize work factor using chafa's 0.0–1.0 scale.
+    - **Code Cleanup**: Remove unused renderer config fields and unused input/preloader APIs.
+    - **Docs**: Refresh architecture, development, status, and roadmap docs to match current behavior.
+
 - v1.3.8: Improve SSH terminal detection defaults.
     - **Rendering**: When `TERM_PROGRAM` is missing and `TERM` is empty or `xterm-256color`, default `TERM` to `rio` to preserve image clarity in SSH sessions.
 
