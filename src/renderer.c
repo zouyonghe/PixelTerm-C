@@ -109,7 +109,6 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
         envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
     }
-
     renderer->term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
     
@@ -367,7 +366,6 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
         envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
     }
-
     renderer->term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
 

@@ -1106,6 +1106,16 @@ int main(int argc, char *argv[]) {
         path = g_get_current_dir();
     }
 
+    {
+        const char *term_program = getenv("TERM_PROGRAM");
+        const char *term_env = getenv("TERM");
+        if (!term_program || term_program[0] == '\0') {
+            if (!term_env || term_env[0] == '\0' || strcmp(term_env, "xterm-256color") == 0) {
+                setenv("TERM", "rio", 1);
+            }
+        }
+    }
+
     // Create and initialize application
     g_app = app_create();
     if (!g_app) {
