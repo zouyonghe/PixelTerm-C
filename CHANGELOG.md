@@ -1,8 +1,24 @@
 # Changelog
 
-- v1.3.2: Rendering quality controls and sixel tuning.
+- v1.3.6: Rendering quality controls and sixel tuning.
     - **CLI**: Add `--work-factor N` (1-9, default: 9) to adjust quality vs speed.
     - **Rendering**: Align non-symbols pixel modes with TrueColor defaults, apply sixel noise dither, and set grain size to 1x1 for smoother color transitions.
+    - **Docs/Completions**: Document the new flag and update shell completions.
+
+- v1.3.5: Shell completion cleanup.
+    - **Completions**: Translate completion descriptions to English.
+
+- v1.3.4: Add shell completions and doc updates.
+    - **Completions**: Add Bash/Fish/Zsh completion scripts.
+    - **Docs**: Update development status notes and TAB cycling hints.
+    - **Repo**: Ignore `.iflow` artifacts.
+
+- v1.3.3: Rendering efficiency and README refresh.
+    - **Rendering**: Avoid redundant redraws in preview and file manager.
+    - **Docs**: Refresh README screenshots, usage notes, and add changelog link.
+
+- v1.3.2: UI hints and clear workaround tweaks.
+    - **UI**: Improve clear workaround behavior and single-view TAB hinting.
 
 - v1.3.1: Fix preview selection on double-click; improve install portability.
     - **Preview Grid**: Double-click switching between Single Image View and Grid Preview now preserves the selected image and avoids unintended yellow (virtual) selection state.
