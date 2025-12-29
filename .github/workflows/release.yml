@@ -46,7 +46,7 @@ jobs:
         sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl
         
         # Get Chafa version
-        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name')
+        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name' 2>/dev/null || true)
         if [ -z "$CHAFA_VERSION" ] || [ "$CHAFA_VERSION" = "null" ]; then
           CHAFA_VERSION='v1.14.4'
         fi
