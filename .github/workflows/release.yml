@@ -57,6 +57,7 @@ jobs:
             ubuntu:22.04 \
             bash -c "
               cd /workspace &&
+              git config --global --add safe.directory /workspace &&
               export DEBIAN_FRONTEND=noninteractive &&
               apt-get update &&
               apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
@@ -84,7 +85,9 @@ jobs:
               make install &&
               cd .. &&
               rm -rf chafa-* &&
-              make clean && make &&
+              VERSION=\$(git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2-) &&
+              if [ -z \"\$VERSION\" ]; then VERSION=\"unknown\"; fi &&
+              make clean && make VERSION=\$VERSION &&
               cp bin/pixelterm /workspace/release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
             "
         else
