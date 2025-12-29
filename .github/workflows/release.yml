@@ -57,10 +57,10 @@ jobs:
             ubuntu:22.04 \
             bash -c "
               cd /workspace &&
-              git config --global --add safe.directory /workspace &&
               export DEBIAN_FRONTEND=noninteractive &&
               apt-get update &&
               apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl &&
+              git config --global --add safe.directory /workspace &&
               
               CHAFA_VERSION=\$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name') &&
               if [ -z \"\$CHAFA_VERSION\" ] || [ \"\$CHAFA_VERSION\" = \"null\" ]; then
