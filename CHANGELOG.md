@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.3.2: Rendering quality controls and sixel tuning.
+    - **CLI**: Add `--work-factor N` (1-9, default: 9) to adjust quality vs speed.
+    - **Rendering**: Align non-symbols pixel modes with TrueColor defaults, apply sixel noise dither, and set grain size to 1x1 for smoother color transitions.
+
 - v1.3.1: Fix preview selection on double-click; improve install portability.
     - **Preview Grid**: Double-click switching between Single Image View and Grid Preview now preserves the selected image and avoids unintended yellow (virtual) selection state.
     - **Build/Install**: Make `make install` portable across GNU/BSD `install` by removing GNU-only `-D` usage and supporting `PREFIX`/`DESTDIR`.

@@ -126,6 +126,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # Or
 ./pixelterm --dither /path/to/image.jpg
 
+# Adjust rendering work factor (1-9, higher is slower but higher quality)
+./pixelterm --work-factor 7 /path/to/image.jpg
+
 ```
 
 ## 🎮 Controls
