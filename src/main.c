@@ -42,6 +42,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
+    printf("  %-29s %s\n", "--term TERM", "Override TERM (default: use environment; fallback: rio)");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -62,7 +63,7 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor, char **term_override) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
@@ -72,6 +73,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
         {"no-alt-screen", no_argument,   0, 1002},
         {"clear-workaround", no_argument, 0, 1003},
         {"work-factor", required_argument, 0, 1004},
+        {"term", required_argument, 0, 1005},
         {0, 0, 0, 0}
     };
 
@@ -119,6 +121,16 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                 *work_factor = (gint)value;
                 break;
             }
+            case 1005: // --term
+                if (!optarg || optarg[0] == '\0') {
+                    fprintf(stderr, "Invalid --term value: empty\n");
+                    return ERROR_INVALID_ARGS;
+                }
+                if (*term_override) {
+                    g_free(*term_override);
+                }
+                *term_override = g_strdup(optarg);
+                break;
             case '?':
                 // Check if it's a long option (starts with --)
                 if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {
@@ -1091,10 +1103,12 @@ int main(int argc, char *argv[]) {
     gboolean alt_screen_enabled = TRUE;
     gboolean clear_workaround_enabled = FALSE;
     gint work_factor = 9;
+    char *term_override = NULL;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor, &term_override);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
+        if (term_override) g_free(term_override);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
             return 0;
         }
@@ -1109,7 +1123,9 @@ int main(int argc, char *argv[]) {
     {
         const char *term_program = getenv("TERM_PROGRAM");
         const char *term_env = getenv("TERM");
-        if (!term_program || term_program[0] == '\0') {
+        if (term_override) {
+            setenv("TERM", term_override, 1);
+        } else if (!term_program || term_program[0] == '\0') {
             if (!term_env || term_env[0] == '\0' || strcmp(term_env, "xterm-256color") == 0) {
                 setenv("TERM", "rio", 1);
             }
@@ -1120,6 +1136,7 @@ int main(int argc, char *argv[]) {
     g_app = app_create();
     if (!g_app) {
         g_free(path);
+        if (term_override) g_free(term_override);
         return 1;
     }
 
@@ -1129,6 +1146,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);
         app_destroy(g_app);
         g_free(path);
+        if (term_override) g_free(term_override);
         return 1;
     }
 
@@ -1143,6 +1161,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", path);
         app_destroy(g_app);
         g_free(path);
+        if (term_override) g_free(term_override);
         return 1;
     }
 
@@ -1180,6 +1199,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Failed to load images from '%s'\n", path);
         app_destroy(g_app);
         g_free(path);
+        if (term_override) g_free(term_override);
         return 1;
     }
 
@@ -1191,12 +1211,14 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Failed to start file manager: %d\n", error);
                 app_destroy(g_app);
                 g_free(path);
+                if (term_override) g_free(term_override);
                 return 1;
             }
             app_render_file_manager(g_app);
             error = run_application(g_app, alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
+            if (term_override) g_free(term_override);
             g_app = NULL;
             if (g_terminate_requested) {
                 if (g_last_signal == SIGINT) return 130;
@@ -1211,12 +1233,14 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Failed to start file manager: %d\n", error);
                 app_destroy(g_app);
                 g_free(path);
+                if (term_override) g_free(term_override);
                 return 1;
             }
             // Continue into main loop with file manager active
             error = run_application(g_app, alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
+            if (term_override) g_free(term_override);
             g_app = NULL;
             if (g_terminate_requested) {
                 if (g_last_signal == SIGINT) return 130;
@@ -1237,6 +1261,7 @@ int main(int argc, char *argv[]) {
     // Cleanup
     app_destroy(g_app);
     g_free(path);
+    if (term_override) g_free(term_override);
     g_app = NULL;
 
     if (g_terminate_requested) {

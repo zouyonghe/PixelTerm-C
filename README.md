@@ -129,6 +129,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # Adjust rendering work factor (1-9, higher is slower but higher quality)
 ./pixelterm --work-factor 7 /path/to/image.jpg
 
+# Override TERM detection (default: use environment; fallback: rio)
+./pixelterm --term xterm-256color /path/to/image.jpg
+
 ```
 
 ## 🎮 Controls

@@ -10,6 +10,7 @@ _pixelterm() {
         '--no-alt-screen[Disable alternate screen buffer (default: on)]'
         '--clear-workaround[Improve UI rendering on some terminals but may reduce performance (default: off)]'
         '--work-factor[Quality/speed tradeoff (1-9, default: 9)]:factor:(1 2 3 4 5 6 7 8 9)'
+        '--term[Override TERM (default: use environment; fallback: rio)]:term:'
         '::File or directory:_files'
     )
 

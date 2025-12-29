@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.3.10: Terminal override flag and safer defaults.
+    - **CLI**: Add `--term TERM` to override terminal detection.
+    - **Rendering**: Only default `TERM=rio` when `TERM_PROGRAM` is missing and `TERM` is empty or `xterm-256color`.
+
 - v1.3.9: Codebase cleanup and documentation alignment.
     - **Rendering**: Clamp and normalize work factor using chafa's 0.0–1.0 scale.
     - **Code Cleanup**: Remove unused renderer config fields and unused input/preloader APIs.

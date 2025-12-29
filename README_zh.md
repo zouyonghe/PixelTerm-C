@@ -127,6 +127,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # 调整渲染 work factor（1-9，越高越慢但质量更好）
 ./pixelterm --work-factor 7 /path/to/image.jpg
 
+# 覆盖 TERM 检测（默认使用环境变量；无则回落为 rio）
+./pixelterm --term xterm-256color /path/to/image.jpg
+
 ```
 
 ## 🎮 控制
