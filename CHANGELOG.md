@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.3.8: Improve SSH terminal detection defaults.
+    - **Rendering**: When `TERM_PROGRAM` is missing and `TERM` is empty or `xterm-256color`, default `TERM` to `rio` to preserve image clarity in SSH sessions.
+
 - v1.3.6: Rendering quality controls and sixel tuning.
     - **CLI**: Add `--work-factor N` (1-9, default: 9) to adjust quality vs speed.
     - **Rendering**: Align non-symbols pixel modes with TrueColor defaults, apply sixel noise dither, and set grain size to 1x1 for smoother color transitions.
