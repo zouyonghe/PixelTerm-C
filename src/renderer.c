@@ -269,16 +269,6 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
         // Calculate geometry that fits within bounds
         chafa_calc_canvas_geometry(width, height, &output_width, &output_height, 
                                    font_ratio, TRUE, FALSE);
-        
-        // Ensure we don't exceed the maximum dimensions
-        if (output_width > renderer->config.max_width) {
-            output_width = renderer->config.max_width;
-            output_height = (gint)(height * (gdouble)output_width / width);
-        }
-        if (output_height > renderer->config.max_height) {
-            output_height = renderer->config.max_height;
-            output_width = (gint)(width * (gdouble)output_height / height);
-        }
     }
 
     // Update canvas geometry
