@@ -85,6 +85,7 @@ ImagePreloader* preloader_create(void) {
     preloader->max_queue_size = PRELOAD_QUEUE_SIZE;
     preloader->max_cache_size = MAX_CACHE_SIZE;
     preloader->active_tasks = 0;
+    preloader->work_factor = 9;
     
     // Default terminal dimensions
     preloader->term_width = 80;
@@ -129,11 +130,17 @@ void preloader_destroy(ImagePreloader *preloader) {
 }
 
 // Initialize preloader
-ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled) {
+ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor) {
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
     preloader->dither_enabled = dither_enabled;
+    if (work_factor < 1) {
+        work_factor = 1;
+    } else if (work_factor > 9) {
+        work_factor = 9;
+    }
+    preloader->work_factor = work_factor;
 
     return ERROR_NONE;
 }
@@ -700,7 +707,7 @@ gpointer preloader_worker_thread(gpointer data) {
         .dither = preloader->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 9,
+        .work_factor = preloader->work_factor,
         .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

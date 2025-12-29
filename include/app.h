@@ -32,6 +32,7 @@ typedef struct {
     gboolean clear_workaround_enabled; // Enable double-clear workaround on full refresh
     gboolean preload_enabled;
     gboolean dither_enabled;
+    gint render_work_factor;
     gboolean needs_redraw;
     gboolean file_manager_mode;  // Track if file manager is active
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager

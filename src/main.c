@@ -41,6 +41,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--no-preload", "Disable image preloading (default: enabled)");
     printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
+    printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -61,7 +62,7 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
@@ -70,6 +71,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
         {"dither",     no_argument,      0, 1001},
         {"no-alt-screen", no_argument,   0, 1002},
         {"clear-workaround", no_argument, 0, 1003},
+        {"work-factor", required_argument, 0, 1004},
         {0, 0, 0, 0}
     };
 
@@ -103,6 +105,20 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
             case 1003: // --clear-workaround
                 *clear_workaround_enabled = TRUE;
                 break;
+            case 1004: { // --work-factor
+                char *end = NULL;
+                long value = strtol(optarg, &end, 10);
+                if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
+                    fprintf(stderr, "Invalid --work-factor value: %s (expected 1-9)\n", optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                if (value < 1 || value > 9) {
+                    fprintf(stderr, "Invalid --work-factor value: %ld (expected 1-9)\n", value);
+                    return ERROR_INVALID_ARGS;
+                }
+                *work_factor = (gint)value;
+                break;
+            }
             case '?':
                 // Check if it's a long option (starts with --)
                 if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {
@@ -422,7 +438,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                         if (app->preloader) {
                             preloader_stop(app->preloader); // Stop the preloader thread
                             preloader_cache_clear(app->preloader); // Clear preloader cache
-                            preloader_initialize(app->preloader, app->dither_enabled); // Re-initialize with new setting
+                            preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor); // Re-initialize with new setting
                             preloader_start(app->preloader); // Restart the preloader
                         }
                         if (app->preview_mode) {
@@ -1074,8 +1090,9 @@ int main(int argc, char *argv[]) {
     gboolean dither_enabled = FALSE;
     gboolean alt_screen_enabled = TRUE;
     gboolean clear_workaround_enabled = FALSE;
+    gint work_factor = 9;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
@@ -1096,6 +1113,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);

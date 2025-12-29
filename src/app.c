@@ -36,6 +36,7 @@ PixelTermApp* app_create(void) {
     app->clear_workaround_enabled = FALSE;
     app->preload_enabled = TRUE;
     app->dither_enabled = FALSE;
+    app->render_work_factor = 9;
     app->needs_redraw = TRUE;
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
@@ -725,7 +726,7 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
     }
 
     // Initialize GIF player
-    app->gif_player = gif_player_new();
+    app->gif_player = gif_player_new(app->render_work_factor);
     if (!app->gif_player) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -797,7 +798,7 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     if (app->preload_enabled) {
         app->preloader = preloader_create();
         if (app->preloader) {
-            preloader_initialize(app->preloader, app->dither_enabled);
+            preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor);
             
             // Set terminal dimensions for preloader
             preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -1027,7 +1028,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .dither = app->dither_enabled,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-            .work_factor = 9,
+            .work_factor = app->render_work_factor,
             .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
@@ -1322,7 +1323,7 @@ void app_toggle_preload(PixelTermApp *app) {
             if (!app->preloader) {
                 app->preloader = preloader_create();
                 if (app->preloader) {
-                    preloader_initialize(app->preloader, app->dither_enabled);
+                    preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor);
                     
                     // Set terminal dimensions for preloader
                     preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -2578,7 +2579,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         .dither = app->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-        .work_factor = 9,
+        .work_factor = app->render_work_factor,
         .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

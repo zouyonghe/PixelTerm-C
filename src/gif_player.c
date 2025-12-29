@@ -12,7 +12,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 // 创建新的 GIF 播放器实例
-GifPlayer* gif_player_new(void) {
+GifPlayer* gif_player_new(gint work_factor) {
     GifPlayer *player = g_new0(GifPlayer, 1);
     if (!player) {
         return NULL;
@@ -33,6 +33,12 @@ GifPlayer* gif_player_new(void) {
     
     // Initialize internal renderer
     player->renderer = renderer_create();
+    if (work_factor < 1) {
+        work_factor = 1;
+    } else if (work_factor > 9) {
+        work_factor = 9;
+    }
+
     if (player->renderer) {
         RendererConfig config = {
             .max_width = 80, // Will be updated on play
@@ -41,7 +47,7 @@ GifPlayer* gif_player_new(void) {
             .dither = FALSE,
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS,
-            .work_factor = 9,
+            .work_factor = work_factor,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
