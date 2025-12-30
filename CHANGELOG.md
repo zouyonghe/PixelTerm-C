@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.3.12: Sixel probing and CLI cleanup.
+    - **Rendering**: Probe for sixel support when `TERM_PROGRAM` is missing and force sixel output when supported.
+    - **CLI**: Remove `--term` option; help output no longer lists control keys.
+    - **Completions/Docs**: Remove `--term` from shell completions and READMEs.
+
 - v1.3.11: Adjust terminal override to avoid color regressions.
     - **CLI**: `--term` now overrides `TERM_PROGRAM` instead of `TERM`.
     - **Compatibility**: Default `TERM_PROGRAM=rio` when unset, keeping `TERM` intact for color detection.
