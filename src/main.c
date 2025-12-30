@@ -72,17 +72,6 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("\n");
-    printf("Controls:\n");
-    printf("  Arrow Keys / hjkl             Navigate between images\n");
-    printf("  Enter                         Toggle preview grid mode\n");
-    printf("  Tab                           Toggle file manager mode\n");
-    printf("  i                             Toggle image information\n");
-    printf("  +/-                           Zoom in/out in preview mode\n");
-    printf("  PgUp/PgDn                     Page up/down in preview mode\n");
-    printf("  Mouse Click                   Select image in preview grid\n");
-    printf("  Mouse Wheel                   Navigate/Scroll in all modes\n");
-    printf("  Esc                           Quit application\n");
-    printf("\n");
 }
 
 // Print version information
