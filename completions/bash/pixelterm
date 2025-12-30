@@ -2,7 +2,7 @@ _pixelterm() {
     local cur opts
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
-    opts="-h --help --version -V -D --dither --no-preload --no-alt-screen --clear-workaround --work-factor --term"
+    opts="-h --help --version -V -D --dither --no-preload --no-alt-screen --clear-workaround --work-factor"
 
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
