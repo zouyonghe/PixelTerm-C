@@ -453,6 +453,79 @@ gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     return 0;
 }
 
+static gboolean input_response_has_sixel(const char *buffer) {
+    if (!buffer) {
+        return FALSE;
+    }
+
+    const char *cursor = strchr(buffer, '?');
+    if (!cursor) {
+        cursor = strchr(buffer, '[');
+    }
+    if (!cursor) {
+        cursor = buffer;
+    }
+
+    for (; *cursor != '\0'; cursor++) {
+        if (!g_ascii_isdigit(*cursor)) {
+            continue;
+        }
+
+        gint value = 0;
+        while (g_ascii_isdigit(*cursor)) {
+            value = value * 10 + (*cursor - '0');
+            cursor++;
+        }
+
+        if (value == 4) {
+            return TRUE;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+    }
+
+    return FALSE;
+}
+
+gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
+    if (!handler || timeout_ms <= 0) {
+        return FALSE;
+    }
+
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+        return FALSE;
+    }
+
+    input_flush_buffer(handler);
+
+    const char query[] = "\033[c";
+    (void)write(STDOUT_FILENO, query, sizeof(query) - 1);
+
+    gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
+    char buffer[128];
+    gint length = 0;
+
+    while (g_get_monotonic_time() < deadline && length < (gint)(sizeof(buffer) - 1)) {
+        gint ch = input_read_char_with_timeout(handler, 20);
+        if (ch == 0) {
+            continue;
+        }
+        buffer[length++] = (char)ch;
+        if (ch == 'c') {
+            break;
+        }
+    }
+
+    buffer[length] = '\0';
+    if (length == 0) {
+        return FALSE;
+    }
+
+    return input_response_has_sixel(buffer);
+}
+
 // Update terminal size
 ErrorCode input_update_terminal_size(InputHandler *handler) {
     if (!handler) {

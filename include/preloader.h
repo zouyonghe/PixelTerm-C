@@ -48,6 +48,7 @@ typedef struct {
     // Dithering setting
     gboolean dither_enabled;
     gint work_factor;
+    gboolean force_sixel;
 } ImagePreloader;
 
 // Preloader lifecycle functions
@@ -82,7 +83,7 @@ void preloader_destroy(ImagePreloader *preloader);
  *                       for preloaded images.
  * @return `ERROR_NONE` on success.
  */
-ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor);
+ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor, gboolean force_sixel);
 /**
  * @brief Starts the preloader's worker thread.
  * 

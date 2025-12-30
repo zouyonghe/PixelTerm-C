@@ -248,6 +248,7 @@ gchar input_read_char(InputHandler *handler);
  *         or an error occurs.
  */
 gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
+gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms);
 
 // Terminal size handling
 /**

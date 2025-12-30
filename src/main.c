@@ -17,6 +17,35 @@
 static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
+static gboolean g_force_sixel = FALSE;
+
+static gboolean probe_sixel_support(void) {
+    const char *term_program = getenv("TERM_PROGRAM");
+    if (term_program && term_program[0] != '\0') {
+        return FALSE;
+    }
+
+    InputHandler *probe = input_handler_create();
+    if (!probe) {
+        return FALSE;
+    }
+
+    if (input_handler_initialize(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    if (input_enable_raw_mode(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    gboolean sixel_supported = input_probe_sixel_support(probe, 120);
+    input_disable_raw_mode(probe);
+    input_handler_destroy(probe);
+
+    return sixel_supported;
+}
 
 // Signal handler for graceful shutdown
 static void signal_handler(int sig) {
@@ -42,7 +71,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
-    printf("  %-29s %s\n", "--term TERM", "Override TERM_PROGRAM (default: use environment; fallback: rio)");
+    printf("  %-29s %s\n", "--term TERM", "Override TERM_PROGRAM (default: use environment; may probe for sixel)");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -450,7 +479,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                         if (app->preloader) {
                             preloader_stop(app->preloader); // Stop the preloader thread
                             preloader_cache_clear(app->preloader); // Clear preloader cache
-                            preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor); // Re-initialize with new setting
+                            preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor, app->force_sixel); // Re-initialize with new setting
                             preloader_start(app->preloader); // Restart the preloader
                         }
                         if (app->preview_mode) {
@@ -1121,11 +1150,10 @@ int main(int argc, char *argv[]) {
     }
 
     {
-        const char *term_program = getenv("TERM_PROGRAM");
         if (term_override) {
             setenv("TERM_PROGRAM", term_override, 1);
-        } else if (!term_program || term_program[0] == '\0') {
-            setenv("TERM_PROGRAM", "rio", 1);
+        } else {
+            g_force_sixel = probe_sixel_support();
         }
     }
 
@@ -1136,6 +1164,7 @@ int main(int argc, char *argv[]) {
         if (term_override) g_free(term_override);
         return 1;
     }
+    g_app->force_sixel = g_force_sixel;
 
     g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);

@@ -46,6 +46,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.preserve_aspect_ratio = TRUE;
     renderer->config.dither = FALSE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
+    renderer->config.force_sixel = FALSE;
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -100,7 +101,6 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
 
     gchar **envp = g_get_environ();
-    
     // Force TrueColor support detection by injecting/overriding environment variables
     envp = g_environ_setenv(envp, "COLORTERM", "truecolor", TRUE);
     // Ensure we have a capable TERM if not already set to something good
@@ -115,6 +115,15 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         return ERROR_CHAFA_INIT;
     }
 
+    gboolean force_sixel_mode = renderer->config.force_sixel;
+    if (force_sixel_mode) {
+        ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
+        if (fallback) {
+            chafa_term_info_supplement(renderer->term_info, fallback);
+            chafa_term_info_unref(fallback);
+        }
+    }
+
     // Create canvas configuration
     renderer->canvas_config = chafa_canvas_config_new();
     if (!renderer->canvas_config) {
@@ -124,7 +133,10 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     // Configure canvas with terminal-adaptive settings
     ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
     ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-    if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+    if (force_sixel_mode) {
+        pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
+        mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     }
     
@@ -379,11 +391,23 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_CHAFA_INIT;
     }
 
+    gboolean force_sixel_mode = renderer->config.force_sixel;
+    if (force_sixel_mode) {
+        ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
+        if (fallback) {
+            chafa_term_info_supplement(renderer->term_info, fallback);
+            chafa_term_info_unref(fallback);
+        }
+    }
+
     // Apply best modes from the new terminal info
     if (renderer->canvas_config) {
         ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-        if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+        if (force_sixel_mode) {
+            pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
+            mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+        } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         }
         
