@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.3.11: Adjust terminal override to avoid color regressions.
+    - **CLI**: `--term` now overrides `TERM_PROGRAM` instead of `TERM`.
+    - **Compatibility**: Default `TERM_PROGRAM=rio` when unset, keeping `TERM` intact for color detection.
+
 - v1.3.10: Terminal override flag and safer defaults.
     - **CLI**: Add `--term TERM` to override terminal detection.
     - **Rendering**: Only default `TERM=rio` when `TERM_PROGRAM` is missing and `TERM` is empty or `xterm-256color`.

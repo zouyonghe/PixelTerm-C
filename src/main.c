@@ -42,7 +42,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
-    printf("  %-29s %s\n", "--term TERM", "Override TERM (default: use environment; fallback: rio)");
+    printf("  %-29s %s\n", "--term TERM", "Override TERM_PROGRAM (default: use environment; fallback: rio)");
     printf("\n");
     printf("Controls:\n");
     printf("  Arrow Keys / hjkl             Navigate between images\n");
@@ -1122,13 +1122,10 @@ int main(int argc, char *argv[]) {
 
     {
         const char *term_program = getenv("TERM_PROGRAM");
-        const char *term_env = getenv("TERM");
         if (term_override) {
-            setenv("TERM", term_override, 1);
+            setenv("TERM_PROGRAM", term_override, 1);
         } else if (!term_program || term_program[0] == '\0') {
-            if (!term_env || term_env[0] == '\0' || strcmp(term_env, "xterm-256color") == 0) {
-                setenv("TERM", "rio", 1);
-            }
+            setenv("TERM_PROGRAM", "rio", 1);
         }
     }
 
