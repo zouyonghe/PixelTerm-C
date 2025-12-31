@@ -18,8 +18,19 @@ static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
 static gboolean g_force_sixel = FALSE;
-static gboolean g_has_pending_event = FALSE;
-static InputEvent g_pending_event;
+static const gint64 k_click_threshold_us = 400000;
+static const useconds_t k_input_poll_sleep_us = 10000;
+static const useconds_t k_resize_sleep_us = 100000;
+static const KeyCode g_nav_keys_lr[] = {
+    KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
+};
+static const KeyCode g_nav_keys_ud[] = {
+    KEY_UP, (KeyCode)'k', KEY_LEFT, (KeyCode)'h', KEY_RIGHT, (KeyCode)'l', KEY_DOWN, (KeyCode)'j',
+    KEY_PAGE_UP, KEY_PAGE_DOWN
+};
+static const KeyCode g_nav_keys_page[] = {
+    KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, (KeyCode)'a'
+};
 
 static gboolean probe_sixel_support(void) {
     const char *term_program = getenv("TERM_PROGRAM");
@@ -194,10 +205,6 @@ static gboolean key_in_list(KeyCode key, const KeyCode *keys, size_t key_count) 
 static void skip_queued_navigation(InputHandler *input_handler,
                                    const KeyCode *keys,
                                    size_t key_count) {
-    if (g_has_pending_event) {
-        return;
-    }
-
     InputEvent skip_event;
     while (input_has_pending_input(input_handler)) {
         ErrorCode skip_error = input_get_event(input_handler, &skip_event);
@@ -206,11 +213,581 @@ static void skip_queued_navigation(InputHandler *input_handler,
         }
         if (skip_event.type != INPUT_KEY_PRESS ||
             !key_in_list(skip_event.key_code, keys, key_count)) {
-            g_pending_event = skip_event;
-            g_has_pending_event = TRUE;
+            input_unget_event(input_handler, &skip_event);
             break;
         }
         // Skip this navigation event
+    }
+}
+
+static void handle_mouse_press_preview(PixelTermApp *app, const InputEvent *event) {
+    app->pending_grid_single_click = TRUE;
+    app->pending_grid_click_time = g_get_monotonic_time();
+    app->pending_grid_click_x = event->mouse_x;
+    app->pending_grid_click_y = event->mouse_y;
+}
+
+static void handle_mouse_press_file_manager(PixelTermApp *app, const InputEvent *event) {
+    app->pending_file_manager_single_click = TRUE;
+    app->pending_file_manager_click_time = g_get_monotonic_time();
+    app->pending_file_manager_click_x = event->mouse_x;
+    app->pending_file_manager_click_y = event->mouse_y;
+}
+
+static void handle_mouse_press_single(PixelTermApp *app, const InputEvent *event) {
+    (void)event;
+    app->pending_single_click = TRUE;
+    app->pending_click_time = g_get_monotonic_time();
+}
+
+static void handle_mouse_press(PixelTermApp *app, const InputEvent *event) {
+    if (app->preview_mode) {
+        handle_mouse_press_preview(app, event);
+    } else if (app->file_manager_mode) {
+        handle_mouse_press_file_manager(app, event);
+    } else {
+        handle_mouse_press_single(app, event);
+    }
+}
+
+static void handle_mouse_double_click_preview(PixelTermApp *app, const InputEvent *event) {
+    app->pending_grid_single_click = FALSE;
+
+    gboolean redraw_needed = FALSE;
+    app_handle_mouse_click_preview(app, event->mouse_x, event->mouse_y, &redraw_needed);
+
+    if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
+        app->return_to_mode = RETURN_MODE_PREVIEW;
+    }
+    app->preview_mode = FALSE;
+    app_render_current_image(app);
+}
+
+static void handle_mouse_double_click_file_manager(PixelTermApp *app, const InputEvent *event) {
+    app->pending_file_manager_single_click = FALSE;
+    ErrorCode err = app_file_manager_enter_at_position(app, event->mouse_x, event->mouse_y);
+    if (err == ERROR_NONE && app->file_manager_mode) {
+        app_render_file_manager(app);
+    }
+}
+
+static void handle_mouse_double_click_single(PixelTermApp *app, const InputEvent *event) {
+    (void)event;
+    app->pending_single_click = FALSE;
+
+    if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
+        app->return_to_mode = RETURN_MODE_PREVIEW;
+    }
+    if (app_enter_preview(app) == ERROR_NONE) {
+        app_render_preview_grid(app);
+    }
+}
+
+static void handle_mouse_double_click(PixelTermApp *app, const InputEvent *event) {
+    if (app->preview_mode) {
+        handle_mouse_double_click_preview(app, event);
+    } else if (app->file_manager_mode) {
+        handle_mouse_double_click_file_manager(app, event);
+    } else {
+        handle_mouse_double_click_single(app, event);
+    }
+}
+
+static void handle_mouse_scroll_preview(PixelTermApp *app, const InputEvent *event) {
+    gint old_selected = app->preview_selected;
+    gint old_scroll = app->preview_scroll;
+    if (event->mouse_button == MOUSE_SCROLL_UP) {
+        app_preview_page_move(app, -1);
+    } else if (event->mouse_button == MOUSE_SCROLL_DOWN) {
+        app_preview_page_move(app, 1);
+    }
+    if (app->preview_scroll != old_scroll) {
+        app_render_preview_grid(app);
+    } else if (app->preview_selected != old_selected) {
+        app_render_preview_selection_change(app, old_selected);
+    }
+}
+
+static void handle_mouse_scroll_file_manager(PixelTermApp *app, const InputEvent *event) {
+    gint old_selected = app->selected_entry;
+    gint old_scroll = app->scroll_offset;
+    if (event->mouse_button == MOUSE_SCROLL_UP) {
+        app_file_manager_up(app);
+    } else if (event->mouse_button == MOUSE_SCROLL_DOWN) {
+        app_file_manager_down(app);
+    }
+    if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+        app_render_file_manager(app);
+    }
+}
+
+static void handle_mouse_scroll_single(PixelTermApp *app, const InputEvent *event) {
+    gboolean redraw_needed = FALSE;
+    if (event->mouse_button == MOUSE_SCROLL_UP) {
+        gint old_index = app_get_current_index(app);
+        app_previous_image(app);
+        if (old_index != app_get_current_index(app)) {
+            redraw_needed = TRUE;
+        }
+    } else if (event->mouse_button == MOUSE_SCROLL_DOWN) {
+        gint old_index = app_get_current_index(app);
+        app_next_image(app);
+        if (old_index != app_get_current_index(app)) {
+            redraw_needed = TRUE;
+        }
+    }
+    if (redraw_needed) {
+        app_refresh_display(app);
+        app->needs_redraw = FALSE;
+    }
+}
+
+static void handle_mouse_scroll(PixelTermApp *app, const InputEvent *event) {
+    if (app->preview_mode) {
+        handle_mouse_scroll_preview(app, event);
+    } else if (app->file_manager_mode) {
+        handle_mouse_scroll_file_manager(app, event);
+    } else {
+        handle_mouse_scroll_single(app, event);
+    }
+}
+
+static void handle_delete_current_image(PixelTermApp *app) {
+    app_delete_current_image(app);
+    app_render_by_mode(app);
+}
+
+static gboolean handle_key_press_common(PixelTermApp *app,
+                                        InputHandler *input_handler,
+                                        const InputEvent *event) {
+    switch (event->key_code) {
+        case KEY_ESCAPE:
+            app->running = FALSE;
+            input_handler->should_exit = TRUE;
+            return TRUE;
+        case (KeyCode)'d':
+        case (KeyCode)'D':
+            app->dither_enabled = !app->dither_enabled;
+            if (app->preloader) {
+                preloader_stop(app->preloader);
+                preloader_cache_clear(app->preloader);
+                preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor, app->force_sixel);
+                preloader_start(app->preloader);
+            }
+            app_render_by_mode(app);
+            return TRUE;
+        case (KeyCode)'i':
+            if (!app->preview_mode) {
+                if (app->ui_text_hidden) {
+                    return TRUE;
+                }
+                if (g_app->info_visible) {
+                    g_app->info_visible = FALSE;
+                    app_render_current_image(app);
+                } else {
+                    app_display_image_info(app);
+                }
+            }
+            return TRUE;
+        case (KeyCode)'~':
+        case (KeyCode)'`':
+            if (!app->file_manager_mode) {
+                gboolean info_was_visible = app->info_visible;
+                app->ui_text_hidden = !app->ui_text_hidden;
+                if (app->ui_text_hidden) {
+                    app->info_visible = FALSE;
+                }
+                if (app->preview_mode) {
+                    app->needs_screen_clear = TRUE;
+                } else if (!info_was_visible) {
+                    app->suppress_full_clear = TRUE;
+                }
+                app_render_by_mode(app);
+            }
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
+
+static void handle_key_press_preview(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
+    switch (event->key_code) {
+        case KEY_LEFT:
+        case (KeyCode)'h': {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_move_selection(app, 0, -1);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case KEY_RIGHT:
+        case (KeyCode)'l': {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_move_selection(app, 0, 1);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case (KeyCode)'k':
+        case KEY_UP: {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_move_selection(app, -1, 0);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case (KeyCode)'j':
+        case KEY_DOWN: {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_move_selection(app, 1, 0);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case KEY_PAGE_DOWN: {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_page_move(app, 1);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
+            break;
+        }
+        case KEY_PAGE_UP: {
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_preview_page_move(app, -1);
+            if (app->preview_scroll != old_scroll) {
+                app_render_preview_grid(app);
+            } else if (app->preview_selected != old_selected) {
+                app_render_preview_selection_change(app, old_selected);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
+            break;
+        }
+        case (KeyCode)'r':
+            if (app_has_images(app)) {
+                app->current_index = app->preview_selected;
+                app_delete_current_image(app);
+            }
+
+            if (app_has_images(app)) {
+                if (app->current_index < 0) app->current_index = 0;
+                if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
+                app->preview_selected = app->current_index;
+                app->needs_screen_clear = TRUE;
+                app_render_preview_grid(app);
+            } else {
+                app->preview_mode = FALSE;
+                app->needs_screen_clear = TRUE;
+                app_refresh_display(app);
+            }
+            break;
+        case (KeyCode)'+':
+        case (KeyCode)'=':
+            app_preview_change_zoom(app, 1);
+            break;
+        case (KeyCode)'-':
+            app_preview_change_zoom(app, -1);
+            break;
+        case KEY_TAB:
+            if (app->return_to_mode == RETURN_MODE_PREVIEW) {
+                app_exit_preview(app, TRUE);
+                app_refresh_display(app);
+            } else {
+                ReturnMode saved_return_mode = app->return_to_mode;
+                app->return_to_mode = RETURN_MODE_PREVIEW;
+                app_exit_preview(app, TRUE);
+                app_enter_file_manager(app);
+                if (saved_return_mode == RETURN_MODE_PREVIEW_VIRTUAL && app->previous_selected_entry >= 0) {
+                    app->selected_entry = app->previous_selected_entry;
+                    app->previous_selected_entry = -1;
+                }
+                app_render_file_manager(app);
+            }
+            break;
+        case KEY_ENTER:
+        case 13:
+            if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
+                app->return_to_mode = RETURN_MODE_PREVIEW;
+            }
+            app_exit_preview(app, TRUE);
+            app_refresh_display(app);
+            break;
+        default:
+            break;
+    }
+}
+
+static void handle_key_press_file_manager(PixelTermApp *app,
+                                          InputHandler *input_handler,
+                                          const InputEvent *event) {
+    if ((event->key_code >= 'A' && event->key_code <= 'Z') ||
+        (event->key_code >= 'a' && event->key_code <= 'z')) {
+        gint old_selected = app->selected_entry;
+        gint old_scroll = app->scroll_offset;
+        app_file_manager_jump_to_letter(app, (char)event->key_code);
+        if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+            app_render_file_manager(app);
+        }
+        return;
+    }
+
+    switch (event->key_code) {
+        case KEY_LEFT:
+        case (KeyCode)'h': {
+            gint old_selected = app->selected_entry;
+            gint old_scroll = app->scroll_offset;
+            GList *old_entries = app->directory_entries;
+            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
+            ErrorCode err = app_file_manager_left(app);
+            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
+            gboolean state_changed = dir_changed ||
+                                     (app->directory_entries != old_entries) ||
+                                     (app->selected_entry != old_selected) ||
+                                     (app->scroll_offset != old_scroll);
+            g_free(old_dir);
+            if (err == ERROR_NONE && state_changed) {
+                app_render_file_manager(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case KEY_RIGHT:
+        case (KeyCode)'l': {
+            gint old_selected = app->selected_entry;
+            gint old_scroll = app->scroll_offset;
+            GList *old_entries = app->directory_entries;
+            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
+            ErrorCode err = app_file_manager_right(app);
+            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
+            gboolean state_changed = dir_changed ||
+                                     (app->directory_entries != old_entries) ||
+                                     (app->selected_entry != old_selected) ||
+                                     (app->scroll_offset != old_scroll);
+            g_free(old_dir);
+            if (err == ERROR_NONE && app->file_manager_mode) {
+                if (state_changed) {
+                    app_render_file_manager(app);
+                }
+            } else if (app->file_manager_mode) {
+                app_render_file_manager(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case (KeyCode)'k':
+        case KEY_UP: {
+            gint old_selected = app->selected_entry;
+            gint old_scroll = app->scroll_offset;
+            app_file_manager_up(app);
+            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                app_render_file_manager(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case (KeyCode)'j':
+        case KEY_DOWN: {
+            gint old_selected = app->selected_entry;
+            gint old_scroll = app->scroll_offset;
+            app_file_manager_down(app);
+            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                app_render_file_manager(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case KEY_TAB: {
+            if (!app_file_manager_has_images(app)) {
+                break;
+            }
+
+            ErrorCode load_error = app_load_directory(app, app->file_manager_directory);
+            if (load_error != ERROR_NONE) {
+                app_render_file_manager(app);
+                break;
+            }
+
+            if (app_file_manager_selection_is_image(app)) {
+                app->return_to_mode = RETURN_MODE_PREVIEW;
+                gint selected_image_index = app_file_manager_get_selected_image_index(app);
+                if (selected_image_index >= 0) {
+                    app->current_index = selected_image_index;
+                }
+                app_exit_file_manager(app);
+                if (app_enter_preview(app) == ERROR_NONE) {
+                    app_render_preview_grid(app);
+                } else {
+                    app_refresh_display(app);
+                }
+            } else {
+                app->return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+                app->previous_selected_entry = app->selected_entry;
+                app_exit_file_manager(app);
+                if (app_enter_preview(app) == ERROR_NONE) {
+                    app->preview_selected = 0;
+                    app_render_preview_grid(app);
+                } else {
+                    app_refresh_display(app);
+                }
+            }
+            break;
+        }
+        case KEY_ENTER:
+        case 13:
+            {
+                ErrorCode error;
+                input_flush_buffer(input_handler);
+                error = app_file_manager_enter(app);
+                if (error != ERROR_NONE) {
+                    app_render_file_manager(app);
+                } else if (app->file_manager_mode) {
+                    app_render_file_manager(app);
+                }
+            }
+            break;
+        case KEY_BACKSPACE:
+        case 8:
+            if (app_file_manager_toggle_hidden(app) == ERROR_NONE) {
+                app_render_file_manager(app);
+            }
+            break;
+        case (KeyCode)'r':
+            handle_delete_current_image(app);
+            break;
+        default:
+            break;
+    }
+}
+
+static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
+    switch (event->key_code) {
+        case KEY_LEFT:
+        case (KeyCode)'h': {
+            gint old_index = app_get_current_index(app);
+            app_previous_image(app);
+            if (old_index != app_get_current_index(app)) {
+                app_refresh_display(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case KEY_RIGHT:
+        case (KeyCode)'l': {
+            gint old_index = app_get_current_index(app);
+            app_next_image(app);
+            if (old_index != app_get_current_index(app)) {
+                app_refresh_display(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            break;
+        }
+        case (KeyCode)'k':
+        case KEY_UP: {
+            gint old_index = app_get_current_index(app);
+            app_previous_image(app);
+            if (old_index != app_get_current_index(app)) {
+                app_refresh_display(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case (KeyCode)'j':
+        case KEY_DOWN: {
+            gint old_index = app_get_current_index(app);
+            app_next_image(app);
+            if (old_index != app_get_current_index(app)) {
+                app_refresh_display(app);
+            }
+            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            break;
+        }
+        case KEY_TAB:
+            app->return_to_mode = RETURN_MODE_SINGLE;
+            app_enter_file_manager(app);
+            app_render_file_manager(app);
+            break;
+        case KEY_ENTER:
+        case 13:
+            if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
+                app->return_to_mode = RETURN_MODE_PREVIEW;
+            }
+            if (app_enter_preview(app) == ERROR_NONE) {
+                app_render_preview_grid(app);
+            }
+            break;
+        case (KeyCode)'r':
+            handle_delete_current_image(app);
+            break;
+        default:
+            break;
+    }
+}
+
+static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
+    if (handle_key_press_common(app, input_handler, event)) {
+        return;
+    }
+    if (app->preview_mode) {
+        handle_key_press_preview(app, input_handler, event);
+    } else if (app->file_manager_mode) {
+        handle_key_press_file_manager(app, input_handler, event);
+    } else {
+        handle_key_press_single(app, input_handler, event);
+    }
+}
+
+static void handle_resize(PixelTermApp *app, InputHandler *input_handler) {
+    input_update_terminal_size(input_handler);
+    get_terminal_size(&app->term_width, &app->term_height);
+    printf("\033[2J\033[H\033[0m");
+    fflush(stdout);
+    app_render_by_mode(app);
+}
+
+static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
+    switch (event->type) {
+        case INPUT_MOUSE_PRESS:
+            handle_mouse_press(app, event);
+            break;
+        case INPUT_MOUSE_DOUBLE_CLICK:
+            handle_mouse_double_click(app, event);
+            break;
+        case INPUT_MOUSE_SCROLL:
+            handle_mouse_scroll(app, event);
+            break;
+        case INPUT_KEY_PRESS:
+            handle_key_press(app, input_handler, event);
+            break;
+        case INPUT_RESIZE:
+            handle_resize(app, input_handler);
+            break;
+        default:
+            break;
     }
 }
 
@@ -247,12 +824,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     // which would otherwise immediately trigger an action like exit.
     input_flush_buffer(input_handler);
 
-    // Initial render: show file manager if already active
-    if (app->file_manager_mode) {
-        error = app_render_file_manager(app);
-    } else {
-        error = app_refresh_display(app);
-    }
+    // Initial render
+    error = app_render_by_mode(app);
     if (error != ERROR_NONE) {
         input_disable_raw_mode(input_handler);
         input_handler_destroy(input_handler);
@@ -262,17 +835,6 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     // Main event loop
     InputEvent event;
     static gint last_term_width = 0, last_term_height = 0;
-    static const KeyCode nav_keys_lr[] = {
-        KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
-    };
-    static const KeyCode nav_keys_ud[] = {
-        KEY_UP, (KeyCode)'k', KEY_LEFT, (KeyCode)'h', KEY_RIGHT, (KeyCode)'l', KEY_DOWN, (KeyCode)'j',
-        KEY_PAGE_UP, KEY_PAGE_DOWN
-    };
-    static const KeyCode nav_keys_page[] = {
-        KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, (KeyCode)'a'
-    };
-    
     // Initialize terminal size tracking
     last_term_width = input_handler->terminal_width;
     last_term_height = input_handler->terminal_height;
@@ -295,21 +857,16 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
             if (app->preview_mode) {
                 app->needs_screen_clear = TRUE;
-                app_render_preview_grid(app);
-            } else if (app->file_manager_mode) {
-                app_render_file_manager(app);
-            } else {
-                app_refresh_display(app);
             }
-            usleep(100000); // 100ms delay
+            app_render_by_mode(app);
+            usleep(k_resize_sleep_us);
             continue;
         }
         
                     // Process pending single click action (Single Image Mode)
                     if (app->pending_single_click) {
                         gint64 current_time = g_get_monotonic_time();
-                        // Threshold: 400ms (400000 microseconds)
-                        if (current_time - app->pending_click_time > 400000) {
+                        if (current_time - app->pending_click_time > k_click_threshold_us) {
                             app->pending_single_click = FALSE;
                             // Execute the deferred "Next Image" action
                             app_next_image(app);
@@ -323,8 +880,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     // Process pending single click action (Preview Grid Mode)
                     if (app->pending_grid_single_click) {
                         gint64 current_time = g_get_monotonic_time();
-                        // Threshold: 400ms (400000 microseconds)
-                        if (current_time - app->pending_grid_click_time > 400000) {
+                        if (current_time - app->pending_grid_click_time > k_click_threshold_us) {
                             app->pending_grid_single_click = FALSE;
                             // Execute the deferred "Select image" action
                             gboolean redraw_needed = FALSE;
@@ -344,7 +900,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     // Process pending single click action (File Manager Mode)
                     if (app->file_manager_mode && app->pending_file_manager_single_click) {
                         gint64 current_time = g_get_monotonic_time();
-                        if (current_time - app->pending_file_manager_click_time > 400000) {
+                        if (current_time - app->pending_file_manager_click_time > k_click_threshold_us) {
                             app->pending_file_manager_single_click = FALSE;
                             gint old_selected = app->selected_entry;
                             gint old_scroll = app->scroll_offset;
@@ -367,532 +923,17 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         }
         
         // Check if we have pending input with timeout to allow signal checking
-        if (g_has_pending_event) {
-            event = g_pending_event;
-            g_has_pending_event = FALSE;
-            error = ERROR_NONE;
-        } else {
-            if (!input_has_pending_input(input_handler)) {
-                // Use a shorter delay to allow more responsive event processing
-                usleep(10000); // 10ms instead of 50ms for better animation responsiveness
-                continue;
-            }
-            
-            error = input_get_event(input_handler, &event);
-            if (error != ERROR_NONE) {
-                break;
-            }
+        if (!input_has_pending_input(input_handler)) {
+            usleep(k_input_poll_sleep_us);
+            continue;
         }
 
-        // Process input events
-        switch (event.type) {
-            case INPUT_MOUSE_PRESS:
-                if (app->preview_mode) {
-                    // In preview grid mode, defer click action to wait for potential double click
-                    app->pending_grid_single_click = TRUE;
-                    app->pending_grid_click_time = g_get_monotonic_time();
-                    app->pending_grid_click_x = event.mouse_x;
-                    app->pending_grid_click_y = event.mouse_y;
-                } else if (app->file_manager_mode) {
-                    // Defer file manager single click to distinguish from double click
-                    app->pending_file_manager_single_click = TRUE;
-                    app->pending_file_manager_click_time = g_get_monotonic_time();
-                    app->pending_file_manager_click_x = event.mouse_x;
-                    app->pending_file_manager_click_y = event.mouse_y;
-                } else {
-                    // In single image mode, defer click action to wait for potential double click
-                    app->pending_single_click = TRUE;
-                    app->pending_click_time = g_get_monotonic_time();
-                }
-                break;
-            case INPUT_MOUSE_DOUBLE_CLICK:
-                if (app->preview_mode) {
-                    // Handle double click: Enter single view
-                    // Cancel any pending grid single click action
-                    app->pending_grid_single_click = FALSE;
-                    
-                    // Ensure selection is on the clicked image
-                    gboolean redraw_needed = FALSE;
-                    app_handle_mouse_click_preview(app, event.mouse_x, event.mouse_y, &redraw_needed);
-
-                    // A double click is an explicit selection/open action; if we were in
-                    // yellow (virtual selection) preview mode, switch to actual selection.
-                    if (app->return_to_mode == 2) {
-                        app->return_to_mode = 1;
-                    }
-                    app->preview_mode = FALSE;
-                    app_render_current_image(app);
-                } else if (app->file_manager_mode) {
-                    // Handle double click: open entry directly without extra selection jumps
-                    app->pending_file_manager_single_click = FALSE;
-                    ErrorCode err = app_file_manager_enter_at_position(app, event.mouse_x, event.mouse_y);
-                    if (err == ERROR_NONE && app->file_manager_mode) {
-                        app_render_file_manager(app);
-                    }
-                } else {
-                    // Handle double click in single image mode: Enter preview grid
-                    // Cancel any pending single click action
-                    app->pending_single_click = FALSE;
-                    
-                    // If we previously came from yellow (virtual selection) preview mode,
-                    // entering preview from single view should keep an actual selection.
-                    if (app->return_to_mode == 2) {
-                        app->return_to_mode = 1;
-                    }
-                    if (app_enter_preview(app) == ERROR_NONE) {
-                        app_render_preview_grid(app);
-                    }
-                }
-                break;
-            case INPUT_MOUSE_SCROLL:
-                if (app->file_manager_mode) {
-                    // Handle scroll in file manager
-                    gint old_selected = app->selected_entry;
-                    gint old_scroll = app->scroll_offset;
-                    if (event.mouse_button == MOUSE_SCROLL_UP) {
-                        app_file_manager_up(app);
-                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
-                        app_file_manager_down(app);
-                    }
-                    if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
-                        app_render_file_manager(app);
-                    }
-                } else if (app->preview_mode) {
-                    // Handle scroll in preview grid mode
-                    gint old_selected = app->preview_selected;
-                    gint old_scroll = app->preview_scroll;
-                    if (event.mouse_button == MOUSE_SCROLL_UP) {
-                        app_preview_page_move(app, -1);
-                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
-                        app_preview_page_move(app, 1);
-                    }
-                    if (app->preview_scroll != old_scroll) {
-                        app_render_preview_grid(app);
-                    } else if (app->preview_selected != old_selected) {
-                        app_render_preview_selection_change(app, old_selected);
-                    }
-                } else {
-                    // Handle mouse scroll in single image mode
-                    gboolean redraw_needed = FALSE;
-                    if (event.mouse_button == MOUSE_SCROLL_UP) {
-                        gint old_index = app_get_current_index(app);
-                        app_previous_image(app);
-                        if (old_index != app_get_current_index(app)) {
-                            redraw_needed = TRUE;
-                        }
-                    } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
-                        gint old_index = app_get_current_index(app);
-                        app_next_image(app);
-                        if (old_index != app_get_current_index(app)) {
-                            redraw_needed = TRUE;
-                        }
-                    }
-                    if (redraw_needed) {
-                        app_refresh_display(app);
-                        app->needs_redraw = FALSE; // Reset after refresh
-                    }
-                }
-                break;
-            case INPUT_KEY_PRESS:
-                // In file manager, any letter key acts as jump-to-letter
-                if (app->file_manager_mode &&
-                    ((event.key_code >= 'A' && event.key_code <= 'Z') ||
-                     (event.key_code >= 'a' && event.key_code <= 'z'))) {
-                    gint old_selected = app->selected_entry;
-                    gint old_scroll = app->scroll_offset;
-                    app_file_manager_jump_to_letter(app, (char)event.key_code);
-                    if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
-                        app_render_file_manager(app);
-                    }
-                    break;
-                }
-
-                switch (event.key_code) {
-                    case (KeyCode)'d':
-                    case (KeyCode)'D':
-                        app->dither_enabled = !app->dither_enabled;
-                        if (app->preloader) {
-                            preloader_stop(app->preloader); // Stop the preloader thread
-                            preloader_cache_clear(app->preloader); // Clear preloader cache
-                            preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor, app->force_sixel); // Re-initialize with new setting
-                            preloader_start(app->preloader); // Restart the preloader
-                        }
-                        if (app->preview_mode) {
-                            app_render_preview_grid(app);
-                        } else {
-                            app_refresh_display(app);
-                        }
-                        break;
-                    case KEY_LEFT:
-                    case (KeyCode)'h':
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_move_selection(app, 0, -1);
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        } else if (app->file_manager_mode) {
-                            gint old_selected = app->selected_entry;
-                            gint old_scroll = app->scroll_offset;
-                            GList *old_entries = app->directory_entries;
-                            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
-                            ErrorCode err = app_file_manager_left(app);
-                            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
-                            gboolean state_changed = dir_changed ||
-                                                     (app->directory_entries != old_entries) ||
-                                                     (app->selected_entry != old_selected) ||
-                                                     (app->scroll_offset != old_scroll);
-                            g_free(old_dir);
-                            if (err == ERROR_NONE && state_changed) {
-                                app_render_file_manager(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        } else {
-                            gint old_index = app_get_current_index(app);
-                            app_previous_image(app);
-                            if (old_index != app_get_current_index(app)) {
-                                app_refresh_display(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        }
-                        break;
-                    case KEY_RIGHT:
-                    case (KeyCode)'l':
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_move_selection(app, 0, 1);
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        } else if (app->file_manager_mode) {
-                            gint old_selected = app->selected_entry;
-                            gint old_scroll = app->scroll_offset;
-                            GList *old_entries = app->directory_entries;
-                            gchar *old_dir = app->file_manager_directory ? g_strdup(app->file_manager_directory) : NULL;
-                            ErrorCode err = app_file_manager_right(app);
-                            gboolean dir_changed = (g_strcmp0(old_dir, app->file_manager_directory) != 0);
-                            gboolean state_changed = dir_changed ||
-                                                     (app->directory_entries != old_entries) ||
-                                                     (app->selected_entry != old_selected) ||
-                                                     (app->scroll_offset != old_scroll);
-                            g_free(old_dir);
-                            if (err == ERROR_NONE && app->file_manager_mode) {
-                                if (state_changed) {
-                                    app_render_file_manager(app);
-                                }
-                            } else if (app->file_manager_mode) {
-                                // Keep previous behavior for errors while staying in file manager.
-                                app_render_file_manager(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        } else {
-                            gint old_index = app_get_current_index(app);
-                            app_next_image(app);
-                            if (old_index != app_get_current_index(app)) {
-                                app_refresh_display(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
-                        }
-                        break;
-                    case (KeyCode)'i':
-                        if (!app->preview_mode) {
-                            if (app->ui_text_hidden) {
-                                break;
-                            }
-                            if (g_app->info_visible) {
-                                g_app->info_visible = FALSE;
-                                app_render_current_image(app);
-                            } else {
-                                app_display_image_info(app);
-                            }
-                        }
-                        break;
-                    case (KeyCode)'~':
-                    case (KeyCode)'`':
-                        if (!app->file_manager_mode) {
-                            gboolean info_was_visible = app->info_visible;
-                            app->ui_text_hidden = !app->ui_text_hidden;
-                            if (app->ui_text_hidden) {
-                                app->info_visible = FALSE;
-                            }
-                            if (app->preview_mode) {
-                                app->needs_screen_clear = TRUE;
-                            } else if (!info_was_visible) {
-                                app->suppress_full_clear = TRUE;
-                            }
-                            app_refresh_display(app);
-                        }
-                        break;
-                    case (KeyCode)'r':
-                        if (app->preview_mode) {
-                            if (app_has_images(app)) {
-                                // Delete the currently selected preview item
-                                app->current_index = app->preview_selected;
-                                app_delete_current_image(app);
-                            }
-
-                            if (app_has_images(app)) {
-                                // Keep preview selection aligned with current_index after deletion
-                                if (app->current_index < 0) app->current_index = 0;
-                                if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
-                                app->preview_selected = app->current_index;
-                                app->needs_screen_clear = TRUE;
-                                app_render_preview_grid(app);
-                            } else {
-                                // No images left: leave preview mode
-                                app->preview_mode = FALSE;
-                                app->needs_screen_clear = TRUE;
-                                app_refresh_display(app);
-                            }
-                        } else {
-                            app_delete_current_image(app);
-                            app_refresh_display(app);
-                        }
-                        break;
-
-                    case (KeyCode)'+':
-                    case (KeyCode)'=': // treat '=' as unshifted '+'
-                        if (app->preview_mode) {
-                            app_preview_change_zoom(app, 1);
-                        }
-                        break;
-                    case (KeyCode)'-':
-                        if (app->preview_mode) {
-                            app_preview_change_zoom(app, -1);
-                        }
-                        break;
-                    case KEY_ESCAPE:
-                        app->running = FALSE;
-                        input_handler->should_exit = TRUE;
-                        break;
-                    case KEY_TAB:
-                        if (app->preview_mode) {
-                            // From preview mode, behavior depends on how we entered
-                            if (app->return_to_mode == 1) {
-                                // Blue border mode (entered from file manager with image selected)
-                                // Tab should enter single image view
-                                app_exit_preview(app, TRUE);
-                                app_refresh_display(app);
-                            } else {
-                                // Yellow border mode or other modes: return to file manager
-                                gint saved_return_mode = app->return_to_mode;
-                                app->return_to_mode = 1; // Mark return to PREVIEW
-                                app_exit_preview(app, TRUE);
-                                app_enter_file_manager(app);
-                                // If returning from yellow preview mode, restore the previous file manager selection
-                                if (saved_return_mode == 2 && app->previous_selected_entry >= 0) {
-                                    app->selected_entry = app->previous_selected_entry;
-                                    app->previous_selected_entry = -1; // Reset
-                                }
-                                app_render_file_manager(app);
-                            }
-                        } else if (app->file_manager_mode) {
-                            // From file manager, check if directory has images
-                            if (!app_file_manager_has_images(app)) {
-                                // No images in directory, TAB invalid
-                                break;
-                            }
-
-                            // Load images from current file manager directory
-                            ErrorCode load_error = app_load_directory(app, app->file_manager_directory);
-                            if (load_error != ERROR_NONE) {
-                                // If loading fails, stay in file manager
-                                app_render_file_manager(app);
-                                break;
-                            }
-
-                            // Check if current selection is an image
-                            if (app_file_manager_selection_is_image(app)) {
-                                // Selected item is an image: enter preview with blue border (actual selection)
-                                app->return_to_mode = 1; // Mark return to PREVIEW
-                                // Set current_index to the selected image's index in the image list
-                                gint selected_image_index = app_file_manager_get_selected_image_index(app);
-                                if (selected_image_index >= 0) {
-                                    app->current_index = selected_image_index;
-                                }
-                                app_exit_file_manager(app);
-                                if (app_enter_preview(app) == ERROR_NONE) {
-                                    app_render_preview_grid(app);
-                                } else {
-                                    app_refresh_display(app);
-                                }
-                            } else {
-                                // Selected item is not an image: enter preview with yellow border (virtual selection)
-                                app->return_to_mode = 2; // Mark return to YELLOW PREVIEW
-                                app->previous_selected_entry = app->selected_entry; // Remember the file manager selection
-                                app_exit_file_manager(app);
-                                if (app_enter_preview(app) == ERROR_NONE) {
-                                    app->preview_selected = 0; // Always select first image in yellow border mode
-                                    app_render_preview_grid(app);
-                                } else {
-                                    app_refresh_display(app);
-                                }
-                            }
-                        } else {
-                            // From single image view, enter file manager
-                            app->return_to_mode = 0; // Mark return to SINGLE
-                            app_enter_file_manager(app);
-                            app_render_file_manager(app);
-                        }
-                        break;
-                    case (KeyCode)'k':
-                    case KEY_UP:
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_move_selection(app, -1, 0);
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        } else if (app->file_manager_mode) {
-                            gint old_selected = app->selected_entry;
-                            gint old_scroll = app->scroll_offset;
-                            app_file_manager_up(app);
-                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
-                                app_render_file_manager(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        } else {
-                            gint old_index = app_get_current_index(app);
-                            app_previous_image(app);
-                            if (old_index != app_get_current_index(app)) {
-                                app_refresh_display(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        }
-                        break;
-                    case (KeyCode)'j':
-                    case KEY_DOWN:
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_move_selection(app, 1, 0);
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        } else if (app->file_manager_mode) {
-                            gint old_selected = app->selected_entry;
-                            gint old_scroll = app->scroll_offset;
-                            app_file_manager_down(app);
-                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
-                                app_render_file_manager(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        } else {
-                            gint old_index = app_get_current_index(app);
-                            app_next_image(app);
-                            if (old_index != app_get_current_index(app)) {
-                                app_refresh_display(app);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
-                        }
-                        break;
-                    case KEY_PAGE_DOWN:
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_page_move(app, 1); // jump a page down
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_page, G_N_ELEMENTS(nav_keys_page));
-                        }
-                        break;
-                    case KEY_PAGE_UP:
-                        if (app->preview_mode) {
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_preview_page_move(app, -1); // jump a page up
-                            if (app->preview_scroll != old_scroll) {
-                                app_render_preview_grid(app);
-                            } else if (app->preview_selected != old_selected) {
-                                app_render_preview_selection_change(app, old_selected);
-                            }
-                            skip_queued_navigation(input_handler, nav_keys_page, G_N_ELEMENTS(nav_keys_page));
-                        }
-                        break;
-                    case KEY_BACKSPACE:
-                    case 8: // Ctrl+H on many terminals
-                        if (app->file_manager_mode) {
-                            ErrorCode err = app_file_manager_toggle_hidden(app);
-                            if (err == ERROR_NONE) {
-                                app_render_file_manager(app);
-                            }
-                        }
-                        break;
-                    case KEY_ENTER:
-                    case 13:  // Handle both LF (10) and CR (13) for Enter key
-                        if (app->preview_mode) {
-                            // If entering from yellow border mode, change to actual selection mode
-                            if (app->return_to_mode == 2) {
-                                app->return_to_mode = 1; // Change to actual selection
-                            }
-                            app_exit_preview(app, TRUE);
-                            app_refresh_display(app);
-                        } else if (app->file_manager_mode) {
-                            // Clear any pending input to avoid multiple triggers
-                            input_flush_buffer(input_handler);
-                            
-                            ErrorCode error = app_file_manager_enter(app);
-                            if (error != ERROR_NONE) {
-                                // Handle error - refresh display
-                                app_render_file_manager(app);
-                            } else if (app->file_manager_mode) {
-                                // If still in file manager (directory entered), redraw immediately
-                                app_render_file_manager(app);
-                            }
-                            // Note: when opening a file, app_file_manager_enter renders the image
-                        } else {
-                            // From normal view, Enter toggles into preview grid
-                            if (app->return_to_mode == 2) {
-                                app->return_to_mode = 1; // Change to actual selection
-                            }
-                            if (app_enter_preview(app) == ERROR_NONE) {
-                                app_render_preview_grid(app);
-                            }
-                        }
-                        break;
-                    default:
-                        if (app->file_manager_mode) {
-                            if ((event.key_code >= 'A' && event.key_code <= 'Z') ||
-                                (event.key_code >= 'a' && event.key_code <= 'z')) {
-                                app_file_manager_jump_to_letter(app, (char)event.key_code);
-                                app_render_file_manager(app);
-                            }
-                        }
-                        break;
-                }
-                break;
-            case INPUT_RESIZE:
-                input_update_terminal_size(input_handler);
-                get_terminal_size(&app->term_width, &app->term_height);
-                printf("\033[2J\033[H\033[0m"); // Clear screen to avoid artifacts
-                fflush(stdout);
-                if (app->file_manager_mode) {
-                    app_render_file_manager(app);
-                } else {
-                    app_refresh_display(app);
-                }
-                break;
-            default:
-                break;
+        error = input_get_event(input_handler, &event);
+        if (error != ERROR_NONE) {
+            break;
         }
+
+        handle_input_event(app, input_handler, &event);
     }
 
     // Cleanup - Reset terminal state before exiting

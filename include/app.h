@@ -5,6 +5,13 @@
 #include "preloader.h"
 #include "gif_player.h"
 
+typedef enum {
+    RETURN_MODE_NONE = -1,
+    RETURN_MODE_SINGLE = 0,
+    RETURN_MODE_PREVIEW = 1,
+    RETURN_MODE_PREVIEW_VIRTUAL = 2
+} ReturnMode;
+
 // Main application structure
 typedef struct {
     // Chafa integration
@@ -39,7 +46,7 @@ typedef struct {
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
     gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
-    gint return_to_mode;         // Return mode after file manager (0=single, 1=preview, 2=yellow preview, -1=none)
+    ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
     
     // Terminal info
@@ -560,6 +567,17 @@ ErrorCode app_display_image_info(PixelTermApp *app);
  *         of the current mode fails.
  */
 ErrorCode app_refresh_display(PixelTermApp *app);
+/**
+ * @brief Renders the display based on the current application mode.
+ *
+ * This function chooses the appropriate renderer for preview grid,
+ * file manager, or single image view.
+ *
+ * @param app A pointer to the `PixelTermApp` instance.
+ * @return `ERROR_NONE` on success, or an appropriate `ErrorCode` if rendering
+ *         of the current mode fails.
+ */
+ErrorCode app_render_by_mode(PixelTermApp *app);
 
 // State management
 /**

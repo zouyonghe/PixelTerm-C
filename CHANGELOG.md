@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.4.0: Input refactor and preview paging polish.
+    - **Input**: Split per-mode event handling, add input event pushback/peek support, and remove main-loop pending event globals.
+    - **Preview Grid**: PageUp/PageDown now keep the selection's row position while paging.
+    - **App State**: Replace return_to_mode magic numbers with an enum and centralize render-by-mode routing.
+    - **Timing**: Hoist input/paging delays into constants for easier tuning.
+
 - v1.3.16: Reduce Zen toggle flicker in single image view.
     - **Single Image View**: Skip full screen clear when toggling Zen to avoid flashing.
 

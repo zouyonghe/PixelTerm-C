@@ -25,6 +25,7 @@ InputHandler* input_handler_create(void) {
     handler->last_scroll_button = (MouseButton)0;
     handler->last_scroll_x = 0;
     handler->last_scroll_y = 0;
+    handler->has_pending_event = FALSE;
 
     return handler;
 }
@@ -169,6 +170,12 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (!handler || !event) {
         return ERROR_MEMORY_ALLOC;
+    }
+
+    if (handler->has_pending_event) {
+        *event = handler->pending_event;
+        handler->has_pending_event = FALSE;
+        return ERROR_NONE;
     }
 
     // Initialize event
@@ -384,6 +391,9 @@ gboolean input_has_pending_input(InputHandler *handler) {
     if (!handler) {
         return FALSE;
     }
+    if (handler->has_pending_event) {
+        return TRUE;
+    }
 
     struct timeval tv = {0, 0};
     fd_set fds;
@@ -399,7 +409,39 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    handler->has_pending_event = FALSE;
     tcflush(STDIN_FILENO, TCIFLUSH);
+    return ERROR_NONE;
+}
+
+gboolean input_peek_event(InputHandler *handler, InputEvent *event) {
+    if (!handler || !event) {
+        return FALSE;
+    }
+    if (handler->has_pending_event) {
+        *event = handler->pending_event;
+        return TRUE;
+    }
+
+    if (input_get_event(handler, event) != ERROR_NONE) {
+        return FALSE;
+    }
+
+    handler->pending_event = *event;
+    handler->has_pending_event = TRUE;
+    return TRUE;
+}
+
+ErrorCode input_unget_event(InputHandler *handler, const InputEvent *event) {
+    if (!handler || !event) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (handler->has_pending_event) {
+        return ERROR_NONE;
+    }
+
+    handler->pending_event = *event;
+    handler->has_pending_event = TRUE;
     return ERROR_NONE;
 }
 

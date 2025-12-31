@@ -43,7 +43,7 @@ PixelTermApp* app_create(void) {
     app->show_hidden_files = FALSE;
     app->preview_mode = FALSE;
     app->preview_zoom = 0; // 0 indicates uninitialized target cell width
-    app->return_to_mode = -1; // -1 indicates no return mode set
+    app->return_to_mode = RETURN_MODE_NONE;
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -563,10 +563,9 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
 
 // Select the current image in file manager (only when appropriate)
 static void app_file_manager_select_current_image(PixelTermApp *app) {
-    // Only select current image if we're returning from image view (return_to_mode != -1)
-    // For initial file manager entry (return_to_mode == -1), keep selected_entry = 0
-    // Also select when returning from single image view (return_to_mode == 0)
-    if (app->return_to_mode == -1) {
+    // Only select current image if we're returning from image view.
+    // For initial file manager entry (RETURN_MODE_NONE), keep selected_entry = 0.
+    if (app->return_to_mode == RETURN_MODE_NONE) {
         return;
     }
 
@@ -897,7 +896,7 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     if (found) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;
-        app->return_to_mode = 0; // Actual selection
+        app->return_to_mode = RETURN_MODE_SINGLE;
     }
     
     return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
@@ -1347,6 +1346,20 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     }
 
     return app_render_current_image(app);
+}
+
+ErrorCode app_render_by_mode(PixelTermApp *app) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    if (app->preview_mode) {
+        return app_render_preview_grid(app);
+    }
+    if (app->file_manager_mode) {
+        return app_render_file_manager(app);
+    }
+    return app_refresh_display(app);
 }
 
 
@@ -2276,7 +2289,9 @@ static void app_preview_draw_cell_border(const PixelTermApp *app,
         return;
     }
 
-    const char *border_style = (app->return_to_mode == 2) ? "\033[33;1m" : "\033[34;1m";
+    const char *border_style = (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL)
+                                   ? "\033[33;1m"
+                                   : "\033[34;1m";
     printf("\033[%d;%dH%s+", cell_y, cell_x, border_style);
     for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
     printf("+\033[0m");
@@ -2680,8 +2695,8 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->file_manager_mode = FALSE; // ensure we are not in file manager
     app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
 
-    // For yellow border mode (return_to_mode == 2), always select first image
-    if (app->return_to_mode == 2) {
+    // For yellow border mode (RETURN_MODE_PREVIEW_VIRTUAL), always select first image
+    if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
         app->preview_selected = 0;
     }
 
@@ -2838,7 +2853,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             gint content_y = cell_y + 1;
 
             // Clear cell and draw border without occupying content area
-            const char *border_style = (app->return_to_mode == 2) ? "\033[33;1m" : "\033[34;1m"; // yellow for virtual selection, blue for actual
+            const char *border_style =
+                (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) ? "\033[33;1m" : "\033[34;1m";
             for (gint line = 0; line < layout.cell_height; line++) {
                 gint y = cell_y + line;
                 printf("\033[%d;%dH", y, cell_x);

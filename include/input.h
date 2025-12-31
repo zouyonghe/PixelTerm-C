@@ -95,6 +95,9 @@ typedef struct {
     MouseButton last_scroll_button;
     gint last_scroll_x;
     gint last_scroll_y;
+
+    gboolean has_pending_event;
+    InputEvent pending_event;
 } InputHandler;
 
 // Input handler lifecycle
@@ -188,6 +191,31 @@ ErrorCode input_disable_mouse(InputHandler *handler);
  *         `ErrorCode` if an error occurs during input reading.
  */
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event);
+/**
+ * @brief Peeks at the next input event without consuming it.
+ *
+ * If an event is already queued, it is returned immediately. Otherwise, this
+ * function reads the next event and stores it for the next call to
+ * `input_get_event`.
+ *
+ * @param handler A pointer to the `InputHandler` instance.
+ * @param event A pointer to an `InputEvent` structure where the peeked
+ *              event data will be stored.
+ * @return `TRUE` if an event was retrieved, `FALSE` otherwise.
+ */
+gboolean input_peek_event(InputHandler *handler, InputEvent *event);
+/**
+ * @brief Pushes an event back so it will be returned by the next
+ *        `input_get_event` call.
+ *
+ * Only a single pending event is supported; if one is already queued,
+ * this function is a no-op.
+ *
+ * @param handler A pointer to the `InputHandler` instance.
+ * @param event A pointer to an `InputEvent` structure to enqueue.
+ * @return `ERROR_NONE` on success, or an appropriate `ErrorCode`.
+ */
+ErrorCode input_unget_event(InputHandler *handler, const InputEvent *event);
 /**
  * @brief Checks if there is any pending input available from the terminal.
  * 
