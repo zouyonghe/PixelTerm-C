@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.3.16: Reduce Zen toggle flicker in single image view.
+    - **Single Image View**: Skip full screen clear when toggling Zen to avoid flashing.
+
 - v1.3.15: Preview selection polish and layout alignment.
     - **Preview Grid**: Update selection highlight by redrawing borders only (no image re-render).
     - **UI**: Align preview and image view header/footer rows.
