@@ -210,9 +210,10 @@ static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_w
     if (app && app->info_visible) {
         height -= 10;
     } else {
-        // Single view reserves: title (row 1), index (row 2), filename (row -1), footer (row -0)
+        // Single view reserves: title (row 1), spacer (row 2), index (row 3),
+        // filename (row -2), spacer (row -1), footer (row -0).
         // Keep image position/size stable even when Zen hides UI text.
-        height -= 4;
+        height -= 6;
     }
     if (height < 1) {
         height = 1;
@@ -1087,7 +1088,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     app_clear_screen_for_refresh(app);
 
     // Title + index area (single image view)
-    const gint image_area_top_row = 3; // Keep layout stable even in Zen (UI hidden)
+    const gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
     if (app->gif_player) {
         gif_player_set_render_area(app->gif_player,
                                    app->term_width,
@@ -1105,7 +1106,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         for (gint i = 0; i < title_pad; i++) putchar(' ');
         printf("%s", title);
 
-        // Row 2: Index indicator centered (numbers only)
+        // Row 2: spacer
+        printf("\033[2;1H\033[2K");
+
+        // Row 3: Index indicator centered (numbers only)
         gint current = app_get_current_index(app) + 1;
         gint total = app_get_total_images(app);
         if (current < 1) current = 1;
@@ -1114,7 +1118,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
         gint idx_len = (gint)strlen(idx_text);
         gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
-        printf("\033[2;1H\033[2K");
+        printf("\033[3;1H\033[2K");
         for (gint i = 0; i < idx_pad; i++) putchar(' ');
         printf("%s", idx_text);
     }
@@ -1169,8 +1173,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 filename_start_col = app->term_width - filename_len;
             }
             
-            // Keep filename on the second-to-last line to keep it outside the image area
-            gint filename_row = (app->term_height >= 2) ? (app->term_height - 1) : 1;
+            // Keep filename on the third-to-last line to keep it outside the image area
+            gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
             printf("\033[%d;%dH", filename_row, filename_start_col + 1);
             printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
             g_free(safe_basename);
@@ -2111,8 +2115,8 @@ static void app_preview_queue_preloads(PixelTermApp *app, const PreviewLayout *l
 static gint app_preview_bottom_reserved_lines(const PixelTermApp *app) {
     (void)app;
     // Keep preview layout stable even when Zen hides UI text.
-    // Row -1: filename, Row -0: footer hints (not drawn in Zen).
-    return 2;
+    // Row -2: filename, Row -1: spacer, Row -0: footer hints (not drawn in Zen).
+    return 3;
 }
 
 static gint app_preview_compute_vertical_offset(const PixelTermApp *app,
@@ -2136,7 +2140,7 @@ static gint app_preview_compute_vertical_offset(const PixelTermApp *app,
 }
 
 static void app_preview_render_selected_filename(PixelTermApp *app) {
-    if (!app || app->ui_text_hidden || app->term_height < 2) {
+    if (!app || app->ui_text_hidden || app->term_height < 3) {
         return;
     }
 
@@ -2147,7 +2151,7 @@ static void app_preview_render_selected_filename(PixelTermApp *app) {
 
     gchar *base = g_path_get_basename(sel_path);
     gchar *safe = sanitize_for_terminal(base);
-    gint row = app->term_height - 1;
+    gint row = app->term_height - 2;
     gint name_len = strlen(safe);
     if (name_len > app->term_width) {
         if (app->term_width > 3) {
