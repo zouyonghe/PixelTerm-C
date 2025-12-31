@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.3.14: Reduce preview grid flicker on selection change.
+    - **Preview Grid**: Redraw only the affected cells and filename when selection changes without scrolling.
+
 - v1.3.13: Fix GIF rendering in Single Image View.
     - **Single Image View**: Prevent GIF frames from overwriting UI text by rendering within the image area.
     - **Rendering**: Stabilize GIF frame placement and fix sixel frame output handling to avoid flicker/ghosting.
