@@ -676,11 +676,16 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     case (KeyCode)'~':
                     case (KeyCode)'`':
                         if (!app->file_manager_mode) {
+                            gboolean info_was_visible = app->info_visible;
                             app->ui_text_hidden = !app->ui_text_hidden;
                             if (app->ui_text_hidden) {
                                 app->info_visible = FALSE;
                             }
-                            app->needs_screen_clear = TRUE;
+                            if (app->preview_mode) {
+                                app->needs_screen_clear = TRUE;
+                            } else if (!info_was_visible) {
+                                app->suppress_full_clear = TRUE;
+                            }
                             app_refresh_display(app);
                         }
                         break;

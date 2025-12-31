@@ -175,6 +175,28 @@ static void app_clear_screen_for_refresh(const PixelTermApp *app) {
     printf("\033[2J\033[H\033[0m");
 }
 
+static void app_clear_single_view_ui_lines(const PixelTermApp *app) {
+    if (!app || app->term_height <= 0) {
+        return;
+    }
+
+    const gint top_rows[] = {1, 2, 3};
+    for (gsize i = 0; i < G_N_ELEMENTS(top_rows); i++) {
+        gint row = top_rows[i];
+        if (row > app->term_height) {
+            continue;
+        }
+        printf("\033[%d;1H\033[2K", row);
+    }
+
+    for (gint row = app->term_height - 2; row <= app->term_height; row++) {
+        if (row < 1) {
+            continue;
+        }
+        printf("\033[%d;1H\033[2K", row);
+    }
+}
+
 // Check if a directory contains image files
 static gboolean directory_contains_images(const gchar *dir_path) {
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
@@ -1085,7 +1107,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (left_pad < 0) left_pad = 0;
 
     // Clear screen and reset terminal state
-    app_clear_screen_for_refresh(app);
+    if (app && app->suppress_full_clear) {
+        app->suppress_full_clear = FALSE;
+        printf("\033[H\033[0m");
+        if (app->ui_text_hidden) {
+            app_clear_single_view_ui_lines(app);
+        }
+    } else {
+        app_clear_screen_for_refresh(app);
+    }
 
     // Title + index area (single image view)
     const gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
@@ -2004,8 +2034,7 @@ static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
         return layout;
     }
 
-    // Keep layout stable even when UI text is hidden
-    const gint header_lines = 3;
+    const gint header_lines = app->ui_text_hidden ? 0 : 3;
     gint usable_width = app->term_width > 0 ? app->term_width : 80;
     gint bottom_reserved = app_preview_bottom_reserved_lines(app);
     gint usable_height = app->term_height > header_lines + bottom_reserved
@@ -2113,9 +2142,10 @@ static void app_preview_queue_preloads(PixelTermApp *app, const PreviewLayout *l
 }
 
 static gint app_preview_bottom_reserved_lines(const PixelTermApp *app) {
-    (void)app;
-    // Keep preview layout stable even when Zen hides UI text.
-    // Row -2: filename, Row -1: spacer, Row -0: footer hints (not drawn in Zen).
+    if (app && app->ui_text_hidden) {
+        return 0;
+    }
+    // Row -2: filename, Row -1: spacer, Row -0: footer hints.
     return 3;
 }
 

@@ -40,6 +40,7 @@ typedef struct {
     gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
     gint return_to_mode;         // Return mode after file manager (0=single, 1=preview, 2=yellow preview, -1=none)
+    gboolean suppress_full_clear; // Skip full clear on next single-image refresh
     
     // Terminal info
     gint term_width;
