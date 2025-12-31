@@ -18,6 +18,8 @@ static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
 static gboolean g_force_sixel = FALSE;
+static gboolean g_has_pending_event = FALSE;
+static InputEvent g_pending_event;
 
 static gboolean probe_sixel_support(void) {
     const char *term_program = getenv("TERM_PROGRAM");
@@ -180,6 +182,38 @@ static ErrorCode validate_path(const char *path, gboolean *is_directory) {
     return ERROR_NONE;
 }
 
+static gboolean key_in_list(KeyCode key, const KeyCode *keys, size_t key_count) {
+    for (size_t i = 0; i < key_count; i++) {
+        if (keys[i] == key) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static void skip_queued_navigation(InputHandler *input_handler,
+                                   const KeyCode *keys,
+                                   size_t key_count) {
+    if (g_has_pending_event) {
+        return;
+    }
+
+    InputEvent skip_event;
+    while (input_has_pending_input(input_handler)) {
+        ErrorCode skip_error = input_get_event(input_handler, &skip_event);
+        if (skip_error != ERROR_NONE) {
+            break;
+        }
+        if (skip_event.type != INPUT_KEY_PRESS ||
+            !key_in_list(skip_event.key_code, keys, key_count)) {
+            g_pending_event = skip_event;
+            g_has_pending_event = TRUE;
+            break;
+        }
+        // Skip this navigation event
+    }
+}
+
 // Main application loop
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
     InputHandler *input_handler = input_handler_create();
@@ -228,6 +262,16 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     // Main event loop
     InputEvent event;
     static gint last_term_width = 0, last_term_height = 0;
+    static const KeyCode nav_keys_lr[] = {
+        KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
+    };
+    static const KeyCode nav_keys_ud[] = {
+        KEY_UP, (KeyCode)'k', KEY_LEFT, (KeyCode)'h', KEY_RIGHT, (KeyCode)'l', KEY_DOWN, (KeyCode)'j',
+        KEY_PAGE_UP, KEY_PAGE_DOWN
+    };
+    static const KeyCode nav_keys_page[] = {
+        KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, (KeyCode)'a'
+    };
     
     // Initialize terminal size tracking
     last_term_width = input_handler->terminal_width;
@@ -323,15 +367,21 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         }
         
         // Check if we have pending input with timeout to allow signal checking
-        if (!input_has_pending_input(input_handler)) {
-            // Use a shorter delay to allow more responsive event processing
-            usleep(10000); // 10ms instead of 50ms for better animation responsiveness
-            continue;
-        }
-        
-        error = input_get_event(input_handler, &event);
-        if (error != ERROR_NONE) {
-            break;
+        if (g_has_pending_event) {
+            event = g_pending_event;
+            g_has_pending_event = FALSE;
+            error = ERROR_NONE;
+        } else {
+            if (!input_has_pending_input(input_handler)) {
+                // Use a shorter delay to allow more responsive event processing
+                usleep(10000); // 10ms instead of 50ms for better animation responsiveness
+                continue;
+            }
+            
+            error = input_get_event(input_handler, &event);
+            if (error != ERROR_NONE) {
+                break;
+            }
         }
 
         // Process input events
@@ -484,25 +534,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         } else if (app->file_manager_mode) {
                             gint old_selected = app->selected_entry;
                             gint old_scroll = app->scroll_offset;
@@ -518,50 +550,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             if (err == ERROR_NONE && state_changed) {
                                 app_render_file_manager(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         } else {
                             gint old_index = app_get_current_index(app);
                             app_previous_image(app);
                             if (old_index != app_get_current_index(app)) {
                                 app_refresh_display(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_LEFT && 
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         }
                         break;
                     case KEY_RIGHT:
@@ -575,25 +571,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         } else if (app->file_manager_mode) {
                             gint old_selected = app->selected_entry;
                             gint old_scroll = app->scroll_offset;
@@ -614,50 +592,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                                 // Keep previous behavior for errors while staying in file manager.
                                 app_render_file_manager(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         } else {
                             gint old_index = app_get_current_index(app);
                             app_next_image(app);
                             if (old_index != app_get_current_index(app)) {
                                 app_refresh_display(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_RIGHT && 
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_lr, G_N_ELEMENTS(nav_keys_lr));
                         }
                         break;
                     case (KeyCode)'i':
@@ -812,27 +754,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_UP && 
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         } else if (app->file_manager_mode) {
                             gint old_selected = app->selected_entry;
                             gint old_scroll = app->scroll_offset;
@@ -840,54 +762,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
                                 app_render_file_manager(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_UP && 
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         } else {
                             gint old_index = app_get_current_index(app);
                             app_previous_image(app);
                             if (old_index != app_get_current_index(app)) {
                                 app_refresh_display(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_UP && 
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         }
                         break;
                     case (KeyCode)'j':
@@ -901,27 +783,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_DOWN && 
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         } else if (app->file_manager_mode) {
                             gint old_selected = app->selected_entry;
                             gint old_scroll = app->scroll_offset;
@@ -929,54 +791,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
                                 app_render_file_manager(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_DOWN && 
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         } else {
                             gint old_index = app_get_current_index(app);
                             app_next_image(app);
                             if (old_index != app_get_current_index(app)) {
                                 app_refresh_display(app);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_DOWN && 
-                                    skip_event.key_code != (KeyCode)'j' &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != (KeyCode)'h' &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'l' &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != (KeyCode)'k' &&
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_PAGE_DOWN) {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_ud, G_N_ELEMENTS(nav_keys_ud));
                         }
                         break;
                     case KEY_PAGE_DOWN:
@@ -989,24 +811,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_PAGE_DOWN && 
-                                    skip_event.key_code != KEY_PAGE_UP &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'a') {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_page, G_N_ELEMENTS(nav_keys_page));
                         }
                         break;
                     case KEY_PAGE_UP:
@@ -1019,24 +824,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             } else if (app->preview_selected != old_selected) {
                                 app_render_preview_selection_change(app, old_selected);
                             }
-                            // Skip any queued navigation key events to prevent skipping when holding keys
-                            InputEvent skip_event;
-                            while (input_has_pending_input(input_handler)) {
-                                ErrorCode skip_error = input_get_event(input_handler, &skip_event);
-                                if (skip_error != ERROR_NONE) break;
-                                if (skip_event.type != INPUT_KEY_PRESS) continue;
-                                if (skip_event.key_code != KEY_PAGE_UP && 
-                                    skip_event.key_code != KEY_PAGE_DOWN &&
-                                    skip_event.key_code != KEY_UP &&
-                                    skip_event.key_code != KEY_DOWN &&
-                                    skip_event.key_code != KEY_LEFT &&
-                                    skip_event.key_code != KEY_RIGHT &&
-                                    skip_event.key_code != (KeyCode)'a') {
-                                    // If we encounter a non-navigation key, put it back by breaking
-                                    break;
-                                }
-                                // Skip this navigation event
-                            }
+                            skip_queued_navigation(input_handler, nav_keys_page, G_N_ELEMENTS(nav_keys_page));
                         }
                         break;
                     case KEY_BACKSPACE:

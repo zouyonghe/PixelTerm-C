@@ -2487,21 +2487,47 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
 
     gint old_selected = app->preview_selected;
     gint old_scroll = app->preview_scroll;
-    gint delta = direction >= 0 ? layout.visible_rows : -layout.visible_rows;
-    if (delta == 0) {
-        delta = direction >= 0 ? 1 : -1;
+    gint rows = layout.rows;
+    gint cols = layout.cols;
+
+    gint current_row = cols > 0 ? app->preview_selected / cols : 0;
+    gint current_col = cols > 0 ? app->preview_selected % cols : 0;
+    gint relative_row = current_row - app->preview_scroll;
+    if (relative_row < 0) relative_row = 0;
+    if (relative_row >= rows_per_page) relative_row = rows_per_page - 1;
+
+    gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
+    gint new_scroll = app->preview_scroll + delta_scroll;
+    gint last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
+    if (last_page_scroll < 0) last_page_scroll = 0;
+    if (new_scroll < 0) new_scroll = 0;
+    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
+
+    gint new_row = new_scroll + relative_row;
+    if (new_row < 0) new_row = 0;
+    if (new_row >= rows) new_row = rows - 1;
+
+    if (current_col < 0) current_col = 0;
+    if (current_col >= cols) current_col = cols - 1;
+
+    gint new_index = new_row * cols + current_col;
+    gint row_start = new_row * cols;
+    gint row_end = MIN(app->total_images - 1, row_start + cols - 1);
+    if (new_index < row_start) new_index = row_start;
+    if (new_index > row_end) new_index = row_end;
+    if (new_index >= app->total_images) new_index = app->total_images - 1;
+    if (new_index < 0) new_index = 0;
+
+    app->preview_scroll = new_scroll;
+    app->preview_selected = new_index;
+
+    if (app->preview_scroll != old_scroll) {
+        app->needs_screen_clear = TRUE;
     }
-    ErrorCode result = app_preview_move_selection(app, delta, 0);
-    if (result == ERROR_NONE) {
-        // Avoid forcing a refresh when selection/scroll didn't change.
-        if (app->preview_scroll != old_scroll) {
-            app->needs_screen_clear = TRUE;
-        }
-        if (app->preview_selected == old_selected && app->preview_scroll == old_scroll) {
-            return ERROR_NONE;
-        }
+    if (app->preview_selected == old_selected && app->preview_scroll == old_scroll) {
+        return ERROR_NONE;
     }
-    return result;
+    return ERROR_NONE;
 }
 
 // Change preview zoom (target cell width) by stepping column count
