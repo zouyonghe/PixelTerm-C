@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.3.15: Preview selection polish and layout alignment.
+    - **Preview Grid**: Update selection highlight by redrawing borders only (no image re-render).
+    - **UI**: Align preview and image view header/footer rows.
+
 - v1.3.14: Reduce preview grid flicker on selection change.
     - **Preview Grid**: Redraw only the affected cells and filename when selection changes without scrolling.
 
