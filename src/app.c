@@ -1088,6 +1088,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     // Title + index area (single image view)
     const gint image_area_top_row = 3; // Keep layout stable even in Zen (UI hidden)
+    if (app->gif_player) {
+        gif_player_set_render_area(app->gif_player,
+                                   app->term_width,
+                                   app->term_height,
+                                   image_area_top_row,
+                                   target_height,
+                                   target_width,
+                                   target_height);
+    }
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = "Image View";
         gint title_len = strlen(title);
@@ -1096,7 +1105,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         for (gint i = 0; i < title_pad; i++) putchar(' ');
         printf("%s", title);
 
-        // Row 3: Index indicator centered (numbers only)
+        // Row 2: Index indicator centered (numbers only)
         gint current = app_get_current_index(app) + 1;
         gint total = app_get_total_images(app);
         if (current < 1) current = 1;
@@ -1105,7 +1114,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
         gint idx_len = (gint)strlen(idx_text);
         gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
-        printf("\033[3;1H\033[2K");
+        printf("\033[2;1H\033[2K");
         for (gint i = 0; i < idx_pad; i++) putchar(' ');
         printf("%s", idx_text);
     }
@@ -1160,14 +1169,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 filename_start_col = app->term_width - filename_len;
             }
             
-            // Move cursor to position just below the image and center the filename
-            gint filename_row = image_top_row + image_height;
-            if (app->term_height >= 2) {
-                // Keep filename on the second-to-last line to leave the last line for footer hints
-                filename_row = MIN(filename_row, app->term_height - 1);
-            } else if (app->term_height == 1) {
-                filename_row = 1;
-            }
+            // Keep filename on the second-to-last line to keep it outside the image area
+            gint filename_row = (app->term_height >= 2) ? (app->term_height - 1) : 1;
             printf("\033[%d;%dH", filename_row, filename_start_col + 1);
             printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
             g_free(safe_basename);

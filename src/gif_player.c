@@ -30,6 +30,17 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel) {
     player->filepath = NULL;
     player->animation = NULL;
     player->iter = NULL;
+    player->render_area_top_row = 0;
+    player->render_area_height = 0;
+    player->render_max_width = 0;
+    player->render_max_height = 0;
+    player->render_term_width = 0;
+    player->render_term_height = 0;
+    player->render_layout_valid = FALSE;
+    player->last_frame_top_row = 0;
+    player->last_frame_height = 0;
+    player->fixed_frame_top_row = 0;
+    player->fixed_frame_valid = FALSE;
     
     // Initialize internal renderer
     player->renderer = renderer_create();
@@ -70,6 +81,39 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer) {
     }
 }
 
+// 设置渲染区域，避免覆盖 UI
+void gif_player_set_render_area(GifPlayer *player,
+                                gint term_width,
+                                gint term_height,
+                                gint area_top_row,
+                                gint area_height,
+                                gint max_width,
+                                gint max_height) {
+    if (!player) {
+        return;
+    }
+
+    gboolean layout_changed = (player->render_term_width != term_width ||
+                               player->render_term_height != term_height ||
+                               player->render_area_top_row != area_top_row ||
+                               player->render_area_height != area_height ||
+                               player->render_max_width != max_width ||
+                               player->render_max_height != max_height);
+
+    player->render_term_width = term_width;
+    player->render_term_height = term_height;
+    player->render_area_top_row = area_top_row;
+    player->render_area_height = area_height;
+    player->render_max_width = max_width;
+    player->render_max_height = max_height;
+    player->render_layout_valid = (area_top_row > 0 && area_height > 0 && max_width > 0 && max_height > 0);
+    if (layout_changed) {
+        player->fixed_frame_valid = FALSE;
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 0;
+    }
+}
+
 // 销毁 GIF 播放器
 void gif_player_destroy(GifPlayer *player) {
     if (!player) {
@@ -94,7 +138,7 @@ void gif_player_destroy(GifPlayer *player) {
     if (player->renderer) {
         renderer_destroy(player->renderer);
     }
-    
+
     g_free(player);
 }
 
@@ -145,6 +189,9 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     
     player->is_animated = !gdk_pixbuf_animation_is_static_image(player->animation);
     player->filepath = g_strdup(filepath);
+    player->fixed_frame_valid = FALSE;
+    player->last_frame_top_row = 0;
+    player->last_frame_height = 0;
     
     // 初始化迭代器
     player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
@@ -160,6 +207,10 @@ static void render_current_frame_internal(GifPlayer *player) {
 
     // Update terminal size for renderer to ensure correct scaling
     renderer_update_terminal_size(player->renderer);
+    if (player->render_layout_valid) {
+        player->renderer->config.max_width = player->render_max_width;
+        player->renderer->config.max_height = player->render_max_height;
+    }
 
     GdkPixbuf *frame = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
     if (!frame) return;
@@ -175,35 +226,101 @@ static void render_current_frame_internal(GifPlayer *player) {
     GString *result = renderer_render_image_data(player->renderer, pixels, width, height, rowstride, n_channels);
     
     if (result) {
-        // 移动光标到顶部，而不是清屏，减少闪烁
-        printf("\033[H");
-        printf("%s", result->str);
-        
-        // 清除图片下方的剩余内容（防止调整大小时出现残影）
-        printf("\033[J");
-        
-        // 显示文件名
-        gint term_w, term_h;
-        renderer_get_rendered_dimensions(player->renderer, &term_w, &term_h);
-        
-        gchar *basename = g_path_get_basename(player->filepath);
-        if (basename) {
-            // 清理文件名中的控制字符
-            for (gchar *p = basename; *p; ++p) {
-                if ((unsigned char)*p < 0x20 || *p == 0x7f) *p = '?';
+        if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
+            gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
+            gint term_h = player->render_term_height;
+            gint area_top = player->render_area_top_row;
+            gint area_bottom = area_top + player->render_area_height - 1;
+            if (term_h > 0 && area_bottom > term_h) {
+                area_bottom = term_h;
             }
-            
-            gint name_len = strlen(basename);
-            gint start_col = (term_w - name_len) / 2;
-            if (start_col < 0) start_col = 0;
-            
-            // 定位到图片下方
-            printf("\033[%d;%dH", term_h + 1, start_col + 1);
-            printf("\033[34m%s\033[0m\n", basename);
-            
-            g_free(basename);
+
+            gint rendered_w = 0, rendered_h = 0;
+            renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
+            gint effective_w = rendered_w > 0 ? rendered_w : player->render_max_width;
+            if (term_w > 0 && effective_w > term_w) {
+                effective_w = term_w;
+            }
+            gint left_pad = (term_w > effective_w) ? (term_w - effective_w) / 2 : 0;
+            if (left_pad < 0) left_pad = 0;
+
+            gint image_top_row = area_top;
+            if (player->fixed_frame_valid) {
+                image_top_row = player->fixed_frame_top_row;
+            } else if (player->render_area_height > 0 && rendered_h > 0 && rendered_h < player->render_area_height) {
+                gint vpad = (player->render_area_height - rendered_h) / 2;
+                if (vpad > 0) {
+                    image_top_row = area_top + vpad;
+                }
+                player->fixed_frame_top_row = image_top_row;
+                player->fixed_frame_valid = TRUE;
+            } else {
+                player->fixed_frame_top_row = image_top_row;
+                player->fixed_frame_valid = TRUE;
+            }
+
+            gchar *pad_buffer = NULL;
+            if (left_pad > 0) {
+                pad_buffer = g_malloc(left_pad);
+                memset(pad_buffer, ' ', left_pad);
+            }
+
+            const gchar *line_ptr = result->str;
+            gint row = image_top_row;
+            gint lines_printed = 0;
+            if (!strchr(result->str, '\n')) {
+                printf("\033[%d;1H", row);
+                if (left_pad > 0) {
+                    fwrite(pad_buffer, 1, left_pad, stdout);
+                }
+                fwrite(result->str, 1, result->len, stdout);
+                lines_printed = rendered_h > 0 ? rendered_h : 1;
+            } else {
+                while (line_ptr && *line_ptr && row <= area_bottom) {
+                    const gchar *newline = strchr(line_ptr, '\n');
+                    gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
+                    printf("\033[%d;1H\033[2K", row);
+                    if (left_pad > 0) {
+                        fwrite(pad_buffer, 1, left_pad, stdout);
+                    }
+                    if (line_len > 0) {
+                        fwrite(line_ptr, 1, line_len, stdout);
+                    }
+                    lines_printed++;
+                    if (!newline) {
+                        break;
+                    }
+                    line_ptr = newline + 1;
+                    row++;
+                }
+            }
+            g_free(pad_buffer);
+            // Clear only rows that were previously used but are no longer covered.
+            if (player->last_frame_height > 0) {
+                gint prev_top = player->last_frame_top_row;
+                gint prev_bottom = prev_top + player->last_frame_height - 1;
+                gint new_top = image_top_row;
+                gint new_bottom = image_top_row + (lines_printed > 0 ? (lines_printed - 1) : -1);
+                if (prev_top < area_top) prev_top = area_top;
+                if (prev_bottom > area_bottom) prev_bottom = area_bottom;
+                for (gint r = prev_top; r <= prev_bottom; r++) {
+                    if (r < new_top || r > new_bottom) {
+                        printf("\033[%d;1H\033[2K", r);
+                    }
+                }
+            }
+
+            player->last_frame_top_row = image_top_row;
+            player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
+        } else {
+            // Fallback to full-frame rendering when layout is unavailable.
+            printf("\033[H");
+            printf("%s", result->str);
+            printf("\033[J");
+            player->last_frame_top_row = 0;
+            player->last_frame_height = 0;
         }
-        
+
         g_string_free(result, TRUE);
         fflush(stdout);
     }
@@ -251,6 +368,9 @@ ErrorCode gif_player_play(GifPlayer *player) {
     }
     
     player->is_playing = TRUE;
+    player->fixed_frame_valid = FALSE;
+    player->last_frame_top_row = 0;
+    player->last_frame_height = 0;
     
     // 立即渲染第一帧
     render_current_frame_internal(player);

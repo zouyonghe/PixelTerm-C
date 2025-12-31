@@ -24,6 +24,19 @@ typedef struct {
     
     // Renderer reference
     ImageRenderer *renderer;
+
+    // Render layout for single image mode
+    gint render_area_top_row;
+    gint render_area_height;
+    gint render_max_width;
+    gint render_max_height;
+    gint render_term_width;
+    gint render_term_height;
+    gboolean render_layout_valid;
+    gint last_frame_top_row;
+    gint last_frame_height;
+    gint fixed_frame_top_row;
+    gboolean fixed_frame_valid;
 } GifPlayer;
 
 // GIF Player functions
@@ -56,6 +69,24 @@ void gif_player_destroy(GifPlayer *player);
  * @param renderer A pointer to the `ImageRenderer` instance to set.
  */
 void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer);
+/**
+ * @brief Sets the render area to avoid overwriting UI text during playback.
+ *
+ * @param player A pointer to the `GifPlayer` instance.
+ * @param term_width Terminal width in characters.
+ * @param term_height Terminal height in characters.
+ * @param area_top_row Top row (1-based) of the image area.
+ * @param area_height Height of the image area in rows.
+ * @param max_width Maximum render width in characters.
+ * @param max_height Maximum render height in characters.
+ */
+void gif_player_set_render_area(GifPlayer *player,
+                                gint term_width,
+                                gint term_height,
+                                gint area_top_row,
+                                gint area_height,
+                                gint max_width,
+                                gint max_height);
 /**
  * @brief Loads a GIF file for playback.
  * 
