@@ -479,6 +479,18 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction);
  */
 ErrorCode app_render_preview_grid(PixelTermApp *app);
 /**
+ * @brief Updates only the affected preview cells after a selection change.
+ *
+ * Redraws the old and new selection cells plus the selected filename line,
+ * avoiding a full grid refresh when the scroll position does not change.
+ *
+ * @param app A pointer to the `PixelTermApp` instance.
+ * @param old_index The previously selected image index.
+ * @return `ERROR_NONE` on successful rendering, or an appropriate `ErrorCode`
+ *         if the application is not in preview mode or no images are loaded.
+ */
+ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index);
+/**
  * @brief Prints brief information for the currently selected item in preview mode.
  * 
  * This function displays details such as filename, path, dimensions, and file size

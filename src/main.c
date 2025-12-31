@@ -284,9 +284,15 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             app->pending_grid_single_click = FALSE;
                             // Execute the deferred "Select image" action
                             gboolean redraw_needed = FALSE;
+                            gint old_selected = app->preview_selected;
+                            gint old_scroll = app->preview_scroll;
                             app_handle_mouse_click_preview(app, app->pending_grid_click_x, app->pending_grid_click_y, &redraw_needed);
                             if (redraw_needed) {
-                                app_render_preview_grid(app);
+                                if (app->preview_scroll != old_scroll) {
+                                    app_render_preview_grid(app);
+                                } else if (app->preview_selected != old_selected) {
+                                    app_render_preview_selection_change(app, old_selected);
+                                }
                             }
                         }
                     }
@@ -410,8 +416,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                     } else if (event.mouse_button == MOUSE_SCROLL_DOWN) {
                         app_preview_page_move(app, 1);
                     }
-                    if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                    if (app->preview_scroll != old_scroll) {
                         app_render_preview_grid(app);
+                    } else if (app->preview_selected != old_selected) {
+                        app_render_preview_selection_change(app, old_selected);
                     }
                 } else {
                     // Handle mouse scroll in single image mode
@@ -471,8 +479,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 0, -1);
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
@@ -560,8 +570,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 0, 1);
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
@@ -790,8 +802,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, -1, 0);
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
@@ -877,8 +891,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_move_selection(app, 1, 0);
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
@@ -963,8 +979,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_page_move(app, 1); // jump a page down
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
@@ -991,8 +1009,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
                             app_preview_page_move(app, -1); // jump a page up
-                            if (app->preview_selected != old_selected || app->preview_scroll != old_scroll) {
+                            if (app->preview_scroll != old_scroll) {
                                 app_render_preview_grid(app);
+                            } else if (app->preview_selected != old_selected) {
+                                app_render_preview_selection_change(app, old_selected);
                             }
                             // Skip any queued navigation key events to prevent skipping when holding keys
                             InputEvent skip_event;
