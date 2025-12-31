@@ -2135,8 +2135,6 @@ static gint app_preview_compute_vertical_offset(const PixelTermApp *app,
     return (available - grid_h) / 2;
 }
 
-static gint app_preview_visible_width(const char *str, gint len);
-
 static void app_preview_render_selected_filename(PixelTermApp *app) {
     if (!app || app->ui_text_hidden || app->term_height < 2) {
         return;
@@ -2172,115 +2170,93 @@ static void app_preview_render_selected_filename(PixelTermApp *app) {
     g_free(base);
 }
 
-static void app_preview_render_cell(PixelTermApp *app,
-                                    const PreviewLayout *layout,
-                                    ImageRenderer *renderer,
-                                    gint index,
-                                    gint start_row,
-                                    gint vertical_offset,
-                                    gint content_width,
-                                    gint content_height) {
-    if (!app || !layout || !renderer) {
-        return;
+static gboolean app_preview_get_cell_origin(const PixelTermApp *app,
+                                            const PreviewLayout *layout,
+                                            gint index,
+                                            gint start_row,
+                                            gint vertical_offset,
+                                            gint *cell_x,
+                                            gint *cell_y) {
+    if (!app || !layout || !cell_x || !cell_y) {
+        return FALSE;
     }
     if (index < 0 || index >= app->total_images) {
-        return;
+        return FALSE;
     }
-
     gint row = index / layout->cols;
     gint col = index % layout->cols;
     if (row < start_row || row >= start_row + layout->visible_rows) {
+        return FALSE;
+    }
+    *cell_x = col * layout->cell_width + 1;
+    *cell_y = layout->header_lines + vertical_offset + (row - start_row) * layout->cell_height + 1;
+    return TRUE;
+}
+
+static void app_preview_clear_cell_border(const PixelTermApp *app,
+                                          const PreviewLayout *layout,
+                                          gint index,
+                                          gint start_row,
+                                          gint vertical_offset) {
+    if (!app || !layout) {
         return;
     }
-
-    const gchar *filepath = (const gchar*)g_list_nth_data(app->image_files, index);
-    if (!filepath) {
+    if (layout->cell_width < 4 || layout->cell_height < 4) {
         return;
     }
-
-    gint cell_x = col * layout->cell_width + 1;
-    gint cell_y = layout->header_lines + vertical_offset + (row - start_row) * layout->cell_height + 1;
-
-    gboolean selected = (index == app->preview_selected);
-    gboolean use_border = selected &&
-                          layout->cell_width >= 4 &&
-                          layout->cell_height >= 4;
-
-    gint content_x = cell_x + 1;
-    gint content_y = cell_y + 1;
-
-    const char *border_style = (app->return_to_mode == 2) ? "\033[33;1m" : "\033[34;1m";
-    for (gint line = 0; line < layout->cell_height; line++) {
-        gint y = cell_y + line;
-        printf("\033[%d;%dH", y, cell_x);
-        for (gint c = 0; c < layout->cell_width; c++) {
-            putchar(' ');
-        }
-
-        if (use_border) {
-            if (line == 0 || line == layout->cell_height - 1) {
-                printf("\033[%d;%dH%s+", y, cell_x, border_style);
-                for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
-                printf("+\033[0m");
-            } else {
-                printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
-                printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout->cell_width - 1, border_style);
-            }
-        }
-    }
-
-    gboolean rendered_from_preload = FALSE;
-    gboolean rendered_from_renderer_cache = FALSE;
-
-    GString *rendered = NULL;
-    if (app->preloader && app->preload_enabled) {
-        rendered = preloader_get_cached_image(app->preloader, filepath, content_width, content_height);
-        rendered_from_preload = (rendered != NULL);
-    }
-    if (!rendered) {
-        rendered = renderer_render_image_file(renderer, filepath);
-        if (rendered) {
-            GString *cached_entry = renderer_cache_get(renderer, filepath);
-            rendered_from_renderer_cache = (cached_entry == rendered);
-        }
-    }
-    if (!rendered) {
+    gint cell_x = 0;
+    gint cell_y = 0;
+    if (!app_preview_get_cell_origin(app, layout, index, start_row, vertical_offset, &cell_x, &cell_y)) {
         return;
-    }
-
-    if (!rendered_from_preload && app->preloader && app->preload_enabled) {
-        gint rendered_w = 0, rendered_h = 0;
-        renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
-        preloader_cache_add(app->preloader, filepath, rendered, rendered_w, rendered_h, content_width, content_height);
-    }
-
-    gint line_no = 0;
-    char *line_cursor = rendered->str;
-    while (line_cursor && line_no < content_height) {
-        char *newline = strchr(line_cursor, '\n');
-        gint line_len = newline ? (gint)(newline - line_cursor) : (gint)strlen(line_cursor);
-
-        gint visible_len = app_preview_visible_width(line_cursor, line_len);
-        gint pad_left = 0;
-        if (content_width > visible_len) {
-            pad_left = (content_width - visible_len) / 2;
-        }
-
-        printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
-        fwrite(line_cursor, 1, line_len, stdout);
-
-        if (!newline) {
-            break;
-        }
-        line_cursor = newline + 1;
-        line_no++;
     }
 
     printf("\033[0m");
+    printf("\033[%d;%dH", cell_y, cell_x);
+    for (gint c = 0; c < layout->cell_width; c++) putchar(' ');
 
-    if (!rendered_from_renderer_cache) {
-        g_string_free(rendered, TRUE);
+    gint bottom_y = cell_y + layout->cell_height - 1;
+    printf("\033[%d;%dH", bottom_y, cell_x);
+    for (gint c = 0; c < layout->cell_width; c++) putchar(' ');
+
+    for (gint line = 1; line < layout->cell_height - 1; line++) {
+        gint y = cell_y + line;
+        printf("\033[%d;%dH ", y, cell_x);
+        printf("\033[%d;%dH ", y, cell_x + layout->cell_width - 1);
     }
+}
+
+static void app_preview_draw_cell_border(const PixelTermApp *app,
+                                         const PreviewLayout *layout,
+                                         gint index,
+                                         gint start_row,
+                                         gint vertical_offset) {
+    if (!app || !layout) {
+        return;
+    }
+    if (layout->cell_width < 4 || layout->cell_height < 4) {
+        return;
+    }
+    gint cell_x = 0;
+    gint cell_y = 0;
+    if (!app_preview_get_cell_origin(app, layout, index, start_row, vertical_offset, &cell_x, &cell_y)) {
+        return;
+    }
+
+    const char *border_style = (app->return_to_mode == 2) ? "\033[33;1m" : "\033[34;1m";
+    printf("\033[%d;%dH%s+", cell_y, cell_x, border_style);
+    for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
+    printf("+\033[0m");
+
+    for (gint line = 1; line < layout->cell_height - 1; line++) {
+        gint y = cell_y + line;
+        printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
+        printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout->cell_width - 1, border_style);
+    }
+
+    gint bottom_y = cell_y + layout->cell_height - 1;
+    printf("\033[%d;%dH%s+", bottom_y, cell_x, border_style);
+    for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
+    printf("+\033[0m");
 }
 
 // Print brief info for the currently selected preview item on the status line
@@ -2925,44 +2901,17 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
 
     app_preview_queue_preloads(app, &layout);
 
-    gint content_width = layout.cell_width - 2;
-    gint content_height = layout.cell_height - 2;
-    if (content_width < 1) content_width = 1;
-    if (content_height < 1) content_height = 1;
-
-    RendererConfig config = {
-        .max_width = MAX(2, content_width),
-        .max_height = MAX(2, content_height),
-        .preserve_aspect_ratio = TRUE,
-        .dither = app->dither_enabled,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = app->render_work_factor,
-        .force_sixel = app->force_sixel,
-        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
-        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
-    };
-    ImageRenderer *renderer = renderer_create();
-    if (!renderer) {
-        return ERROR_MEMORY_ALLOC;
-    }
-    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
-        renderer_destroy(renderer);
-        return ERROR_CHAFA_INIT;
-    }
-
     gint start_row = app->preview_scroll;
     gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
     gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
 
     if (old_index != app->preview_selected) {
-        app_preview_render_cell(app, &layout, renderer, old_index, start_row, vertical_offset, content_width, content_height);
+        app_preview_clear_cell_border(app, &layout, old_index, start_row, vertical_offset);
     }
-    app_preview_render_cell(app, &layout, renderer, app->preview_selected, start_row, vertical_offset, content_width, content_height);
+    app_preview_draw_cell_border(app, &layout, app->preview_selected, start_row, vertical_offset);
     app_preview_render_selected_filename(app);
 
     fflush(stdout);
-    renderer_destroy(renderer);
     return ERROR_NONE;
 }
 

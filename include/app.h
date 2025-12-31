@@ -481,8 +481,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app);
 /**
  * @brief Updates only the affected preview cells after a selection change.
  *
- * Redraws the old and new selection cells plus the selected filename line,
- * avoiding a full grid refresh when the scroll position does not change.
+ * Updates only the selection border and filename line when the scroll position
+ * does not change, avoiding a full grid refresh.
  *
  * @param app A pointer to the `PixelTermApp` instance.
  * @param old_index The previously selected image index.
