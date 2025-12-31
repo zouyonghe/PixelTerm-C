@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.3.13: Fix GIF rendering in Single Image View.
+    - **Single Image View**: Prevent GIF frames from overwriting UI text by rendering within the image area.
+    - **Rendering**: Stabilize GIF frame placement and fix sixel frame output handling to avoid flicker/ghosting.
+    - **UI**: Keep the filename on the second-to-last line and move the index indicator to row 2.
+
 - v1.3.12: Sixel probing and CLI cleanup.
     - **Rendering**: Probe for sixel support when `TERM_PROGRAM` is missing and force sixel output when supported.
     - **CLI**: Remove `--term` option; help output no longer lists control keys.
