@@ -4,6 +4,9 @@
 
 #include "common.h"
 
+void register_browser_tests(void);
+void register_renderer_tests(void);
+
 static void remove_path(gpointer data) {
     if (!data) {
         return;
@@ -137,6 +140,12 @@ static void test_cleanup_helpers(void) {
     g_assert_null(value);
 }
 
+static void test_error_code_to_string(void) {
+    g_assert_cmpstr(error_code_to_string(ERROR_NONE), ==, "No error");
+    g_assert_cmpstr(error_code_to_string(ERROR_INVALID_ARGS), ==, "Invalid arguments");
+    g_assert_cmpstr(error_code_to_string((ErrorCode)999), ==, "Unknown error");
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
 
@@ -147,6 +156,9 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_valid_image_file", test_is_valid_image_file);
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
+    g_test_add_func("/common/error_code_to_string", test_error_code_to_string);
+    register_browser_tests();
+    register_renderer_tests();
 
     return g_test_run();
 }

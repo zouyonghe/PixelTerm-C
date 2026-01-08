@@ -49,8 +49,16 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 $(OBJDIR)/test_common.o: tests/test_common.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+# Compile test sources
+$(OBJDIR)/test_browser.o: tests/test_browser.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Compile test sources
+$(OBJDIR)/test_renderer.o: tests/test_renderer.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
 # Build test executable
-$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/common.o | $(BINDIR)
+$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/test_browser.o $(OBJDIR)/test_renderer.o $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o | $(BINDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Debug build
