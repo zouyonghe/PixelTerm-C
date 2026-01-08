@@ -25,6 +25,7 @@ BINDIR = bin
 SOURCES = $(wildcard $(SRCDIR)/*.c)
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 TARGET = $(BINDIR)/pixelterm
+TEST_TARGET = $(BINDIR)/pixelterm-tests
 
 # Default target
 all: $(TARGET)
@@ -44,6 +45,14 @@ $(TARGET): $(OBJECTS) | $(BINDIR)
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+# Compile test sources
+$(OBJDIR)/test_common.o: tests/test_common.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Build test executable
+$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/common.o | $(BINDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+
 # Debug build
 debug: CFLAGS += $(DEBUG_CFLAGS)
 debug: clean all
@@ -58,9 +67,9 @@ install: $(TARGET)
 	$(INSTALL) -m 0755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/pixelterm"
 
 # Test
-test: $(TARGET)
-	@echo "Running basic tests..."
-	@echo "No tests defined yet"
+test: $(TEST_TARGET)
+	@echo "Running tests..."
+	@$(TEST_TARGET)
 
 # Run with sample image
 run: $(TARGET)
