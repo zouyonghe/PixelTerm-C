@@ -13,6 +13,8 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 ## 🌟 特性
 
 - 🖼️ **多格式支持** - 支持JPG、PNG、GIF、BMP、WebP、TIFF等主流图像格式
+- 🎬 **动画GIF支持** - 终端内播放动图，时序准确、渲染清晰
+- 🎨 **TrueColor渲染** - 全24位色彩支持，自动检测与优化
 - 📁 **智能浏览** - 自动检测目录中的图像文件，支持目录导航
 - ⌨️ **键盘导航** - 使用方向键在图像间切换，支持各种终端环境
 - 📏 **自适应显示** - 自动适应终端大小变化
@@ -87,6 +89,9 @@ git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
 
+# 可执行文件输出在 ./bin/pixelterm
+# （或使用：sudo make install 安装到系统）
+
 # 交叉编译到aarch64
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # 注意：交叉编译是实验性的，需要宿主系统正确安装对应的架构依赖库。
@@ -96,36 +101,36 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 ```bash
 # 查看单个图像（直接进入图像查看器）
-./pixelterm /path/to/image.jpg
+./bin/pixelterm /path/to/image.jpg
 
 # 浏览目录（进入文件管理器模式）
-./pixelterm /path/to/directory
+./bin/pixelterm /path/to/directory
 
 # 在当前目录运行（进入文件管理器模式）
-./pixelterm
+./bin/pixelterm
 
 # 显示版本
-./pixelterm --version
+./bin/pixelterm --version
 
 # 显示帮助
-./pixelterm --help
+./bin/pixelterm --help
 
 # 禁用预加载
-./pixelterm --no-preload /path/to/images
+./bin/pixelterm --no-preload /path/to/images
 
 # 禁用备用屏幕缓冲区
-./pixelterm --no-alt-screen /path/to/images
+./bin/pixelterm --no-alt-screen /path/to/images
 
 # 改善部分终端的界面显示（可能降低性能）
-./pixelterm --clear-workaround /path/to/images
+./bin/pixelterm --clear-workaround /path/to/images
 
 # 启用抖动
-./pixelterm -D /path/to/image.jpg
+./bin/pixelterm -D /path/to/image.jpg
 # 或
-./pixelterm --dither /path/to/image.jpg
+./bin/pixelterm --dither /path/to/image.jpg
 
 # 调整渲染 work factor（1-9，越高越慢但质量更好）
-./pixelterm --work-factor 7 /path/to/image.jpg
+./bin/pixelterm --work-factor 7 /path/to/image.jpg
 
 ```
 
@@ -171,7 +176,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | i | 切换图像信息显示 |
 | `~` / `` ` `` | 切换Zen模式（隐藏/显示所有文字信息） |
 | r | 删除当前图像 |
-| D | 切换抖动开/关 |
+| d/D | 切换抖动开/关 |
 
 ### 网格预览（缩略图模式）
 
@@ -187,7 +192,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | TAB | 在图像视图 / 网格预览 / 文件管理器间循环切换 |
 | `~` / `` ` `` | 切换Zen模式（隐藏/显示所有文字信息） |
 | r | 删除选中图像 |
-| D | 切换抖动开/关 |
+| d/D | 切换抖动开/关 |
+| +/= | 放大 |
+| - | 缩小 |
 
 ### 文件管理器模式
 
@@ -199,6 +206,7 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 | ↑/↓ | 向上/向下导航条目 |
 | Enter | 打开选中目录或文件 |
 | TAB | 在图像视图 / 网格预览 / 文件管理器间循环切换 |
+| Backspace | 显示/隐藏隐藏文件 |
 | 任意字母键 (a-z/A-Z) | 跳转到以该字母开头的下一个条目 |
 
 ## 📄 许可证

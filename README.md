@@ -89,6 +89,9 @@ git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
 
+# The binary will be at ./bin/pixelterm
+# (Or install system-wide with: sudo make install)
+
 # For cross-compilation to aarch64
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 # Note: Cross-compilation is experimental and requires corresponding architecture-specific dependency libraries to be correctly installed on the host system.
@@ -98,36 +101,36 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 ```bash
 # View single image (opens image viewer directly)
-./pixelterm /path/to/image.jpg
+./bin/pixelterm /path/to/image.jpg
 
 # Browse directory (launches file manager mode)
-./pixelterm /path/to/directory
+./bin/pixelterm /path/to/directory
 
 # Run in current directory (launches file manager mode)
-./pixelterm
+./bin/pixelterm
 
 # Show version
-./pixelterm --version
+./bin/pixelterm --version
 
 # Show help
-./pixelterm --help
+./bin/pixelterm --help
 
 # Disable preloading
-./pixelterm --no-preload /path/to/images
+./bin/pixelterm --no-preload /path/to/images
 
 # Disable alternate screen buffer
-./pixelterm --no-alt-screen /path/to/images
+./bin/pixelterm --no-alt-screen /path/to/images
 
 # Improve UI appearance on some terminals (may reduce performance)
-./pixelterm --clear-workaround /path/to/images
+./bin/pixelterm --clear-workaround /path/to/images
 
 # Enable dithering
-./pixelterm -D /path/to/image.jpg
+./bin/pixelterm -D /path/to/image.jpg
 # Or
-./pixelterm --dither /path/to/image.jpg
+./bin/pixelterm --dither /path/to/image.jpg
 
 # Adjust rendering work factor (1-9, higher is slower but higher quality)
-./pixelterm --work-factor 7 /path/to/image.jpg
+./bin/pixelterm --work-factor 7 /path/to/image.jpg
 
 ```
 
@@ -173,7 +176,7 @@ This is the default mode when viewing a single image.
 | i | Toggle image information display |
 | `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete current image |
-| D | Toggle dithering on/off |
+| d/D | Toggle dithering on/off |
 
 ### Grid Preview (Thumbnail Mode)
 
@@ -189,7 +192,9 @@ This mode displays multiple image thumbnails in a grid.
 | TAB | Cycle between Image View / Grid Preview / File Manager |
 | `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete selected image |
-| D | Toggle dithering on/off |
+| d/D | Toggle dithering on/off |
+| +/= | Zoom in |
+| - | Zoom out |
 
 ### File Manager Mode
 
@@ -201,6 +206,7 @@ This mode allows browsing through directories and files. Note that Vim-style nav
 | ↑/↓ | Navigate entries up/down |
 | Enter | Open selected directory or file |
 | TAB | Cycle between Image View / Grid Preview / File Manager |
+| Backspace | Toggle hidden files |
 | Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
 
 

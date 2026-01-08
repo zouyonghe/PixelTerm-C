@@ -1,9 +1,9 @@
 # PixelTerm-C Project Status
 
 ## Overview
-- **Current Version**: v1.3.8
+- **Current Version**: v1.4.0
 - **Status**: Production ready
-- **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf, pthread
+- **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf, gio-2.0, pthread
 
 ## Repository Structure
 ```
@@ -23,9 +23,10 @@ PixelTerm-C/
 ## Feature Summary
 - Image viewing for common formats (PNG, JPEG, GIF, WebP, TIFF, BMP)
 - Animated GIF playback
-- File browser with preview grid
+- File browser with preview grid and paging
 - Background preloading and LRU cache
 - Mouse and keyboard navigation
+- Dithering toggle and work-factor quality control
 
 ## Testing
 - Manual verification on supported terminals

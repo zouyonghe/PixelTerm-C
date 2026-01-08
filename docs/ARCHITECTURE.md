@@ -101,9 +101,9 @@ typedef struct {
 - **Animated**: GIF, WebP animation
 
 ### Directory Scanning
-- **Parallel Processing**: Multiple threads for large directories
-- **Filtering**: Efficient file type detection
-- **Sorting**: Optimize for navigation patterns
+- **Single-Threaded Scan**: Directory traversal happens on the main thread.
+- **Filtering**: Image lists rely on `is_valid_image_file` (magic header checks).
+- **Sorting**: File manager groups directories before files and sorts entries in AaBb order; image lists reuse the same AaBb ordering for consistency.
 
 ## Error Handling Strategy
 
@@ -152,9 +152,8 @@ typedef struct {
 - **Windows**: Experimental, requires WSL or similar
 
 ### Build System
-- **Autotools**: For maximum compatibility
-- **CMake**: Modern alternative
-- **Make**: Simple fallback
+- **Makefile**: Uses pkg-config for Chafa/GLib/GDK-Pixbuf/GIO and outputs `bin/pixelterm`.
+- **Cross-Compile**: `ARCH=aarch64` switches pkg-config paths for ARM64 builds.
 
 ## Future Optimization Opportunities
 

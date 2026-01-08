@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.3.8 with mouse support, animated GIF playback, dithering control, and advanced navigation modes.
+**Current Status**: ✅ **PRODUCTION READY** - v1.4.0 with mouse support, animated GIF playback, dithering control, input refactor, and preview paging polish.
 
 ## Technical Architecture
 
@@ -19,33 +19,55 @@ PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image b
 ```c
 typedef struct {
     ChafaCanvas *canvas;
-    ChafaCanvasConfig *config;
+    ChafaCanvasConfig *canvas_config;
     ChafaTermInfo *term_info;
+
     GList *image_files;
+    gchar *current_directory;
     gint current_index;
-    gboolean running;
-    GThread *preload_thread;
-    GMutex preload_mutex;
-    GQueue *preload_queue;
+    gint total_images;
+
+    ImagePreloader *preloader;
+    GifPlayer *gif_player;
+
+    gboolean preview_mode;
+    gboolean file_manager_mode;
+    gboolean preload_enabled;
+    gboolean dither_enabled;
+    gint render_work_factor;
+    gboolean force_sixel;
+
+    gint term_width;
+    gint term_height;
 } PixelTermApp;
 ```
+See `include/app.h` for the full state definition.
 
 #### 3. File Browser (src/browser.h, src/browser.c)
-- Directory scanning
-- Image file filtering
-- File list management
+- Image directory scanning
+- Image file filtering/validation
+- File list management for the viewer
 
-#### 4. Image Renderer (src/renderer.h, src/renderer.c)
+#### 4. File Manager (src/app.c)
+- Directory listing for mixed files/folders
+- Hidden file toggling and AaBb sorting
+- Selection, paging, and navigation logic
+
+#### 5. Image Renderer (src/renderer.h, src/renderer.c)
 - Direct Chafa canvas integration
 - Image processing and display
 - Caching system
 
-#### 5. Input Handler (src/input.h, src/input.c)
+#### 6. GIF Player (src/gif_player.h, src/gif_player.c)
+- Animated GIF decoding and playback
+- Frame timing and render window management
+
+#### 7. Input Handler (src/input.h, src/input.c)
 - Keyboard input processing
 - Terminal mode management
 - Key mapping
 
-#### 6. Preloading System (src/preloader.h, src/preloader.c)
+#### 8. Preloading System (src/preloader.h, src/preloader.c)
 - Multi-threaded image preloading
 - Memory management
 - Cache coordination
@@ -59,7 +81,7 @@ typedef struct {
 - [x] Basic error handling
 
 ### Phase 2: Core Features ✅ COMPLETED
-- [x] Complete keyboard support (hjkl, i, r, q)
+- [x] Complete keyboard support (arrows, hjkl in image/preview, i, r, Tab)
 - [x] Preloading system implementation
 - [x] File management (delete, info display)
 - [x] Memory optimization
@@ -116,21 +138,18 @@ GString *output = chafa_canvas_print(canvas, term_info);
 - GCC or Clang with C11 support
 - Chafa development libraries
 - GLib 2.0 development libraries
+- GDK-Pixbuf development libraries
+- GIO development libraries (glib)
 - Make or compatible build system
 
 ### Build System
-```makefile
-CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -O2
-LIBS = -lchafa -lglib-2.0 -lpthread
+The project ships a Makefile using pkg-config. Typical commands:
+```bash
+make
+# Outputs: bin/pixelterm
 
-all: pixelterm-c
-
-pixelterm-c: src/main.o src/app.o src/browser.o src/renderer.o src/input.o src/preloader.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
-
-clean:
-	rm -f src/*.o pixelterm-c
+make debug
+make ARCH=aarch64
 ```
 
 ## Testing Strategy
@@ -168,12 +187,7 @@ clean:
 ## Debugging and Profiling
 
 ### Debug Builds
-```makefile
-DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address -fsanitize=thread
-
-debug: CFLAGS += $(DEBUG_CFLAGS)
-debug: clean all
-```
+`make debug` enables AddressSanitizer with debug symbols.
 
 ### Profiling
 - Use gprof for performance profiling

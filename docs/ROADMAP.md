@@ -1,7 +1,7 @@
 # PixelTerm-C Roadmap
 
 ## Current Status
-Core functionality is complete and stable as of v1.3.8. Ongoing work focuses on
+Core functionality is complete and stable as of v1.4.0. Ongoing work focuses on
 terminal compatibility and rendering quality across SSH sessions.
 
 ## Near-Term Ideas
