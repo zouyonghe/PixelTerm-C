@@ -2590,12 +2590,18 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
 }
 
 // Handle mouse click in preview grid mode
-ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y, gboolean *redraw_needed) {
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
+                                         gint mouse_x,
+                                         gint mouse_y,
+                                         gboolean *redraw_needed,
+                                         gboolean *out_hit) {
     if (!app || !app->preview_mode) {
         if (redraw_needed) *redraw_needed = FALSE;
+        if (out_hit) *out_hit = FALSE;
         return ERROR_MEMORY_ALLOC;
     }
     if (redraw_needed) *redraw_needed = FALSE; // Default to no redraw
+    if (out_hit) *out_hit = FALSE; // Default to no hit
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     gint start_row = app->preview_scroll;
@@ -2624,6 +2630,7 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint m
 
     // Check if index is valid
     if (index >= 0 && index < app->total_images) {
+        if (out_hit) *out_hit = TRUE;
         if (app->preview_selected != index) { // Check if selection actually changed
             app->preview_selected = index;
             app->current_index = index; // Also update current index for consistency

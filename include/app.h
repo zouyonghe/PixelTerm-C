@@ -523,10 +523,16 @@ ErrorCode app_preview_print_info(PixelTermApp *app);
  * @param mouse_y The Y-coordinate of the mouse click.
  * @param redraw_needed A boolean pointer that will be set to `TRUE` if the
  *                      click resulted in a change requiring a screen redraw.
+ * @param out_hit A boolean pointer that will be set to `TRUE` if the click
+ *                landed on a valid image cell in the grid.
  * @return `ERROR_NONE` on success, or `ERROR_MEMORY_ALLOC` if the app
  *         is NULL or not in preview mode.
  */
-ErrorCode app_handle_mouse_click_preview(PixelTermApp *app, gint mouse_x, gint mouse_y, gboolean *redraw_needed);
+ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
+                                         gint mouse_x,
+                                         gint mouse_y,
+                                         gboolean *redraw_needed,
+                                         gboolean *out_hit);
 
 // Display functions
 /**

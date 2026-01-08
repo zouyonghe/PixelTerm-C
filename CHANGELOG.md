@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.4.1: Preview grid double-click hit testing.
+    - **Preview Grid**: Ignore double-clicks on empty grid space to avoid unintended mode switches.
+    - **Input**: Expose hit flag from preview grid click handling for callers to detect valid clicks.
+
 - v1.4.0: Input refactor and preview paging polish.
     - **Input**: Split per-mode event handling, add input event pushback/peek support, and remove main-loop pending event globals.
     - **Preview Grid**: PageUp/PageDown now keep the selection's row position while paging.

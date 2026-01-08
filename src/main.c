@@ -254,7 +254,11 @@ static void handle_mouse_double_click_preview(PixelTermApp *app, const InputEven
     app->pending_grid_single_click = FALSE;
 
     gboolean redraw_needed = FALSE;
-    app_handle_mouse_click_preview(app, event->mouse_x, event->mouse_y, &redraw_needed);
+    gboolean hit = FALSE;
+    app_handle_mouse_click_preview(app, event->mouse_x, event->mouse_y, &redraw_needed, &hit);
+    if (!hit) {
+        return;
+    }
 
     if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
         app->return_to_mode = RETURN_MODE_PREVIEW;
@@ -886,7 +890,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                             gboolean redraw_needed = FALSE;
                             gint old_selected = app->preview_selected;
                             gint old_scroll = app->preview_scroll;
-                            app_handle_mouse_click_preview(app, app->pending_grid_click_x, app->pending_grid_click_y, &redraw_needed);
+                            app_handle_mouse_click_preview(app,
+                                                           app->pending_grid_click_x,
+                                                           app->pending_grid_click_y,
+                                                           &redraw_needed,
+                                                           NULL);
                             if (redraw_needed) {
                                 if (app->preview_scroll != old_scroll) {
                                     app_render_preview_grid(app);
