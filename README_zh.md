@@ -59,7 +59,7 @@ sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
 
 ```bash
 # 使用包管理器安装（推荐）
-# Arch Linux: pacman -S pixelterm-c
+# Arch Linux: paru -S pixelterm-c 或yay -S pixelterm-c
 
 # 或下载对应架构的二进制文件
 # AMD64:
