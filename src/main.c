@@ -33,11 +33,6 @@ static const KeyCode g_nav_keys_page[] = {
 };
 
 static gboolean probe_sixel_support(void) {
-    const char *term_program = getenv("TERM_PROGRAM");
-    if (term_program && term_program[0] != '\0') {
-        return FALSE;
-    }
-
     InputHandler *probe = input_handler_create();
     if (!probe) {
         return FALSE;

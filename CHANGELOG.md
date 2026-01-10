@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.4.2: Runtime safety and terminal handling fixes.
+    - **GIF**: Guard renderer initialization failures and avoid double-free when an external renderer is injected.
+    - **Input**: Only enable/disable mouse tracking on TTY outputs to avoid control code leaks.
+    - **Rendering**: Always probe sixel support instead of short-circuiting on `TERM_PROGRAM`.
+
 - v1.4.1: Preview grid double-click hit testing.
     - **Preview Grid**: Ignore double-clicks on empty grid space to avoid unintended mode switches.
     - **Input**: Expose hit flag from preview grid click handling for callers to detect valid clicks.

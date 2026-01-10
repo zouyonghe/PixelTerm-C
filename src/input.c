@@ -144,6 +144,10 @@ ErrorCode input_enable_mouse(InputHandler *handler) {
         return ERROR_NONE;
     }
 
+    if (!isatty(STDOUT_FILENO)) {
+        return ERROR_NONE;
+    }
+
     // Enable mouse tracking with button event tracking (supports scroll wheel)
     printf("\033[?1002;1006h");
     fflush(stdout);
@@ -155,6 +159,11 @@ ErrorCode input_enable_mouse(InputHandler *handler) {
 // Disable mouse tracking
 ErrorCode input_disable_mouse(InputHandler *handler) {
     if (!handler || !handler->mouse_enabled) {
+        return ERROR_NONE;
+    }
+
+    if (!isatty(STDOUT_FILENO)) {
+        handler->mouse_enabled = FALSE;
         return ERROR_NONE;
     }
 

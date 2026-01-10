@@ -24,6 +24,7 @@ typedef struct {
     
     // Renderer reference
     ImageRenderer *renderer;
+    gboolean owns_renderer;
 
     // Render layout for single image mode
     gint render_area_top_row;
@@ -63,7 +64,8 @@ void gif_player_destroy(GifPlayer *player);
  * @brief Sets the image renderer to be used by the GIF player.
  * 
  * This allows the GIF player to use a specific `ImageRenderer` instance
- * for processing and rendering GIF frames.
+ * for processing and rendering GIF frames. The caller retains ownership
+ * of the renderer provided here.
  * 
  * @param player A pointer to the `GifPlayer` instance.
  * @param renderer A pointer to the `ImageRenderer` instance to set.

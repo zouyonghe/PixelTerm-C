@@ -41,6 +41,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel) {
     player->last_frame_height = 0;
     player->fixed_frame_top_row = 0;
     player->fixed_frame_valid = FALSE;
+    player->owns_renderer = FALSE;
     
     // Initialize internal renderer
     player->renderer = renderer_create();
@@ -63,7 +64,12 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel) {
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
         };
-        renderer_initialize(player->renderer, &config);
+        if (renderer_initialize(player->renderer, &config) == ERROR_NONE) {
+            player->owns_renderer = TRUE;
+        } else {
+            renderer_destroy(player->renderer);
+            player->renderer = NULL;
+        }
     }
 
     return player;
@@ -74,10 +80,11 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer) {
     if (player) {
         // If we had an internal renderer and we're replacing it, we should arguably destroy the old one
         // IF we knew we owned it. For simplicity, let's assume this is called right after new() if at all.
-        if (player->renderer && player->renderer != renderer) {
+        if (player->renderer && player->renderer != renderer && player->owns_renderer) {
             renderer_destroy(player->renderer);
         }
         player->renderer = renderer;
+        player->owns_renderer = FALSE;
     }
 }
 
@@ -135,7 +142,7 @@ void gif_player_destroy(GifPlayer *player) {
         g_object_unref(player->animation);
     }
     
-    if (player->renderer) {
+    if (player->renderer && player->owns_renderer) {
         renderer_destroy(player->renderer);
     }
 
