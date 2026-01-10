@@ -5,6 +5,7 @@
 #include "common.h"
 
 void register_browser_tests(void);
+void register_gif_player_tests(void);
 void register_renderer_tests(void);
 
 static void remove_path(gpointer data) {
@@ -158,6 +159,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
     g_test_add_func("/common/error_code_to_string", test_error_code_to_string);
     register_browser_tests();
+    register_gif_player_tests();
     register_renderer_tests();
 
     return g_test_run();
