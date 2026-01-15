@@ -1,5 +1,8 @@
 # PixelTerm-C - High Performance Terminal Image Viewer
 
+![Version](https://img.shields.io/badge/Version-v1.4.2-blue)
+![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
+
 *English | [中文](README_zh.md)*
 
 🖼️ A high-performance terminal image browser written in C, based on the [Chafa](https://github.com/hpjansson/chafa) library.

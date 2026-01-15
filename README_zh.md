@@ -1,5 +1,8 @@
 # PixelTerm-C - 高性能终端图像查看器
 
+![Version](https://img.shields.io/badge/Version-v1.4.2-blue)
+![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
+
 *[English](README.md) | 中文*
 
 🖼️ 基于[Chafa](https://github.com/hpjansson/chafa)库编写的C语言高性能终端图像浏览器。
