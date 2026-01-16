@@ -46,6 +46,12 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 *图片由zimage生成，终端使用：Warp*
 
+当前测试中，图片效果相对最好、色彩还原度最高的终端：
+- [rio](https://github.com/raphamorim/rio)
+- [ghostty](https://github.com/ghostty-org/ghostty)
+- [warp](https://www.warp.dev/)
+- [iterm2](https://github.com/gnachman/iTerm2)
+
 ## 🚀 快速开始
 
 ### 安装依赖
@@ -92,7 +98,7 @@ git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
 
-# 可执行文件输出在 ./bin/pixelterm
+# 可执行文件输出在 pixelterm
 # （或使用：sudo make install 安装到系统）
 
 # 交叉编译到aarch64
@@ -104,36 +110,38 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 ```bash
 # 查看单个图像（直接进入图像查看器）
-./bin/pixelterm /path/to/image.jpg
+pixelterm /path/to/image.jpg
 
 # 浏览目录（进入文件管理器模式）
-./bin/pixelterm /path/to/directory
+pixelterm /path/to/directory
 
 # 在当前目录运行（进入文件管理器模式）
-./bin/pixelterm
+pixelterm
 
 # 显示版本
-./bin/pixelterm --version
+pixelterm --version
 
 # 显示帮助
-./bin/pixelterm --help
+pixelterm --help
 
 # 禁用预加载
-./bin/pixelterm --no-preload /path/to/images
+pixelterm --no-preload /path/to/images
 
 # 禁用备用屏幕缓冲区
-./bin/pixelterm --no-alt-screen /path/to/images
+pixelterm --no-alt-screen /path/to/images
+# 说明：主要用于 Warp 终端，通常情况下不需要。
 
 # 改善部分终端的界面显示（可能降低性能）
-./bin/pixelterm --clear-workaround /path/to/images
+pixelterm --clear-workaround /path/to/images
+# 说明：主要用于 Warp 终端，通常情况下不需要。
 
 # 启用抖动
-./bin/pixelterm -D /path/to/image.jpg
+pixelterm -D /path/to/image.jpg
 # 或
-./bin/pixelterm --dither /path/to/image.jpg
+pixelterm --dither /path/to/image.jpg
 
 # 调整渲染 work factor（1-9，越高越慢但质量更好）
-./bin/pixelterm --work-factor 7 /path/to/image.jpg
+pixelterm --work-factor 7 /path/to/image.jpg
 
 ```
 
