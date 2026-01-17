@@ -65,19 +65,19 @@ ErrorCode browser_refresh_directory(FileBrowser *browser);
 /**
  * @brief Moves the current file pointer to the next file in the list.
  * 
- * If currently at the last file, it wraps around to the first file.
+ * If currently at the last file, the current selection stays unchanged.
  * 
  * @param browser A pointer to the `FileBrowser` instance.
- * @return `ERROR_NONE` on success, or `ERROR_FILE_NOT_FOUND` if no files are loaded.
+ * @return `ERROR_NONE` on success, or `ERROR_INVALID_IMAGE` if no next file exists.
  */
 ErrorCode browser_next_file(FileBrowser *browser);
 /**
  * @brief Moves the current file pointer to the previous file in the list.
  * 
- * If currently at the first file, it wraps around to the last file.
+ * If currently at the first file, the current selection stays unchanged.
  * 
  * @param browser A pointer to the `FileBrowser` instance.
- * @return `ERROR_NONE` on success, or `ERROR_FILE_NOT_FOUND` if no files are loaded.
+ * @return `ERROR_NONE` on success, or `ERROR_INVALID_IMAGE` if no previous file exists.
  */
 ErrorCode browser_previous_file(FileBrowser *browser);
 /**

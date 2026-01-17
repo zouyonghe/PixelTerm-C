@@ -377,7 +377,7 @@ static void app_clear_single_view_ui_lines(const PixelTermApp *app) {
     }
 }
 
-    // Check if a directory contains media files
+// Check if a directory contains media files
 static gboolean directory_contains_media(const gchar *dir_path) {
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
         return FALSE;

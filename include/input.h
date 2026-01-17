@@ -8,14 +8,11 @@
 // Input event types
 typedef enum {
     INPUT_KEY_PRESS,
-    INPUT_KEY_RELEASE,
 
     INPUT_MOUSE_PRESS,
     INPUT_MOUSE_RELEASE,
     INPUT_MOUSE_DOUBLE_CLICK,
     INPUT_MOUSE_SCROLL,
-
-    INPUT_RESIZE
 } InputEventType;
 
 // Mouse buttons
@@ -180,8 +177,8 @@ ErrorCode input_disable_mouse(InputHandler *handler);
 /**
  * @brief Reads the next available input event from the terminal.
  * 
- * This function blocks until an input event (key press, mouse event,
- * or terminal resize) is received. It parses the raw terminal input
+ * This function blocks until an input event (key press or mouse event)
+ * is received. It parses the raw terminal input
  * into a structured `InputEvent`.
  * 
  * @param handler A pointer to the `InputHandler` instance.
@@ -191,19 +188,6 @@ ErrorCode input_disable_mouse(InputHandler *handler);
  *         `ErrorCode` if an error occurs during input reading.
  */
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event);
-/**
- * @brief Peeks at the next input event without consuming it.
- *
- * If an event is already queued, it is returned immediately. Otherwise, this
- * function reads the next event and stores it for the next call to
- * `input_get_event`.
- *
- * @param handler A pointer to the `InputHandler` instance.
- * @param event A pointer to an `InputEvent` structure where the peeked
- *              event data will be stored.
- * @return `TRUE` if an event was retrieved, `FALSE` otherwise.
- */
-gboolean input_peek_event(InputHandler *handler, InputEvent *event);
 /**
  * @brief Pushes an event back so it will be returned by the next
  *        `input_get_event` call.
@@ -290,39 +274,4 @@ gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms);
  *         terminal size cannot be retrieved.
  */
 ErrorCode input_update_terminal_size(InputHandler *handler);
-/**
- * @brief Retrieves the stored terminal width from the `InputHandler`.
- * 
- * @param handler A pointer to the constant `InputHandler` instance.
- * @return The terminal width in characters, or 0 if the handler is NULL.
- */
-gint input_get_terminal_width(const InputHandler *handler);
-/**
- * @brief Retrieves the stored terminal height from the `InputHandler`.
- * 
- * @param handler A pointer to the constant `InputHandler` instance.
- * @return The terminal height in characters, or 0 if the handler is NULL.
- */
-gint input_get_terminal_height(const InputHandler *handler);
-
-// Utility functions
-/**
- * @brief Converts a `KeyCode` enum value to a human-readable string.
- * 
- * @param key The `KeyCode` value to convert.
- * @return A constant string representation of the key code, or "Unknown Key"
- *         if the code is not recognized. The returned string should not be freed.
- */
-const gchar* input_key_code_to_string(KeyCode key);
-/**
- * @brief Checks if a given `KeyCode` corresponds to a navigation key.
- * 
- * Navigation keys typically include arrow keys, page up/down, and `h`, `j`, `k`, `l`
- * for Vim-style navigation.
- * 
- * @param key The `KeyCode` to check.
- * @return `TRUE` if the key is a navigation key, `FALSE` otherwise.
- */
-gboolean input_is_navigation_key(KeyCode key);
-
 #endif // INPUT_H

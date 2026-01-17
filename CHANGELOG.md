@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.5.4: Code hygiene and input cleanup.
+    - **Input**: Remove unused APIs/enums and clarify input documentation.
+    - **Core**: Refactor main loop pending-click/animation handling into helpers.
+    - **Maintenance**: Drop unused renderer/preloader APIs and normalize comments.
+
 - v1.5.3: Video timing smoothing and resize safety.
     - **Video**: Smooth PTS pacing to reduce jumpy playback while keeping sync.
     - **Resize**: Pause video during terminal resize to avoid layout glitches.

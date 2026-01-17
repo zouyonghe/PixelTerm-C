@@ -401,6 +401,84 @@ static void handle_mouse_scroll(PixelTermApp *app, const InputEvent *event) {
     }
 }
 
+static void process_pending_clicks(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+
+    // Process pending single click action (Single Image Mode).
+    if (app->pending_single_click) {
+        gint64 current_time = g_get_monotonic_time();
+        if (current_time - app->pending_click_time > k_click_threshold_us) {
+            app->pending_single_click = FALSE;
+            app_next_image(app);
+            if (app->needs_redraw) {
+                app_refresh_display(app);
+                app->needs_redraw = FALSE;
+            }
+        }
+    }
+
+    // Process pending single click action (Preview Grid Mode).
+    if (app->pending_grid_single_click) {
+        gint64 current_time = g_get_monotonic_time();
+        if (current_time - app->pending_grid_click_time > k_click_threshold_us) {
+            app->pending_grid_single_click = FALSE;
+            gboolean redraw_needed = FALSE;
+            gint old_selected = app->preview_selected;
+            gint old_scroll = app->preview_scroll;
+            app_handle_mouse_click_preview(app,
+                                           app->pending_grid_click_x,
+                                           app->pending_grid_click_y,
+                                           &redraw_needed,
+                                           NULL);
+            if (redraw_needed) {
+                if (app->preview_scroll != old_scroll) {
+                    app_render_preview_grid(app);
+                } else if (app->preview_selected != old_selected) {
+                    app_render_preview_selection_change(app, old_selected);
+                }
+            }
+        }
+    }
+
+    // Process pending single click action (File Manager Mode).
+    if (app->file_manager_mode && app->pending_file_manager_single_click) {
+        gint64 current_time = g_get_monotonic_time();
+        if (current_time - app->pending_file_manager_click_time > k_click_threshold_us) {
+            app->pending_file_manager_single_click = FALSE;
+            gint old_selected = app->selected_entry;
+            gint old_scroll = app->scroll_offset;
+            app_handle_mouse_file_manager(app,
+                                          app->pending_file_manager_click_x,
+                                          app->pending_file_manager_click_y);
+            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
+                app_render_file_manager(app);
+            }
+        }
+    } else if (!app->file_manager_mode && app->pending_file_manager_single_click) {
+        app->pending_file_manager_single_click = FALSE;
+    }
+}
+
+static void process_animation_events(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+
+    if (app->gif_player && gif_player_is_playing(app->gif_player)) {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+    }
+
+    if (app->video_player && video_player_is_playing(app->video_player)) {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+    }
+}
+
 static void handle_delete_current_image(PixelTermApp *app) {
     app_delete_current_image(app);
     app_render_by_mode(app);
@@ -433,8 +511,8 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 if (app->ui_text_hidden) {
                     return TRUE;
                 }
-                if (g_app->info_visible) {
-                    g_app->info_visible = FALSE;
+                if (app->info_visible) {
+                    app->info_visible = FALSE;
                     app_render_current_image(app);
                 } else {
                     app_display_image_info(app);
@@ -816,15 +894,6 @@ static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, con
     }
 }
 
-static void handle_resize(PixelTermApp *app, InputHandler *input_handler) {
-    app_pause_video_for_resize(app);
-    input_update_terminal_size(input_handler);
-    get_terminal_size(&app->term_width, &app->term_height);
-    printf("\033[2J\033[H\033[0m");
-    fflush(stdout);
-    app_render_by_mode(app);
-}
-
 static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
     switch (event->type) {
         case INPUT_MOUSE_PRESS:
@@ -838,9 +907,6 @@ static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, c
             break;
         case INPUT_KEY_PRESS:
             handle_key_press(app, input_handler, event);
-            break;
-        case INPUT_RESIZE:
-            handle_resize(app, input_handler);
             break;
         default:
             break;
@@ -920,73 +986,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             continue;
         }
         
-                    // Process pending single click action (Single Image Mode)
-                    if (app->pending_single_click) {
-                        gint64 current_time = g_get_monotonic_time();
-                        if (current_time - app->pending_click_time > k_click_threshold_us) {
-                            app->pending_single_click = FALSE;
-                            // Execute the deferred "Next Image" action
-                            app_next_image(app);
-                            if (app->needs_redraw) { // Only refresh if the image actually changed
-                                app_refresh_display(app);
-                                app->needs_redraw = FALSE;
-                            }
-                        }
-                    }
-        
-                    // Process pending single click action (Preview Grid Mode)
-                    if (app->pending_grid_single_click) {
-                        gint64 current_time = g_get_monotonic_time();
-                        if (current_time - app->pending_grid_click_time > k_click_threshold_us) {
-                            app->pending_grid_single_click = FALSE;
-                            // Execute the deferred "Select image" action
-                            gboolean redraw_needed = FALSE;
-                            gint old_selected = app->preview_selected;
-                            gint old_scroll = app->preview_scroll;
-                            app_handle_mouse_click_preview(app,
-                                                           app->pending_grid_click_x,
-                                                           app->pending_grid_click_y,
-                                                           &redraw_needed,
-                                                           NULL);
-                            if (redraw_needed) {
-                                if (app->preview_scroll != old_scroll) {
-                                    app_render_preview_grid(app);
-                                } else if (app->preview_selected != old_selected) {
-                                    app_render_preview_selection_change(app, old_selected);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Process pending single click action (File Manager Mode)
-                    if (app->file_manager_mode && app->pending_file_manager_single_click) {
-                        gint64 current_time = g_get_monotonic_time();
-                        if (current_time - app->pending_file_manager_click_time > k_click_threshold_us) {
-                            app->pending_file_manager_single_click = FALSE;
-                            gint old_selected = app->selected_entry;
-                            gint old_scroll = app->scroll_offset;
-                            app_handle_mouse_file_manager(app,
-                                                          app->pending_file_manager_click_x,
-                                                          app->pending_file_manager_click_y);
-                            if (app->selected_entry != old_selected || app->scroll_offset != old_scroll) {
-                                app_render_file_manager(app);
-                            }
-                        }
-                    } else if (!app->file_manager_mode && app->pending_file_manager_single_click) {
-                        app->pending_file_manager_single_click = FALSE;
-                    }
-                    
-                    // Process any pending GLib events (such as timer callbacks for GIF animation)        // Only process these if we're currently displaying an animated GIF
-        if (app->gif_player && gif_player_is_playing(app->gif_player)) {
-            while (g_main_context_pending(NULL)) {
-                g_main_context_iteration(NULL, FALSE);
-            }
-        }
-        if (app->video_player && video_player_is_playing(app->video_player)) {
-            while (g_main_context_pending(NULL)) {
-                g_main_context_iteration(NULL, FALSE);
-            }
-        }
+        process_pending_clicks(app);
+        process_animation_events(app);
 
         
         // Check if we have pending input with timeout to allow signal checking

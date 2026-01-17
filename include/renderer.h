@@ -140,16 +140,6 @@ GString* renderer_cache_get(ImageRenderer *renderer, const char *filepath);
  * @param renderer A pointer to the `ImageRenderer` instance.
  */
 void renderer_cache_clear(ImageRenderer *renderer);
-/**
- * @brief Performs cleanup on the renderer's internal cache.
- * 
- * This function can be used to manage the cache size, for instance,
- * by removing least recently used items if a size limit is enforced.
- * 
- * @param renderer A pointer to the `ImageRenderer` instance.
- */
-void renderer_cache_cleanup(ImageRenderer *renderer);
-
 // Configuration functions
 /**
  * @brief Updates the terminal size information used by the renderer.

@@ -160,15 +160,6 @@ ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *fi
  * @return `ERROR_NONE` on success.
  */
 ErrorCode preloader_clear_queue(ImagePreloader *preloader);
-/**
- * @brief Checks if there are any pending tasks in the preloader's queue.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return `TRUE` if the task queue is not empty, `FALSE` otherwise.
- */
-gboolean preloader_has_pending_tasks(const ImagePreloader *preloader);
-
-// Cache management
 // Cache management
 /**
  * @brief Retrieves a rendered image from the cache.
@@ -285,66 +276,6 @@ void preloader_pause(ImagePreloader *preloader);
  * @param preloader A pointer to the `ImagePreloader` instance.
  */
 void preloader_resume(ImagePreloader *preloader);
-/**
- * @brief Checks if the preloader is currently enabled.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return `TRUE` if the preloader is enabled, `FALSE` otherwise.
- */
-gboolean preloader_is_enabled(const ImagePreloader *preloader);
-/**
- * @brief Retrieves the current operational status of the preloader.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The current `PreloaderStatus` (IDLE, ACTIVE, PAUSED, STOPPING).
- */
-PreloaderStatus preloader_get_status(const ImagePreloader *preloader);
-
-// Configuration
-/**
- * @brief Sets the maximum number of tasks allowed in the preload queue.
- * 
- * If the queue already contains more tasks than the new maximum size,
- * older tasks will be removed to adhere to the limit.
- * 
- * @param preloader A pointer to the `ImagePreloader` instance.
- * @param max_size The new maximum size for the task queue.
- */
-void preloader_set_max_queue_size(ImagePreloader *preloader, gint max_size);
-/**
- * @brief Sets the maximum number of rendered images allowed in the cache.
- * 
- * If the cache already contains more entries than the new maximum size,
- * least recently used entries will be removed to adhere to the limit.
- * 
- * @param preloader A pointer to the `ImagePreloader` instance.
- * @param max_size The new maximum size for the cache.
- */
-void preloader_set_max_cache_size(ImagePreloader *preloader, gint max_size);
-/**
- * @brief Retrieves the current number of pending tasks in the preload queue.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The number of tasks currently in the queue.
- */
-gint preloader_get_queue_size(const ImagePreloader *preloader);
-/**
- * @brief Retrieves the current number of items in the preloader's cache.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The number of items currently stored in the cache.
- */
-gint preloader_get_cache_size(const ImagePreloader *preloader);
-
-// Statistics
-/**
- * @brief Retrieves the number of tasks currently being processed by the preloader.
- * 
- * @param preloader A pointer to the constant `ImagePreloader` instance.
- * @return The count of active (in-progress) preload tasks.
- */
-gint preloader_get_active_tasks(const ImagePreloader *preloader);
-
 // Worker thread function
 /**
  * @brief The entry point function for the preloader's worker thread.

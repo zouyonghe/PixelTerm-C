@@ -423,24 +423,6 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
     return ERROR_NONE;
 }
 
-gboolean input_peek_event(InputHandler *handler, InputEvent *event) {
-    if (!handler || !event) {
-        return FALSE;
-    }
-    if (handler->has_pending_event) {
-        *event = handler->pending_event;
-        return TRUE;
-    }
-
-    if (input_get_event(handler, event) != ERROR_NONE) {
-        return FALSE;
-    }
-
-    handler->pending_event = *event;
-    handler->has_pending_event = TRUE;
-    return TRUE;
-}
-
 ErrorCode input_unget_event(InputHandler *handler, const InputEvent *event) {
     if (!handler || !event) {
         return ERROR_MEMORY_ALLOC;
@@ -592,59 +574,4 @@ ErrorCode input_update_terminal_size(InputHandler *handler) {
 
     get_terminal_size(&handler->terminal_width, &handler->terminal_height);
     return ERROR_NONE;
-}
-
-// Get terminal width
-gint input_get_terminal_width(const InputHandler *handler) {
-    return handler ? handler->terminal_width : 80;
-}
-
-// Get terminal height
-gint input_get_terminal_height(const InputHandler *handler) {
-    return handler ? handler->terminal_height : 24;
-}
-
-// Convert key code to string
-const gchar* input_key_code_to_string(KeyCode key) {
-    switch (key) {
-        case KEY_ESCAPE: return "ESC";
-        case KEY_ENTER: return "ENTER";
-        case KEY_TAB: return "TAB";
-        case KEY_BACKSPACE: return "BACKSPACE";
-        case KEY_DELETE: return "DELETE";
-        case KEY_UP: return "UP";
-        case KEY_DOWN: return "DOWN";
-        case KEY_LEFT: return "LEFT";
-        case KEY_RIGHT: return "RIGHT";
-        case KEY_HOME: return "HOME";
-        case KEY_END: return "END";
-        case KEY_PAGE_UP: return "PAGE_UP";
-        case KEY_PAGE_DOWN: return "PAGE_DOWN";
-        case KEY_F1: return "F1";
-        case KEY_F2: return "F2";
-        case KEY_F3: return "F3";
-        case KEY_F4: return "F4";
-        case KEY_F5: return "F5";
-        case KEY_F6: return "F6";
-        case KEY_F7: return "F7";
-        case KEY_F8: return "F8";
-        case KEY_F9: return "F9";
-        case KEY_F10: return "F10";
-        case KEY_F11: return "F11";
-        case KEY_F12: return "F12";
-        default:
-            if (key >= 32 && key <= 126) {
-                static gchar buf[2] = {0};
-                buf[0] = (gchar)key;
-                return buf;
-            }
-            return "UNKNOWN";
-    }
-}
-
-// Check if key is for navigation
-gboolean input_is_navigation_key(KeyCode key) {
-    return (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_UP || key == KEY_DOWN ||
-            key == KEY_HOME || key == KEY_END || key == KEY_PAGE_UP || key == KEY_PAGE_DOWN ||
-            key == 'a' || key == 'd');
 }

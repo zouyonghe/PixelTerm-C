@@ -338,32 +338,6 @@ void renderer_cache_clear(ImageRenderer *renderer) {
     g_hash_table_remove_all(renderer->cache);
 }
 
-// Cleanup old cache entries (LRU eviction)
-void renderer_cache_cleanup(ImageRenderer *renderer) {
-    if (!renderer) {
-        return;
-    }
-
-    guint size = g_hash_table_size(renderer->cache);
-    if (size <= MAX_CACHE_SIZE) {
-        return;
-    }
-
-    // Remove oldest entries to maintain cache size limit
-    guint target_size = MAX_CACHE_SIZE * 3 / 4; // Remove 25% when over limit
-    guint to_remove = size - target_size;
-    
-    GHashTableIter iter;
-    gpointer key, value;
-    guint removed = 0;
-
-    g_hash_table_iter_init(&iter, renderer->cache);
-    while (g_hash_table_iter_next(&iter, &key, &value) && removed < to_remove) {
-        g_hash_table_iter_remove(&iter);
-        removed++;
-    }
-}
-
 // Update terminal size information
 ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (!renderer) {

@@ -332,18 +332,6 @@ ErrorCode preloader_clear_queue(ImagePreloader *preloader) {
 }
 
 // Check if there are pending tasks
-gboolean preloader_has_pending_tasks(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return FALSE;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    gboolean has_tasks = !g_queue_is_empty(preloader->task_queue);
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return has_tasks;
-}
-
 // Get cached image
 GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath, gint target_width, gint target_height) {
     if (!preloader || !filepath) {
@@ -582,88 +570,6 @@ void preloader_resume(ImagePreloader *preloader) {
 }
 
 // Check if preloader is enabled
-gboolean preloader_is_enabled(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return FALSE;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    gboolean enabled = preloader->enabled;
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return enabled;
-}
-
-// Get preloader status
-PreloaderStatus preloader_get_status(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return PRELOADER_IDLE;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    PreloaderStatus status = preloader->status;
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return status;
-}
-
-// Set maximum queue size
-void preloader_set_max_queue_size(ImagePreloader *preloader, gint max_size) {
-    if (preloader && max_size > 0) {
-        g_mutex_lock(&preloader->mutex);
-        preloader->max_queue_size = max_size;
-        g_mutex_unlock(&preloader->mutex);
-    }
-}
-
-// Set maximum cache size
-void preloader_set_max_cache_size(ImagePreloader *preloader, gint max_size) {
-    if (preloader && max_size > 0) {
-        g_mutex_lock(&preloader->mutex);
-        preloader->max_cache_size = max_size;
-        g_mutex_unlock(&preloader->mutex);
-    }
-}
-
-// Get queue size
-gint preloader_get_queue_size(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return 0;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    gint size = g_queue_get_length(preloader->task_queue);
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return size;
-}
-
-// Get cache size
-gint preloader_get_cache_size(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return 0;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    gint size = g_hash_table_size(preloader->preload_cache);
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return size;
-}
-
-// Get active task count
-gint preloader_get_active_tasks(const ImagePreloader *preloader) {
-    if (!preloader) {
-        return 0;
-    }
-
-    g_mutex_lock((GMutex*)&preloader->mutex);
-    gint active = preloader->active_tasks;
-    g_mutex_unlock((GMutex*)&preloader->mutex);
-
-    return active;
-}
-
 // Update terminal dimensions for rendering
 void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint height) {
     if (preloader && width > 0 && height > 0) {
