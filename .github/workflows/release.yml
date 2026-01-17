@@ -97,10 +97,10 @@ jobs:
         mkdir -p release
         if [ "${{ matrix.os }}" = "macos" ]; then
           cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
+          tar --exclude='screenshots' -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
         else
           cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
+          tar --exclude='screenshots' -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
         fi
 
     - name: Upload artifact
