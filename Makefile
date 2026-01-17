@@ -11,11 +11,11 @@ LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
   PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
-  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gio-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavformat) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavcodec) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libswscale) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavutil) -lpthread
-  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gio-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavformat) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavcodec) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libswscale) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavutil)
+  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread
+  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
 else
-  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) $(shell pkg-config --libs gio-2.0) $(shell pkg-config --libs libavformat) $(shell pkg-config --libs libavcodec) $(shell pkg-config --libs libswscale) $(shell pkg-config --libs libavutil) -lpthread
-  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0) $(shell pkg-config --cflags gio-2.0) $(shell pkg-config --cflags libavformat) $(shell pkg-config --cflags libavcodec) $(shell pkg-config --cflags libswscale) $(shell pkg-config --cflags libavutil)
+  LIBS = $(shell pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread
+  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
 endif
 SRCDIR = src
 OBJDIR = obj
