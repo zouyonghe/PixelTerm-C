@@ -1,7 +1,7 @@
 # Changelog
 
-- v1.5.5: Release packaging tweak.
-    - **Release**: Exclude screenshots from release archives.
+- v1.5.5: Source archive cleanup.
+    - **Release**: Exclude screenshots from GitHub source archives via export-ignore.
 
 - v1.5.4: Code hygiene and input cleanup.
     - **Input**: Remove unused APIs/enums and clarify input documentation.
