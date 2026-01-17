@@ -24,7 +24,7 @@
 
 // Supported image formats
 static const char* SUPPORTED_EXTENSIONS[] = {
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
+    ".jpg", ".jpeg", ".png", ".apng", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
 };
 
 // Supported video formats
@@ -135,6 +135,15 @@ gboolean is_image_by_content(const char *filepath);
  * @return `TRUE` if the file is deemed a valid and supported image, `FALSE` otherwise.
  */
 gboolean is_valid_image_file(const char *filepath);
+/**
+ * @brief Checks if a file is a likely animated image (e.g., GIF, WebP, APNG, multi-page TIFF).
+ *
+ * Uses lightweight header checks where possible to avoid unnecessary full decoding.
+ *
+ * @param filepath The path to the file.
+ * @return `TRUE` if the file is a candidate for animation playback, `FALSE` otherwise.
+ */
+gboolean is_animated_image_candidate(const char *filepath);
 /**
  * @brief Retrieves the file extension from a given filename.
  * 

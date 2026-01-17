@@ -41,13 +41,12 @@ static gboolean app_current_is_video(const PixelTermApp *app) {
     if (!filepath) {
         return FALSE;
     }
-    const char *ext = get_file_extension(filepath);
-    gboolean is_gif = (ext && g_ascii_strcasecmp(ext, ".gif") == 0) ? TRUE : FALSE;
+    gboolean is_animated_image = is_animated_image_candidate(filepath);
     gboolean is_video = is_video_file(filepath);
-    if (!is_video && !is_gif && !is_image_file(filepath)) {
+    if (!is_video && !is_animated_image && !is_image_file(filepath)) {
         is_video = is_valid_video_file(filepath);
     }
-    if (is_gif && is_video) {
+    if (is_animated_image && is_video) {
         is_video = FALSE;
     }
     return is_video;

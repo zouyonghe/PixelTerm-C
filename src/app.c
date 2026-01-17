@@ -1227,15 +1227,14 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Check if it's a GIF/video file and handle animation
-    const char *ext = get_file_extension(filepath);
-    gboolean is_gif = (ext && g_ascii_strcasecmp(ext, ".gif") == 0) ? TRUE : FALSE;
+    // Check if it's an animated image/video file and handle animation
+    gboolean is_animated_image = is_animated_image_candidate(filepath);
     gboolean is_video = is_video_file(filepath);
-    if (!is_video && !is_gif && !is_image_file(filepath)) {
+    if (!is_video && !is_animated_image && !is_image_file(filepath)) {
         is_video = is_valid_video_file(filepath);
     }
 
-    if (is_gif && is_video) {
+    if (is_animated_image && is_video) {
         is_video = FALSE;
     }
 
@@ -1248,13 +1247,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
-    if (is_gif && app->gif_player && !is_video) {
-        // First, check if we need to load the GIF animation
+    if (is_animated_image && app->gif_player && !is_video) {
+        // First, check if we need to load the animated image
         if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
             ErrorCode load_result = gif_player_load(app->gif_player, filepath);
             if (load_result != ERROR_NONE) {
-                // If GIF loading fails, just treat it as a regular image
-                is_gif = FALSE;
+                // If animation loading fails, just treat it as a regular image
+                is_animated_image = FALSE;
             }
         }
     }
@@ -1540,8 +1539,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
-    // If it's a GIF and player is available, start playing if animated
-    if (is_gif && app->gif_player && gif_player_is_animated(app->gif_player)) {
+    // If it's an animated image and player is available, start playing if animated
+    if (is_animated_image && app->gif_player && gif_player_is_animated(app->gif_player)) {
         // For first render, just show the first frame, then start animation
         gif_player_play(app->gif_player);
         // Indicate that we are currently displaying an animated GIF

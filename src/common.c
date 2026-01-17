@@ -1,6 +1,295 @@
 #include "common.h"
 #include <sys/ioctl.h>
 #include <fcntl.h>
+#include <limits.h>
+
+typedef enum {
+    IMAGE_MAGIC_UNKNOWN = 0,
+    IMAGE_MAGIC_JPEG,
+    IMAGE_MAGIC_PNG,
+    IMAGE_MAGIC_GIF,
+    IMAGE_MAGIC_WEBP,
+    IMAGE_MAGIC_BMP,
+    IMAGE_MAGIC_TIFF
+} ImageMagicType;
+
+static guint32 read_be32(const unsigned char *buf) {
+    return ((guint32)buf[0] << 24) |
+           ((guint32)buf[1] << 16) |
+           ((guint32)buf[2] << 8) |
+           (guint32)buf[3];
+}
+
+static guint32 read_le32(const unsigned char *buf) {
+    return (guint32)buf[0] |
+           ((guint32)buf[1] << 8) |
+           ((guint32)buf[2] << 16) |
+           ((guint32)buf[3] << 24);
+}
+
+static guint16 read_be16(const unsigned char *buf) {
+    return (guint16)(((guint16)buf[0] << 8) | (guint16)buf[1]);
+}
+
+static guint16 read_le16(const unsigned char *buf) {
+    return (guint16)((guint16)buf[0] | ((guint16)buf[1] << 8));
+}
+
+static ImageMagicType get_image_magic_type(const char *filepath) {
+    if (!filepath) {
+        return IMAGE_MAGIC_UNKNOWN;
+    }
+
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return IMAGE_MAGIC_UNKNOWN;
+    }
+
+    unsigned char header[16];
+    size_t bytes_read = fread(header, 1, sizeof(header), file);
+    fclose(file);
+
+    if (bytes_read < 4) {
+        return IMAGE_MAGIC_UNKNOWN;
+    }
+
+    // JPEG (FF D8 FF)
+    if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) {
+        return IMAGE_MAGIC_JPEG;
+    }
+
+    // PNG (89 50 4E 47)
+    if (bytes_read >= 8 &&
+        header[0] == 0x89 && header[1] == 0x50 &&
+        header[2] == 0x4E && header[3] == 0x47) {
+        return IMAGE_MAGIC_PNG;
+    }
+
+    // GIF (GIF87a or GIF89a)
+    if (bytes_read >= 6 &&
+        header[0] == 'G' && header[1] == 'I' && header[2] == 'F' &&
+        header[3] == '8' && (header[4] == '7' || header[4] == '9') &&
+        header[5] == 'a') {
+        return IMAGE_MAGIC_GIF;
+    }
+
+    // WebP (RIFF....WEBP)
+    if (bytes_read >= 12 &&
+        header[0] == 'R' && header[1] == 'I' &&
+        header[2] == 'F' && header[3] == 'F' &&
+        header[8] == 'W' && header[9] == 'E' &&
+        header[10] == 'B' && header[11] == 'P') {
+        return IMAGE_MAGIC_WEBP;
+    }
+
+    // BMP (BM)
+    if (header[0] == 'B' && header[1] == 'M') {
+        return IMAGE_MAGIC_BMP;
+    }
+
+    // TIFF (II*\0 or MM\0*)
+    if (bytes_read >= 4 && (
+        (header[0] == 'I' && header[1] == 'I' && header[2] == '*' && header[3] == '\0') ||
+        (header[0] == 'M' && header[1] == 'M' && header[2] == '\0' && header[3] == '*')
+    )) {
+        return IMAGE_MAGIC_TIFF;
+    }
+
+    return IMAGE_MAGIC_UNKNOWN;
+}
+
+static gboolean png_has_animation(const char *filepath) {
+    static const unsigned char png_sig[8] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+    };
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return FALSE;
+    }
+
+    unsigned char sig[8];
+    if (fread(sig, 1, sizeof(sig), file) != sizeof(sig)) {
+        fclose(file);
+        return FALSE;
+    }
+    if (memcmp(sig, png_sig, sizeof(png_sig)) != 0) {
+        fclose(file);
+        return FALSE;
+    }
+
+    while (TRUE) {
+        unsigned char len_buf[4];
+        unsigned char type_buf[4];
+        if (fread(len_buf, 1, sizeof(len_buf), file) != sizeof(len_buf)) {
+            break;
+        }
+        if (fread(type_buf, 1, sizeof(type_buf), file) != sizeof(type_buf)) {
+            break;
+        }
+
+        guint32 len = read_be32(len_buf);
+        if (memcmp(type_buf, "acTL", 4) == 0) {
+            fclose(file);
+            return TRUE;
+        }
+        if (memcmp(type_buf, "IDAT", 4) == 0) {
+            fclose(file);
+            return FALSE;
+        }
+
+        if (len > (guint32)(LONG_MAX - 4)) {
+            break;
+        }
+        if (fseek(file, (long)len + 4, SEEK_CUR) != 0) {
+            break;
+        }
+    }
+
+    fclose(file);
+    return FALSE;
+}
+
+static gboolean webp_has_animation(const char *filepath) {
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return FALSE;
+    }
+
+    unsigned char header[12];
+    if (fread(header, 1, sizeof(header), file) != sizeof(header)) {
+        fclose(file);
+        return FALSE;
+    }
+    if (memcmp(header, "RIFF", 4) != 0 || memcmp(header + 8, "WEBP", 4) != 0) {
+        fclose(file);
+        return FALSE;
+    }
+
+    while (TRUE) {
+        unsigned char chunk_hdr[8];
+        if (fread(chunk_hdr, 1, sizeof(chunk_hdr), file) != sizeof(chunk_hdr)) {
+            break;
+        }
+
+        if (memcmp(chunk_hdr, "ANIM", 4) == 0) {
+            fclose(file);
+            return TRUE;
+        }
+
+        guint32 chunk_size = read_le32(chunk_hdr + 4);
+        guint32 skip = chunk_size + (chunk_size & 1);
+        if (skip > (guint32)LONG_MAX) {
+            break;
+        }
+        if (fseek(file, (long)skip, SEEK_CUR) != 0) {
+            break;
+        }
+    }
+
+    fclose(file);
+    return FALSE;
+}
+
+static gboolean tiff_has_multiple_pages(const char *filepath) {
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return FALSE;
+    }
+
+    unsigned char header[8];
+    if (fread(header, 1, sizeof(header), file) != sizeof(header)) {
+        fclose(file);
+        return FALSE;
+    }
+
+    gboolean little_endian = FALSE;
+    if (header[0] == 'I' && header[1] == 'I') {
+        little_endian = TRUE;
+    } else if (header[0] == 'M' && header[1] == 'M') {
+        little_endian = FALSE;
+    } else {
+        fclose(file);
+        return FALSE;
+    }
+
+    guint16 magic = little_endian ? read_le16(header + 2) : read_be16(header + 2);
+    if (magic != 42) {
+        fclose(file);
+        return FALSE;
+    }
+
+    guint32 ifd_offset = little_endian ? read_le32(header + 4) : read_be32(header + 4);
+    if (ifd_offset == 0 || ifd_offset > (guint32)LONG_MAX) {
+        fclose(file);
+        return FALSE;
+    }
+    if (fseek(file, (long)ifd_offset, SEEK_SET) != 0) {
+        fclose(file);
+        return FALSE;
+    }
+
+    unsigned char count_buf[2];
+    if (fread(count_buf, 1, sizeof(count_buf), file) != sizeof(count_buf)) {
+        fclose(file);
+        return FALSE;
+    }
+    guint16 count = little_endian ? read_le16(count_buf) : read_be16(count_buf);
+    long next_offset_pos = (long)ifd_offset + 2L + (long)count * 12L;
+    if (next_offset_pos < 0 || next_offset_pos > LONG_MAX - 4) {
+        fclose(file);
+        return FALSE;
+    }
+    if (fseek(file, next_offset_pos, SEEK_SET) != 0) {
+        fclose(file);
+        return FALSE;
+    }
+
+    unsigned char next_buf[4];
+    if (fread(next_buf, 1, sizeof(next_buf), file) != sizeof(next_buf)) {
+        fclose(file);
+        return FALSE;
+    }
+    guint32 next_ifd = little_endian ? read_le32(next_buf) : read_be32(next_buf);
+    fclose(file);
+    return next_ifd != 0;
+}
+
+gboolean is_animated_image_candidate(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    const char *ext = get_file_extension(filepath);
+    if (ext) {
+        if (g_ascii_strcasecmp(ext, ".gif") == 0) {
+            return TRUE;
+        }
+        if (g_ascii_strcasecmp(ext, ".webp") == 0) {
+            return webp_has_animation(filepath);
+        }
+        if (g_ascii_strcasecmp(ext, ".png") == 0 || g_ascii_strcasecmp(ext, ".apng") == 0) {
+            return png_has_animation(filepath);
+        }
+        if (g_ascii_strcasecmp(ext, ".tif") == 0 || g_ascii_strcasecmp(ext, ".tiff") == 0) {
+            return tiff_has_multiple_pages(filepath);
+        }
+        return FALSE;
+    }
+
+    ImageMagicType magic = get_image_magic_type(filepath);
+    switch (magic) {
+        case IMAGE_MAGIC_GIF:
+            return TRUE;
+        case IMAGE_MAGIC_WEBP:
+            return webp_has_animation(filepath);
+        case IMAGE_MAGIC_PNG:
+            return png_has_animation(filepath);
+        case IMAGE_MAGIC_TIFF:
+            return tiff_has_multiple_pages(filepath);
+        default:
+            return FALSE;
+    }
+}
 
 // Check if a file is an image based on its extension
 gboolean is_image_file(const char *filename) {
@@ -124,66 +413,7 @@ gboolean is_valid_media_file(const char *filepath) {
 
 // Check if a file is an image by reading its magic numbers (for files without extensions)
 gboolean is_image_by_content(const char *filepath) {
-    if (!filepath) {
-        return FALSE;
-    }
-
-    FILE *file = fopen(filepath, "rb");
-    if (!file) {
-        return FALSE;
-    }
-
-    unsigned char header[16];
-    size_t bytes_read = fread(header, 1, sizeof(header), file);
-    fclose(file);
-
-    if (bytes_read < 4) {
-        return FALSE;
-    }
-
-    // JPEG (FF D8 FF)
-    if (header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF) {
-        return TRUE;
-    }
-
-    // PNG (89 50 4E 47)
-    if (bytes_read >= 8 && 
-        header[0] == 0x89 && header[1] == 0x50 && 
-        header[2] == 0x4E && header[3] == 0x47) {
-        return TRUE;
-    }
-
-    // GIF (GIF87a or GIF89a)
-    if (bytes_read >= 6 && 
-        header[0] == 'G' && header[1] == 'I' && header[2] == 'F' &&
-        header[3] == '8' && (header[4] == '7' || header[4] == '9') && 
-        header[5] == 'a') {
-        return TRUE;
-    }
-
-    // WebP (RIFF....WEBP)
-    if (bytes_read >= 12 && 
-        header[0] == 'R' && header[1] == 'I' && 
-        header[2] == 'F' && header[3] == 'F' &&
-        header[8] == 'W' && header[9] == 'E' && 
-        header[10] == 'B' && header[11] == 'P') {
-        return TRUE;
-    }
-
-    // BMP (BM)
-    if (header[0] == 'B' && header[1] == 'M') {
-        return TRUE;
-    }
-
-    // TIFF (II*\0 or MM\0*)
-    if (bytes_read >= 4 && (
-        (header[0] == 'I' && header[1] == 'I' && header[2] == '*' && header[3] == '\0') ||
-        (header[0] == 'M' && header[1] == 'M' && header[2] == '\0' && header[3] == '*')
-    )) {
-        return TRUE;
-    }
-
-    return FALSE;
+    return get_image_magic_type(filepath) != IMAGE_MAGIC_UNKNOWN;
 }
 
 // Check if a file is a valid image file (checks size, content, format)
