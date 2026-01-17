@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.5.2: Animated image detection for more formats.
+    - **Animation**: Detect animated WebP and APNG plus multi-page TIFF for playback.
+    - **Formats**: Recognize `.apng` extension and scan PNG/WebP headers for animation chunks.
+
 - v1.5.0: Video playback, previews, and media UI polish.
     - **Video**: Add FFmpeg-backed video playback with smoother frame scheduling and pause/resume controls.
     - **Preview Grid**: Render video first-frame thumbnails instead of placeholder labels.
