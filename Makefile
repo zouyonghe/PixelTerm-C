@@ -5,6 +5,7 @@ INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
 CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
+DEPFLAGS = -MMD -MP
 # Prefer the locally installed Chafa when both system and /usr/local versions exist
 LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 
@@ -45,23 +46,23 @@ $(TARGET): $(OBJECTS) | $(BINDIR)
 
 # Compile source files
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
 $(OBJDIR)/test_common.o: tests/test_common.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
 $(OBJDIR)/test_browser.o: tests/test_browser.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
 $(OBJDIR)/test_gif_player.o: tests/test_gif_player.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
 $(OBJDIR)/test_renderer.o: tests/test_renderer.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Build test executable
 $(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/test_browser.o $(OBJDIR)/test_gif_player.o $(OBJDIR)/test_renderer.o $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o $(OBJDIR)/gif_player.o $(OBJDIR)/input.o | $(BINDIR)
@@ -122,3 +123,7 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 
 .PHONY: all debug clean install test run check-deps help
+
+# Auto-generated dependencies
+-include $(OBJECTS:.o=.d) $(OBJDIR)/test_common.d $(OBJDIR)/test_browser.d \
+  $(OBJDIR)/test_gif_player.d $(OBJDIR)/test_renderer.d

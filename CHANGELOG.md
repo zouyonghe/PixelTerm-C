@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.5.3: Video timing smoothing and resize safety.
+    - **Video**: Smooth PTS pacing to reduce jumpy playback while keeping sync.
+    - **Resize**: Pause video during terminal resize to avoid layout glitches.
+    - **Build**: Track header dependencies to prevent stale object ABI mismatches.
+
 - v1.5.2: Animated image detection for more formats.
     - **Animation**: Detect animated WebP and APNG plus multi-page TIFF for playback.
     - **Formats**: Recognize `.apng` extension and scan PNG/WebP headers for animation chunks.

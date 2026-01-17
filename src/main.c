@@ -52,6 +52,18 @@ static gboolean app_current_is_video(const PixelTermApp *app) {
     return is_video;
 }
 
+static void app_pause_video_for_resize(PixelTermApp *app) {
+    if (!app || !app->video_player) {
+        return;
+    }
+    if (!app_current_is_video(app)) {
+        return;
+    }
+    if (video_player_is_playing(app->video_player)) {
+        video_player_pause(app->video_player);
+    }
+}
+
 static void app_toggle_video_playback(PixelTermApp *app) {
     if (!app || !app->video_player) {
         return;
@@ -805,6 +817,7 @@ static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, con
 }
 
 static void handle_resize(PixelTermApp *app, InputHandler *input_handler) {
+    app_pause_video_for_resize(app);
     input_update_terminal_size(input_handler);
     get_terminal_size(&app->term_width, &app->term_height);
     printf("\033[2J\033[H\033[0m");
@@ -898,6 +911,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             last_term_height = input_handler->terminal_height;
             get_terminal_size(&app->term_width, &app->term_height);
 
+            app_pause_video_for_resize(app);
             if (app->preview_mode) {
                 app->needs_screen_clear = TRUE;
             }

@@ -16,6 +16,15 @@ typedef struct {
     gboolean has_video;
     gboolean draining;
     gint frame_delay_ms;
+    gint time_base_num;
+    gint time_base_den;
+    gint64 clock_start_us;
+    gint64 clock_start_pts_ms;
+    gint64 fallback_pts_ms;
+    gboolean clock_started;
+    gint64 smooth_last_pts_ms;
+    gint64 smooth_pts_ms;
+    gboolean smooth_valid;
     guint timer_id;
     gchar *filepath;
     gint max_queue_size;
