@@ -186,6 +186,18 @@ gboolean is_image_by_content(const char *filepath) {
     return FALSE;
 }
 
+// Check if gdk-pixbuf has a loader for this image file
+static gboolean is_pixbuf_loader_available(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    gint width = 0;
+    gint height = 0;
+    GdkPixbufFormat *format = gdk_pixbuf_get_file_info(filepath, &width, &height);
+    return format != NULL;
+}
+
 // Check if a file is a valid image file (checks size, content, format)
 gboolean is_valid_image_file(const char *filepath) {
     if (!filepath) {
@@ -208,9 +220,12 @@ gboolean is_valid_image_file(const char *filepath) {
         return FALSE;
     }
 
-    // For non-zero files, we'll be more lenient and only check the file header
-    // to avoid rejecting valid images that might have issues with gdk-pixbuf
-    return is_image_by_content(filepath);
+    // Validate the header first, then confirm a gdk-pixbuf loader exists.
+    if (!is_image_by_content(filepath)) {
+        return FALSE;
+    }
+
+    return is_pixbuf_loader_available(filepath);
 }
 
 // Get file extension
