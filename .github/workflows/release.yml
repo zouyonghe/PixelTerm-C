@@ -43,7 +43,7 @@ jobs:
         
         # Install dependencies
         sudo apt-get update
-        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl
+        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
         
         # Get Chafa version
         CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name' 2>/dev/null || true)
@@ -83,6 +83,7 @@ jobs:
         
         # Install dependencies using Homebrew (only install packages not pre-installed)
         brew install pkg-config glib gdk-pixbuf chafa ffmpeg
+        export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig"
         
         # Chafa is already installed by Homebrew, no need to build from source
         echo "Using Homebrew Chafa"
