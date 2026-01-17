@@ -23,6 +23,105 @@ gboolean is_image_file(const char *filename) {
     return FALSE;
 }
 
+// Check if a file is a video based on its extension
+gboolean is_video_file(const char *filename) {
+    if (!filename) {
+        return FALSE;
+    }
+
+    const char *ext = get_file_extension(filename);
+    if (!ext) {
+        return FALSE;
+    }
+
+    for (int i = 0; SUPPORTED_VIDEO_EXTENSIONS[i] != NULL; i++) {
+        if (g_ascii_strcasecmp(ext, SUPPORTED_VIDEO_EXTENSIONS[i]) == 0) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+// Check if a file is an image or video based on its extension
+gboolean is_media_file(const char *filename) {
+    return is_image_file(filename) || is_video_file(filename);
+}
+
+// Check if a file is a video by reading its magic numbers
+static gboolean is_video_by_content(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        return FALSE;
+    }
+
+    unsigned char header[16];
+    size_t bytes_read = fread(header, 1, sizeof(header), file);
+    fclose(file);
+
+    if (bytes_read < 12) {
+        return FALSE;
+    }
+
+    // WebM/Matroska EBML header (1A 45 DF A3)
+    if (header[0] == 0x1A && header[1] == 0x45 && header[2] == 0xDF && header[3] == 0xA3) {
+        return TRUE;
+    }
+
+    // MP4/MOV/ISO BMFF: 'ftyp' at offset 4
+    if (header[4] == 'f' && header[5] == 't' && header[6] == 'y' && header[7] == 'p') {
+        return TRUE;
+    }
+
+    // AVI: RIFF....AVI
+    if (header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+        header[8] == 'A' && header[9] == 'V' && header[10] == 'I') {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+// Check if a file is a valid video file (checks size, extension)
+gboolean is_valid_video_file(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        return FALSE;
+    }
+
+    if (st.st_size == 0) {
+        return FALSE;
+    }
+
+    if (is_video_file(filepath)) {
+        return TRUE;
+    }
+
+    return is_video_by_content(filepath);
+}
+
+// Check if a file is a valid image or video file
+// NOTE: images still use content checks for robustness.
+gboolean is_valid_media_file(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    if (is_image_file(filepath)) {
+        return is_valid_image_file(filepath);
+    }
+
+    return is_valid_video_file(filepath);
+}
+
 // Check if a file is an image by reading its magic numbers (for files without extensions)
 gboolean is_image_by_content(const char *filepath) {
     if (!filepath) {

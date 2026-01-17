@@ -11,11 +11,11 @@ LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
   PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
-  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gio-2.0) -lpthread
-  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gio-2.0)
+  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs gio-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavformat) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavcodec) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libswscale) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs libavutil) -lpthread
+  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags chafa) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gdk-pixbuf-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags gio-2.0) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavformat) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavcodec) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libswscale) $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags libavutil)
 else
-  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) $(shell pkg-config --libs gio-2.0) -lpthread
-  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0) $(shell pkg-config --cflags gio-2.0)
+  LIBS = $(shell pkg-config --libs chafa) $(shell pkg-config --libs gdk-pixbuf-2.0) $(shell pkg-config --libs gio-2.0) $(shell pkg-config --libs libavformat) $(shell pkg-config --libs libavcodec) $(shell pkg-config --libs libswscale) $(shell pkg-config --libs libavutil) -lpthread
+  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0) $(shell pkg-config --cflags chafa) $(shell pkg-config --cflags gdk-pixbuf-2.0) $(shell pkg-config --cflags gio-2.0) $(shell pkg-config --cflags libavformat) $(shell pkg-config --cflags libavcodec) $(shell pkg-config --cflags libswscale) $(shell pkg-config --cflags libavutil)
 endif
 SRCDIR = src
 OBJDIR = obj
@@ -23,6 +23,8 @@ BINDIR = bin
 
 # Source files
 SOURCES = $(wildcard $(SRCDIR)/*.c)
+SOURCES := $(filter-out $(SRCDIR)/video_player.c, $(SOURCES))
+SOURCES += $(SRCDIR)/video_player.c
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 TARGET = $(BINDIR)/pixelterm
 TEST_TARGET = $(BINDIR)/pixelterm-tests
@@ -92,6 +94,10 @@ check-deps:
 	@echo "Checking dependencies..."
 	@pkg-config --exists chafa || (echo "Chafa library not found" && exit 1)
 	@pkg-config --exists glib-2.0 || (echo "GLib 2.0 not found" && exit 1)
+	@pkg-config --exists libavformat || (echo "FFmpeg libavformat not found" && exit 1)
+	@pkg-config --exists libavcodec || (echo "FFmpeg libavcodec not found" && exit 1)
+	@pkg-config --exists libswscale || (echo "FFmpeg libswscale not found" && exit 1)
+	@pkg-config --exists libavutil || (echo "FFmpeg libavutil not found" && exit 1)
 	@echo "All dependencies found"
 
 # Help

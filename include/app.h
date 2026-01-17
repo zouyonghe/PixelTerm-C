@@ -4,6 +4,7 @@
 #include "common.h"
 #include "preloader.h"
 #include "gif_player.h"
+#include "video_player.h"
 
 typedef enum {
     RETURN_MODE_NONE = -1,
@@ -30,6 +31,7 @@ typedef struct {
     
     // Animation support
     GifPlayer *gif_player;
+    VideoPlayer *video_player;
     
     // Application state
     gboolean running;

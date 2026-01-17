@@ -197,7 +197,32 @@ static void app_clear_single_view_ui_lines(const PixelTermApp *app) {
     }
 }
 
-// Check if a directory contains image files
+    // Check if a directory contains media files
+static gboolean directory_contains_media(const gchar *dir_path) {
+    if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
+        return FALSE;
+    }
+
+    GDir *dir = g_dir_open(dir_path, 0, NULL);
+    if (!dir) {
+        return FALSE;
+    }
+
+    const gchar *filename;
+    while ((filename = g_dir_read_name(dir))) {
+        gchar *full_path = g_build_filename(dir_path, filename, NULL);
+        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_media_file(full_path)) {
+            g_free(full_path);
+            g_dir_close(dir);
+            return TRUE;
+        }
+        g_free(full_path);
+    }
+
+    g_dir_close(dir);
+    return FALSE;
+}
+
 static gboolean directory_contains_images(const gchar *dir_path) {
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
         return FALSE;
@@ -674,6 +699,14 @@ void app_destroy(PixelTermApp *app) {
         app->gif_player = NULL;
     }
 
+    // Stop and destroy video player
+    if (app->video_player) {
+        video_player_stop(app->video_player);
+        video_player_destroy(app->video_player);
+        app->video_player = NULL;
+    }
+
+
     // Cleanup Chafa resources
     if (app->canvas) {
         chafa_canvas_unref(app->canvas);
@@ -751,6 +784,14 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
     // Initialize GIF player
     app->gif_player = gif_player_new(app->render_work_factor, app->force_sixel);
     if (!app->gif_player) {
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    // Initialize video player
+    app->video_player = video_player_new(app->render_work_factor, app->force_sixel);
+    if (!app->video_player) {
+        gif_player_destroy(app->gif_player);
+        app->gif_player = NULL;
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -853,12 +894,8 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    if (!is_image_file(filepath)) {
-        return ERROR_INVALID_IMAGE;
-    }
-
-    // Additionally check if the file is a valid image file
-    if (!is_valid_image_file(filepath)) {
+    // Check if the file is a valid image/video file
+    if (!is_valid_media_file(filepath)) {
         return ERROR_INVALID_IMAGE;
     }
 
@@ -1001,7 +1038,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
-    
+
     // Reset info visibility when rendering image
     app->info_visible = FALSE;
 
@@ -1010,11 +1047,28 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Check if it's a GIF file and handle animation
+    // Check if it's a GIF/video file and handle animation
     const char *ext = get_file_extension(filepath);
     gboolean is_gif = (ext && g_ascii_strcasecmp(ext, ".gif") == 0) ? TRUE : FALSE;
-    
-    if (is_gif && app->gif_player) {
+    gboolean is_video = is_video_file(filepath);
+    if (!is_video && !is_gif && !is_image_file(filepath)) {
+        is_video = is_valid_video_file(filepath);
+    }
+
+    if (is_gif && is_video) {
+        is_video = FALSE;
+    }
+
+    if (is_video && app->video_player) {
+        if (!app->video_player->filepath || g_strcmp0(app->video_player->filepath, filepath) != 0) {
+            ErrorCode load_result = video_player_load(app->video_player, filepath);
+            if (load_result != ERROR_NONE) {
+                is_video = FALSE;
+            }
+        }
+    }
+
+    if (is_gif && app->gif_player && !is_video) {
         // First, check if we need to load the GIF animation
         if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
             ErrorCode load_result = gif_player_load(app->gif_player, filepath);
@@ -1025,12 +1079,126 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
+    gint target_width = 0, target_height = 0;
+    app_get_image_target_dimensions(app, &target_width, &target_height);
+
+    // Clear screen and reset terminal state
+    if (app && app->suppress_full_clear) {
+        app->suppress_full_clear = FALSE;
+        printf("\033[H\033[0m");
+        if (app->ui_text_hidden) {
+            app_clear_single_view_ui_lines(app);
+        }
+    } else {
+        app_clear_screen_for_refresh(app);
+    }
+
+    // Title + index area (single image view)
+    const gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
+    if (app->gif_player) {
+        gif_player_set_render_area(app->gif_player,
+                                   app->term_width,
+                                   app->term_height,
+                                   image_area_top_row,
+                                   target_height,
+                                   target_width,
+                                   target_height);
+    }
+    if (app->video_player) {
+        video_player_set_render_area(app->video_player,
+                                     app->term_width,
+                                     app->term_height,
+                                     image_area_top_row,
+                                     target_height,
+                                     target_width,
+                                     target_height);
+    }
+    if (!app->ui_text_hidden && app->term_height > 0) {
+        const char *title = "Image View";
+        gint title_len = strlen(title);
+        gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+        printf("\033[1;1H\033[2K");
+        for (gint i = 0; i < title_pad; i++) putchar(' ');
+        printf("%s", title);
+
+        // Row 2: spacer
+        printf("\033[2;1H\033[2K");
+
+        // Row 3: Index indicator centered (numbers only)
+        gint current = app_get_current_index(app) + 1;
+        gint total = app_get_total_images(app);
+        if (current < 1) current = 1;
+        if (total < 1) total = 1;
+        char idx_text[32];
+        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        gint idx_len = (gint)strlen(idx_text);
+        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+        printf("\033[3;1H\033[2K");
+        for (gint i = 0; i < idx_pad; i++) putchar(' ');
+        printf("%s", idx_text);
+    }
+
+    if (is_video) {
+        gint effective_width = target_width > 0 ? target_width : app->term_width;
+        if (effective_width > app->term_width) {
+            effective_width = app->term_width;
+        }
+        if (effective_width < 0) {
+            effective_width = 0;
+        }
+        gint left_pad = (app->term_width > effective_width) ? (app->term_width - effective_width) / 2 : 0;
+        if (left_pad < 0) left_pad = 0;
+
+        if (filepath && !app->ui_text_hidden) {
+            gchar *basename = g_path_get_basename(filepath);
+            gchar *safe_basename = sanitize_for_terminal(basename);
+            if (safe_basename) {
+                gint filename_len = strlen(safe_basename);
+                gint image_center_col = effective_width / 2;
+                gint filename_start_col = left_pad + image_center_col - filename_len / 2;
+                if (filename_start_col < 0) filename_start_col = 0;
+                if (filename_start_col + filename_len > app->term_width) {
+                    filename_start_col = app->term_width - filename_len;
+                }
+                gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
+                printf("\033[%d;%dH", filename_row, filename_start_col + 1);
+                printf("\033[34m%s\033[0m", safe_basename);
+                g_free(safe_basename);
+                g_free(basename);
+            }
+        }
+
+        if (app->term_height > 0 && !app->ui_text_hidden) {
+            const HelpSegment segments[] = {
+                {"←/→", "Prev/Next"},
+                {"Enter", "Preview"},
+                {"TAB", "Toggle"},
+                {"i", "Info"},
+                {"r", "Delete"},
+                {"~", "Zen"},
+                {"ESC", "Exit"}
+            };
+            print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+        }
+
+        if (app->gif_player) {
+            gif_player_stop(app->gif_player);
+        }
+        if (app->video_player) {
+            video_player_play(app->video_player);
+            app->needs_redraw = FALSE;
+        } else {
+            return ERROR_INVALID_IMAGE;
+        }
+
+        fflush(stdout);
+        return ERROR_NONE;
+    }
+
     // Check if image is already cached
     GString *rendered = NULL;
     gint image_width, image_height;
-    gint target_width = 0, target_height = 0;
-    app_get_image_target_dimensions(app, &target_width, &target_height);
-    
+
     if (app->preloader && app->preload_enabled) {
         rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
     }
@@ -1072,7 +1240,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
         // Get rendered image dimensions
         renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
-        
+
         // Add to cache if preloader is available
         if (app->preloader && app->preload_enabled) {
             preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height, target_width, target_height);
@@ -1085,7 +1253,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             // Fallback: count lines in the rendered output to get actual height
             image_width = app->term_width;
             image_height = 1; // Start with 1 for first line
-            
+
             for (gsize i = 0; i < rendered->len; i++) {
                 if (rendered->str[i] == '\n') {
                     image_height++;
@@ -1093,7 +1261,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             }
         }
     }
-    
+
     // Determine effective width for centering
     gint effective_width = image_width > 0 ? image_width : target_width;
     if (effective_width > app->term_width) {
@@ -1104,53 +1272,6 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
     gint left_pad = (app->term_width > effective_width) ? (app->term_width - effective_width) / 2 : 0;
     if (left_pad < 0) left_pad = 0;
-
-    // Clear screen and reset terminal state
-    if (app && app->suppress_full_clear) {
-        app->suppress_full_clear = FALSE;
-        printf("\033[H\033[0m");
-        if (app->ui_text_hidden) {
-            app_clear_single_view_ui_lines(app);
-        }
-    } else {
-        app_clear_screen_for_refresh(app);
-    }
-
-    // Title + index area (single image view)
-    const gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
-    if (app->gif_player) {
-        gif_player_set_render_area(app->gif_player,
-                                   app->term_width,
-                                   app->term_height,
-                                   image_area_top_row,
-                                   target_height,
-                                   target_width,
-                                   target_height);
-    }
-    if (!app->ui_text_hidden && app->term_height > 0) {
-        const char *title = "Image View";
-        gint title_len = strlen(title);
-        gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
-        printf("\033[1;1H\033[2K");
-        for (gint i = 0; i < title_pad; i++) putchar(' ');
-        printf("%s", title);
-
-        // Row 2: spacer
-        printf("\033[2;1H\033[2K");
-
-        // Row 3: Index indicator centered (numbers only)
-        gint current = app_get_current_index(app) + 1;
-        gint total = app_get_total_images(app);
-        if (current < 1) current = 1;
-        if (total < 1) total = 1;
-        char idx_text[32];
-        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
-        gint idx_len = (gint)strlen(idx_text);
-        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
-        printf("\033[3;1H\033[2K");
-        for (gint i = 0; i < idx_pad; i++) putchar(' ');
-        printf("%s", idx_text);
-    }
 
     // Vertically center the rendered image inside the image area
     gint image_top_row = image_area_top_row;
@@ -1185,7 +1306,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         row++;
     }
     g_free(pad_buffer);
-    
+
     // Calculate filename position relative to image center
     if (filepath && !app->ui_text_hidden) {
         gchar *basename = g_path_get_basename(filepath);
@@ -1195,13 +1316,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             // Center filename relative to image width, but ensure it stays within terminal bounds
             gint image_center_col = effective_width / 2;
             gint filename_start_col = left_pad + image_center_col - filename_len / 2;
-            
+
             // Ensure filename doesn't go beyond terminal bounds
             if (filename_start_col < 0) filename_start_col = 0;
             if (filename_start_col + filename_len > app->term_width) {
                 filename_start_col = app->term_width - filename_len;
             }
-            
+
             // Keep filename on the third-to-last line to keep it outside the image area
             gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
             printf("\033[%d;%dH", filename_row, filename_start_col + 1);
@@ -1224,7 +1345,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         };
         print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
-    
+
     // If it's a GIF and player is available, start playing if animated
     if (is_gif && app->gif_player && gif_player_is_animated(app->gif_player)) {
         // For first render, just show the first frame, then start animation
@@ -1236,12 +1357,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (app->gif_player) {
             gif_player_stop(app->gif_player);
         }
+        if (app->video_player) {
+            video_player_stop(app->video_player);
+        }
     }
-    
+
     fflush(stdout);
 
     g_string_free(rendered, TRUE);
-    
+
     return ERROR_NONE;
 }
 
@@ -1250,13 +1374,13 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
-    
+
     // If info is already visible, clear it by redrawing the image
     if (app->info_visible) {
         app->info_visible = FALSE;
         return app_render_current_image(app);
     }
-    
+
     app->info_visible = TRUE;
 
     const gchar *filepath = app_get_current_filepath(app);
@@ -1266,7 +1390,7 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
 
     // Get image dimensions
     gint width, height;
-    ErrorCode error = renderer_get_image_dimensions(filepath, &width, &height);
+    ErrorCode error = renderer_get_media_dimensions(filepath, &width, &height);
     if (error != ERROR_NONE) {
         return error;
     }
@@ -1287,7 +1411,7 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
 
     // Move to next line and ensure cursor is at the beginning
     printf("\n\033[G"); // New line and move cursor to column 1
-    
+
     // Display information with colored labels
     for (gint i = 0; i < 60; i++) printf("=");
     printf("\n\033[G");
@@ -1305,10 +1429,10 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     printf("\033[36m📏 Aspect ratio:\033[0m %.2f\n\033[G", aspect_ratio);
     for (gint i = 0; i < 60; i++) printf("=");
     // Keep cursor on the last line (do not append a newline)
-    
+
     // Reset terminal attributes to prevent interference with future rendering
     printf("\033[0m");  // Reset all attributes
-    
+
     fflush(stdout);
 
     g_free(safe_basename);
@@ -1343,6 +1467,9 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     // Update GIF player terminal size if active
     if (app->gif_player) {
         gif_player_update_terminal_size(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_update_terminal_size(app->video_player);
     }
 
     return app_render_current_image(app);
@@ -1518,6 +1645,9 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     // Stop GIF playback if active
     if (app->gif_player) {
         gif_player_stop(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_stop(app->video_player);
     }
 
     app->file_manager_mode = TRUE;
@@ -1720,8 +1850,8 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         return app_file_manager_refresh(app);
     } else {
         // It's a file, check if it's a valid image file before loading
-        if (!is_valid_image_file(selected_path)) {
-            // If it's not a valid image file, don't try to load it
+        if (!is_valid_media_file(selected_path)) {
+            // If it's not a valid media file, don't try to load it
             return ERROR_INVALID_IMAGE;
         }
         
@@ -1881,7 +2011,7 @@ gboolean app_file_manager_has_images(PixelTermApp *app) {
     // Check if any entry in the current directory listing is an image file
     for (GList *cur = app->directory_entries; cur; cur = cur->next) {
         gchar *path = (gchar*)cur->data;
-        if (g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_image_file(path)) {
+        if (g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_media_file(path)) {
             return TRUE;
         }
     }
@@ -1904,7 +2034,7 @@ gboolean app_file_manager_selection_is_image(PixelTermApp *app) {
         return FALSE;
     }
 
-    return g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_image_file(path);
+    return g_file_test(path, G_FILE_TEST_IS_REGULAR) && is_valid_media_file(path);
 }
 
 // Get the image index of the currently selected file in file manager
@@ -2336,7 +2466,7 @@ ErrorCode app_preview_print_info(PixelTermApp *app) {
     gchar *safe_basename = sanitize_for_terminal(basename);
     gchar *safe_dirname = sanitize_for_terminal(dirname);
     gint width = 0, height = 0;
-    renderer_get_image_dimensions(filepath, &width, &height);
+    renderer_get_media_dimensions(filepath, &width, &height);
     gint64 file_size = get_file_size(filepath);
     gdouble file_size_mb = file_size > 0 ? file_size / (1024.0 * 1024.0) : 0.0;
     const char *ext = get_file_extension(filepath);
@@ -2660,7 +2790,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     gint original_index = 0;
     while (current) {
         const gchar *filepath = (const gchar*)current->data;
-        if (is_valid_image_file(filepath)) {
+        if (is_valid_media_file(filepath)) {
             valid_images = g_list_append(valid_images, g_strdup(filepath));
             if (original_index == app->current_index) {
                 valid_current_index = valid_count;
@@ -2696,6 +2826,9 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     // Stop GIF playback if active
     if (app->gif_player) {
         gif_player_stop(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_stop(app->video_player);
     }
 
     app->preview_mode = TRUE;
@@ -2850,6 +2983,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
             const gchar *filepath = (const gchar*)cursor->data;
             cursor = cursor->next;
+            gboolean is_video = is_video_file(filepath);
+            if (!is_video && !is_image_file(filepath)) {
+                is_video = is_valid_video_file(filepath);
+            }
             gboolean selected = (idx == app->preview_selected);
             gboolean use_border = selected &&
                                   layout.cell_width >= 4 &&
@@ -2890,13 +3027,42 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
                 rendered_from_preload = (rendered != NULL);
             }
             if (!rendered) {
-                rendered = renderer_render_image_file(renderer, filepath);
-                if (rendered) {
-                    GString *cached_entry = renderer_cache_get(renderer, filepath);
-                    rendered_from_renderer_cache = (cached_entry == rendered);
+                if (is_video) {
+                    guint8 *frame_pixels = NULL;
+                    gint frame_width = 0;
+                    gint frame_height = 0;
+                    gint frame_rowstride = 0;
+                    if (video_player_get_first_frame(filepath,
+                                                     &frame_pixels,
+                                                     &frame_width,
+                                                     &frame_height,
+                                                     &frame_rowstride) == ERROR_NONE) {
+                        rendered = renderer_render_image_data(renderer,
+                                                              frame_pixels,
+                                                              frame_width,
+                                                              frame_height,
+                                                              frame_rowstride,
+                                                              4);
+                    }
+                    g_free(frame_pixels);
+                } else {
+                    rendered = renderer_render_image_file(renderer, filepath);
+                    if (rendered) {
+                        GString *cached_entry = renderer_cache_get(renderer, filepath);
+                        rendered_from_renderer_cache = (cached_entry == rendered);
+                    }
                 }
             }
             if (!rendered) {
+                if (is_video) {
+                    const char *label = "VIDEO";
+                    gint label_len = (gint)strlen(label);
+                    gint label_row = content_y + content_height / 2;
+                    gint label_col = content_x + (content_width - label_len) / 2;
+                    if (label_row < content_y) label_row = content_y;
+                    if (label_col < content_x) label_col = content_x;
+                    printf("\033[%d;%dH\033[35m%s\033[0m", label_row, label_col, label);
+                }
                 continue;
             }
 
@@ -3141,7 +3307,9 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gchar *print_name = sanitize_for_terminal(display_name);
         gint name_len = utf8_display_width(print_name);
         gboolean is_image = (!is_dir && is_image_file(entry));
+        gboolean is_video = (!is_dir && is_video_file(entry));
         gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
+        gboolean is_dir_with_media = is_dir && directory_contains_media(entry);
 
         gint max_display_width = (app->term_width / 2) - 2;
         if (max_display_width < 15) max_display_width = 15;
@@ -3247,9 +3415,9 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         }
         for (gint s = 0; s < pad; s++) putchar(' ');
 
-        gboolean is_valid_image = (!is_dir && is_valid_image_file(entry));
+        gboolean is_valid_media = (!is_dir && is_valid_media_file(entry));
         gboolean selected = (idx == app->selected_entry);
-        if (is_image && !is_valid_image) {
+        if ((is_image || is_video) && !is_valid_media) {
             if (selected) {
                 printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
             } else {
@@ -3259,13 +3427,18 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             printf("\033[47;30m%s\033[0m", print_name);
         } else if (is_dir_with_images) {
             printf("\033[33m%s\033[0m", print_name);
+        } else if (is_dir_with_media) {
+            printf("\033[33m%s\033[0m", print_name);
         } else if (is_dir) {
             printf("\033[34m%s\033[0m", print_name);
         } else if (is_image) {
             printf("\033[32m%s\033[0m", print_name);
+        } else if (is_video) {
+            printf("\033[35m%s\033[0m", print_name);
         } else {
             printf("%s", print_name);
         }
+
 
         g_free(print_name);
         g_free(display_name);

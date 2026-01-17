@@ -27,6 +27,11 @@ static const char* SUPPORTED_EXTENSIONS[] = {
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
 };
 
+// Supported video formats
+static const char* SUPPORTED_VIDEO_EXTENSIONS[] = {
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg", ".mpg", ".m4v", NULL
+};
+
 // Key codes are defined in input.h as KeyCode enum
 
 // Error codes
@@ -68,6 +73,44 @@ typedef struct {
  * @return `TRUE` if the file is identified as an image, `FALSE` otherwise.
  */
 gboolean is_image_file(const char *filename);
+
+/**
+ * @brief Checks if a file is a video based on its file extension.
+ *
+ * @param filename The path to the file.
+ * @return `TRUE` if the file is identified as a video, `FALSE` otherwise.
+ */
+gboolean is_video_file(const char *filename);
+
+typedef struct {
+    gboolean is_video;
+    gint width;
+    gint height;
+} MediaDimensions;
+
+/**
+ * @brief Checks if a file is an image or video based on its file extension.
+ *
+ * @param filename The path to the file.
+ * @return `TRUE` if the file is identified as an image or video, `FALSE` otherwise.
+ */
+gboolean is_media_file(const char *filename);
+
+/**
+ * @brief Checks if a file is a valid video file (exists, non-zero size).
+ *
+ * @param filepath The path to the file.
+ * @return `TRUE` if the file is deemed a valid video, `FALSE` otherwise.
+ */
+gboolean is_valid_video_file(const char *filepath);
+
+/**
+ * @brief Checks if a file is a valid image or video file.
+ *
+ * @param filepath The path to the file.
+ * @return `TRUE` if the file is deemed a valid image or video, `FALSE` otherwise.
+ */
+gboolean is_valid_media_file(const char *filepath);
 
 /**
  * @brief Checks if a file is an image by reading its magic numbers.

@@ -3,6 +3,8 @@
 #include <gio/gio.h>
 #include <sys/ioctl.h>
 
+#include "video_player.h"
+
 // Load pixbuf using a GInputStream to avoid path-length limits in gdk_pixbuf_new_from_file
 static GdkPixbuf* renderer_load_pixbuf_from_stream(const char *filepath, GError **error) {
     if (!filepath) {
@@ -447,7 +449,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
 // Check if image file is supported
 gboolean renderer_is_image_supported(const char *filepath) {
-    return is_image_file(filepath);
+    return is_media_file(filepath);
 }
 
 // Get image dimensions
@@ -467,9 +469,30 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
 
     *width = gdk_pixbuf_get_width(pixbuf);
     *height = gdk_pixbuf_get_height(pixbuf);
-    
+
     g_object_unref(pixbuf);
     return ERROR_NONE;
+}
+
+ErrorCode renderer_get_media_dimensions(const char *filepath, gint *width, gint *height) {
+    if (!filepath || !width || !height) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    if (is_video_file(filepath)) {
+        return video_player_get_dimensions(filepath, width, height);
+    }
+
+    ErrorCode image_error = renderer_get_image_dimensions(filepath, width, height);
+    if (image_error == ERROR_NONE) {
+        return ERROR_NONE;
+    }
+
+    if (is_valid_video_file(filepath)) {
+        return video_player_get_dimensions(filepath, width, height);
+    }
+
+    return image_error;
 }
 
 // Get rendered image dimensions

@@ -12,6 +12,7 @@
 #include "app.h"
 #include "input.h"
 #include "common.h"
+#include "video_player.h"
 
 // Global application instance
 static PixelTermApp *g_app = NULL;
@@ -924,6 +925,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                 g_main_context_iteration(NULL, FALSE);
             }
         }
+        if (app->video_player && video_player_is_playing(app->video_player)) {
+            while (g_main_context_pending(NULL)) {
+                g_main_context_iteration(NULL, FALSE);
+            }
+        }
+
         
         // Check if we have pending input with timeout to allow signal checking
         if (!input_has_pending_input(input_handler)) {
@@ -1024,8 +1031,8 @@ int main(int argc, char *argv[]) {
             }
         }
     } else {
-        // Check if the file is a valid image file first
-        if (!is_valid_image_file(path)) {
+        // Check if the file is a valid media file first
+        if (!is_valid_media_file(path)) {
             // If the file is not valid, load the directory and enter file manager
             gchar *directory = g_path_get_dirname(path);
             error = app_load_directory(g_app, directory);

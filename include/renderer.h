@@ -185,6 +185,7 @@ gboolean renderer_is_image_supported(const char *filepath);
  *         file is not found or its dimensions cannot be determined.
  */
 ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint *height);
+ErrorCode renderer_get_media_dimensions(const char *filepath, gint *width, gint *height);
 /**
  * @brief Retrieves the actual dimensions (in characters) that the last image was rendered to.
  * 
