@@ -106,6 +106,68 @@ static gint utf8_display_width(const gchar *text) {
     return width;
 }
 
+static gchar* utf8_prefix_by_width(const gchar *text, gint max_width) {
+    if (!text || max_width <= 0) {
+        return g_strdup("");
+    }
+
+    gint width = 0;
+    const gchar *p = text;
+    const gchar *end = text;
+    while (*p) {
+        gunichar ch = g_utf8_get_char_validated(p, -1);
+        gint char_width = 1;
+        const gchar *next = p + 1;
+        if (ch != (gunichar)-1 && ch != (gunichar)-2) {
+            if (g_unichar_iszerowidth(ch)) {
+                char_width = 0;
+            } else {
+                char_width = g_unichar_iswide(ch) ? 2 : 1;
+            }
+            next = g_utf8_next_char(p);
+        }
+        if (width + char_width > max_width) {
+            break;
+        }
+        width += char_width;
+        end = next;
+        p = next;
+    }
+
+    return g_strndup(text, end - text);
+}
+
+static gchar* utf8_suffix_by_width(const gchar *text, gint max_width) {
+    if (!text || max_width <= 0) {
+        return g_strdup("");
+    }
+
+    const gchar *end = text + strlen(text);
+    const gchar *p = end;
+    const gchar *start = end;
+    gint width = 0;
+    while (p > text) {
+        const gchar *prev = g_utf8_prev_char(p);
+        gunichar ch = g_utf8_get_char_validated(prev, -1);
+        gint char_width = 1;
+        if (ch != (gunichar)-1 && ch != (gunichar)-2) {
+            if (g_unichar_iszerowidth(ch)) {
+                char_width = 0;
+            } else {
+                char_width = g_unichar_iswide(ch) ? 2 : 1;
+            }
+        }
+        if (width + char_width > max_width) {
+            break;
+        }
+        width += char_width;
+        start = prev;
+        p = prev;
+    }
+
+    return g_strndup(start, end - start);
+}
+
 // Truncate UTF-8 text to a given display width, appending "..." when needed.
 static gchar* truncate_utf8_for_display(const gchar *text, gint max_width) {
     if (!text || max_width <= 0) {
@@ -152,6 +214,76 @@ static gchar* truncate_utf8_for_display(const gchar *text, gint max_width) {
     gchar *result = g_strdup_printf("%s...", prefix);
     g_free(prefix);
     return result;
+}
+
+static gchar* truncate_utf8_middle_keep_suffix(const gchar *text, gint max_width) {
+    if (!text || max_width <= 0) {
+        return g_strdup("");
+    }
+
+    gint width = utf8_display_width(text);
+    if (width <= max_width) {
+        return g_strdup(text);
+    }
+
+    if (max_width <= 3) {
+        return truncate_utf8_for_display(text, max_width);
+    }
+
+    const gchar *ext = strrchr(text, '.');
+    gint ext_width = 0;
+    if (ext && ext != text && *(ext + 1) != '\0') {
+        ext_width = utf8_display_width(ext);
+    }
+
+    gint suffix_width = max_width / 3;
+    if (suffix_width < ext_width) {
+        suffix_width = ext_width;
+    }
+    gint max_suffix = max_width - 4;
+    if (max_suffix < 1) {
+        max_suffix = 1;
+    }
+    if (suffix_width > max_suffix) {
+        suffix_width = max_suffix;
+    }
+    gint prefix_width = max_width - 3 - suffix_width;
+    if (prefix_width < 1) {
+        prefix_width = 1;
+        suffix_width = max_width - 4;
+        if (suffix_width < ext_width && ext_width <= max_width - 3) {
+            prefix_width = max_width - 3 - ext_width;
+            if (prefix_width < 0) {
+                prefix_width = 0;
+            }
+            suffix_width = max_width - 3 - prefix_width;
+        }
+    }
+
+    if (prefix_width <= 0) {
+        return truncate_utf8_for_display(text, max_width);
+    }
+
+    gchar *prefix = utf8_prefix_by_width(text, prefix_width);
+    gchar *suffix = utf8_suffix_by_width(text, suffix_width);
+    gchar *result = g_strdup_printf("%s...%s", prefix, suffix);
+    g_free(prefix);
+    g_free(suffix);
+    return result;
+}
+
+static gint app_filename_max_width(const PixelTermApp *app) {
+    if (!app || app->term_width <= 0) {
+        return 0;
+    }
+    gint limit = (app->term_width * 4) / 5;
+    if (limit < 1) {
+        limit = app->term_width;
+    }
+    if (limit < 1) {
+        limit = 1;
+    }
+    return limit;
 }
 
 typedef struct {
@@ -1201,7 +1333,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             gchar *basename = g_path_get_basename(filepath);
             gchar *safe_basename = sanitize_for_terminal(basename);
             if (safe_basename) {
-                gchar *display_name = truncate_utf8_for_display(safe_basename, app->term_width);
+                gint max_width = app_filename_max_width(app);
+                if (max_width <= 0) {
+                    max_width = app->term_width;
+                }
+                gchar *display_name = truncate_utf8_middle_keep_suffix(safe_basename, max_width);
                 gint filename_len = utf8_display_width(display_name);
                 gint image_center_col = effective_width / 2;
                 gint filename_start_col = left_pad + image_center_col - filename_len / 2;
@@ -1222,9 +1358,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (app->term_height > 0 && !app->ui_text_hidden) {
             const HelpSegment segments[] = {
                 {"←/→", "Prev/Next"},
+                {"Space", "Pause/Play"},
                 {"Enter", "Preview"},
                 {"TAB", "Toggle"},
-                {"i", "Info"},
                 {"r", "Delete"},
                 {"~", "Zen"},
                 {"ESC", "Exit"}
@@ -1363,7 +1499,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         gchar *basename = g_path_get_basename(filepath);
         gchar *safe_basename = sanitize_for_terminal(basename);
         if (safe_basename) {
-            gchar *display_name = truncate_utf8_for_display(safe_basename, app->term_width);
+            gint max_width = app_filename_max_width(app);
+            if (max_width <= 0) {
+                max_width = app->term_width;
+            }
+            gchar *display_name = truncate_utf8_middle_keep_suffix(safe_basename, max_width);
             gint filename_len = utf8_display_width(display_name);
             // Center filename relative to image width, but ensure it stays within terminal bounds
             gint image_center_col = effective_width / 2;
@@ -2378,7 +2518,11 @@ static void app_preview_render_selected_filename(PixelTermApp *app) {
 
     gchar *base = g_path_get_basename(sel_path);
     gchar *safe = sanitize_for_terminal(base);
-    gchar *display_name = truncate_utf8_for_display(safe, app->term_width);
+    gint max_width = app_filename_max_width(app);
+    if (max_width <= 0) {
+        max_width = app->term_width;
+    }
+    gchar *display_name = truncate_utf8_middle_keep_suffix(safe, max_width);
     gint row = app->term_height - 2;
     gint name_len = utf8_display_width(display_name);
     gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
