@@ -203,6 +203,10 @@ ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gi
         return ERROR_MEMORY_ALLOC;
     }
 
+    if (!is_image_file(filepath)) {
+        return ERROR_NONE;
+    }
+
     g_mutex_lock(&preloader->mutex);
 
     gint task_width = target_width;
@@ -291,13 +295,17 @@ ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *fi
     GList *current = g_list_nth(files, current_index);
     GList *walker = current ? current->next : NULL;
     for (gint priority = 1; walker && priority <= 3; priority++) {
-        preloader_add_task(preloader, (gchar*)walker->data, priority, task_width, task_height);
+        if (is_image_file((gchar*)walker->data)) {
+            preloader_add_task(preloader, (gchar*)walker->data, priority, task_width, task_height);
+        }
         walker = walker->next;
     }
 
     walker = current ? current->prev : NULL;
     for (gint distance = 1; walker && distance <= 2; distance++) {
-        preloader_add_task(preloader, (gchar*)walker->data, 10 + distance, task_width, task_height);
+        if (is_image_file((gchar*)walker->data)) {
+            preloader_add_task(preloader, (gchar*)walker->data, 10 + distance, task_width, task_height);
+        }
         walker = walker->prev;
     }
 

@@ -68,7 +68,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         
         // Check if it's a regular file and a valid image
         if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && 
-            is_valid_image_file(full_path)) {
+            is_valid_media_file(full_path)) {
             all_files = g_list_prepend(all_files, full_path);
         } else {
             g_free(full_path);
@@ -263,8 +263,8 @@ ImageInfo* browser_get_file_info(const FileBrowser *browser) {
     info->modification_time = get_file_mtime(filepath);
     info->format = g_strdup(get_file_extension(filepath));
 
-    // Get image dimensions
-    renderer_get_image_dimensions(filepath, &info->width, &info->height);
+    // Get image/video dimensions
+    renderer_get_media_dimensions(filepath, &info->width, &info->height);
 
     return info;
 }

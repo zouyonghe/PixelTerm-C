@@ -12,6 +12,7 @@
 #include "app.h"
 #include "input.h"
 #include "common.h"
+#include "video_player.h"
 
 // Global application instance
 static PixelTermApp *g_app = NULL;
@@ -31,6 +32,40 @@ static const KeyCode g_nav_keys_ud[] = {
 static const KeyCode g_nav_keys_page[] = {
     KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, (KeyCode)'a'
 };
+
+static gboolean app_current_is_video(const PixelTermApp *app) {
+    if (!app || app->preview_mode || app->file_manager_mode) {
+        return FALSE;
+    }
+    const gchar *filepath = app_get_current_filepath(app);
+    if (!filepath) {
+        return FALSE;
+    }
+    const char *ext = get_file_extension(filepath);
+    gboolean is_gif = (ext && g_ascii_strcasecmp(ext, ".gif") == 0) ? TRUE : FALSE;
+    gboolean is_video = is_video_file(filepath);
+    if (!is_video && !is_gif && !is_image_file(filepath)) {
+        is_video = is_valid_video_file(filepath);
+    }
+    if (is_gif && is_video) {
+        is_video = FALSE;
+    }
+    return is_video;
+}
+
+static void app_toggle_video_playback(PixelTermApp *app) {
+    if (!app || !app->video_player) {
+        return;
+    }
+    if (!app_current_is_video(app)) {
+        return;
+    }
+    if (video_player_is_playing(app->video_player)) {
+        video_player_pause(app->video_player);
+    } else if (video_player_has_video(app->video_player)) {
+        video_player_play(app->video_player);
+    }
+}
 
 static gboolean probe_sixel_support(void) {
     InputHandler *probe = input_handler_create();
@@ -230,7 +265,11 @@ static void handle_mouse_press_file_manager(PixelTermApp *app, const InputEvent 
 }
 
 static void handle_mouse_press_single(PixelTermApp *app, const InputEvent *event) {
-    (void)event;
+    if (event->mouse_button == MOUSE_BUTTON_LEFT && app_current_is_video(app)) {
+        app_toggle_video_playback(app);
+        app->pending_single_click = FALSE;
+        return;
+    }
     app->pending_single_click = TRUE;
     app->pending_click_time = g_get_monotonic_time();
 }
@@ -376,6 +415,9 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             app_render_by_mode(app);
             return TRUE;
         case (KeyCode)'i':
+            if (app_current_is_video(app)) {
+                return TRUE;
+            }
             if (!app->preview_mode) {
                 if (app->ui_text_hidden) {
                     return TRUE;
@@ -685,6 +727,9 @@ static void handle_key_press_file_manager(PixelTermApp *app,
 
 static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
     switch (event->key_code) {
+        case (KeyCode)' ':
+            app_toggle_video_playback(app);
+            break;
         case KEY_LEFT:
         case (KeyCode)'h': {
             gint old_index = app_get_current_index(app);
@@ -924,6 +969,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                 g_main_context_iteration(NULL, FALSE);
             }
         }
+        if (app->video_player && video_player_is_playing(app->video_player)) {
+            while (g_main_context_pending(NULL)) {
+                g_main_context_iteration(NULL, FALSE);
+            }
+        }
+
         
         // Check if we have pending input with timeout to allow signal checking
         if (!input_has_pending_input(input_handler)) {
@@ -1024,8 +1075,8 @@ int main(int argc, char *argv[]) {
             }
         }
     } else {
-        // Check if the file is a valid image file first
-        if (!is_valid_image_file(path)) {
+        // Check if the file is a valid media file first
+        if (!is_valid_media_file(path)) {
             // If the file is not valid, load the directory and enter file manager
             gchar *directory = g_path_get_dirname(path);
             error = app_load_directory(g_app, directory);
