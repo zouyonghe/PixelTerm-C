@@ -1,6 +1,6 @@
 # PixelTerm-C - 高性能终端图像查看器
 
-![Version](https://img.shields.io/badge/Version-v1.4.2-blue)
+![Version](https://img.shields.io/badge/Version-v1.5.1-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](README.md) | 中文*
@@ -17,6 +17,7 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 - 🖼️ **多格式支持** - 支持JPG、PNG、GIF、BMP、WebP、TIFF等主流图像格式
 - 🎬 **动画GIF支持** - 终端内播放动图，时序准确、渲染清晰
+- 🎥 **视频播放** - 在终端内播放 MP4、MKV、AVI、MOV、WebM、MPEG/MPG、M4V 视频（仅视频，无音频）
 - 🎨 **TrueColor渲染** - 全24位色彩支持，自动检测与优化
 - 📁 **智能浏览** - 自动检测目录中的图像文件，支持目录导航
 - ⌨️ **键盘导航** - 使用方向键在图像间切换，支持各种终端环境
@@ -58,10 +59,10 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential
+sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config build-essential
 
 # Arch Linux
-sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
+sudo pacman -S chafa glib2 gdk-pixbuf2 ffmpeg pkgconf base-devel
 ```
 
 ### 快速安装
@@ -111,6 +112,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ```bash
 # 查看单个图像（直接进入图像查看器）
 pixelterm /path/to/image.jpg
+
+# 播放视频（仅视频，无音频）
+pixelterm /path/to/video.mp4
 
 # 浏览目录（进入文件管理器模式）
 pixelterm /path/to/directory
@@ -162,7 +166,7 @@ pixelterm --work-factor 7 /path/to/image.jpg
 
 | 操作 | 功能 | 适用模式 | 说明 |
 |---------|----------|------------------|-------|
-| 左键单击 | 切换到下一张图像 | 图像视图（单图模式） | |
+| 左键单击 | 切换到下一张图像 | 图像视图（单图模式） | 视频时为播放/暂停。 |
 | 左键双击 | 切换到网格预览 | 图像视图（单图模式） | |
 | 左键单击 | 选中图像 | 网格预览 | 选中光标下的图像。 |
 | 左键双击 | 在图像视图中打开选中图像 | 网格预览 | 打开光标位置的图像。 |
@@ -182,6 +186,7 @@ pixelterm --work-factor 7 /path/to/image.jpg
 | →/↓ | 下一张图像 |
 | h/k | Vim风格导航（上一张图像） |
 | l/j | Vim风格导航（下一张图像） |
+| 空格 | 视频播放/暂停（仅视频） |
 | Enter | 切换进入网格预览模式 |
 | TAB | 在图像视图 / 网格预览 / 文件管理器间循环切换 |
 | i | 切换图像信息显示 |

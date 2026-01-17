@@ -1,6 +1,6 @@
 # PixelTerm-C - High Performance Terminal Image Viewer
 
-![Version](https://img.shields.io/badge/Version-v1.4.2-blue)
+![Version](https://img.shields.io/badge/Version-v1.5.1-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](README_zh.md)*
@@ -17,6 +17,7 @@ Release notes: see [CHANGELOG.md](CHANGELOG.md).
 
 - 🖼️ **Multi-format Support** - Supports JPG, PNG, GIF, BMP, WebP, TIFF and other mainstream image formats
 - 🎬 **Animated GIF Support** - Play animated GIFs directly in the terminal with proper timing and high-quality rendering
+- 🎥 **Video Playback** - Play MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V videos in the terminal (video-only, no audio)
 - 🎨 **TrueColor Rendering** - Full 24-bit color support with automatic detection and optimization
 - 📁 **Smart Browsing** - Automatically detects image files in directories with directory navigation support
 - ⌨️ **Keyboard Navigation** - Switch between images with arrow keys, supporting various terminal environments
@@ -57,11 +58,11 @@ Terminals with the best image quality and color accuracy tested so far:
 ### Install Dependencies
 
 ```bash
-# Ubuntu/Debian  
-sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config build-essential
+# Ubuntu/Debian
+sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config build-essential
 
 # Arch Linux
-sudo pacman -S chafa glib2 gdk-pixbuf2 pkgconf base-devel
+sudo pacman -S chafa glib2 gdk-pixbuf2 ffmpeg pkgconf base-devel
 ```
 
 ### Quick Install
@@ -111,6 +112,9 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ```bash
 # View single image (opens image viewer directly)
 pixelterm /path/to/image.jpg
+
+# Play a video (video-only; no audio)
+pixelterm /path/to/video.mp4
 
 # Browse directory (launches file manager mode)
 pixelterm /path/to/directory
@@ -162,7 +166,7 @@ Mouse interaction significantly enhances navigation and selection across differe
 
 | Control | Function | Applicable Modes | Notes |
 |---------|----------|------------------|-------|
-| Left Click | Advance to next image | Image View (Single Image Mode) | |
+| Left Click | Advance to next image | Image View (Single Image Mode) | In Video View, toggles play/pause. |
 | Double Left Click | Switch to Grid Preview | Image View (Single Image Mode) | |
 | Left Click | Select image | Grid Preview | Selects the image under the cursor. |
 | Double Left Click | Open selected image in Image View | Grid Preview | Opens the image at the cursor position. |
@@ -182,6 +186,7 @@ This is the default mode when viewing a single image.
 | →/↓ | Next image |
 | h/k | Vim-style navigation (previous image) |
 | l/j | Vim-style navigation (next image) |
+| Space | Play/Pause video (Video View only) |
 | Enter | Toggle into Grid Preview mode |
 | TAB | Cycle between Image View / Grid Preview / File Manager |
 | i | Toggle image information display |
