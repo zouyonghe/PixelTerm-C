@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.5.0: Video playback, previews, and media UI polish.
+    - **Video**: Add FFmpeg-backed video playback with smoother frame scheduling and pause/resume controls.
+    - **Preview Grid**: Render video first-frame thumbnails instead of placeholder labels.
+    - **UI**: Truncate long filenames with middle ellipsis and keep extensions; cap display width for better centering.
+    - **Input**: Space/left-click toggle video playback; suppress info overlay on videos.
+    - **Build**: Deduplicate pkg-config linker flags to avoid duplicate library warnings.
+
 - v1.4.2: Runtime safety and terminal handling fixes.
     - **GIF**: Guard renderer initialization failures and avoid double-free when an external renderer is injected.
     - **Input**: Only enable/disable mouse tracking on TTY outputs to avoid control code leaks.
