@@ -106,6 +106,54 @@ static gint utf8_display_width(const gchar *text) {
     return width;
 }
 
+// Truncate UTF-8 text to a given display width, appending "..." when needed.
+static gchar* truncate_utf8_for_display(const gchar *text, gint max_width) {
+    if (!text || max_width <= 0) {
+        return g_strdup("");
+    }
+
+    gint width = utf8_display_width(text);
+    if (width <= max_width) {
+        return g_strdup(text);
+    }
+
+    if (max_width <= 3) {
+        gchar *dots = g_malloc((gsize)max_width + 1);
+        memset(dots, '.', (gsize)max_width);
+        dots[max_width] = '\0';
+        return dots;
+    }
+
+    gint target_width = max_width - 3;
+    gint current_width = 0;
+    const gchar *p = text;
+    const gchar *end = text;
+    while (*p) {
+        gunichar ch = g_utf8_get_char_validated(p, -1);
+        gint char_width = 1;
+        const gchar *next = p + 1;
+        if (ch != (gunichar)-1 && ch != (gunichar)-2) {
+            if (g_unichar_iszerowidth(ch)) {
+                char_width = 0;
+            } else {
+                char_width = g_unichar_iswide(ch) ? 2 : 1;
+            }
+            next = g_utf8_next_char(p);
+        }
+        if (current_width + char_width > target_width) {
+            break;
+        }
+        current_width += char_width;
+        end = next;
+        p = next;
+    }
+
+    gchar *prefix = g_strndup(text, end - text);
+    gchar *result = g_strdup_printf("%s...", prefix);
+    g_free(prefix);
+    return result;
+}
+
 typedef struct {
     const char *key;
     const char *label;
@@ -1114,7 +1162,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                      target_height);
     }
     if (!app->ui_text_hidden && app->term_height > 0) {
-        const char *title = "Image View";
+        const char *title = is_video ? "Video View" : "Image View";
         gint title_len = strlen(title);
         gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
         printf("\033[1;1H\033[2K");
@@ -1153,16 +1201,19 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             gchar *basename = g_path_get_basename(filepath);
             gchar *safe_basename = sanitize_for_terminal(basename);
             if (safe_basename) {
-                gint filename_len = strlen(safe_basename);
+                gchar *display_name = truncate_utf8_for_display(safe_basename, app->term_width);
+                gint filename_len = utf8_display_width(display_name);
                 gint image_center_col = effective_width / 2;
                 gint filename_start_col = left_pad + image_center_col - filename_len / 2;
                 if (filename_start_col < 0) filename_start_col = 0;
                 if (filename_start_col + filename_len > app->term_width) {
                     filename_start_col = app->term_width - filename_len;
                 }
+                if (filename_start_col < 0) filename_start_col = 0;
                 gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
                 printf("\033[%d;%dH", filename_row, filename_start_col + 1);
-                printf("\033[34m%s\033[0m", safe_basename);
+                printf("\033[34m%s\033[0m", display_name);
+                g_free(display_name);
                 g_free(safe_basename);
                 g_free(basename);
             }
@@ -1312,7 +1363,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         gchar *basename = g_path_get_basename(filepath);
         gchar *safe_basename = sanitize_for_terminal(basename);
         if (safe_basename) {
-            gint filename_len = strlen(safe_basename);
+            gchar *display_name = truncate_utf8_for_display(safe_basename, app->term_width);
+            gint filename_len = utf8_display_width(display_name);
             // Center filename relative to image width, but ensure it stays within terminal bounds
             gint image_center_col = effective_width / 2;
             gint filename_start_col = left_pad + image_center_col - filename_len / 2;
@@ -1322,11 +1374,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             if (filename_start_col + filename_len > app->term_width) {
                 filename_start_col = app->term_width - filename_len;
             }
+            if (filename_start_col < 0) filename_start_col = 0;
 
             // Keep filename on the third-to-last line to keep it outside the image area
             gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
             printf("\033[%d;%dH", filename_row, filename_start_col + 1);
-            printf("\033[34m%s\033[0m", safe_basename); // Blue filename with reset
+            printf("\033[34m%s\033[0m", display_name); // Blue filename with reset
+            g_free(display_name);
             g_free(safe_basename);
             g_free(basename);
         }
@@ -2324,25 +2378,16 @@ static void app_preview_render_selected_filename(PixelTermApp *app) {
 
     gchar *base = g_path_get_basename(sel_path);
     gchar *safe = sanitize_for_terminal(base);
+    gchar *display_name = truncate_utf8_for_display(safe, app->term_width);
     gint row = app->term_height - 2;
-    gint name_len = strlen(safe);
-    if (name_len > app->term_width) {
-        if (app->term_width > 3) {
-            safe[app->term_width - 3] = '.';
-            safe[app->term_width - 2] = '.';
-            safe[app->term_width - 1] = '\0';
-            name_len = app->term_width;
-        } else {
-            safe[0] = '\0';
-            name_len = 0;
-        }
-    }
+    gint name_len = utf8_display_width(display_name);
     gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
     printf("\033[%d;1H", row);
     for (gint i = 0; i < app->term_width; i++) putchar(' ');
     if (name_len > 0) {
-        printf("\033[%d;%dH\033[34m%s\033[0m", row, pad + 1, safe);
+        printf("\033[%d;%dH\033[34m%s\033[0m", row, pad + 1, display_name);
     }
+    g_free(display_name);
     g_free(safe);
     g_free(base);
 }

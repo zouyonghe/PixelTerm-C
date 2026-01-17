@@ -18,10 +18,13 @@ typedef struct {
     gint frame_delay_ms;
     guint timer_id;
     gchar *filepath;
+    gint max_queue_size;
 
     // Renderer reference
     ImageRenderer *renderer;
     gboolean owns_renderer;
+    GMutex render_mutex;
+    GMutex state_mutex;
 
     // Render layout for single image mode
     gint render_area_top_row;
@@ -48,6 +51,12 @@ typedef struct {
     gint video_height;
     guint8 *rgba_buffer;
     gint rgba_buffer_size;
+
+    // Pre-rendered frame queue (worker thread)
+    GThread *worker_thread;
+    GMutex queue_mutex;
+    GQueue *frame_queue;
+    gboolean worker_stop;
 } VideoPlayer;
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel);
