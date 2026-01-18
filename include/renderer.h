@@ -13,6 +13,7 @@ typedef struct {
     gint work_factor;
     gboolean force_sixel;
     gboolean force_kitty;
+    gboolean force_iterm2;
     
     // Advanced quality settings
     ChafaDitherMode dither_mode;

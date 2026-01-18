@@ -12,7 +12,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 // 创建新的 GIF 播放器实例
-GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel, gboolean force_kitty) {
+GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2) {
     GifPlayer *player = g_new0(GifPlayer, 1);
     if (!player) {
         return NULL;
@@ -61,6 +61,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel, gboolean force
             .work_factor = work_factor,
             .force_sixel = force_sixel,
             .force_kitty = force_kitty,
+            .force_iterm2 = force_iterm2,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

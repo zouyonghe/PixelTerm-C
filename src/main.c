@@ -20,6 +20,7 @@ static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
 static gboolean g_force_sixel = FALSE;
 static gboolean g_force_kitty = FALSE;
+static gboolean g_force_iterm2 = FALSE;
 static const gint64 k_click_threshold_us = 400000;
 static const useconds_t k_input_poll_sleep_us = 10000;
 static const useconds_t k_resize_sleep_us = 100000;
@@ -138,6 +139,34 @@ static gboolean probe_kitty_support(void) {
     input_handler_destroy(probe);
 
     return kitty_supported;
+}
+
+static gboolean probe_iterm2_support(void) {
+    const char *term_program = getenv("TERM_PROGRAM");
+    if (term_program && (strcmp(term_program, "iTerm.app") == 0 || strcmp(term_program, "iTerm2") == 0)) {
+        return TRUE;
+    }
+
+    InputHandler *probe = input_handler_create();
+    if (!probe) {
+        return FALSE;
+    }
+
+    if (input_handler_initialize(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    if (input_enable_raw_mode(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    gboolean iterm2_supported = input_probe_iterm2_support(probe, 120);
+    input_disable_raw_mode(probe);
+    input_handler_destroy(probe);
+
+    return iterm2_supported;
 }
 
 // Signal handler for graceful shutdown
@@ -607,7 +636,8 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             if (app->preloader) {
                 preloader_stop(app->preloader);
                 preloader_cache_clear(app->preloader);
-                preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor, app->force_sixel);
+                preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
+                                     app->force_sixel, app->force_kitty, app->force_iterm2);
                 preloader_start(app->preloader);
             }
             app_render_by_mode(app);
@@ -1168,9 +1198,15 @@ int main(int argc, char *argv[]) {
 
     g_force_kitty = probe_kitty_support();
     if (g_force_kitty) {
+        g_force_iterm2 = FALSE;
         g_force_sixel = FALSE;
     } else {
-        g_force_sixel = probe_sixel_support();
+        g_force_iterm2 = probe_iterm2_support();
+        if (g_force_iterm2) {
+            g_force_sixel = FALSE;
+        } else {
+            g_force_sixel = probe_sixel_support();
+        }
     }
 
     // Create and initialize application
@@ -1181,6 +1217,7 @@ int main(int argc, char *argv[]) {
     }
     g_app->force_sixel = g_force_sixel;
     g_app->force_kitty = g_force_kitty;
+    g_app->force_iterm2 = g_force_iterm2;
 
     g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);

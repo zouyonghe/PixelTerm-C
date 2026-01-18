@@ -262,6 +262,7 @@ gchar input_read_char(InputHandler *handler);
 gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
 gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms);
 gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms);
+gboolean input_probe_iterm2_support(InputHandler *handler, gint timeout_ms);
 
 // Terminal size handling
 /**

@@ -130,7 +130,8 @@ void preloader_destroy(ImagePreloader *preloader) {
 }
 
 // Initialize preloader
-ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor, gboolean force_sixel) {
+ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor,
+                               gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2) {
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -142,6 +143,8 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
     }
     preloader->work_factor = work_factor;
     preloader->force_sixel = force_sixel;
+    preloader->force_kitty = force_kitty;
+    preloader->force_iterm2 = force_iterm2;
 
     return ERROR_NONE;
 }
@@ -609,6 +612,8 @@ gpointer preloader_worker_thread(gpointer data) {
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .work_factor = preloader->work_factor,
         .force_sixel = preloader->force_sixel,
+        .force_kitty = preloader->force_kitty,
+        .force_iterm2 = preloader->force_iterm2,
         .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

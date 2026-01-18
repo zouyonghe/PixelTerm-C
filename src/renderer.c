@@ -50,6 +50,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
     renderer->config.force_sixel = FALSE;
     renderer->config.force_kitty = FALSE;
+    renderer->config.force_iterm2 = FALSE;
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -119,7 +120,8 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
 
     gboolean force_kitty_mode = renderer->config.force_kitty;
-    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode;
+    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -139,6 +141,9 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
     if (force_kitty_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+        mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    } else if (force_iterm2_mode) {
+        pixel_mode = CHAFA_PIXEL_MODE_ITERM2;
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     } else if (force_sixel_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
@@ -373,7 +378,8 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     }
 
     gboolean force_kitty_mode = renderer->config.force_kitty;
-    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode;
+    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -388,6 +394,9 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
         if (force_kitty_mode) {
             pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+            mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+        } else if (force_iterm2_mode) {
+            pixel_mode = CHAFA_PIXEL_MODE_ITERM2;
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         } else if (force_sixel_mode) {
             pixel_mode = CHAFA_PIXEL_MODE_SIXELS;

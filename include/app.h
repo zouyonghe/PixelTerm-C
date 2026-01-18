@@ -46,6 +46,7 @@ typedef struct {
     gint render_work_factor;
     gboolean force_sixel;
     gboolean force_kitty;
+    gboolean force_iterm2;
     gboolean needs_redraw;
     gboolean file_manager_mode;  // Track if file manager is active
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
