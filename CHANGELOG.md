@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.5.7: Video protocol toggle and stats layout.
+    - **Video**: Add `P` key to cycle rendering protocol during video playback.
+    - **Video**: Show protocol on the left and FPS on the right in the stats overlay (values only).
+
 - v1.5.6: Video playback responsiveness and controls.
     - **Video**: Reduce terminal IO with line-diff rendering and more aggressive late-frame dropping to keep pace.
     - **Video**: Add FPS overlay toggle (F) with on-screen display in video view.
