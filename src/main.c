@@ -21,6 +21,7 @@ static volatile sig_atomic_t g_last_signal = 0;
 static gboolean g_force_sixel = FALSE;
 static gboolean g_force_kitty = FALSE;
 static gboolean g_force_iterm2 = FALSE;
+static gboolean g_force_text = FALSE;
 static const gint64 k_click_threshold_us = 400000;
 static const useconds_t k_input_poll_sleep_us = 10000;
 static const useconds_t k_resize_sleep_us = 100000;
@@ -193,6 +194,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
+    printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
     printf("\n");
 }
 
@@ -202,7 +204,7 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor, gchar **protocol) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
@@ -212,6 +214,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
         {"no-alt-screen", no_argument,   0, 1002},
         {"clear-workaround", no_argument, 0, 1003},
         {"work-factor", required_argument, 0, 1004},
+        {"protocol", required_argument, 0, 1005},
         {0, 0, 0, 0}
     };
 
@@ -257,6 +260,13 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                     return ERROR_INVALID_ARGS;
                 }
                 *work_factor = (gint)value;
+                break;
+            }
+            case 1005: { // --protocol
+                if (protocol) {
+                    g_free(*protocol);
+                    *protocol = g_ascii_strdown(optarg, -1);
+                }
                 break;
             }
             case '?':
@@ -637,7 +647,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 preloader_stop(app->preloader);
                 preloader_cache_clear(app->preloader);
                 preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
-                                     app->force_sixel, app->force_kitty, app->force_iterm2);
+                                     app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
                 preloader_start(app->preloader);
             }
             app_render_by_mode(app);
@@ -1181,10 +1191,12 @@ int main(int argc, char *argv[]) {
     gboolean alt_screen_enabled = TRUE;
     gboolean clear_workaround_enabled = FALSE;
     gint work_factor = 9;
+    gchar *protocol = NULL;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor, &protocol);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
+        g_free(protocol);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
             return 0;
         }
@@ -1196,28 +1208,55 @@ int main(int argc, char *argv[]) {
         path = g_get_current_dir();
     }
 
-    g_force_kitty = probe_kitty_support();
-    if (g_force_kitty) {
-        g_force_iterm2 = FALSE;
-        g_force_sixel = FALSE;
-    } else {
-        g_force_iterm2 = probe_iterm2_support();
-        if (g_force_iterm2) {
+    if (protocol && *protocol) {
+        if (strcmp(protocol, "auto") == 0) {
+            // Fall through to auto detection below.
+        } else if (strcmp(protocol, "text") == 0) {
+            g_force_text = TRUE;
+        } else if (strcmp(protocol, "sixel") == 0) {
+            g_force_sixel = TRUE;
+        } else if (strcmp(protocol, "kitty") == 0) {
+            g_force_kitty = TRUE;
+        } else if (strcmp(protocol, "iterm2") == 0) {
+            g_force_iterm2 = TRUE;
+        } else {
+            fprintf(stderr, "Unknown protocol: %s\n", protocol);
+            g_free(protocol);
+            if (path) g_free(path);
+            return 1;
+        }
+    }
+    if (!g_force_text && !g_force_kitty && !g_force_iterm2 && !g_force_sixel) {
+        g_force_kitty = probe_kitty_support();
+        if (g_force_kitty) {
+            g_force_iterm2 = FALSE;
             g_force_sixel = FALSE;
         } else {
-            g_force_sixel = probe_sixel_support();
+            g_force_iterm2 = probe_iterm2_support();
+            if (g_force_iterm2) {
+                g_force_sixel = FALSE;
+            } else {
+                g_force_sixel = probe_sixel_support();
+            }
         }
+    }
+    if (g_force_text) {
+        g_force_kitty = FALSE;
+        g_force_iterm2 = FALSE;
+        g_force_sixel = FALSE;
     }
 
     // Create and initialize application
     g_app = app_create();
     if (!g_app) {
         g_free(path);
+        g_free(protocol);
         return 1;
     }
     g_app->force_sixel = g_force_sixel;
     g_app->force_kitty = g_force_kitty;
     g_app->force_iterm2 = g_force_iterm2;
+    g_app->force_text = g_force_text;
 
     g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);
@@ -1225,12 +1264,14 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);
         app_destroy(g_app);
         g_free(path);
+        g_free(protocol);
         return 1;
     }
 
     // Configure application settings
     g_app->preload_enabled = preload_enabled;
     g_app->clear_workaround_enabled = clear_workaround_enabled;
+    g_free(protocol);
 
     // Validate and load path
     gboolean is_directory;

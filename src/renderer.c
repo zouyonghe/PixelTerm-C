@@ -48,6 +48,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.preserve_aspect_ratio = TRUE;
     renderer->config.dither = FALSE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
+    renderer->config.force_text = FALSE;
     renderer->config.force_sixel = FALSE;
     renderer->config.force_kitty = FALSE;
     renderer->config.force_iterm2 = FALSE;
@@ -119,9 +120,10 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         return ERROR_CHAFA_INIT;
     }
 
-    gboolean force_kitty_mode = renderer->config.force_kitty;
-    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode;
-    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode;
+    gboolean force_text_mode = renderer->config.force_text;
+    gboolean force_kitty_mode = renderer->config.force_kitty && !force_text_mode;
+    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode && !force_text_mode;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode && !force_text_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -139,7 +141,10 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     // Configure canvas with terminal-adaptive settings
     ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
     ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-    if (force_kitty_mode) {
+    if (force_text_mode) {
+        pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+        mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    } else if (force_kitty_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_KITTY;
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     } else if (force_iterm2_mode) {
@@ -377,9 +382,10 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_CHAFA_INIT;
     }
 
-    gboolean force_kitty_mode = renderer->config.force_kitty;
-    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode;
-    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode;
+    gboolean force_text_mode = renderer->config.force_text;
+    gboolean force_kitty_mode = renderer->config.force_kitty && !force_text_mode;
+    gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode && !force_text_mode;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode && !force_text_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -392,7 +398,10 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (renderer->canvas_config) {
         ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-        if (force_kitty_mode) {
+        if (force_text_mode) {
+            pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+            mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+        } else if (force_kitty_mode) {
             pixel_mode = CHAFA_PIXEL_MODE_KITTY;
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         } else if (force_iterm2_mode) {

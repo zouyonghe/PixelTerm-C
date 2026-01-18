@@ -86,6 +86,10 @@ ImagePreloader* preloader_create(void) {
     preloader->max_cache_size = MAX_CACHE_SIZE;
     preloader->active_tasks = 0;
     preloader->work_factor = 9;
+    preloader->force_text = FALSE;
+    preloader->force_sixel = FALSE;
+    preloader->force_kitty = FALSE;
+    preloader->force_iterm2 = FALSE;
     
     // Default terminal dimensions
     preloader->term_width = 80;
@@ -131,7 +135,7 @@ void preloader_destroy(ImagePreloader *preloader) {
 
 // Initialize preloader
 ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor,
-                               gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2) {
+                               gboolean force_text, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2) {
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -142,6 +146,7 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
         work_factor = 9;
     }
     preloader->work_factor = work_factor;
+    preloader->force_text = force_text;
     preloader->force_sixel = force_sixel;
     preloader->force_kitty = force_kitty;
     preloader->force_iterm2 = force_iterm2;
@@ -611,6 +616,7 @@ gpointer preloader_worker_thread(gpointer data) {
         .dither = preloader->dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
         .work_factor = preloader->work_factor,
+        .force_text = preloader->force_text,
         .force_sixel = preloader->force_sixel,
         .force_kitty = preloader->force_kitty,
         .force_iterm2 = preloader->force_iterm2,

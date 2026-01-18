@@ -11,6 +11,7 @@ typedef struct {
     gboolean dither;
     ChafaColorSpace color_space;
     gint work_factor;
+    gboolean force_text;
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
