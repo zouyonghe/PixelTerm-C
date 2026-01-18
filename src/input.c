@@ -527,7 +527,7 @@ static gboolean input_response_has_kitty(const char *buffer) {
         return FALSE;
     }
 
-    return strstr(buffer, "kitty") != NULL;
+    return strstr(buffer, "kitty") != NULL || strstr(buffer, "ghostty") != NULL;
 }
 
 static gboolean input_response_has_iterm2(const char *buffer) {
