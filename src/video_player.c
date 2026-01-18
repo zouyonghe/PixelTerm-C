@@ -20,6 +20,7 @@ typedef struct {
     gint rendered_width;
     gint rendered_height;
     gint64 pts_ms;
+    ChafaPixelMode pixel_mode;
 } VideoFrame;
 
 static gint video_player_get_slow_level(VideoPlayer *player);
@@ -773,6 +774,7 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         GString *rendered = NULL;
         gint rendered_w = 0;
         gint rendered_h = 0;
+        ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
         g_mutex_lock(&player->render_mutex);
         renderer_update_terminal_size(player->renderer);
         if (layout_valid) {
@@ -787,6 +789,9 @@ static gpointer video_player_worker_thread(gpointer user_data) {
                                               4);
         if (rendered) {
             renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
+            if (player->renderer->canvas_config) {
+                pixel_mode = chafa_canvas_config_get_pixel_mode(player->renderer->canvas_config);
+            }
         }
         g_mutex_unlock(&player->render_mutex);
 
@@ -803,6 +808,7 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         frame->rendered_width = rendered_w;
         frame->rendered_height = rendered_h;
         frame->pts_ms = pts_ms;
+        frame->pixel_mode = pixel_mode;
         video_player_queue_push(player, frame);
     }
 
@@ -848,6 +854,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     GString *result = frame->rendered;
     gint rendered_w = frame->rendered_width;
     gint rendered_h = frame->rendered_height;
+    gboolean graphics_mode = (frame->pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS);
 
     gint64 io_start_us = g_get_monotonic_time();
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
@@ -883,9 +890,20 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
 
         gint row = image_top_row;
         gint lines_printed = 0;
-        gboolean has_newline = memchr(result->str, '\n', result->len) != NULL;
+        gboolean has_newline = !graphics_mode && memchr(result->str, '\n', result->len) != NULL;
 
-        if (!has_newline) {
+        if (graphics_mode) {
+            video_player_clear_line_cache(player);
+            gint col = 1 + left_pad;
+            if (col < 1) {
+                col = 1;
+            }
+            printf("\033[%d;%dH", row, col);
+            if (result->len > 0) {
+                fwrite(result->str, 1, result->len, stdout);
+            }
+            lines_printed = rendered_h > 0 ? rendered_h : 1;
+        } else if (!has_newline) {
             video_player_clear_line_cache(player);
             if (left_pad > 0) {
                 gchar *pad_buffer = g_malloc(left_pad);
