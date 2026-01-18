@@ -22,6 +22,29 @@ typedef struct {
     gint64 pts_ms;
 } VideoFrame;
 
+static void video_player_clear_line_cache(VideoPlayer *player) {
+    if (!player || !player->last_frame_lines) {
+        return;
+    }
+    g_ptr_array_free(player->last_frame_lines, TRUE);
+    player->last_frame_lines = NULL;
+}
+
+static void video_player_update_io_avg(VideoPlayer *player, gint64 io_ms) {
+    if (!player || io_ms < 0) {
+        return;
+    }
+    const gdouble alpha = 0.2;
+    g_mutex_lock(&player->state_mutex);
+    if (!player->io_avg_valid) {
+        player->io_avg_ms = (gdouble)io_ms;
+        player->io_avg_valid = TRUE;
+    } else {
+        player->io_avg_ms = player->io_avg_ms * (1.0 - alpha) + (gdouble)io_ms * alpha;
+    }
+    g_mutex_unlock(&player->state_mutex);
+}
+
 static void video_frame_destroy(VideoFrame *frame) {
     if (!frame) {
         return;
@@ -225,7 +248,18 @@ static gint video_player_calc_delay_ms(VideoPlayer *player) {
     if (wait_ms < 1) {
         wait_ms = 1;
     }
-    return (gint)wait_ms;
+    gint delay = (gint)wait_ms;
+    g_mutex_lock(&player->state_mutex);
+    gboolean io_valid = player->io_avg_valid;
+    gdouble io_avg = player->io_avg_ms;
+    g_mutex_unlock(&player->state_mutex);
+    if (io_valid) {
+        gint io_floor = (gint)(io_avg + 0.5);
+        if (io_floor > delay) {
+            delay = io_floor;
+        }
+    }
+    return delay;
 }
 
 static gboolean video_player_should_stop(VideoPlayer *player) {
@@ -314,6 +348,8 @@ static void video_player_clear_decode(VideoPlayer *player) {
         return;
     }
 
+    video_player_clear_line_cache(player);
+
     if (player->sws_context) {
         sws_freeContext(player->sws_context);
         player->sws_context = NULL;
@@ -359,6 +395,8 @@ static void video_player_clear_decode(VideoPlayer *player) {
     player->smooth_valid = FALSE;
     player->has_video = FALSE;
     player->draining = FALSE;
+    player->io_avg_ms = 0.0;
+    player->io_avg_valid = FALSE;
 }
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel) {
@@ -403,6 +441,9 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel) {
     player->last_frame_height = 0;
     player->fixed_frame_top_row = 0;
     player->fixed_frame_valid = FALSE;
+    player->last_frame_lines = NULL;
+    player->io_avg_ms = 0.0;
+    player->io_avg_valid = FALSE;
 
     if (work_factor < 1) {
         work_factor = 1;
@@ -479,6 +520,7 @@ void video_player_set_render_area(VideoPlayer *player,
         player->fixed_frame_valid = FALSE;
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
+        video_player_clear_line_cache(player);
     }
     g_mutex_unlock(&player->state_mutex);
 }
@@ -728,6 +770,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     gint rendered_w = frame->rendered_width;
     gint rendered_h = frame->rendered_height;
 
+    gint64 io_start_us = g_get_monotonic_time();
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
         gint term_h = player->render_term_height;
@@ -759,42 +802,69 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
             player->fixed_frame_valid = TRUE;
         }
 
-        gchar *pad_buffer = NULL;
-        if (left_pad > 0) {
-            pad_buffer = g_malloc(left_pad);
-            memset(pad_buffer, ' ', left_pad);
-        }
-
-        const gchar *line_ptr = result->str;
         gint row = image_top_row;
         gint lines_printed = 0;
-        if (!strchr(result->str, '\n')) {
-            printf("\033[%d;1H", row);
+        gboolean has_newline = memchr(result->str, '\n', result->len) != NULL;
+
+        if (!has_newline) {
+            video_player_clear_line_cache(player);
             if (left_pad > 0) {
+                gchar *pad_buffer = g_malloc(left_pad);
+                memset(pad_buffer, ' ', left_pad);
+                printf("\033[%d;1H", row);
                 fwrite(pad_buffer, 1, left_pad, stdout);
+                g_free(pad_buffer);
+            } else {
+                printf("\033[%d;1H", row);
             }
-            fwrite(result->str, 1, result->len, stdout);
+            if (result->len > 0) {
+                fwrite(result->str, 1, result->len, stdout);
+            }
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else {
-            while (line_ptr && *line_ptr && row <= area_bottom) {
-                const gchar *newline = strchr(line_ptr, '\n');
-                gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
-                printf("\033[%d;1H\033[2K", row);
+            GPtrArray *new_lines = g_ptr_array_new_with_free_func(g_free);
+            const gchar *line_ptr = result->str;
+            const gchar *end = result->str + result->len;
+            gint line_index = 0;
+            while (line_ptr && line_ptr < end && row <= area_bottom) {
+                const gchar *newline = memchr(line_ptr, '\n', end - line_ptr);
+                gint line_len = newline ? (gint)(newline - line_ptr) : (gint)(end - line_ptr);
+                gint full_len = left_pad + line_len;
+                gchar *full_line = g_malloc(full_len + 1);
                 if (left_pad > 0) {
-                    fwrite(pad_buffer, 1, left_pad, stdout);
+                    memset(full_line, ' ', left_pad);
                 }
                 if (line_len > 0) {
-                    fwrite(line_ptr, 1, line_len, stdout);
+                    memcpy(full_line + left_pad, line_ptr, line_len);
                 }
+                full_line[full_len] = '\0';
+
+                const gchar *prev_line = NULL;
+                if (player->last_frame_lines &&
+                    line_index < (gint)player->last_frame_lines->len) {
+                    prev_line = g_ptr_array_index(player->last_frame_lines, line_index);
+                }
+                if (!prev_line || strcmp(prev_line, full_line) != 0) {
+                    printf("\033[%d;1H\033[2K", row);
+                    if (full_len > 0) {
+                        fwrite(full_line, 1, full_len, stdout);
+                    }
+                }
+                g_ptr_array_add(new_lines, full_line);
                 lines_printed++;
+                line_index++;
                 if (!newline) {
                     break;
                 }
                 line_ptr = newline + 1;
                 row++;
             }
+
+            if (player->last_frame_lines) {
+                g_ptr_array_free(player->last_frame_lines, TRUE);
+            }
+            player->last_frame_lines = new_lines;
         }
-        g_free(pad_buffer);
 
         if (player->last_frame_height > 0) {
             gint prev_top = player->last_frame_top_row;
@@ -813,6 +883,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         player->last_frame_top_row = image_top_row;
         player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
     } else {
+        video_player_clear_line_cache(player);
         printf("\033[H");
         printf("%s", result->str);
         printf("\033[J");
@@ -820,8 +891,11 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         player->last_frame_height = 0;
     }
 
-    video_frame_destroy(frame);
     fflush(stdout);
+    gint64 io_end_us = g_get_monotonic_time();
+    video_player_update_io_avg(player, (io_end_us - io_start_us) / 1000);
+
+    video_frame_destroy(frame);
     return TRUE;
 }
 
@@ -984,6 +1058,7 @@ ErrorCode video_player_play(VideoPlayer *player) {
     player->fixed_frame_valid = FALSE;
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
+    video_player_clear_line_cache(player);
     g_mutex_lock(&player->state_mutex);
     player->clock_started = FALSE;
     player->clock_start_us = 0;
@@ -991,6 +1066,8 @@ ErrorCode video_player_play(VideoPlayer *player) {
     player->smooth_last_pts_ms = 0;
     player->smooth_pts_ms = 0;
     player->smooth_valid = FALSE;
+    player->io_avg_ms = 0.0;
+    player->io_avg_valid = FALSE;
     g_mutex_unlock(&player->state_mutex);
 
     video_player_queue_clear(player);

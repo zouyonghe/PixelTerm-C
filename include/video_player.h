@@ -47,6 +47,9 @@ typedef struct {
     gint last_frame_height;
     gint fixed_frame_top_row;
     gboolean fixed_frame_valid;
+    GPtrArray *last_frame_lines;
+    gdouble io_avg_ms;
+    gboolean io_avg_valid;
 
     // FFmpeg state
     struct AVFormatContext *format_context;
