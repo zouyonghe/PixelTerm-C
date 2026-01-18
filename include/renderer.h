@@ -12,6 +12,7 @@ typedef struct {
     ChafaColorSpace color_space;
     gint work_factor;
     gboolean force_sixel;
+    gboolean force_kitty;
     
     // Advanced quality settings
     ChafaDitherMode dither_mode;

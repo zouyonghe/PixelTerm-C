@@ -49,6 +49,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.dither = FALSE;
     renderer->config.color_space = CHAFA_COLOR_SPACE_RGB;
     renderer->config.force_sixel = FALSE;
+    renderer->config.force_kitty = FALSE;
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -117,7 +118,8 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         return ERROR_CHAFA_INIT;
     }
 
-    gboolean force_sixel_mode = renderer->config.force_sixel;
+    gboolean force_kitty_mode = renderer->config.force_kitty;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -135,7 +137,10 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     // Configure canvas with terminal-adaptive settings
     ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
     ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-    if (force_sixel_mode) {
+    if (force_kitty_mode) {
+        pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+        mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    } else if (force_sixel_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
@@ -367,7 +372,8 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_CHAFA_INIT;
     }
 
-    gboolean force_sixel_mode = renderer->config.force_sixel;
+    gboolean force_kitty_mode = renderer->config.force_kitty;
+    gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode;
     if (force_sixel_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
@@ -380,7 +386,10 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (renderer->canvas_config) {
         ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
-        if (force_sixel_mode) {
+        if (force_kitty_mode) {
+            pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+            mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+        } else if (force_sixel_mode) {
             pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {

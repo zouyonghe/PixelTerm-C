@@ -522,6 +522,14 @@ static gboolean input_response_has_sixel(const char *buffer) {
     return FALSE;
 }
 
+static gboolean input_response_has_kitty(const char *buffer) {
+    if (!buffer) {
+        return FALSE;
+    }
+
+    return strstr(buffer, "kitty") != NULL;
+}
+
 gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
     if (!handler || timeout_ms <= 0) {
         return FALSE;
@@ -557,6 +565,40 @@ gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
     }
 
     return input_response_has_sixel(buffer);
+}
+
+gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
+    if (!handler || timeout_ms <= 0) {
+        return FALSE;
+    }
+
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+        return FALSE;
+    }
+
+    input_flush_buffer(handler);
+
+    const char query[] = "\033[>q\033[5n";
+    (void)write(STDOUT_FILENO, query, sizeof(query) - 1);
+
+    gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
+    char buffer[256];
+    gint length = 0;
+
+    while (g_get_monotonic_time() < deadline && length < (gint)(sizeof(buffer) - 1)) {
+        gint ch = input_read_char_with_timeout(handler, 20);
+        if (ch == 0) {
+            continue;
+        }
+        buffer[length++] = (char)ch;
+    }
+
+    buffer[length] = '\0';
+    if (length == 0) {
+        return FALSE;
+    }
+
+    return input_response_has_kitty(buffer);
 }
 
 // Update terminal size

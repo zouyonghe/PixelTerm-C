@@ -457,7 +457,7 @@ static void video_player_clear_decode(VideoPlayer *player) {
     player->present_fps_valid = FALSE;
 }
 
-VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel) {
+VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel, gboolean force_kitty) {
     VideoPlayer *player = g_new0(VideoPlayer, 1);
     if (!player) {
         return NULL;
@@ -522,6 +522,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel) {
             .color_space = CHAFA_COLOR_SPACE_RGB,
             .work_factor = work_factor,
             .force_sixel = force_sixel,
+            .force_kitty = force_kitty,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

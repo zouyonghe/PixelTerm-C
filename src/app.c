@@ -40,6 +40,7 @@ PixelTermApp* app_create(void) {
     app->dither_enabled = FALSE;
     app->render_work_factor = 9;
     app->force_sixel = FALSE;
+    app->force_kitty = FALSE;
     app->needs_redraw = TRUE;
     app->file_manager_mode = FALSE;
     app->show_hidden_files = FALSE;
@@ -964,13 +965,13 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
     }
 
     // Initialize GIF player
-    app->gif_player = gif_player_new(app->render_work_factor, app->force_sixel);
+    app->gif_player = gif_player_new(app->render_work_factor, app->force_sixel, app->force_kitty);
     if (!app->gif_player) {
         return ERROR_MEMORY_ALLOC;
     }
 
     // Initialize video player
-    app->video_player = video_player_new(app->render_work_factor, app->force_sixel);
+    app->video_player = video_player_new(app->render_work_factor, app->force_sixel, app->force_kitty);
     if (!app->video_player) {
         gif_player_destroy(app->gif_player);
         app->gif_player = NULL;

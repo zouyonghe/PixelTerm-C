@@ -19,6 +19,7 @@ static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
 static gboolean g_force_sixel = FALSE;
+static gboolean g_force_kitty = FALSE;
 static const gint64 k_click_threshold_us = 400000;
 static const useconds_t k_input_poll_sleep_us = 10000;
 static const useconds_t k_resize_sleep_us = 100000;
@@ -99,6 +100,44 @@ static gboolean probe_sixel_support(void) {
     input_handler_destroy(probe);
 
     return sixel_supported;
+}
+
+static gboolean probe_kitty_support(void) {
+    const char *term = getenv("TERM");
+    if (term && (strcmp(term, "xterm-kitty") == 0 || strcmp(term, "kitty") == 0)) {
+        return TRUE;
+    }
+
+    const char *kitty_window_id = getenv("KITTY_WINDOW_ID");
+    if (kitty_window_id && *kitty_window_id) {
+        return TRUE;
+    }
+
+    const char *term_program = getenv("TERM_PROGRAM");
+    if (term_program && strcmp(term_program, "kitty") == 0) {
+        return TRUE;
+    }
+
+    InputHandler *probe = input_handler_create();
+    if (!probe) {
+        return FALSE;
+    }
+
+    if (input_handler_initialize(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    if (input_enable_raw_mode(probe) != ERROR_NONE) {
+        input_handler_destroy(probe);
+        return FALSE;
+    }
+
+    gboolean kitty_supported = input_probe_kitty_support(probe, 120);
+    input_disable_raw_mode(probe);
+    input_handler_destroy(probe);
+
+    return kitty_supported;
 }
 
 // Signal handler for graceful shutdown
@@ -492,9 +531,23 @@ static void handle_toggle_video_fps(PixelTermApp *app) {
     app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
     if (!app->show_fps && !app->ui_text_hidden) {
         gint stats_row = 4;
-        if (stats_row >= 1 && stats_row < app->video_player->render_area_top_row &&
-            stats_row <= app->term_height) {
-            printf("\033[%d;1H\033[2K", stats_row);
+        if (stats_row >= 1 && stats_row <= app->term_height) {
+            gboolean restored_line = FALSE;
+            VideoPlayer *player = app->video_player;
+            if (player->last_frame_lines && player->last_frame_height > 0) {
+                gint line_index = stats_row - player->last_frame_top_row;
+                if (line_index >= 0 && line_index < (gint)player->last_frame_lines->len) {
+                    const gchar *line = g_ptr_array_index(player->last_frame_lines, line_index);
+                    printf("\033[%d;1H\033[2K", stats_row);
+                    if (line) {
+                        fwrite(line, 1, strlen(line), stdout);
+                    }
+                    restored_line = TRUE;
+                }
+            }
+            if (!restored_line) {
+                printf("\033[%d;1H\033[2K", stats_row);
+            }
             fflush(stdout);
         }
     }
@@ -1113,7 +1166,12 @@ int main(int argc, char *argv[]) {
         path = g_get_current_dir();
     }
 
-    g_force_sixel = probe_sixel_support();
+    g_force_kitty = probe_kitty_support();
+    if (g_force_kitty) {
+        g_force_sixel = FALSE;
+    } else {
+        g_force_sixel = probe_sixel_support();
+    }
 
     // Create and initialize application
     g_app = app_create();
@@ -1122,6 +1180,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     g_app->force_sixel = g_force_sixel;
+    g_app->force_kitty = g_force_kitty;
 
     g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);

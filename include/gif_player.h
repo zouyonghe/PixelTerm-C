@@ -50,7 +50,7 @@ typedef struct {
  * @return A pointer to the newly created `GifPlayer` instance on success,
  *         or NULL if memory allocation fails.
  */
-GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel);
+GifPlayer* gif_player_new(gint work_factor, gboolean force_sixel, gboolean force_kitty);
 /**
  * @brief Destroys a `GifPlayer` instance and frees all associated resources.
  * 
