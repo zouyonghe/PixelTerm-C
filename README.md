@@ -52,6 +52,7 @@ Terminals with the best image quality and color accuracy tested so far:
 - [ghostty](https://github.com/ghostty-org/ghostty)
 - [warp](https://www.warp.dev/)
 - [iterm2](https://github.com/gnachman/iTerm2)
+- [contour](https://github.com/contour-terminal/contour)
 
 ## 🚀 Quick Start
 

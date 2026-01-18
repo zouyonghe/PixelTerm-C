@@ -52,6 +52,7 @@ PixelTerm-C是原始PixelTerm应用的C语言实现，旨在提供显著更好�
 - [ghostty](https://github.com/ghostty-org/ghostty)
 - [warp](https://www.warp.dev/)
 - [iterm2](https://github.com/gnachman/iTerm2)
+- [contour](https://github.com/contour-terminal/contour)
 
 ## 🚀 快速开始
 
