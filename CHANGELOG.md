@@ -1,5 +1,13 @@
 # Changelog
 
+- v1.5.9: Kitty protocol robustness and delete prompt polish.
+    - **Input**: Ignore kitty APC image responses (`ESC _ ... ESC \`) to prevent stray input and playback stalls in iTerm2.
+    - **Video**: Debounce `P` protocol cycling to avoid accidental rapid toggles.
+    - **Rendering**: Supplement terminfo fallback when forcing kitty/iterm2/sixel, including on resize.
+    - **Gamma**: Default kitty gamma only on actual kitty terminals.
+    - **UI**: Center delete confirmation near the image area, clear it without full refresh, and return to file manager after the last deletion.
+    - **Docs**: Update README version badge.
+
 - v1.5.8: Gamma correction for terminal rendering.
     - **Rendering**: Add `--gamma` to adjust image brightness across protocols.
     - **Kitty**: Default gamma to 0.5 when kitty protocol is used (1.0 elsewhere).
