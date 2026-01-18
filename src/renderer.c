@@ -445,7 +445,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     gboolean force_kitty_mode = renderer->config.force_kitty && !force_text_mode;
     gboolean force_iterm2_mode = renderer->config.force_iterm2 && !force_kitty_mode && !force_text_mode;
     gboolean force_sixel_mode = renderer->config.force_sixel && !force_kitty_mode && !force_iterm2_mode && !force_text_mode;
-    if (force_sixel_mode) {
+    if (force_sixel_mode || force_kitty_mode || force_iterm2_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
             chafa_term_info_supplement(renderer->term_info, fallback);
