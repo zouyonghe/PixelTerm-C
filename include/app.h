@@ -38,6 +38,8 @@ typedef struct {
     gboolean show_info;
     gboolean info_visible;  // Track if info is currently displayed
     gboolean ui_text_hidden; // Hide all UI text overlays (single/preview)
+    gboolean show_fps; // Toggle FPS overlay in video view
+    gdouble video_scale; // Scale factor for video render size
     gboolean clear_workaround_enabled; // Enable double-clear workaround on full refresh
     gboolean preload_enabled;
     gboolean dither_enabled;

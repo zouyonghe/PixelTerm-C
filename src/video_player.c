@@ -314,8 +314,7 @@ static gint video_player_calc_delay_ms(VideoPlayer *player) {
     if (wait_ms < 1) {
         wait_ms = 1;
     }
-    gint delay = (gint)wait_ms;
-    return delay;
+    return (gint)wait_ms;
 }
 
 static gboolean video_player_should_stop(VideoPlayer *player) {
@@ -506,7 +505,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_sixel) {
     player->last_present_us = 0;
     player->present_fps = 0.0;
     player->present_fps_valid = FALSE;
-    player->show_stats = TRUE;
+    player->show_stats = FALSE;
 
     if (work_factor < 1) {
         work_factor = 1;
@@ -581,8 +580,8 @@ void video_player_set_render_area(VideoPlayer *player,
 
     if (layout_changed) {
         player->fixed_frame_valid = FALSE;
-        player->last_frame_top_row = 0;
-        player->last_frame_height = 0;
+        player->last_frame_top_row = area_top_row;
+        player->last_frame_height = area_height;
         video_player_clear_line_cache(player);
     }
     g_mutex_unlock(&player->state_mutex);
@@ -962,15 +961,23 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
 
         if (player->show_stats) {
-            gint stats_row = player->render_area_top_row - 2;
+            gint stats_row = 4;
             if (stats_row >= 1 && (term_h <= 0 || stats_row <= term_h)) {
-                char fps_text[16];
+                char line[32];
                 if (player->present_fps_valid) {
-                    g_snprintf(fps_text, sizeof(fps_text), "%.1f", player->present_fps);
+                    g_snprintf(line, sizeof(line), "FPS %5.1f", player->present_fps);
                 } else {
-                    g_snprintf(fps_text, sizeof(fps_text), "--");
+                    g_snprintf(line, sizeof(line), "FPS  --.-");
                 }
-                printf("\033[%d;1H\033[2KFPS %s", stats_row, fps_text);
+                gint line_len = (gint)strlen(line);
+                gint col = 1;
+                if (term_w > 0) {
+                    col = term_w - line_len + 1;
+                }
+                if (col < 1) {
+                    col = 1;
+                }
+                printf("\033[%d;%dH%s", stats_row, col, line);
             }
         }
     } else {

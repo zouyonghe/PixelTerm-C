@@ -33,6 +33,8 @@ PixelTermApp* app_create(void) {
     app->show_info = FALSE;
     app->info_visible = FALSE;
     app->ui_text_hidden = FALSE;
+    app->show_fps = FALSE;
+    app->video_scale = 1.0;
     app->clear_workaround_enabled = FALSE;
     app->preload_enabled = TRUE;
     app->dither_enabled = FALSE;
@@ -1260,6 +1262,22 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
+    if (is_video && app) {
+        gdouble scale = app->video_scale;
+        if (scale < 0.3) {
+            scale = 0.3;
+        } else if (scale > 1.5) {
+            scale = 1.5;
+        }
+        target_width = (gint)(target_width * scale + 0.5);
+        target_height = (gint)(target_height * scale + 0.5);
+        if (target_width < 1) {
+            target_width = 1;
+        }
+        if (target_height < 1) {
+            target_height = 1;
+        }
+    }
 
     // Clear screen and reset terminal state
     if (app && app->suppress_full_clear) {
@@ -1273,7 +1291,24 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // Title + index area (single image view)
-    const gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
+    gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
+    if (is_video && app) {
+        gint available_height = (app->term_height > 0) ? app->term_height : 24;
+        if (app->info_visible) {
+            available_height -= 10;
+        } else {
+            available_height -= 6;
+        }
+        if (available_height < 1) {
+            available_height = 1;
+        }
+        if (target_height > 0 && available_height > target_height) {
+            gint vpad = (available_height - target_height) / 2;
+            if (vpad > 0) {
+                image_area_top_row += vpad;
+            }
+        }
+    }
     if (app->gif_player) {
         gif_player_set_render_area(app->gif_player,
                                    app->term_width,
@@ -1291,7 +1326,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                      target_height,
                                      target_width,
                                      target_height);
-        app->video_player->show_stats = !app->ui_text_hidden;
+        app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
     }
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = is_video ? "Video View" : "Image View";
@@ -1359,6 +1394,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             const HelpSegment segments[] = {
                 {"←/→", "Prev/Next"},
                 {"Space", "Pause/Play"},
+                {"F", "FPS"},
+                {"+/-", "Scale"},
                 {"Enter", "Preview"},
                 {"TAB", "Toggle"},
                 {"r", "Delete"},

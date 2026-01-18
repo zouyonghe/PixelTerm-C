@@ -484,6 +484,62 @@ static void handle_delete_current_image(PixelTermApp *app) {
     app_render_by_mode(app);
 }
 
+static void handle_toggle_video_fps(PixelTermApp *app) {
+    if (!app || !app_current_is_video(app) || !app->video_player) {
+        return;
+    }
+    app->show_fps = !app->show_fps;
+    app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
+    if (!app->show_fps && !app->ui_text_hidden) {
+        gint stats_row = 4;
+        if (stats_row >= 1 && stats_row < app->video_player->render_area_top_row &&
+            stats_row <= app->term_height) {
+            printf("\033[%d;1H\033[2K", stats_row);
+            fflush(stdout);
+        }
+    }
+}
+
+static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
+    if (!app || !app_current_is_video(app)) {
+        return;
+    }
+    gdouble next_scale = app->video_scale + delta;
+    if (next_scale < 0.3) {
+        next_scale = 0.3;
+    } else if (next_scale > 1.5) {
+        next_scale = 1.5;
+    }
+    if (delta > 0.0) {
+        gint base_w = app->term_width > 0 ? app->term_width : 80;
+        gint base_h = app->term_height > 0 ? app->term_height : 24;
+        if (app->info_visible) {
+            base_h -= 10;
+        } else {
+            base_h -= 6;
+        }
+        if (base_h < 1) {
+            base_h = 1;
+        }
+        gint scaled_w = (gint)(base_w * next_scale + 0.5);
+        gint scaled_h = (gint)(base_h * next_scale + 0.5);
+        if (scaled_w > base_w || scaled_h > base_h) {
+            next_scale = app->video_scale;
+        }
+    }
+    if (next_scale == app->video_scale) {
+        return;
+    }
+    app->video_scale = next_scale;
+    if (app->video_player) {
+        video_player_stop(app->video_player);
+    }
+    app_render_current_image(app);
+    if (app->video_player) {
+        video_player_play(app->video_player);
+    }
+}
+
 static gboolean handle_key_press_common(PixelTermApp *app,
                                         InputHandler *input_handler,
                                         const InputEvent *event) {
@@ -518,6 +574,10 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                     app_display_image_info(app);
                 }
             }
+            return TRUE;
+        case (KeyCode)'f':
+        case (KeyCode)'F':
+            handle_toggle_video_fps(app);
             return TRUE;
         case (KeyCode)'~':
         case (KeyCode)'`':
@@ -818,6 +878,13 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
     switch (event->key_code) {
         case (KeyCode)' ':
             app_toggle_video_playback(app);
+            break;
+        case (KeyCode)'+':
+        case (KeyCode)'=':
+            handle_video_scale_change(app, 0.1);
+            break;
+        case (KeyCode)'-':
+            handle_video_scale_change(app, -0.1);
             break;
         case KEY_LEFT:
         case (KeyCode)'h': {

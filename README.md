@@ -187,6 +187,8 @@ This is the default mode when viewing a single image.
 | h/k | Vim-style navigation (previous image) |
 | l/j | Vim-style navigation (next image) |
 | Space | Play/Pause video (Video View only) |
+| F | Toggle FPS overlay (Video View only) |
+| + / - | Adjust video scale (Video View only) |
 | Enter | Toggle into Grid Preview mode |
 | TAB | Cycle between Image View / Grid Preview / File Manager |
 | i | Toggle image information display |
