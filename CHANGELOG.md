@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.5.6: Video playback responsiveness and controls.
+    - **Video**: Reduce terminal IO with line-diff rendering and more aggressive late-frame dropping to keep pace.
+    - **Video**: Add FPS overlay toggle (F) with on-screen display in video view.
+    - **Video**: Add +/- scaling controls with vertical centering and guard against overscaling.
+    - **Playback**: Restart video on scale changes to avoid visual artifacts.
+
 - v1.5.5: Source archive cleanup.
     - **Release**: Exclude screenshots from GitHub source archives via export-ignore.
 
