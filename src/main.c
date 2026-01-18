@@ -632,6 +632,50 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
     }
 }
 
+static void handle_video_protocol_toggle(PixelTermApp *app) {
+    if (!app || !app_current_is_video(app) || !app->video_player || !app->video_player->renderer) {
+        return;
+    }
+
+    gboolean was_playing = video_player_is_playing(app->video_player);
+    if (was_playing) {
+        video_player_stop(app->video_player);
+    }
+
+    g_mutex_lock(&app->video_player->render_mutex);
+    gboolean force_text = app->video_player->renderer->config.force_text;
+    gboolean force_kitty = app->video_player->renderer->config.force_kitty;
+    gboolean force_iterm2 = app->video_player->renderer->config.force_iterm2;
+    gboolean force_sixel = app->video_player->renderer->config.force_sixel;
+    gboolean next_text = FALSE;
+    gboolean next_kitty = FALSE;
+    gboolean next_iterm2 = FALSE;
+    gboolean next_sixel = FALSE;
+
+    if (force_text) {
+        next_kitty = TRUE;
+    } else if (force_kitty) {
+        next_iterm2 = TRUE;
+    } else if (force_iterm2) {
+        next_sixel = TRUE;
+    } else if (force_sixel) {
+        next_text = TRUE;
+    } else {
+        next_kitty = TRUE;
+    }
+
+    app->video_player->renderer->config.force_text = next_text;
+    app->video_player->renderer->config.force_kitty = next_kitty;
+    app->video_player->renderer->config.force_iterm2 = next_iterm2;
+    app->video_player->renderer->config.force_sixel = next_sixel;
+    renderer_update_terminal_size(app->video_player->renderer);
+    g_mutex_unlock(&app->video_player->render_mutex);
+
+    if (was_playing) {
+        video_player_play(app->video_player);
+    }
+}
+
 static gboolean handle_key_press_common(PixelTermApp *app,
                                         InputHandler *input_handler,
                                         const InputEvent *event) {
@@ -978,6 +1022,10 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             break;
         case (KeyCode)'-':
             handle_video_scale_change(app, -0.1);
+            break;
+        case (KeyCode)'p':
+        case (KeyCode)'P':
+            handle_video_protocol_toggle(app);
             break;
         case KEY_LEFT:
         case (KeyCode)'h': {

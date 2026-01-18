@@ -998,22 +998,35 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         if (player->show_stats) {
             gint stats_row = 4;
             if (stats_row >= 1 && (term_h <= 0 || stats_row <= term_h)) {
-                char line[48];
+                char proto_line[24];
+                char fps_line[24];
                 const char *proto = video_player_pixel_mode_label(frame->pixel_mode);
+                g_snprintf(proto_line, sizeof(proto_line), "%s", proto);
                 if (player->present_fps_valid) {
-                    g_snprintf(line, sizeof(line), "FPS %5.1f %s", player->present_fps, proto);
+                    g_snprintf(fps_line, sizeof(fps_line), "%5.1f", player->present_fps);
                 } else {
-                    g_snprintf(line, sizeof(line), "FPS  --.- %s", proto);
+                    g_snprintf(fps_line, sizeof(fps_line), " --.-");
                 }
-                gint line_len = (gint)strlen(line);
-                gint col = 1;
+                gint proto_len = (gint)strlen(proto_line);
+                gint fps_len = (gint)strlen(fps_line);
+                gint fps_col = 1;
                 if (term_w > 0) {
-                    col = term_w - line_len + 1;
+                    fps_col = term_w - fps_len + 1;
                 }
-                if (col < 1) {
-                    col = 1;
+                if (fps_col < 1) {
+                    fps_col = 1;
                 }
-                printf("\033[%d;%dH%s", stats_row, col, line);
+                gboolean show_proto = TRUE;
+                if (term_w > 0 && fps_col <= proto_len + 1) {
+                    show_proto = FALSE;
+                }
+                if (show_proto) {
+                    printf("\033[%d;1H%s", stats_row, proto_line);
+                    for (gint pad = proto_len; pad < 12; pad++) {
+                        putchar(' ');
+                    }
+                }
+                printf("\033[%d;%dH%s", stats_row, fps_col, fps_line);
             }
         }
     } else {

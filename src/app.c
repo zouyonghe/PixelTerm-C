@@ -1399,6 +1399,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 {"←/→", "Prev/Next"},
                 {"Space", "Pause/Play"},
                 {"F", "FPS"},
+                {"P", "Protocol"},
                 {"+/-", "Scale"},
                 {"Enter", "Preview"},
                 {"TAB", "Toggle"},
