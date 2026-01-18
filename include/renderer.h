@@ -15,6 +15,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    gdouble gamma;
     
     // Advanced quality settings
     ChafaDitherMode dither_mode;

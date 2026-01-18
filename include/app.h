@@ -44,6 +44,7 @@ typedef struct {
     gboolean preload_enabled;
     gboolean dither_enabled;
     gint render_work_factor;
+    gdouble gamma;
     gboolean force_text;
     gboolean force_sixel;
     gboolean force_kitty;

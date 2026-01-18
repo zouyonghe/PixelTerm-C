@@ -148,6 +148,13 @@ pixelterm --dither /path/to/image.jpg
 # 调整渲染 work factor（1-9，越高越慢但质量更好）
 pixelterm --work-factor 7 /path/to/image.jpg
 
+# 强制输出协议（auto, text, sixel, kitty, iterm2）
+pixelterm --protocol kitty /path/to/image.jpg
+
+# 图像渲染伽马校正
+# 说明：kitty 下默认 0.5，其他终端默认 1.0
+pixelterm --gamma 0.8 /path/to/image.jpg
+
 ```
 
 ## 🎮 控制

@@ -12,10 +12,10 @@ LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
   PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
-  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread
+  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread -lm
   INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
 else
-  LIBS = $(shell pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread
+  LIBS = $(shell pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread -lm
   INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
 endif
 SRCDIR = src

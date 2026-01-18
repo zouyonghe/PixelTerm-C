@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.5.8: Gamma correction for terminal rendering.
+    - **Rendering**: Add `--gamma` to adjust image brightness across protocols.
+    - **Kitty**: Default gamma to 0.5 when kitty protocol is used (1.0 elsewhere).
+    - **Build**: Link `libm` to support gamma correction.
+
 - v1.5.7: Video protocol toggle and stats layout.
     - **Video**: Add `P` key to cycle rendering protocol during video playback.
     - **Video**: Show protocol on the left and FPS on the right in the stats overlay (values only).

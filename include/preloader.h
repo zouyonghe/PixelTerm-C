@@ -52,6 +52,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    gdouble gamma;
 } ImagePreloader;
 
 // Preloader lifecycle functions
@@ -87,7 +88,8 @@ void preloader_destroy(ImagePreloader *preloader);
  * @return `ERROR_NONE` on success.
  */
 ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor,
-                               gboolean force_text, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2);
+                               gboolean force_text, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2,
+                               gdouble gamma);
 /**
  * @brief Starts the preloader's worker thread.
  * 

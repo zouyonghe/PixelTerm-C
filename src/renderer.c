@@ -2,6 +2,7 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
 #include <sys/ioctl.h>
+#include <math.h>
 
 #include "video_player.h"
 
@@ -25,6 +26,52 @@ static GdkPixbuf* renderer_load_pixbuf_from_stream(const char *filepath, GError 
     GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(G_INPUT_STREAM(stream), NULL, error);
     g_object_unref(stream);
     return pixbuf;
+}
+
+static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
+    if (!renderer) {
+        return FALSE;
+    }
+    if (renderer->config.gamma <= 0.0 || renderer->config.gamma == 1.0) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, gint height,
+                                         gint rowstride, gint n_channels, gdouble gamma) {
+    if (!pixel_data || width <= 0 || height <= 0 || rowstride <= 0) {
+        return NULL;
+    }
+
+    gsize buffer_size = (gsize)height * (gsize)rowstride;
+    guint8 *adjusted = g_malloc(buffer_size);
+    if (!adjusted) {
+        return NULL;
+    }
+    memcpy(adjusted, pixel_data, buffer_size);
+
+    guint8 lut[256];
+    for (int i = 0; i < 256; i++) {
+        double normalized = (double)i / 255.0;
+        double corrected = pow(normalized, gamma);
+        int value = (int)(corrected * 255.0 + 0.5);
+        if (value < 0) value = 0;
+        if (value > 255) value = 255;
+        lut[i] = (guint8)value;
+    }
+
+    for (gint y = 0; y < height; y++) {
+        guint8 *row = adjusted + ((gsize)y * (gsize)rowstride);
+        for (gint x = 0; x < width; x++) {
+            guint8 *px = row + (gsize)x * (gsize)n_channels;
+            px[0] = lut[px[0]];
+            px[1] = lut[px[1]];
+            px[2] = lut[px[2]];
+        }
+    }
+
+    return adjusted;
 }
 
 // Create a new renderer
@@ -52,6 +99,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.force_sixel = FALSE;
     renderer->config.force_kitty = FALSE;
     renderer->config.force_iterm2 = FALSE;
+    renderer->config.gamma = 1.0;
     
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -276,9 +324,20 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
         return NULL;
     }
 
+    const guint8 *pixels_to_draw = pixel_data;
+    guint8 *adjusted = NULL;
+    if (renderer_should_apply_gamma(renderer)) {
+        adjusted = renderer_apply_gamma_copy(pixel_data, width, height, rowstride, n_channels,
+                                             renderer->config.gamma);
+        if (adjusted) {
+            pixels_to_draw = adjusted;
+        }
+    }
+
     // Draw pixels to canvas
-    chafa_canvas_draw_all_pixels(renderer->canvas, pixel_type, 
-                                pixel_data, width, height, rowstride);
+    chafa_canvas_draw_all_pixels(renderer->canvas, pixel_type,
+                                pixels_to_draw, width, height, rowstride);
+    g_free(adjusted);
 
     // Generate output - use NULL for term_info to force generic ANSI output with RGB
     GString *output = chafa_canvas_print(renderer->canvas, renderer->term_info);

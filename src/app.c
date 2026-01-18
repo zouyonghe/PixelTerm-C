@@ -39,6 +39,7 @@ PixelTermApp* app_create(void) {
     app->preload_enabled = TRUE;
     app->dither_enabled = FALSE;
     app->render_work_factor = 9;
+    app->gamma = 1.0;
     app->force_text = FALSE;
     app->force_sixel = FALSE;
     app->force_kitty = FALSE;
@@ -967,13 +968,15 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
     }
 
     // Initialize GIF player
-    app->gif_player = gif_player_new(app->render_work_factor, app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
+    app->gif_player = gif_player_new(app->render_work_factor, app->force_text, app->force_sixel,
+                                     app->force_kitty, app->force_iterm2, app->gamma);
     if (!app->gif_player) {
         return ERROR_MEMORY_ALLOC;
     }
 
     // Initialize video player
-    app->video_player = video_player_new(app->render_work_factor, app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
+    app->video_player = video_player_new(app->render_work_factor, app->force_text, app->force_sixel,
+                                         app->force_kitty, app->force_iterm2, app->gamma);
     if (!app->video_player) {
         gif_player_destroy(app->gif_player);
         app->gif_player = NULL;
@@ -1048,7 +1051,8 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         app->preloader = preloader_create();
         if (app->preloader) {
             preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
-                                 app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
+                                 app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2,
+                                 app->gamma);
             
             // Set terminal dimensions for preloader
             preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -1452,6 +1456,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .force_sixel = app->force_sixel,
             .force_kitty = app->force_kitty,
             .force_iterm2 = app->force_iterm2,
+            .gamma = app->gamma,
             .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
@@ -1741,7 +1746,8 @@ void app_toggle_preload(PixelTermApp *app) {
                 app->preloader = preloader_create();
                 if (app->preloader) {
                     preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
-                                         app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
+                                         app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2,
+                                         app->gamma);
                     
                     // Set terminal dimensions for preloader
                     preloader_update_terminal_size(app->preloader, app->term_width, app->term_height);
@@ -3161,6 +3167,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         .force_sixel = app->force_sixel,
         .force_kitty = app->force_kitty,
         .force_iterm2 = app->force_iterm2,
+        .gamma = app->gamma,
         .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

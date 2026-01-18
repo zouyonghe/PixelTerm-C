@@ -195,6 +195,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
+    printf("  %-29s %s\n", "--gamma G", "Gamma correction for image rendering (default: 0.5 in kitty, 1.0 otherwise)");
     printf("\n");
 }
 
@@ -204,7 +205,7 @@ static void print_version(void) {
 }
 
 // Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor, gchar **protocol) {
+static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor, gchar **protocol, gdouble *gamma, gboolean *gamma_set) {
     static struct option long_options[] = {
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
@@ -215,6 +216,7 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
         {"clear-workaround", no_argument, 0, 1003},
         {"work-factor", required_argument, 0, 1004},
         {"protocol", required_argument, 0, 1005},
+        {"gamma", required_argument, 0, 1006},
         {0, 0, 0, 0}
     };
 
@@ -266,6 +268,25 @@ static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *
                 if (protocol) {
                     g_free(*protocol);
                     *protocol = g_ascii_strdown(optarg, -1);
+                }
+                break;
+            }
+            case 1006: { // --gamma
+                char *end = NULL;
+                double value = strtod(optarg, &end);
+                if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
+                    fprintf(stderr, "Invalid --gamma value: %s (expected float)\n", optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                if (value <= 0.0 || value > 5.0) {
+                    fprintf(stderr, "Invalid --gamma value: %.2f (expected >0 and <=5)\n", value);
+                    return ERROR_INVALID_ARGS;
+                }
+                if (gamma) {
+                    *gamma = value;
+                }
+                if (gamma_set) {
+                    *gamma_set = TRUE;
                 }
                 break;
             }
@@ -691,7 +712,8 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 preloader_stop(app->preloader);
                 preloader_cache_clear(app->preloader);
                 preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
-                                     app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2);
+                                     app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2,
+                                     app->gamma);
                 preloader_start(app->preloader);
             }
             app_render_by_mode(app);
@@ -1240,8 +1262,12 @@ int main(int argc, char *argv[]) {
     gboolean clear_workaround_enabled = FALSE;
     gint work_factor = 9;
     gchar *protocol = NULL;
+    gdouble gamma = 1.0;
+    gboolean gamma_set = FALSE;
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled, &alt_screen_enabled, &clear_workaround_enabled, &work_factor, &protocol);
+    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled,
+                                      &alt_screen_enabled, &clear_workaround_enabled, &work_factor,
+                                      &protocol, &gamma, &gamma_set);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
         g_free(protocol);
@@ -1293,6 +1319,9 @@ int main(int argc, char *argv[]) {
         g_force_iterm2 = FALSE;
         g_force_sixel = FALSE;
     }
+    if (!gamma_set && g_force_kitty) {
+        gamma = 0.5;
+    }
 
     // Create and initialize application
     g_app = app_create();
@@ -1305,6 +1334,7 @@ int main(int argc, char *argv[]) {
     g_app->force_kitty = g_force_kitty;
     g_app->force_iterm2 = g_force_iterm2;
     g_app->force_text = g_force_text;
+    g_app->gamma = gamma;
 
     g_app->render_work_factor = work_factor;
     error = app_initialize(g_app, dither_enabled);
