@@ -25,6 +25,20 @@ typedef struct {
 
 static gint video_player_get_slow_level(VideoPlayer *player);
 
+static const char *video_player_pixel_mode_label(ChafaPixelMode mode) {
+    switch (mode) {
+        case CHAFA_PIXEL_MODE_KITTY:
+            return "kitty";
+        case CHAFA_PIXEL_MODE_ITERM2:
+            return "iterm2";
+        case CHAFA_PIXEL_MODE_SIXELS:
+            return "sixel";
+        case CHAFA_PIXEL_MODE_SYMBOLS:
+        default:
+            return "text";
+    }
+}
+
 static void video_player_clear_line_cache(VideoPlayer *player) {
     if (!player || !player->last_frame_lines) {
         return;
@@ -983,11 +997,12 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         if (player->show_stats) {
             gint stats_row = 4;
             if (stats_row >= 1 && (term_h <= 0 || stats_row <= term_h)) {
-                char line[32];
+                char line[48];
+                const char *proto = video_player_pixel_mode_label(frame->pixel_mode);
                 if (player->present_fps_valid) {
-                    g_snprintf(line, sizeof(line), "FPS %5.1f", player->present_fps);
+                    g_snprintf(line, sizeof(line), "FPS %5.1f %s", player->present_fps, proto);
                 } else {
-                    g_snprintf(line, sizeof(line), "FPS  --.-");
+                    g_snprintf(line, sizeof(line), "FPS  --.- %s", proto);
                 }
                 gint line_len = (gint)strlen(line);
                 gint col = 1;
