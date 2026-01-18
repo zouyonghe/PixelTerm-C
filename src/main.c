@@ -105,9 +105,7 @@ static gboolean probe_sixel_support(void) {
 
 static gboolean probe_kitty_support(void) {
     const char *term = getenv("TERM");
-    if (term && (strcmp(term, "xterm-kitty") == 0 ||
-                 strcmp(term, "kitty") == 0 ||
-                 strcmp(term, "xterm-ghostty") == 0)) {
+    if (term && (strcmp(term, "xterm-kitty") == 0 || strcmp(term, "kitty") == 0)) {
         return TRUE;
     }
 
@@ -117,7 +115,7 @@ static gboolean probe_kitty_support(void) {
     }
 
     const char *term_program = getenv("TERM_PROGRAM");
-    if (term_program && (strcmp(term_program, "kitty") == 0 || strcmp(term_program, "ghostty") == 0)) {
+    if (term_program && strcmp(term_program, "kitty") == 0) {
         return TRUE;
     }
 
