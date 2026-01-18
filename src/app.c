@@ -50,6 +50,9 @@ PixelTermApp* app_create(void) {
     app->preview_mode = FALSE;
     app->preview_zoom = 0; // 0 indicates uninitialized target cell width
     app->return_to_mode = RETURN_MODE_NONE;
+    app->delete_pending = FALSE;
+    app->last_render_top_row = 0;
+    app->last_render_height = 0;
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -1516,6 +1519,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         gint vpad = (target_height - image_height) / 2;
         if (vpad < 0) vpad = 0;
         image_top_row = image_area_top_row + vpad;
+    }
+    if (app) {
+        gint stored_height = image_height > 0 ? image_height : (target_height > 0 ? target_height : 1);
+        app->last_render_top_row = image_top_row;
+        app->last_render_height = stored_height;
     }
 
     gchar *pad_buffer = NULL;

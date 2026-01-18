@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+static gboolean input_discard_kitty_apc(InputHandler *handler);
+
 // Create a new input handler
 InputHandler* input_handler_create(void) {
     InputHandler *handler = g_new0(InputHandler, 1);
@@ -26,6 +28,8 @@ InputHandler* input_handler_create(void) {
     handler->last_scroll_x = 0;
     handler->last_scroll_y = 0;
     handler->has_pending_event = FALSE;
+    handler->apc_discarding = FALSE;
+    handler->apc_saw_esc = FALSE;
 
     return handler;
 }
@@ -192,6 +196,16 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->type = INPUT_KEY_PRESS;
     event->key_code = KEY_UNKNOWN;
 
+    if (handler->apc_discarding) {
+        if (!input_discard_kitty_apc(handler)) {
+            goto finish_event;
+        }
+        handler->apc_discarding = FALSE;
+        handler->apc_saw_esc = FALSE;
+        goto finish_event;
+    }
+
+read_next:
     // Read first character (treat as unsigned byte to avoid sign-extension issues)
     gint c = input_read_key(handler);
     if (c < 0) {
@@ -208,6 +222,16 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         gint next = input_read_char_with_timeout(handler, 50);
 
         if (next != 0) {
+            if (next == '_') {
+                handler->apc_discarding = TRUE;
+                handler->apc_saw_esc = FALSE;
+                if (!input_discard_kitty_apc(handler)) {
+                    goto finish_event;
+                }
+                handler->apc_discarding = FALSE;
+                handler->apc_saw_esc = FALSE;
+                goto finish_event;
+            }
             // We have a character following ESC
             if (next == '[' || next == 'O') {
                 // ANSI escape sequence or Application Cursor Keys
@@ -388,6 +412,7 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         }
     }
 
+finish_event:
     // Update terminal size in event
     event->terminal_width = handler->terminal_width;
     event->terminal_height = handler->terminal_height;
@@ -484,6 +509,27 @@ gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     }
     
     return 0;
+}
+
+static gboolean input_discard_kitty_apc(InputHandler *handler) {
+    if (!handler) {
+        return TRUE;
+    }
+
+    const gint64 deadline = g_get_monotonic_time() + 100000;
+    while (g_get_monotonic_time() < deadline) {
+        gchar ch = input_read_char_with_timeout(handler, 0);
+        if (ch == 0) {
+            return FALSE;
+        }
+        if (handler->apc_saw_esc && ch == '\\') {
+            handler->apc_saw_esc = FALSE;
+            return TRUE;
+        }
+        handler->apc_saw_esc = (ch == '\033');
+    }
+
+    return FALSE;
 }
 
 static gboolean input_response_has_sixel(const char *buffer) {

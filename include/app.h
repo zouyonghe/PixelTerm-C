@@ -56,7 +56,10 @@ typedef struct {
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
     ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
-    
+    gboolean delete_pending;     // Awaiting delete confirmation
+    gint last_render_top_row;    // Single-view image top row for overlays
+    gint last_render_height;     // Single-view image height for overlays
+
     // Terminal info
     gint term_width;
     gint term_height;

@@ -201,6 +201,7 @@ void cleanup_string(gchar **str);
  */
 void cleanup_gstring(GString **str);
 
+
 /**
  * @brief Destroyer function for GString pointers used in GHashTable or similar data structures.
  * 

@@ -95,6 +95,9 @@ typedef struct {
 
     gboolean has_pending_event;
     InputEvent pending_event;
+
+    gboolean apc_discarding;
+    gboolean apc_saw_esc;
 } InputHandler;
 
 // Input handler lifecycle

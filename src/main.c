@@ -25,6 +25,8 @@ static gboolean g_force_text = FALSE;
 static const gint64 k_click_threshold_us = 400000;
 static const useconds_t k_input_poll_sleep_us = 10000;
 static const useconds_t k_resize_sleep_us = 100000;
+static const gint64 k_protocol_toggle_debounce_us = 150000;
+static gint64 g_last_protocol_toggle_us = 0;
 static const KeyCode g_nav_keys_lr[] = {
     KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
 };
@@ -35,6 +37,8 @@ static const KeyCode g_nav_keys_ud[] = {
 static const KeyCode g_nav_keys_page[] = {
     KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, (KeyCode)'a'
 };
+
+static void handle_delete_current_image(PixelTermApp *app);
 
 static gboolean app_current_is_video(const PixelTermApp *app) {
     if (!app || app->preview_mode || app->file_manager_mode) {
@@ -53,6 +57,134 @@ static gboolean app_current_is_video(const PixelTermApp *app) {
         is_video = FALSE;
     }
     return is_video;
+}
+
+static gint delete_prompt_display_width(const char *text) {
+    if (!text) {
+        return 0;
+    }
+    gint width = 0;
+    const char *cursor = text;
+    while (*cursor) {
+        gunichar ch = g_utf8_get_char_validated(cursor, -1);
+        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+            width += 1;
+            cursor++;
+            continue;
+        }
+        width += g_unichar_iswide(ch) ? 2 : 1;
+        cursor = g_utf8_next_char(cursor);
+    }
+    return width;
+}
+
+static gint delete_prompt_row(const PixelTermApp *app) {
+    if (!app) {
+        return 1;
+    }
+
+    gint term_height = app->term_height > 0 ? app->term_height : 24;
+    gint row = term_height - 1;
+
+    if (!app->preview_mode && !app->file_manager_mode) {
+        if (app_current_is_video(app) && app->video_player && app->video_player->last_frame_height > 0) {
+            row = app->video_player->last_frame_top_row + app->video_player->last_frame_height;
+        } else if (app->last_render_height > 0 && app->last_render_top_row > 0) {
+            row = app->last_render_top_row + app->last_render_height;
+        }
+    }
+
+    if (row < 1) {
+        row = 1;
+    } else if (row > term_height - 1) {
+        row = term_height - 1;
+    }
+
+    return row;
+}
+
+static void app_show_delete_prompt(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    const char *message = "Press r again to delete";
+    gint term_width = app->term_width > 0 ? app->term_width : 80;
+    gint row = delete_prompt_row(app);
+
+    gint message_len = delete_prompt_display_width(message);
+    gint col = term_width > message_len ? (term_width - message_len) / 2 + 1 : 1;
+
+    printf("\033[%d;1H\033[2K", row);
+    printf("\033[%d;%dH\033[31m%s\033[0m", row, col, message);
+    fflush(stdout);
+}
+
+static void app_clear_delete_prompt(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    gint row = delete_prompt_row(app);
+    printf("\033[%d;1H\033[2K", row);
+    fflush(stdout);
+}
+
+static void handle_delete_current_in_preview(PixelTermApp *app) {
+    if (app_has_images(app)) {
+        app->current_index = app->preview_selected;
+        app_delete_current_image(app);
+    }
+
+    if (app_has_images(app)) {
+        if (app->current_index < 0) app->current_index = 0;
+        if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
+        app->preview_selected = app->current_index;
+        app->needs_screen_clear = TRUE;
+        app_render_preview_grid(app);
+    } else {
+        app->preview_mode = FALSE;
+        app->needs_screen_clear = TRUE;
+        if (app_enter_file_manager(app) == ERROR_NONE) {
+            app_render_file_manager(app);
+        } else {
+            app_refresh_display(app);
+        }
+    }
+}
+
+static gboolean handle_delete_request(PixelTermApp *app, const InputEvent *event) {
+    if (!app || !event || event->type != INPUT_KEY_PRESS) {
+        return FALSE;
+    }
+
+    if (app->file_manager_mode) {
+        if (app->delete_pending) {
+            app->delete_pending = FALSE;
+            app_clear_delete_prompt(app);
+        }
+        return FALSE;
+    }
+
+    if (app->delete_pending) {
+        app->delete_pending = FALSE;
+        if (event->key_code == (KeyCode)'r') {
+            if (app->preview_mode) {
+                handle_delete_current_in_preview(app);
+            } else {
+                handle_delete_current_image(app);
+            }
+            return TRUE;
+        }
+        app_clear_delete_prompt(app);
+        return FALSE;
+    }
+
+    if (event->key_code == (KeyCode)'r') {
+        app->delete_pending = TRUE;
+        app_show_delete_prompt(app);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 static void app_pause_video_for_resize(PixelTermApp *app) {
@@ -587,7 +719,26 @@ static void process_animation_events(PixelTermApp *app) {
 }
 
 static void handle_delete_current_image(PixelTermApp *app) {
-    app_delete_current_image(app);
+    if (!app) {
+        return;
+    }
+
+    ErrorCode err = app_delete_current_image(app);
+    if (err != ERROR_NONE) {
+        app_render_by_mode(app);
+        return;
+    }
+
+    if (!app_has_images(app)) {
+        app->needs_screen_clear = TRUE;
+        if (app_enter_file_manager(app) == ERROR_NONE) {
+            app_render_file_manager(app);
+        } else {
+            app_refresh_display(app);
+        }
+        return;
+    }
+
     app_render_by_mode(app);
 }
 
@@ -845,24 +996,6 @@ static void handle_key_press_preview(PixelTermApp *app, InputHandler *input_hand
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
         }
-        case (KeyCode)'r':
-            if (app_has_images(app)) {
-                app->current_index = app->preview_selected;
-                app_delete_current_image(app);
-            }
-
-            if (app_has_images(app)) {
-                if (app->current_index < 0) app->current_index = 0;
-                if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
-                app->preview_selected = app->current_index;
-                app->needs_screen_clear = TRUE;
-                app_render_preview_grid(app);
-            } else {
-                app->preview_mode = FALSE;
-                app->needs_screen_clear = TRUE;
-                app_refresh_display(app);
-            }
-            break;
         case (KeyCode)'+':
         case (KeyCode)'=':
             app_preview_change_zoom(app, 1);
@@ -1033,9 +1166,6 @@ static void handle_key_press_file_manager(PixelTermApp *app,
                 app_render_file_manager(app);
             }
             break;
-        case (KeyCode)'r':
-            handle_delete_current_image(app);
-            break;
         default:
             break;
     }
@@ -1055,7 +1185,15 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             break;
         case (KeyCode)'p':
         case (KeyCode)'P':
-            handle_video_protocol_toggle(app);
+            {
+                gint64 now_us = g_get_monotonic_time();
+                if (g_last_protocol_toggle_us > 0 &&
+                    (now_us - g_last_protocol_toggle_us) < k_protocol_toggle_debounce_us) {
+                    break;
+                }
+                g_last_protocol_toggle_us = now_us;
+                handle_video_protocol_toggle(app);
+            }
             break;
         case KEY_LEFT:
         case (KeyCode)'h': {
@@ -1111,15 +1249,15 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
                 app_render_preview_grid(app);
             }
             break;
-        case (KeyCode)'r':
-            handle_delete_current_image(app);
-            break;
         default:
             break;
     }
 }
 
 static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
+    if (handle_delete_request(app, event)) {
+        return;
+    }
     if (handle_key_press_common(app, input_handler, event)) {
         return;
     }
