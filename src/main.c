@@ -104,7 +104,7 @@ static gboolean probe_sixel_support(void) {
     return sixel_supported;
 }
 
-static gboolean probe_kitty_support(void) {
+static gboolean is_kitty_terminal_env(void) {
     const char *term = getenv("TERM");
     if (term && (strcmp(term, "xterm-kitty") == 0 || strcmp(term, "kitty") == 0)) {
         return TRUE;
@@ -117,6 +117,14 @@ static gboolean probe_kitty_support(void) {
 
     const char *term_program = getenv("TERM_PROGRAM");
     if (term_program && strcmp(term_program, "kitty") == 0) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static gboolean probe_kitty_support(void) {
+    if (is_kitty_terminal_env()) {
         return TRUE;
     }
 
@@ -1319,7 +1327,7 @@ int main(int argc, char *argv[]) {
         g_force_iterm2 = FALSE;
         g_force_sixel = FALSE;
     }
-    if (!gamma_set && g_force_kitty) {
+    if (!gamma_set && g_force_kitty && is_kitty_terminal_env()) {
         gamma = 0.5;
     }
 
