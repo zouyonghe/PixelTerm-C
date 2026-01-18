@@ -50,6 +50,10 @@ typedef struct {
     GPtrArray *last_frame_lines;
     gdouble io_avg_ms;
     gboolean io_avg_valid;
+    gint64 last_present_us;
+    gdouble present_fps;
+    gboolean present_fps_valid;
+    gboolean show_stats;
 
     // FFmpeg state
     struct AVFormatContext *format_context;

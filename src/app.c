@@ -1291,6 +1291,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                      target_height,
                                      target_width,
                                      target_height);
+        app->video_player->show_stats = !app->ui_text_hidden;
     }
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = is_video ? "Video View" : "Image View";
