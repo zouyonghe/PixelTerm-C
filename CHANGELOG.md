@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.5.10: Video protocol switch cleanup.
+    - **Video**: Clear the render area when switching from text to graphics protocols to prevent stale blocks.
+
 - v1.5.9: Kitty protocol robustness and delete prompt polish.
     - **Input**: Ignore kitty APC image responses (`ESC _ ... ESC \`) to prevent stray input and playback stalls in iTerm2.
     - **Video**: Debounce `P` protocol cycling to avoid accidental rapid toggles.
