@@ -1,5 +1,8 @@
 # Changelog
 
+- v1.5.11: Linux-only kitty gamma default.
+    - **Gamma**: Apply the kitty default gamma (0.5) only on Linux to avoid over-bright images on other platforms.
+
 - v1.5.10: Video protocol switch cleanup.
     - **Video**: Clear the render area when switching from text to graphics protocols to prevent stale blocks.
 

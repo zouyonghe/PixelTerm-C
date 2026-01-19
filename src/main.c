@@ -335,7 +335,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
-    printf("  %-29s %s\n", "--gamma G", "Gamma correction for image rendering (default: 0.5 in kitty, 1.0 otherwise)");
+    printf("  %-29s %s\n", "--gamma G", "Gamma correction for image rendering (default: 0.5 in kitty on Linux, 1.0 otherwise)");
     printf("\n");
 }
 
@@ -1476,9 +1476,11 @@ int main(int argc, char *argv[]) {
         g_force_iterm2 = FALSE;
         g_force_sixel = FALSE;
     }
+#if defined(__linux__)
     if (!gamma_set && g_force_kitty && is_kitty_terminal_env()) {
         gamma = 0.5;
     }
+#endif
 
     // Create and initialize application
     g_app = app_create();
