@@ -1,6 +1,6 @@
 # PixelTerm-C - 高性能终端图像查看器
 
-![Version](https://img.shields.io/badge/Version-v1.5.9-blue)
+![Version](https://img.shields.io/badge/Version-v1.5.10-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](README.md) | 中文*
