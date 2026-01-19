@@ -607,6 +607,53 @@ void video_player_set_render_area(VideoPlayer *player,
     g_mutex_unlock(&player->state_mutex);
 }
 
+void video_player_clear_render_area(VideoPlayer *player) {
+    if (!player) {
+        return;
+    }
+
+    gint area_top = 0;
+    gint area_height = 0;
+    gint term_h = 0;
+    gint last_top = 0;
+    gint last_height = 0;
+    gboolean layout_valid = FALSE;
+
+    g_mutex_lock(&player->state_mutex);
+    area_top = player->render_area_top_row;
+    area_height = player->render_area_height;
+    term_h = player->render_term_height;
+    last_top = player->last_frame_top_row;
+    last_height = player->last_frame_height;
+    layout_valid = player->render_layout_valid;
+    g_mutex_unlock(&player->state_mutex);
+
+    gint clear_top = 0;
+    gint clear_height = 0;
+    if (layout_valid && area_top > 0 && area_height > 0) {
+        clear_top = area_top;
+        clear_height = area_height;
+    } else if (last_top > 0 && last_height > 0) {
+        clear_top = last_top;
+        clear_height = last_height;
+    }
+
+    if (clear_top <= 0 || clear_height <= 0) {
+        return;
+    }
+
+    gint bottom = clear_top + clear_height - 1;
+    if (term_h > 0 && bottom > term_h) {
+        bottom = term_h;
+    }
+
+    for (gint row = clear_top; row <= bottom; row++) {
+        printf("\033[%d;1H\033[2K", row);
+    }
+    fflush(stdout);
+    video_player_clear_line_cache(player);
+}
+
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gpointer video_player_worker_thread(gpointer user_data);
 

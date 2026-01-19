@@ -827,6 +827,11 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     gboolean force_kitty = app->video_player->renderer->config.force_kitty;
     gboolean force_iterm2 = app->video_player->renderer->config.force_iterm2;
     gboolean force_sixel = app->video_player->renderer->config.force_sixel;
+    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    if (app->video_player->renderer->canvas_config) {
+        current_mode = chafa_canvas_config_get_pixel_mode(app->video_player->renderer->canvas_config);
+    }
+    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
     gboolean next_text = FALSE;
     gboolean next_kitty = FALSE;
     gboolean next_iterm2 = FALSE;
@@ -848,8 +853,14 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     app->video_player->renderer->config.force_kitty = next_kitty;
     app->video_player->renderer->config.force_iterm2 = next_iterm2;
     app->video_player->renderer->config.force_sixel = next_sixel;
+    gboolean next_graphics = next_kitty || next_iterm2 || next_sixel;
+    gboolean should_clear = was_text && next_graphics;
     renderer_update_terminal_size(app->video_player->renderer);
     g_mutex_unlock(&app->video_player->render_mutex);
+
+    if (should_clear) {
+        video_player_clear_render_area(app->video_player);
+    }
 
     if (was_playing) {
         video_player_play(app->video_player);

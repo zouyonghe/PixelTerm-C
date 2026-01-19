@@ -86,6 +86,7 @@ void video_player_set_render_area(VideoPlayer *player,
                                   gint area_height,
                                   gint max_width,
                                   gint max_height);
+void video_player_clear_render_area(VideoPlayer *player);
 ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath);
 ErrorCode video_player_play(VideoPlayer *player);
 ErrorCode video_player_pause(VideoPlayer *player);
