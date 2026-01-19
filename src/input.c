@@ -205,7 +205,6 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         goto finish_event;
     }
 
-read_next:
     // Read first character (treat as unsigned byte to avoid sign-extension issues)
     gint c = input_read_key(handler);
     if (c < 0) {
