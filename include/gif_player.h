@@ -5,7 +5,7 @@
 #include "renderer.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
-// GIF 动画播放器结构
+// GIF animation player structure
 typedef struct {
     gboolean is_playing;
     gboolean is_animated;

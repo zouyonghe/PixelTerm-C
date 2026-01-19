@@ -210,9 +210,6 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (c < 0) {
         c = (unsigned char)c;
     }
-    if (c < 0) {
-        return ERROR_TERMINAL_SIZE;
-    }
 
     // Handle escape sequences
     if (c == '\033') {

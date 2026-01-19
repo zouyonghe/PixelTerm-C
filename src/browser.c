@@ -88,17 +88,6 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
     return ERROR_NONE;
 }
 
-// Refresh current directory
-ErrorCode browser_refresh_directory(FileBrowser *browser) {
-    if (!browser || !browser->directory_path) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    return browser_scan_directory(browser, browser->directory_path);
-}
-
-
-
 // Navigate to next file
 ErrorCode browser_next_file(FileBrowser *browser) {
     if (!browser || !browser->current) {

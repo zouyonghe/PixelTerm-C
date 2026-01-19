@@ -700,22 +700,23 @@ static void process_pending_clicks(PixelTermApp *app) {
     }
 }
 
+static void drain_main_context_if_playing(gboolean is_playing) {
+    if (!is_playing) {
+        return;
+    }
+
+    while (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
+}
+
 static void process_animation_events(PixelTermApp *app) {
     if (!app) {
         return;
     }
 
-    if (app->gif_player && gif_player_is_playing(app->gif_player)) {
-        while (g_main_context_pending(NULL)) {
-            g_main_context_iteration(NULL, FALSE);
-        }
-    }
-
-    if (app->video_player && video_player_is_playing(app->video_player)) {
-        while (g_main_context_pending(NULL)) {
-            g_main_context_iteration(NULL, FALSE);
-        }
-    }
+    drain_main_context_if_playing(app->gif_player && gif_player_is_playing(app->gif_player));
+    drain_main_context_if_playing(app->video_player && video_player_is_playing(app->video_player));
 }
 
 static void handle_delete_current_image(PixelTermApp *app) {

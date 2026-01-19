@@ -118,6 +118,87 @@ static void test_is_valid_image_file(void) {
     g_assert_false(is_valid_image_file("/path/does/not/exist.png"));
 }
 
+static void test_is_video_file_and_media_file(void) {
+    g_assert_true(is_video_file("clip.MP4"));
+    g_assert_true(is_video_file("movie.mkv"));
+    g_assert_false(is_video_file("photo.jpg"));
+    g_assert_false(is_video_file("noext"));
+
+    g_assert_true(is_media_file("photo.JPG"));
+    g_assert_true(is_media_file("movie.mp4"));
+    g_assert_false(is_media_file("note.txt"));
+}
+
+static void test_is_valid_video_file_by_content(void) {
+    static const guint8 k_mp4[] = {
+        0x00, 0x00, 0x00, 0x00,
+        'f', 't', 'y', 'p',
+        'i', 's', 'o', 'm'
+    };
+    static const guint8 k_invalid[] = {0x00, 0x01, 0x02, 0x03};
+
+    gchar *mp4_path = write_temp_file("", k_mp4, sizeof(k_mp4));
+    gchar *invalid_path = write_temp_file("", k_invalid, sizeof(k_invalid));
+
+    g_assert_true(is_valid_video_file(mp4_path));
+    g_assert_false(is_valid_video_file(invalid_path));
+}
+
+static void test_is_animated_image_candidate(void) {
+    static const guint8 k_png_anim[] = {
+        0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x00,
+        'a', 'c', 'T', 'L',
+        0x00, 0x00, 0x00, 0x00
+    };
+    static const guint8 k_png_static[] = {
+        0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x00,
+        'I', 'D', 'A', 'T',
+        0x00, 0x00, 0x00, 0x00
+    };
+    static const guint8 k_webp_anim[] = {
+        'R', 'I', 'F', 'F',
+        0x00, 0x00, 0x00, 0x00,
+        'W', 'E', 'B', 'P',
+        'A', 'N', 'I', 'M',
+        0x00, 0x00, 0x00, 0x00
+    };
+    static const guint8 k_webp_static[] = {
+        'R', 'I', 'F', 'F',
+        0x00, 0x00, 0x00, 0x00,
+        'W', 'E', 'B', 'P',
+        'V', 'P', '8', ' ',
+        0x00, 0x00, 0x00, 0x00
+    };
+    static const guint8 k_tiff_multi[] = {
+        'I', 'I', '*', '\0',
+        0x08, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00
+    };
+    static const guint8 k_tiff_single[] = {
+        'I', 'I', '*', '\0',
+        0x08, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+
+    gchar *png_anim = write_temp_file(".png", k_png_anim, sizeof(k_png_anim));
+    gchar *png_static = write_temp_file(".png", k_png_static, sizeof(k_png_static));
+    gchar *webp_anim = write_temp_file(".webp", k_webp_anim, sizeof(k_webp_anim));
+    gchar *webp_static = write_temp_file(".webp", k_webp_static, sizeof(k_webp_static));
+    gchar *tiff_multi = write_temp_file(".tiff", k_tiff_multi, sizeof(k_tiff_multi));
+    gchar *tiff_single = write_temp_file(".tiff", k_tiff_single, sizeof(k_tiff_single));
+
+    g_assert_true(is_animated_image_candidate(png_anim));
+    g_assert_false(is_animated_image_candidate(png_static));
+    g_assert_true(is_animated_image_candidate(webp_anim));
+    g_assert_false(is_animated_image_candidate(webp_static));
+    g_assert_true(is_animated_image_candidate(tiff_multi));
+    g_assert_false(is_animated_image_candidate(tiff_single));
+}
+
 static void test_file_helpers(void) {
     static const guint8 k_data[] = {'a', 'b', 'c'};
     gchar *path = write_temp_file("", k_data, sizeof(k_data));
@@ -155,6 +236,9 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_image_by_content/invalid", test_is_image_by_content_invalid);
     g_test_add_func("/common/is_image_file", test_is_image_file_extension_and_content);
     g_test_add_func("/common/is_valid_image_file", test_is_valid_image_file);
+    g_test_add_func("/common/is_video_file_and_media_file", test_is_video_file_and_media_file);
+    g_test_add_func("/common/is_valid_video_file_by_content", test_is_valid_video_file_by_content);
+    g_test_add_func("/common/is_animated_image_candidate", test_is_animated_image_candidate);
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
     g_test_add_func("/common/error_code_to_string", test_error_code_to_string);

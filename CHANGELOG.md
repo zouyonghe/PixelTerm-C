@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.5.12: Test coverage and cleanup pass.
+    - **Tests**: Add coverage for video/media helpers, animated-image detection, and GIF player edge cases.
+    - **Tests**: Fix test target linking to include `video_player`.
+    - **Maintenance**: Remove unused browser refresh API and `show_info` state, plus minor dead code cleanup.
+    - **Core**: Reduce duplicate main-loop animation draining logic.
+    - **Docs**: Normalize GIF player comments to English.
+
 - v1.5.11: Linux-only kitty gamma default.
     - **Gamma**: Apply the kitty default gamma (0.5) only on Linux to avoid over-bright images on other platforms.
 

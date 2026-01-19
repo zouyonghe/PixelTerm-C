@@ -30,7 +30,6 @@ PixelTermApp* app_create(void) {
     app->current_index = 0;
     app->total_images = 0;
     app->running = TRUE;
-    app->show_info = FALSE;
     app->info_visible = FALSE;
     app->ui_text_hidden = FALSE;
     app->show_fps = FALSE;

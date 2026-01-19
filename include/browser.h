@@ -46,20 +46,6 @@ void browser_destroy(FileBrowser *browser);
  *         directory cannot be opened or accessed.
  */
 ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory);
-/**
- * @brief Refreshes the current directory's file list.
- * 
- * This function re-scans the directory previously set in the browser.
- * It's equivalent to calling `browser_scan_directory` with the current
- * `directory_path`.
- * 
- * @param browser A pointer to the `FileBrowser` instance.
- * @return `ERROR_NONE` on success, or an appropriate `ErrorCode` if the
- *         directory cannot be opened or accessed.
- */
-ErrorCode browser_refresh_directory(FileBrowser *browser);
-
-
 
 // Navigation functions
 /**

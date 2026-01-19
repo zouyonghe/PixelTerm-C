@@ -11,7 +11,7 @@
 // Suppress deprecation warnings for GdkPixbufAnimation and GTimeVal
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-// 创建新的 GIF 播放器实例
+// Create a new GIF player instance
 GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
                           gboolean force_iterm2, gdouble gamma) {
     GifPlayer *player = g_new0(GifPlayer, 1);
@@ -80,7 +80,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
     return player;
 }
 
-// 设置渲染器 (Optional, allows sharing/overriding)
+// Set the renderer (optional; allows sharing/overriding)
 void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer) {
     if (player) {
         // If we had an internal renderer and we're replacing it, we should arguably destroy the old one
@@ -93,7 +93,7 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer) {
     }
 }
 
-// 设置渲染区域，避免覆盖 UI
+// Set the render area to avoid overwriting UI
 void gif_player_set_render_area(GifPlayer *player,
                                 gint term_width,
                                 gint term_height,
@@ -126,7 +126,7 @@ void gif_player_set_render_area(GifPlayer *player,
     }
 }
 
-// 销毁 GIF 播放器
+// Destroy GIF player
 void gif_player_destroy(GifPlayer *player) {
     if (!player) {
         return;
@@ -154,16 +154,16 @@ void gif_player_destroy(GifPlayer *player) {
     g_free(player);
 }
 
-// 加载 GIF 文件并分析动画信息
+// Load a GIF file and analyze animation info
 ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     if (!player || !filepath) {
         return ERROR_INVALID_IMAGE;
     }
     
-    // 停止之前的播放
+    // Stop any previous playback
     gif_player_stop(player);
     
-    // 清理旧资源
+    // Clean up previous resources
     if (player->iter) {
         g_object_unref(player->iter);
         player->iter = NULL;
@@ -175,12 +175,12 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     g_free(player->filepath);
     player->filepath = NULL;
 
-    // 检查文件是否存在
+    // Check that the file exists
     if (!file_exists(filepath)) {
         return ERROR_FILE_NOT_FOUND;
     }
     
-    // 使用 GdkPixbuf 加载动画
+    // Load animation with GdkPixbuf
     GError *error = NULL;
     GFile *file = g_file_new_for_path(filepath);
     GFileInputStream *stream = g_file_read(file, NULL, &error);
@@ -205,13 +205,13 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
     
-    // 初始化迭代器
+    // Initialize iterator
     player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     
     return ERROR_NONE;
 }
 
-// 渲染当前帧的辅助函数
+// Helper to render the current frame
 static void render_current_frame_internal(GifPlayer *player) {
     if (!player || !player->iter || !player->renderer) {
         return;
@@ -227,14 +227,14 @@ static void render_current_frame_internal(GifPlayer *player) {
     GdkPixbuf *frame = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
     if (!frame) return;
 
-    // 获取图像属性
+    // Get image properties
     gint width = gdk_pixbuf_get_width(frame);
     gint height = gdk_pixbuf_get_height(frame);
     gint rowstride = gdk_pixbuf_get_rowstride(frame);
     gint n_channels = gdk_pixbuf_get_n_channels(frame);
     guchar *pixels = gdk_pixbuf_get_pixels(frame);
 
-    // 使用共享渲染器渲染图像数据
+    // Render image data with the shared renderer
     GString *result = renderer_render_image_data(player->renderer, pixels, width, height, rowstride, n_channels);
     
     if (result) {
@@ -338,7 +338,7 @@ static void render_current_frame_internal(GifPlayer *player) {
     }
 }
 
-// 定时器回调函数
+// Timer callback
 static gboolean render_next_frame(gpointer user_data) {
     GifPlayer *player = (GifPlayer *)user_data;
     
@@ -347,24 +347,24 @@ static gboolean render_next_frame(gpointer user_data) {
         return G_SOURCE_REMOVE;
     }
     
-    // 更新迭代器到当前时间
+    // Advance iterator to current time
     gdk_pixbuf_animation_iter_advance(player->iter, NULL);
     
-    // 渲染新帧
+    // Render the new frame
     render_current_frame_internal(player);
     
-    // 获取下一帧的延迟
+    // Get delay for next frame
     int delay = gdk_pixbuf_animation_iter_get_delay_time(player->iter);
-    if (delay < 10) delay = 10; // 最小延迟保护
+    if (delay < 10) delay = 10; // Minimum delay guard
     
-    // 重新安排定时器
+    // Reschedule timer
     player->timer_id = g_timeout_add(delay, render_next_frame, player);
     
-    // 返回 G_SOURCE_REMOVE 因为我们已经手动添加了新的定时器
+    // Return G_SOURCE_REMOVE because we rescheduled the timer
     return G_SOURCE_REMOVE;
 }
 
-// 播放 GIF
+// Play GIF
 ErrorCode gif_player_play(GifPlayer *player) {
     if (!player || !player->is_animated || !player->animation) {
         return ERROR_INVALID_IMAGE;
@@ -374,7 +374,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
         return ERROR_NONE;
     }
     
-    // 确保迭代器存在
+    // Ensure iterator exists
     if (!player->iter) {
         player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     }
@@ -384,10 +384,10 @@ ErrorCode gif_player_play(GifPlayer *player) {
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
     
-    // 立即渲染第一帧
+    // Render the first frame immediately
     render_current_frame_internal(player);
     
-    // 安排下一帧
+    // Schedule the next frame
     int delay = gdk_pixbuf_animation_iter_get_delay_time(player->iter);
     if (delay < 10) delay = 10;
     
@@ -399,7 +399,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
     return ERROR_NONE;
 }
 
-// 暂停播放
+// Pause playback
 ErrorCode gif_player_pause(GifPlayer *player) {
     if (!player) {
         return ERROR_INVALID_IMAGE;
@@ -415,7 +415,7 @@ ErrorCode gif_player_pause(GifPlayer *player) {
     return ERROR_NONE;
 }
 
-// 停止播放
+// Stop playback
 ErrorCode gif_player_stop(GifPlayer *player) {
     if (!player) {
         return ERROR_INVALID_IMAGE;
@@ -428,18 +428,18 @@ ErrorCode gif_player_stop(GifPlayer *player) {
         player->timer_id = 0;
     }
     
-    // 重置迭代器（如果需要回到开头）
-    // 下次 play 或 load 会处理迭代器重置
+    // Reset iterator if needed to return to start
+    // Next play or load will handle iterator reset
     
     return ERROR_NONE;
 }
 
-// 检查是否正在播放
+// Check if playing
 gboolean gif_player_is_playing(const GifPlayer *player) {
     return player && player->is_playing;
 }
 
-// 检查是否为动画 GIF
+// Check if animated GIF
 gboolean gif_player_is_animated(const GifPlayer *player) {
     return player && player->is_animated;
 }

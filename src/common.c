@@ -548,7 +548,6 @@ void get_terminal_size_pixels(gint *width, gint *height, gint *pixel_width, gint
 
     // Upper bounds to filter out clearly bogus ioctl responses
     const gint pixel_extent_max = 8192 * 3;
-    const gint cell_extent_px_max = 8192;
 
     struct winsize ws;
     gboolean have_winsz = FALSE;
