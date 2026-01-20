@@ -8,6 +8,13 @@
 #include <stdlib.h>
 
 static gboolean input_discard_kitty_apc(InputHandler *handler);
+static gboolean g_scroll_coalesce_active = FALSE;
+
+static gint64 input_now_us(void) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    return (gint64)now.tv_sec * 1000000 + (gint64)now.tv_usec;
+}
 
 // Create a new input handler
 InputHandler* input_handler_create(void) {
@@ -27,6 +34,7 @@ InputHandler* input_handler_create(void) {
     handler->last_scroll_button = (MouseButton)0;
     handler->last_scroll_x = 0;
     handler->last_scroll_y = 0;
+    handler->ignore_input_until_us = 0;
     handler->has_pending_event = FALSE;
     handler->apc_discarding = FALSE;
     handler->apc_saw_esc = FALSE;
@@ -278,6 +286,8 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                         event->mouse_y = y;
 
                         if (button >= 64) {
+                            MouseButton scroll_button = (button & 1) ? MOUSE_SCROLL_DOWN : MOUSE_SCROLL_UP;
+                            event->mouse_button = scroll_button;
                             // Scroll event
                             // Only handle Press ('M'), ignore Release ('m') for scroll
                             if (terminator == 'M') {
@@ -288,13 +298,13 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
 
                                 // Debounce: many terminals emit multiple scroll events per wheel notch.
                                 // Filter very fast duplicates (especially for preview page scrolling).
-                                const glong debounce_ms = 150;
+                                const glong debounce_ms = 200;
                                 gboolean is_fast_duplicate = (diff_ms >= 0 && diff_ms < debounce_ms &&
-                                                             handler->last_scroll_button == (MouseButton)button);
+                                                             handler->last_scroll_button == scroll_button);
                                 if (!is_fast_duplicate) {
                                     event->type = INPUT_MOUSE_SCROLL;
                                     handler->last_scroll_time = now;
-                                    handler->last_scroll_button = (MouseButton)button;
+                                    handler->last_scroll_button = scroll_button;
                                     handler->last_scroll_x = x;
                                     handler->last_scroll_y = y;
                                 } else {
@@ -408,7 +418,41 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         }
     }
 
+    if (event->type == INPUT_MOUSE_SCROLL && !g_scroll_coalesce_active) {
+        g_scroll_coalesce_active = TRUE;
+        InputEvent extra = {0};
+        for (gint i = 0; i < 64; i++) {
+            if (!input_has_pending_input(handler)) {
+                break;
+            }
+            ErrorCode extra_err = input_get_event(handler, &extra);
+            if (extra_err != ERROR_NONE) {
+                break;
+            }
+            if (extra.type == INPUT_MOUSE_SCROLL) {
+                continue;
+            }
+            input_unget_event(handler, &extra);
+            break;
+        }
+        g_scroll_coalesce_active = FALSE;
+    }
+
 finish_event:
+    if (handler) {
+        gint64 now_us = 0;
+        gboolean check_ignore = (handler->ignore_input_until_us > 0 || event->type == INPUT_MOUSE_SCROLL);
+        if (check_ignore) {
+            now_us = input_now_us();
+        }
+        if (handler->ignore_input_until_us > 0 && now_us > 0 &&
+            now_us < handler->ignore_input_until_us) {
+            event->type = INPUT_KEY_PRESS;
+            event->key_code = KEY_UNKNOWN;
+        } else if (event->type == INPUT_MOUSE_SCROLL && now_us > 0) {
+            handler->ignore_input_until_us = now_us + 200000;
+        }
+    }
     // Update terminal size in event
     event->terminal_width = handler->terminal_width;
     event->terminal_height = handler->terminal_height;

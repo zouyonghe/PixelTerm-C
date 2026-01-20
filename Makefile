@@ -12,11 +12,28 @@ LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
 # Cross-compilation settings
 ifeq ($(ARCH),aarch64)
   PKG_CONFIG_PATH = /usr/lib/aarch64-linux-gnu/pkgconfig
-  LIBS = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread -lm
-  INCLUDES = -Iinclude $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
+endif
+
+PKG_CONFIG ?= pkg-config
+PKG_CONFIG_CMD = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG)
+PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil
+
+LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
+INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
+
+ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
+  LIBS += $(shell $(PKG_CONFIG_CMD) --libs mupdf)
+  INCLUDES += $(shell $(PKG_CONFIG_CMD) --cflags mupdf)
+  CFLAGS += -DHAVE_MUPDF
 else
-  LIBS = $(shell pkg-config --libs chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil) -lpthread -lm
-  INCLUDES = -Iinclude $(shell pkg-config --cflags glib-2.0 chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil)
+  MUPDF_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/mupdf /usr/local/opt/mupdf))
+  ifneq ($(wildcard $(MUPDF_PREFIX)/include/mupdf/fitz.h),)
+    LIBS += -L$(MUPDF_PREFIX)/lib -lmupdf -lmupdf-third
+    INCLUDES += -I$(MUPDF_PREFIX)/include
+    CFLAGS += -DHAVE_MUPDF
+  else
+    $(warning mupdf not found; building without book support)
+  endif
 endif
 SRCDIR = src
 OBJDIR = obj

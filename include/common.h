@@ -32,6 +32,11 @@ static const char* SUPPORTED_VIDEO_EXTENSIONS[] = {
     ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg", ".mpg", ".m4v", NULL
 };
 
+// Supported book formats
+static const char* SUPPORTED_BOOK_EXTENSIONS[] = {
+    ".pdf", ".epub", ".cbz", NULL
+};
+
 // Key codes are defined in input.h as KeyCode enum
 
 // Error codes
@@ -111,6 +116,9 @@ gboolean is_valid_video_file(const char *filepath);
  * @return `TRUE` if the file is deemed a valid image or video, `FALSE` otherwise.
  */
 gboolean is_valid_media_file(const char *filepath);
+
+gboolean is_book_file(const char *filename);
+gboolean is_valid_book_file(const char *filepath);
 
 /**
  * @brief Checks if a file is an image by reading its magic numbers.

@@ -92,6 +92,7 @@ typedef struct {
     MouseButton last_scroll_button;
     gint last_scroll_x;
     gint last_scroll_y;
+    gint64 ignore_input_until_us;
 
     gboolean has_pending_event;
     InputEvent pending_event;

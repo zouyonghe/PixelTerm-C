@@ -129,6 +129,20 @@ static void test_is_video_file_and_media_file(void) {
     g_assert_false(is_media_file("note.txt"));
 }
 
+static void test_is_book_file_and_valid(void) {
+    g_assert_true(is_book_file("book.pdf"));
+    g_assert_true(is_book_file("novel.EPUB"));
+    g_assert_true(is_book_file("comic.cbz"));
+    g_assert_false(is_book_file("image.png"));
+
+    static const guint8 k_dummy[] = {'%', 'P', 'D', 'F'};
+    gchar *pdf_path = write_temp_file(".pdf", k_dummy, sizeof(k_dummy));
+    g_assert_true(is_valid_book_file(pdf_path));
+
+    gchar *empty_pdf = write_temp_file(".pdf", NULL, 0);
+    g_assert_false(is_valid_book_file(empty_pdf));
+}
+
 static void test_is_valid_video_file_by_content(void) {
     static const guint8 k_mp4[] = {
         0x00, 0x00, 0x00, 0x00,
@@ -237,6 +251,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_image_file", test_is_image_file_extension_and_content);
     g_test_add_func("/common/is_valid_image_file", test_is_valid_image_file);
     g_test_add_func("/common/is_video_file_and_media_file", test_is_video_file_and_media_file);
+    g_test_add_func("/common/is_book_file_and_valid", test_is_book_file_and_valid);
     g_test_add_func("/common/is_valid_video_file_by_content", test_is_valid_video_file_by_content);
     g_test_add_func("/common/is_animated_image_candidate", test_is_animated_image_candidate);
     g_test_add_func("/common/file_helpers", test_file_helpers);

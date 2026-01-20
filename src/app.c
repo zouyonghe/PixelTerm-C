@@ -5,9 +5,23 @@
 #include "renderer.h"
 #include "input.h"
 #include "preloader.h"
+#include "book.h"
+#include <gio/gio.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <math.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static const gdouble k_book_spread_ratio = 1.0;
+static const gint k_book_spread_min_cols = 120;
+static const gint k_book_spread_min_rows = 24;
+static const gint k_book_spread_min_page_cols = 60;
+static const gint k_book_spread_gutter_cols = 2;
+static const gdouble k_book_cell_aspect = 0.5;
+
+static void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height);
+static GdkPixbuf* app_load_pixbuf_from_stream(const char *filepath, GError **error);
 
 // Create a new application instance
 PixelTermApp* app_create(void) {
@@ -48,10 +62,21 @@ PixelTermApp* app_create(void) {
     app->show_hidden_files = FALSE;
     app->preview_mode = FALSE;
     app->preview_zoom = 0; // 0 indicates uninitialized target cell width
+    app->book_mode = FALSE;
+    app->book_preview_mode = FALSE;
     app->return_to_mode = RETURN_MODE_NONE;
     app->delete_pending = FALSE;
     app->last_render_top_row = 0;
     app->last_render_height = 0;
+    app->image_zoom = 1.0;
+    app->image_pan_x = 0.0;
+    app->image_pan_y = 0.0;
+    app->image_view_left_col = 0;
+    app->image_view_top_row = 0;
+    app->image_view_width = 0;
+    app->image_view_height = 0;
+    app->image_viewport_px_w = 0;
+    app->image_viewport_px_h = 0;
     app->term_width = 80;
     app->term_height = 24;
     app->last_error = ERROR_NONE;
@@ -62,14 +87,75 @@ PixelTermApp* app_create(void) {
     app->preview_selected = 0;
     app->preview_scroll = 0;
     app->needs_screen_clear = FALSE;
+    app->book_doc = NULL;
+    app->book_path = NULL;
+    app->book_page = 0;
+    app->book_page_count = 0;
+    app->book_preview_selected = 0;
+    app->book_preview_scroll = 0;
+    app->book_preview_zoom = 0;
+    app->book_jump_active = FALSE;
+    app->book_jump_dirty = FALSE;
+    app->book_jump_len = 0;
+    app->book_jump_buf[0] = '\0';
     app->pending_single_click = FALSE;
     app->pending_click_time = 0;
     app->pending_grid_single_click = FALSE;
     app->pending_grid_click_time = 0;
     app->pending_grid_click_x = 0;
     app->pending_grid_click_y = 0;
+    app->pending_file_manager_single_click = FALSE;
+    app->pending_file_manager_click_time = 0;
+    app->pending_file_manager_click_x = 0;
+    app->pending_file_manager_click_y = 0;
+    app->last_mouse_x = 0;
+    app->last_mouse_y = 0;
     
     return app;
+}
+
+gboolean app_book_use_double_page(const PixelTermApp *app) {
+    if (!app || !app->book_mode) {
+        return FALSE;
+    }
+    gint width = 0;
+    gint height = 0;
+    app_get_image_target_dimensions(app, &width, &height);
+    gint term_width = app->term_width > 0 ? app->term_width : width;
+    gint term_height = app->term_height > 0 ? app->term_height : height;
+    if (width <= 0) {
+        width = app->term_width > 0 ? app->term_width : 80;
+    }
+    if (height <= 0) {
+        height = app->term_height > 0 ? app->term_height : 24;
+    }
+    if (term_width < k_book_spread_min_cols || term_height < k_book_spread_min_rows) {
+        return FALSE;
+    }
+    if (width < k_book_spread_min_page_cols * 2 + k_book_spread_gutter_cols) {
+        return FALSE;
+    }
+    gdouble ratio = (gdouble)term_width / (gdouble)term_height;
+    ratio *= k_book_cell_aspect;
+    return ratio >= k_book_spread_ratio;
+}
+
+static GdkPixbuf* app_load_pixbuf_from_stream(const char *filepath, GError **error) {
+    if (!filepath) {
+        return NULL;
+    }
+    GFile *file = g_file_new_for_path(filepath);
+    if (!file) {
+        return NULL;
+    }
+    GFileInputStream *stream = g_file_read(file, NULL, error);
+    g_object_unref(file);
+    if (!stream) {
+        return NULL;
+    }
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(G_INPUT_STREAM(stream), NULL, error);
+    g_object_unref(stream);
+    return pixbuf;
 }
 
 // Replace control characters to avoid terminal escape injection when printing paths
@@ -385,6 +471,40 @@ static void app_clear_single_view_ui_lines(const PixelTermApp *app) {
     }
 }
 
+static gint app_count_rendered_lines(const GString *rendered) {
+    if (!rendered || rendered->len == 0) {
+        return 0;
+    }
+    gint lines = 1;
+    for (gsize i = 0; i < rendered->len; i++) {
+        if (rendered->str[i] == '\n') {
+            lines++;
+        }
+    }
+    return lines;
+}
+
+static void app_print_rendered_at(const GString *rendered, gint top_row, gint left_col) {
+    if (!rendered || top_row < 1 || left_col < 1) {
+        return;
+    }
+    const gchar *line_ptr = rendered->str;
+    gint row = top_row;
+    while (line_ptr && *line_ptr) {
+        const gchar *newline = strchr(line_ptr, '\n');
+        gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
+        printf("\033[%d;%dH", row, left_col);
+        if (line_len > 0) {
+            fwrite(line_ptr, 1, line_len, stdout);
+        }
+        if (!newline) {
+            break;
+        }
+        line_ptr = newline + 1;
+        row++;
+    }
+}
+
 // Check if a directory contains media files
 static gboolean directory_contains_media(const gchar *dir_path) {
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
@@ -425,6 +545,31 @@ static gboolean directory_contains_images(const gchar *dir_path) {
     while ((filename = g_dir_read_name(dir))) {
         gchar *full_path = g_build_filename(dir_path, filename, NULL);
         if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_image_file(full_path)) {
+            g_free(full_path);
+            g_dir_close(dir);
+            return TRUE;
+        }
+        g_free(full_path);
+    }
+
+    g_dir_close(dir);
+    return FALSE;
+}
+
+static gboolean directory_contains_books(const gchar *dir_path) {
+    if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
+        return FALSE;
+    }
+
+    GDir *dir = g_dir_open(dir_path, 0, NULL);
+    if (!dir) {
+        return FALSE;
+    }
+
+    const gchar *filename;
+    while ((filename = g_dir_read_name(dir))) {
+        gchar *full_path = g_build_filename(dir_path, filename, NULL);
+        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_book_file(full_path)) {
             g_free(full_path);
             g_dir_close(dir);
             return TRUE;
@@ -894,6 +1039,8 @@ void app_destroy(PixelTermApp *app) {
         app->video_player = NULL;
     }
 
+    app_close_book(app);
+
 
     // Cleanup Chafa resources
     if (app->canvas) {
@@ -1126,9 +1273,65 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;
         app->return_to_mode = RETURN_MODE_SINGLE;
+        app->image_zoom = 1.0;
+        app->image_pan_x = 0.0;
+        app->image_pan_y = 0.0;
     }
     
     return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
+}
+
+ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
+    if (!app || !filepath) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+    if (!is_valid_book_file(filepath)) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    app_close_book(app);
+
+    ErrorCode open_err = ERROR_NONE;
+    BookDocument *doc = book_open(filepath, &open_err);
+    if (!doc) {
+        return open_err != ERROR_NONE ? open_err : ERROR_INVALID_IMAGE;
+    }
+
+    app->book_doc = doc;
+    app->book_path = g_strdup(filepath);
+    app->book_page_count = book_get_page_count(doc);
+    app->book_page = 0;
+    app->book_preview_selected = 0;
+    app->book_preview_scroll = 0;
+    app->book_preview_zoom = 0;
+
+    g_free(app->current_directory);
+    gchar *directory = g_path_get_dirname(filepath);
+    app->current_directory = directory ? directory : g_strdup(filepath);
+
+    return ERROR_NONE;
+}
+
+void app_close_book(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    if (app->book_doc) {
+        book_close(app->book_doc);
+        app->book_doc = NULL;
+    }
+    g_clear_pointer(&app->book_path, g_free);
+    app->book_page = 0;
+    app->book_page_count = 0;
+    app->book_preview_selected = 0;
+    app->book_preview_scroll = 0;
+    app->book_preview_zoom = 0;
+    app->book_jump_active = FALSE;
+    app->book_jump_dirty = FALSE;
+    app->book_jump_len = 0;
+    app->book_jump_buf[0] = '\0';
+    app->book_mode = FALSE;
+    app->book_preview_mode = FALSE;
 }
 
 // Navigate to next image
@@ -1151,6 +1354,9 @@ ErrorCode app_next_image(PixelTermApp *app) {
     if (old_index != app->current_index) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;  // Reset info visibility when switching images
+        app->image_zoom = 1.0;
+        app->image_pan_x = 0.0;
+        app->image_pan_y = 0.0;
 
         // Update preload tasks for new position
         if (app->preloader && app->preload_enabled) {
@@ -1184,6 +1390,9 @@ ErrorCode app_previous_image(PixelTermApp *app) {
     if (old_index != app->current_index) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;  // Reset info visibility when switching images
+        app->image_zoom = 1.0;
+        app->image_pan_x = 0.0;
+        app->image_pan_y = 0.0;
 
         // Update preload tasks for new position
         if (app->preloader && app->preload_enabled) {
@@ -1209,6 +1418,9 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
             app->current_index = index;
             app->needs_redraw = TRUE;
             app->info_visible = FALSE;  // Reset info visibility when switching images
+            app->image_zoom = 1.0;
+            app->image_pan_x = 0.0;
+            app->image_pan_y = 0.0;
             
             // Update preload tasks for new position
             if (app->preloader && app->preload_enabled) {
@@ -1242,6 +1454,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // Check if it's an animated image/video file and handle animation
     gboolean is_animated_image = is_animated_image_candidate(filepath);
     gboolean is_video = is_video_file(filepath);
+    gboolean gif_is_animated = FALSE;
     if (!is_video && !is_animated_image && !is_image_file(filepath)) {
         is_video = is_valid_video_file(filepath);
     }
@@ -1269,10 +1482,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             }
         }
     }
+    if (is_animated_image && app->gif_player && !is_video) {
+        gif_is_animated = gif_player_is_animated(app->gif_player);
+    }
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
-    if (is_video && app) {
+    if (is_video) {
         gdouble scale = app->video_scale;
         if (scale < 0.3) {
             scale = 0.3;
@@ -1287,6 +1503,23 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (target_height < 1) {
             target_height = 1;
         }
+    }
+
+    gint cell_w = 0, cell_h = 0;
+    get_terminal_cell_geometry(&cell_w, &cell_h);
+    if (cell_w <= 0) cell_w = 10;
+    if (cell_h <= 0) cell_h = 20;
+    app->image_viewport_px_w = MAX(1, target_width * cell_w);
+    app->image_viewport_px_h = MAX(1, target_height * cell_h);
+
+    gdouble image_zoom = app->image_zoom;
+    if (image_zoom < 1.0) {
+        image_zoom = 1.0;
+    }
+    app->image_zoom = image_zoom;
+    if (image_zoom <= 1.0) {
+        app->image_pan_x = 0.0;
+        app->image_pan_y = 0.0;
     }
 
     // Clear screen and reset terminal state
@@ -1432,24 +1665,101 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     // Check if image is already cached
     GString *rendered = NULL;
-    gint image_width, image_height;
+    gint image_width = 0;
+    gint image_height = 0;
+    gboolean use_zoom = (!is_video && !gif_is_animated && image_zoom > 1.0 + 0.001);
 
-    if (app->preloader && app->preload_enabled) {
-        rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
-    }
+    if (use_zoom) {
+        GError *load_error = NULL;
+        GdkPixbuf *pixbuf = app_load_pixbuf_from_stream(filepath, &load_error);
+        if (!pixbuf) {
+            if (load_error) {
+                g_error_free(load_error);
+            }
+            return ERROR_INVALID_IMAGE;
+        }
 
-    // If not in cache, render it normally
-    if (!rendered) {
-        // Create renderer
-        ImageRenderer *renderer = renderer_create();
-        if (!renderer) {
+        gint orig_w = gdk_pixbuf_get_width(pixbuf);
+        gint orig_h = gdk_pixbuf_get_height(pixbuf);
+        if (orig_w < 1) orig_w = 1;
+        if (orig_h < 1) orig_h = 1;
+
+        gdouble scale_w = (gdouble)app->image_viewport_px_w / (gdouble)orig_w;
+        gdouble scale_h = (gdouble)app->image_viewport_px_h / (gdouble)orig_h;
+        gdouble base_scale = scale_w < scale_h ? scale_w : scale_h;
+        if (!isfinite(base_scale) || base_scale <= 0.0) {
+            base_scale = 1.0;
+        }
+        gdouble desired_scale = base_scale * image_zoom;
+        gdouble scaled_w = (gdouble)orig_w * desired_scale;
+        gdouble scaled_h = (gdouble)orig_h * desired_scale;
+        const gdouble max_dim = 4096.0;
+        if (scaled_w > max_dim || scaled_h > max_dim) {
+            gdouble descale = scaled_w / max_dim;
+            gdouble descale_h = scaled_h / max_dim;
+            if (descale_h > descale) {
+                descale = descale_h;
+            }
+            if (descale > 1.0) {
+                desired_scale /= descale;
+                scaled_w = (gdouble)orig_w * desired_scale;
+                scaled_h = (gdouble)orig_h * desired_scale;
+            }
+        }
+
+        gint scaled_px_w = (gint)ceil(scaled_w);
+        gint scaled_px_h = (gint)ceil(scaled_h);
+        if (scaled_px_w < 1) scaled_px_w = 1;
+        if (scaled_px_h < 1) scaled_px_h = 1;
+
+        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pixbuf, scaled_px_w, scaled_px_h, GDK_INTERP_BILINEAR);
+        g_object_unref(pixbuf);
+        if (!scaled) {
             return ERROR_MEMORY_ALLOC;
         }
 
-        // Configure renderer
+        gint crop_w = app->image_viewport_px_w;
+        gint crop_h = app->image_viewport_px_h;
+        if (crop_w < 1) crop_w = 1;
+        if (crop_h < 1) crop_h = 1;
+        if (crop_w > scaled_px_w) crop_w = scaled_px_w;
+        if (crop_h > scaled_px_h) crop_h = scaled_px_h;
+
+        gint max_pan_x = MAX(0, scaled_px_w - crop_w);
+        gint max_pan_y = MAX(0, scaled_px_h - crop_h);
+        if (app->image_pan_x < 0.0) app->image_pan_x = 0.0;
+        if (app->image_pan_y < 0.0) app->image_pan_y = 0.0;
+        if (app->image_pan_x > max_pan_x) app->image_pan_x = max_pan_x;
+        if (app->image_pan_y > max_pan_y) app->image_pan_y = max_pan_y;
+
+        gint crop_x = (gint)(app->image_pan_x + 0.5);
+        gint crop_y = (gint)(app->image_pan_y + 0.5);
+        if (crop_x < 0) crop_x = 0;
+        if (crop_y < 0) crop_y = 0;
+        if (crop_x > max_pan_x) crop_x = max_pan_x;
+        if (crop_y > max_pan_y) crop_y = max_pan_y;
+
+        GdkPixbuf *render_pixbuf = scaled;
+        if (crop_w < scaled_px_w || crop_h < scaled_px_h) {
+            render_pixbuf = gdk_pixbuf_new_subpixbuf(scaled, crop_x, crop_y, crop_w, crop_h);
+            if (!render_pixbuf) {
+                g_object_unref(scaled);
+                return ERROR_MEMORY_ALLOC;
+            }
+        } else {
+            g_object_ref(render_pixbuf);
+        }
+
+        ImageRenderer *renderer = renderer_create();
+        if (!renderer) {
+            g_object_unref(render_pixbuf);
+            g_object_unref(scaled);
+            return ERROR_MEMORY_ALLOC;
+        }
+
         RendererConfig config = {
             .max_width = target_width,
-            .max_height = target_height, // Normal: use almost full height, Info: reserve space
+            .max_height = target_height,
             .preserve_aspect_ratio = TRUE,
             .dither = app->dither_enabled,
             .color_space = CHAFA_COLOR_SPACE_RGB,
@@ -1467,35 +1777,90 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         ErrorCode error = renderer_initialize(renderer, &config);
         if (error != ERROR_NONE) {
             renderer_destroy(renderer);
+            g_object_unref(render_pixbuf);
+            g_object_unref(scaled);
             return error;
         }
 
-        // Render image
-        rendered = renderer_render_image_file(renderer, filepath);
-        if (!rendered) {
-            renderer_destroy(renderer);
-            return ERROR_INVALID_IMAGE;
-        }
-
-        // Get rendered image dimensions
+        rendered = renderer_render_image_data(renderer,
+                                              gdk_pixbuf_get_pixels(render_pixbuf),
+                                              gdk_pixbuf_get_width(render_pixbuf),
+                                              gdk_pixbuf_get_height(render_pixbuf),
+                                              gdk_pixbuf_get_rowstride(render_pixbuf),
+                                              gdk_pixbuf_get_n_channels(render_pixbuf));
         renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
 
-        // Add to cache if preloader is available
+        renderer_destroy(renderer);
+        g_object_unref(render_pixbuf);
+        g_object_unref(scaled);
+
+        if (!rendered) {
+            return ERROR_INVALID_IMAGE;
+        }
+    } else {
         if (app->preloader && app->preload_enabled) {
-            preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height, target_width, target_height);
+            rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
         }
 
-        renderer_destroy(renderer);
-    } else {
-        // For cached images, get the actual dimensions from cache
-        if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height, &image_width, &image_height)) {
-            // Fallback: count lines in the rendered output to get actual height
-            image_width = app->term_width;
-            image_height = 1; // Start with 1 for first line
+        // If not in cache, render it normally
+        if (!rendered) {
+            // Create renderer
+            ImageRenderer *renderer = renderer_create();
+            if (!renderer) {
+                return ERROR_MEMORY_ALLOC;
+            }
 
-            for (gsize i = 0; i < rendered->len; i++) {
-                if (rendered->str[i] == '\n') {
-                    image_height++;
+            // Configure renderer
+            RendererConfig config = {
+                .max_width = target_width,
+                .max_height = target_height, // Normal: use almost full height, Info: reserve space
+                .preserve_aspect_ratio = TRUE,
+                .dither = app->dither_enabled,
+                .color_space = CHAFA_COLOR_SPACE_RGB,
+                .work_factor = app->render_work_factor,
+                .force_text = app->force_text,
+                .force_sixel = app->force_sixel,
+                .force_kitty = app->force_kitty,
+                .force_iterm2 = app->force_iterm2,
+                .gamma = app->gamma,
+                .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+                .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+                .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+            };
+
+            ErrorCode error = renderer_initialize(renderer, &config);
+            if (error != ERROR_NONE) {
+                renderer_destroy(renderer);
+                return error;
+            }
+
+            // Render image
+            rendered = renderer_render_image_file(renderer, filepath);
+            if (!rendered) {
+                renderer_destroy(renderer);
+                return ERROR_INVALID_IMAGE;
+            }
+
+            // Get rendered image dimensions
+            renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+
+            // Add to cache if preloader is available
+            if (app->preloader && app->preload_enabled) {
+                preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height, target_width, target_height);
+            }
+
+            renderer_destroy(renderer);
+        } else {
+            // For cached images, get the actual dimensions from cache
+            if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height, &image_width, &image_height)) {
+                // Fallback: count lines in the rendered output to get actual height
+                image_width = app->term_width;
+                image_height = 1; // Start with 1 for first line
+
+                for (gsize i = 0; i < rendered->len; i++) {
+                    if (rendered->str[i] == '\n') {
+                        image_height++;
+                    }
                 }
             }
         }
@@ -1523,6 +1888,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         gint stored_height = image_height > 0 ? image_height : (target_height > 0 ? target_height : 1);
         app->last_render_top_row = image_top_row;
         app->last_render_height = stored_height;
+        app->image_view_left_col = left_pad + 1;
+        app->image_view_top_row = image_top_row;
+        app->image_view_width = image_width > 0 ? image_width : effective_width;
+        app->image_view_height = stored_height;
     }
 
     gchar *pad_buffer = NULL;
@@ -1598,7 +1967,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // If it's an animated image and player is available, start playing if animated
-    if (is_animated_image && app->gif_player && gif_player_is_animated(app->gif_player)) {
+    if (gif_is_animated && app->gif_player) {
         // For first render, just show the first frame, then start animation
         gif_player_play(app->gif_player);
         // Indicate that we are currently displaying an animated GIF
@@ -1703,6 +2072,12 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     // Update terminal size
     get_terminal_size(&app->term_width, &app->term_height);
     
+    if (app->book_preview_mode) {
+        return app_render_book_preview(app);
+    }
+    if (app->book_mode) {
+        return app_render_book_page(app);
+    }
     if (app->preview_mode) {
         return app_render_preview_grid(app);
     }
@@ -1731,6 +2106,12 @@ ErrorCode app_render_by_mode(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    if (app->book_preview_mode) {
+        return app_render_book_preview(app);
+    }
+    if (app->book_mode) {
+        return app_render_book_page(app);
+    }
     if (app->preview_mode) {
         return app_render_preview_grid(app);
     }
@@ -2102,20 +2483,44 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         // Refresh file manager with new directory
         return app_file_manager_refresh(app);
     } else {
+        if (is_valid_book_file(selected_path)) {
+            ErrorCode error = app_open_book(app, selected_path);
+            if (error != ERROR_NONE) {
+                return error;
+            }
+
+            printf("\033[2J\033[H\033[0m");
+            fflush(stdout);
+
+            app->file_manager_mode = FALSE;
+            if (app->directory_entries) {
+                g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
+                app->directory_entries = NULL;
+            }
+            g_clear_pointer(&app->file_manager_directory, g_free);
+            app->info_visible = FALSE;
+            app->needs_redraw = TRUE;
+
+            app_enter_book_preview(app);
+            app_render_book_preview(app);
+            fflush(stdout);
+            return ERROR_NONE;
+        }
+
         // It's a file, check if it's a valid image file before loading
         if (!is_valid_media_file(selected_path)) {
             // If it's not a valid media file, don't try to load it
             return ERROR_INVALID_IMAGE;
         }
-        
+
         ErrorCode error = app_load_single_file(app, selected_path);
-        
+
         // Only exit file manager if file was loaded successfully
         if (error == ERROR_NONE) {
             // Clear screen before exiting file manager
             printf("\033[2J\033[H\033[0m");
             fflush(stdout);
-            
+
             // Exit file manager mode
             app->file_manager_mode = FALSE;
             // Cleanup directory entries
@@ -2252,6 +2657,41 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
         }
     }
 
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
+    if (!app || !app->file_manager_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (!path || !app->directory_entries) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    gchar *target = g_canonicalize_filename(path, NULL);
+    if (!target) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    gboolean found = FALSE;
+    gint idx = 0;
+    for (GList *cur = app->directory_entries; cur; cur = cur->next, idx++) {
+        gchar *entry = (gchar*)cur->data;
+        if (g_strcmp0(entry, target) == 0) {
+            app->selected_entry = idx;
+            found = TRUE;
+            break;
+        }
+    }
+    g_free(target);
+
+    if (!found) {
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    gint col_width = 0, cols = 0, visible_rows = 0, total_rows = 0;
+    app_file_manager_layout(app, &col_width, &cols, &visible_rows, &total_rows);
+    app_file_manager_adjust_scroll(app, cols, visible_rows);
     return ERROR_NONE;
 }
 
@@ -2967,6 +3407,589 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
     return app_render_preview_grid(app);
 }
 
+static PreviewLayout app_book_preview_calculate_layout(PixelTermApp *app) {
+    PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, 3, 1};
+    if (!app || app->book_page_count <= 0) {
+        return layout;
+    }
+
+    const gint header_lines = app->ui_text_hidden ? 0 : 3;
+    gint usable_width = app->term_width > 0 ? app->term_width : 80;
+    gint bottom_reserved = app_preview_bottom_reserved_lines(app);
+    gint usable_height = app->term_height > header_lines + bottom_reserved
+                             ? app->term_height - header_lines - bottom_reserved
+                             : 6;
+
+    if (app->book_preview_zoom <= 0) {
+        app->book_preview_zoom = 30;
+    }
+
+    gint cols = usable_width / app->book_preview_zoom;
+    if (cols < 2) cols = 2;
+    if (usable_width / cols < 4) {
+        cols = usable_width / 4;
+        if (cols < 2) cols = 2;
+    }
+
+    gint cell_width = usable_width / cols;
+    gint cell_height = cell_width / 2 + 1;
+    if (cell_height < 4) cell_height = 4;
+
+    gint rows = (app->book_page_count + cols - 1) / cols;
+    if (rows < 1) rows = 1;
+
+    gint visible_rows = usable_height / cell_height;
+    if (visible_rows < 1) visible_rows = 1;
+
+    layout.cols = cols;
+    layout.rows = rows;
+    layout.cell_width = cell_width;
+    layout.cell_height = cell_height;
+    layout.header_lines = header_lines;
+    layout.visible_rows = visible_rows;
+    return layout;
+}
+
+static void app_book_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *layout) {
+    if (!app || !layout) {
+        return;
+    }
+
+    gint total_rows = layout->rows;
+    gint visible_rows = layout->visible_rows;
+    if (visible_rows < 1) visible_rows = 1;
+
+    gint max_offset = MAX(0, total_rows - 1);
+    if (app->book_preview_scroll > max_offset) {
+        app->book_preview_scroll = max_offset;
+    }
+    if (app->book_preview_scroll < 0) {
+        app->book_preview_scroll = 0;
+    }
+
+    gint row = app->book_preview_selected / layout->cols;
+    if (row < app->book_preview_scroll) {
+        app->book_preview_scroll = row;
+    } else if (row >= app->book_preview_scroll + visible_rows) {
+        app->book_preview_scroll = row - visible_rows + 1;
+    }
+}
+
+static void app_book_preview_render_page_indicator(PixelTermApp *app) {
+    if (!app || app->ui_text_hidden || app->term_height < 3) {
+        return;
+    }
+    if (app->book_page_count <= 0) {
+        return;
+    }
+
+    gint total_pages = app->book_page_count > 0 ? app->book_page_count : 1;
+    gint page_display = app->book_preview_selected + 1;
+    if (page_display < 1) page_display = 1;
+    if (page_display > total_pages) page_display = total_pages;
+
+    char page_text[32];
+    g_snprintf(page_text, sizeof(page_text), "%d/%d", page_display, total_pages);
+    gint page_len = (gint)strlen(page_text);
+    gint page_pad = (app->term_width > page_len) ? (app->term_width - page_len) / 2 : 0;
+    printf("\033[3;1H\033[2K");
+    for (gint i = 0; i < page_pad; i++) putchar(' ');
+    printf("%s", page_text);
+}
+
+static void app_book_preview_render_selected_info(PixelTermApp *app) {
+    if (!app || app->ui_text_hidden || app->term_height < 3) {
+        return;
+    }
+    if (!app->book_path || app->book_page_count <= 0) {
+        return;
+    }
+
+    gchar *base = g_path_get_basename(app->book_path);
+    gchar *safe = sanitize_for_terminal(base);
+    gint max_width = app_filename_max_width(app);
+    if (max_width <= 0) {
+        max_width = app->term_width;
+    }
+
+    gchar *display_name = truncate_utf8_middle_keep_suffix(safe, max_width);
+    gint row = app->term_height - 2;
+    gint name_len = utf8_display_width(display_name);
+    gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+    printf("\033[%d;1H", row);
+    for (gint i = 0; i < app->term_width; i++) putchar(' ');
+    if (name_len > 0) {
+        printf("\033[%d;%dH\033[34m%s\033[0m", row, pad + 1, display_name);
+    }
+
+    g_free(display_name);
+    g_free(safe);
+    g_free(base);
+}
+
+static void app_book_render_page_indicator(const PixelTermApp *app) {
+    if (!app || app->ui_text_hidden || app->term_height <= 0) {
+        return;
+    }
+
+    gint current = app->book_page + 1;
+    gint total = app->book_page_count;
+    if (current < 1) current = 1;
+    if (total < 1) total = 1;
+
+    gint idx_row = (app->term_height >= 2) ? (app->term_height - 2) : 1;
+    printf("\033[%d;1H\033[2K", idx_row);
+
+    gboolean double_page = app_book_use_double_page(app);
+    if (!double_page) {
+        char idx_text[32];
+        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        gint idx_len = (gint)strlen(idx_text);
+        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+        for (gint i = 0; i < idx_pad; i++) putchar(' ');
+        printf("%s", idx_text);
+        return;
+    }
+
+    gint target_width = 0;
+    gint target_height = 0;
+    app_get_image_target_dimensions(app, &target_width, &target_height);
+    (void)target_height;
+    gint gutter_cols = k_book_spread_gutter_cols;
+    gint per_page_cols = (target_width - gutter_cols) / 2;
+    if (per_page_cols < 1) {
+        char idx_text[32];
+        g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        gint idx_len = (gint)strlen(idx_text);
+        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+        for (gint i = 0; i < idx_pad; i++) putchar(' ');
+        printf("%s", idx_text);
+        return;
+    }
+
+    gint spread_cols = per_page_cols * 2 + gutter_cols;
+    gint spread_left_col = 1;
+    if (spread_cols > 0 && app->term_width > spread_cols) {
+        spread_left_col = (app->term_width - spread_cols) / 2 + 1;
+    }
+    gint left_half_start = spread_left_col;
+    gint right_half_start = spread_left_col + per_page_cols + gutter_cols;
+
+    char left_text[32];
+    g_snprintf(left_text, sizeof(left_text), "%d/%d", current, total);
+    gint left_len = (gint)strlen(left_text);
+    gint left_col = left_half_start;
+    if (left_len > 0 && left_len < per_page_cols) {
+        left_col += (per_page_cols - left_len) / 2;
+    }
+    printf("\033[%d;%dH%s", idx_row, left_col, left_text);
+
+    gint right_page = current + 1;
+    if (right_page <= total) {
+        char right_text[32];
+        g_snprintf(right_text, sizeof(right_text), "%d/%d", right_page, total);
+        gint right_len = (gint)strlen(right_text);
+        gint right_col = right_half_start;
+        if (right_len > 0 && right_len < per_page_cols) {
+            right_col += (per_page_cols - right_len) / 2;
+        }
+        printf("\033[%d;%dH%s", idx_row, right_col, right_text);
+    }
+}
+
+void app_book_jump_render_prompt(PixelTermApp *app) {
+    if (!app || !app->book_jump_active) {
+        return;
+    }
+    if (!app->book_mode && !app->book_preview_mode) {
+        return;
+    }
+
+    gint total_pages = app->book_page_count > 0 ? app->book_page_count : 1;
+    gint total_len = 1;
+    for (gint tmp = total_pages; tmp >= 10; tmp /= 10) {
+        total_len++;
+    }
+    const char *buf = app->book_jump_buf;
+    gint buf_len = app->book_jump_len;
+    gint field_width = MIN(total_len, (gint)sizeof(app->book_jump_buf) - 1);
+    if (field_width < 1) field_width = 1;
+
+    const char *label = "Jump:";
+    const gint label_gap = 1;
+    gint label_len = (gint)strlen(label);
+    gint layout_width = label_len + label_gap + field_width;
+
+    gint term_h = app->term_height > 0 ? app->term_height : 24;
+    gint term_w = app->term_width > 0 ? app->term_width : 80;
+    gint input_row = app->book_preview_mode ? term_h - 3 : term_h - 2;
+    if (input_row < 1) input_row = 1;
+
+    printf("\033[%d;1H\033[2K", input_row);
+    gint input_pad = (term_w > layout_width) ? (term_w - layout_width) / 2 : 0;
+    if (input_pad < 0) input_pad = 0;
+    for (gint i = 0; i < input_pad; i++) putchar(' ');
+    gint base_col = input_pad + 1;
+    printf("\033[%d;%dH\033[36m%s\033[0m", input_row, base_col, label);
+
+    gint field_col = base_col + label_len + label_gap;
+    char field_buf[32];
+    gint field_fill = MIN(field_width, (gint)sizeof(field_buf) - 1);
+    for (gint i = 0; i < field_fill; i++) {
+        field_buf[i] = ' ';
+    }
+    if (buf_len > 0) {
+        gint print_len = MIN(buf_len, field_fill);
+        memcpy(field_buf, buf, print_len);
+    } else {
+        field_buf[0] = '_';
+    }
+    field_buf[field_fill] = '\0';
+    printf("\033[%d;%dH\033[33m%s\033[0m", input_row, field_col, field_buf);
+
+    gint cursor_col = field_col + (buf_len > 0 ? MIN(buf_len, field_fill) : 0);
+    if (cursor_col < 1) cursor_col = 1;
+    if (cursor_col > term_w) cursor_col = term_w;
+    printf("\033[%d;%dH\033[?25h", input_row, cursor_col);
+    fflush(stdout);
+}
+
+void app_book_jump_clear_prompt(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    if (!app->book_mode && !app->book_preview_mode) {
+        return;
+    }
+
+    gint term_h = app->term_height > 0 ? app->term_height : 24;
+    gint input_row = app->book_preview_mode ? term_h - 3 : term_h - 2;
+    if (input_row < 1) input_row = 1;
+    printf("\033[%d;1H\033[2K", input_row);
+    printf("\033[?25l");
+
+    if (app->book_preview_mode) {
+        app_book_preview_render_selected_info(app);
+        app_book_preview_render_page_indicator(app);
+    } else if (app->book_mode && !app->ui_text_hidden) {
+        app_book_render_page_indicator(app);
+    }
+
+    fflush(stdout);
+}
+
+static gboolean app_book_preview_get_cell_origin(const PixelTermApp *app,
+                                                 const PreviewLayout *layout,
+                                                 gint index,
+                                                 gint start_row,
+                                                 gint vertical_offset,
+                                                 gint *cell_x,
+                                                 gint *cell_y) {
+    if (!app || !layout || !cell_x || !cell_y) {
+        return FALSE;
+    }
+    if (index < 0 || index >= app->book_page_count) {
+        return FALSE;
+    }
+    gint row = index / layout->cols;
+    gint col = index % layout->cols;
+    if (row < start_row || row >= start_row + layout->visible_rows) {
+        return FALSE;
+    }
+    *cell_x = col * layout->cell_width + 1;
+    *cell_y = layout->header_lines + vertical_offset + (row - start_row) * layout->cell_height + 1;
+    return TRUE;
+}
+
+static void app_book_preview_clear_cell_border(const PixelTermApp *app,
+                                               const PreviewLayout *layout,
+                                               gint index,
+                                               gint start_row,
+                                               gint vertical_offset) {
+    if (!app || !layout) {
+        return;
+    }
+    if (layout->cell_width < 4 || layout->cell_height < 4) {
+        return;
+    }
+    gint cell_x = 0;
+    gint cell_y = 0;
+    if (!app_book_preview_get_cell_origin(app, layout, index, start_row, vertical_offset, &cell_x, &cell_y)) {
+        return;
+    }
+
+    printf("\033[0m");
+    printf("\033[%d;%dH", cell_y, cell_x);
+    for (gint c = 0; c < layout->cell_width; c++) putchar(' ');
+
+    gint bottom_y = cell_y + layout->cell_height - 1;
+    printf("\033[%d;%dH", bottom_y, cell_x);
+    for (gint c = 0; c < layout->cell_width; c++) putchar(' ');
+
+    for (gint line = 1; line < layout->cell_height - 1; line++) {
+        gint y = cell_y + line;
+        printf("\033[%d;%dH ", y, cell_x);
+        printf("\033[%d;%dH ", y, cell_x + layout->cell_width - 1);
+    }
+}
+
+static void app_book_preview_draw_cell_border(const PixelTermApp *app,
+                                              const PreviewLayout *layout,
+                                              gint index,
+                                              gint start_row,
+                                              gint vertical_offset) {
+    if (!app || !layout) {
+        return;
+    }
+    if (layout->cell_width < 4 || layout->cell_height < 4) {
+        return;
+    }
+    gint cell_x = 0;
+    gint cell_y = 0;
+    if (!app_book_preview_get_cell_origin(app, layout, index, start_row, vertical_offset, &cell_x, &cell_y)) {
+        return;
+    }
+
+    const char *border_style = "\033[34;1m";
+    printf("\033[%d;%dH%s+", cell_y, cell_x, border_style);
+    for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
+    printf("+\033[0m");
+
+    for (gint line = 1; line < layout->cell_height - 1; line++) {
+        gint y = cell_y + line;
+        printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
+        printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout->cell_width - 1, border_style);
+    }
+
+    gint bottom_y = cell_y + layout->cell_height - 1;
+    printf("\033[%d;%dH%s+", bottom_y, cell_x, border_style);
+    for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
+    printf("+\033[0m");
+}
+
+ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    gint cols = layout.cols;
+    gint rows = layout.rows;
+    if (cols < 1) cols = 1;
+    if (rows < 1) rows = 1;
+
+    gint old_scroll = app->book_preview_scroll;
+
+    gint row = app->book_preview_selected / cols;
+    gint col = app->book_preview_selected % cols;
+
+    row += delta_row;
+    col += delta_col;
+
+    if (delta_col < 0 && col < 0) {
+        col = cols - 1;
+    } else if (delta_col > 0 && col >= cols) {
+        col = 0;
+    }
+
+    if (delta_row > 0 && row >= rows) {
+        row = 0;
+        app->book_preview_scroll = 0;
+    } else if (delta_row < 0 && row < 0) {
+        gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
+        gint last_page_scroll = 0;
+        if (rows > 0) {
+            last_page_scroll = ((rows - 1) / visible_rows) * visible_rows;
+            if (last_page_scroll < 0) {
+                last_page_scroll = 0;
+            } else if (last_page_scroll > rows - 1) {
+                last_page_scroll = rows - 1;
+            }
+        }
+        row = rows - 1;
+        app->book_preview_scroll = last_page_scroll;
+    } else if (delta_row > 0 && row >= app->book_preview_scroll + layout.visible_rows) {
+        gint new_scroll = MIN(app->book_preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
+        app->book_preview_scroll = new_scroll;
+        row = new_scroll;
+    } else if (delta_row < 0 && row < app->book_preview_scroll) {
+        gint new_scroll = MAX(app->book_preview_scroll - layout.visible_rows, 0);
+        app->book_preview_scroll = new_scroll;
+        row = MIN(new_scroll + layout.visible_rows - 1, rows - 1);
+    }
+
+    if (row < 0) row = 0;
+    if (row >= rows) row = rows - 1;
+    if (col < 0) col = 0;
+    if (col >= cols) col = cols - 1;
+
+    gint new_index = row * cols + col;
+    gint row_start = row * cols;
+    gint row_end = MIN(app->book_page_count - 1, row_start + cols - 1);
+    if (new_index < row_start) new_index = row_start;
+    if (new_index > row_end) new_index = row_end;
+    if (new_index >= app->book_page_count) {
+        new_index = app->book_page_count - 1;
+    }
+
+    app->book_preview_selected = new_index;
+    app_book_preview_adjust_scroll(app, &layout);
+    if (app->book_preview_scroll != old_scroll) {
+        app->needs_screen_clear = TRUE;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+    gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
+    if (total_pages <= 1) {
+        return ERROR_NONE;
+    }
+    gint cols = layout.cols;
+    if (cols < 1) cols = 1;
+    gint rows = layout.rows;
+    gint old_scroll = app->book_preview_scroll;
+
+    gint current_row = cols > 0 ? app->book_preview_selected / cols : 0;
+    gint current_col = cols > 0 ? app->book_preview_selected % cols : 0;
+    gint relative_row = current_row - app->book_preview_scroll;
+    if (relative_row < 0) relative_row = 0;
+    if (relative_row >= rows_per_page) relative_row = rows_per_page - 1;
+
+    gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
+    gint new_scroll = app->book_preview_scroll + delta_scroll;
+    gint last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
+    if (last_page_scroll < 0) last_page_scroll = 0;
+    if (new_scroll < 0) new_scroll = 0;
+    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
+
+    gint new_row = new_scroll + relative_row;
+    if (new_row < 0) new_row = 0;
+    if (new_row >= rows) new_row = rows - 1;
+
+    if (current_col < 0) current_col = 0;
+    if (current_col >= cols) current_col = cols - 1;
+
+    gint new_index = new_row * cols + current_col;
+    gint row_start = new_row * cols;
+    gint row_end = MIN(app->book_page_count - 1, row_start + cols - 1);
+    if (new_index < row_start) new_index = row_start;
+    if (new_index > row_end) new_index = row_end;
+    if (new_index >= app->book_page_count) {
+        new_index = app->book_page_count - 1;
+    }
+
+    app->book_preview_scroll = new_scroll;
+    app->book_preview_selected = new_index;
+
+    if (app->book_preview_scroll != old_scroll) {
+        app->needs_screen_clear = TRUE;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    if (page_index < 0) page_index = 0;
+    if (page_index >= app->book_page_count) page_index = app->book_page_count - 1;
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    gint cols = layout.cols > 0 ? layout.cols : 1;
+    gint rows = layout.rows > 0 ? layout.rows : 1;
+    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+
+    gint row = page_index / cols;
+    gint new_scroll = (rows_per_page > 0) ? (row / rows_per_page) * rows_per_page : row;
+    gint last_page_scroll = 0;
+    if (rows > 0 && rows_per_page > 0) {
+        last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
+    }
+    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
+    if (new_scroll < 0) new_scroll = 0;
+
+    gint old_scroll = app->book_preview_scroll;
+    app->book_preview_selected = page_index;
+    app->book_preview_scroll = new_scroll;
+    if (app->book_preview_scroll != old_scroll) {
+        app->needs_screen_clear = TRUE;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    gint visible_rows = layout.visible_rows;
+    if (visible_rows < 1) visible_rows = 1;
+    gint total_rows = layout.rows;
+    if (total_rows <= visible_rows) {
+        return ERROR_NONE;
+    }
+
+    gint delta = direction > 0 ? visible_rows : -visible_rows;
+    gint new_scroll = app->book_preview_scroll + delta;
+    if (new_scroll < 0) new_scroll = 0;
+    gint max_scroll = MAX(0, total_rows - visible_rows);
+    if (new_scroll > max_scroll) new_scroll = max_scroll;
+
+    if (new_scroll == app->book_preview_scroll) {
+        return ERROR_NONE;
+    }
+
+    app->book_preview_scroll = new_scroll;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_change_zoom(PixelTermApp *app, gint delta) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->term_width <= 0) {
+        return ERROR_NONE;
+    }
+
+    gint usable_width = app->term_width;
+    if (app->book_preview_zoom <= 0) {
+        app->book_preview_zoom = usable_width / 4;
+    }
+
+    gint current_cols = (gint)(usable_width / app->book_preview_zoom + 0.5f);
+    if (current_cols < 2) current_cols = 2;
+    gint new_cols = current_cols - delta;
+    if (new_cols < 2) new_cols = 2;
+    if (new_cols > usable_width) new_cols = usable_width;
+
+    app->book_preview_zoom = (gdouble)usable_width / new_cols;
+    if (app->book_preview_zoom < 1) app->book_preview_zoom = 1;
+
+    app->needs_screen_clear = TRUE;
+    return ERROR_NONE;
+}
+
 // Handle mouse click in preview grid mode
 ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
                                          gint mouse_x,
@@ -3012,6 +4035,50 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
         if (app->preview_selected != index) { // Check if selection actually changed
             app->preview_selected = index;
             app->current_index = index; // Also update current index for consistency
+            if (redraw_needed) *redraw_needed = TRUE;
+        }
+    }
+
+    return ERROR_NONE;
+}
+
+ErrorCode app_handle_mouse_click_book_preview(PixelTermApp *app,
+                                              gint mouse_x,
+                                              gint mouse_y,
+                                              gboolean *redraw_needed,
+                                              gboolean *out_hit) {
+    if (!app || !app->book_preview_mode) {
+        if (redraw_needed) *redraw_needed = FALSE;
+        if (out_hit) *out_hit = FALSE;
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (redraw_needed) *redraw_needed = FALSE;
+    if (out_hit) *out_hit = FALSE;
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    gint start_row = app->book_preview_scroll;
+    gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
+    gint grid_top_y = layout.header_lines + 1 + vertical_offset;
+
+    if (mouse_y < grid_top_y) {
+        return ERROR_NONE;
+    }
+
+    gint col = (mouse_x - 1) / layout.cell_width;
+    gint row_in_visible = (mouse_y - grid_top_y) / layout.cell_height;
+    gint absolute_row = start_row + row_in_visible;
+
+    gint rows_drawn = MAX(0, end_row - start_row);
+    if (col < 0 || col >= layout.cols || row_in_visible < 0 || row_in_visible >= rows_drawn) {
+        return ERROR_NONE;
+    }
+
+    gint index = absolute_row * layout.cols + col;
+    if (index >= 0 && index < app->book_page_count) {
+        if (out_hit) *out_hit = TRUE;
+        if (app->book_preview_selected != index) {
+            app->book_preview_selected = index;
             if (redraw_needed) *redraw_needed = TRUE;
         }
     }
@@ -3101,6 +4168,67 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+ErrorCode app_enter_book_preview(PixelTermApp *app) {
+    if (!app || !app->book_doc) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_stop(app->video_player);
+    }
+
+    app->book_preview_mode = TRUE;
+    app->book_mode = FALSE;
+    app->preview_mode = FALSE;
+    app->file_manager_mode = FALSE;
+    app->book_preview_selected = app->book_page >= 0 ? app->book_page : 0;
+    if (app->book_preview_selected >= app->book_page_count) {
+        app->book_preview_selected = MAX(0, app->book_page_count - 1);
+    }
+    app->book_preview_scroll = 0;
+    app->info_visible = FALSE;
+    app->needs_screen_clear = TRUE;
+
+    if (app->preloader && app->preload_enabled) {
+        preloader_clear_queue(app->preloader);
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
+    if (!app || !app->book_doc) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    if (page_index < 0) page_index = 0;
+    if (page_index >= app->book_page_count) {
+        page_index = MAX(0, app->book_page_count - 1);
+    }
+
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_stop(app->video_player);
+    }
+
+    app->book_page = page_index;
+    app->book_mode = TRUE;
+    app->book_preview_mode = FALSE;
+    app->preview_mode = FALSE;
+    app->file_manager_mode = FALSE;
+    app->info_visible = FALSE;
+    app->needs_redraw = TRUE;
+
+    if (app->preloader && app->preload_enabled) {
+        preloader_clear_queue(app->preloader);
+    }
+    return ERROR_NONE;
+}
+
 // Exit preview grid mode
 ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
     if (!app) {
@@ -3114,6 +4242,9 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
         if (app->preview_selected >= 0 && app->preview_selected < app->total_images) {
             app->current_index = app->preview_selected;
         }
+        app->image_zoom = 1.0;
+        app->image_pan_x = 0.0;
+        app->image_pan_y = 0.0;
     }
 
     app->preview_mode = FALSE;
@@ -3366,8 +4497,8 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             {"PgUp/PgDn", "Page"},
             {"Enter", "Open"},
             {"TAB", "Toggle"},
-            {"+/-", "Zoom"},
             {"r", "Delete"},
+            {"+/-", "Zoom"},
             {"~", "Zen"},
             {"ESC", "Exit"}
         };
@@ -3413,6 +4544,715 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     app_preview_render_selected_filename(app);
 
     fflush(stdout);
+    return ERROR_NONE;
+}
+
+ErrorCode app_render_book_preview(PixelTermApp *app) {
+    if (!app || !app->book_preview_mode || !app->book_doc) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    gint prev_width = app->term_width;
+    gint prev_height = app->term_height;
+    get_terminal_size(&app->term_width, &app->term_height);
+    if ((prev_width > 0 && prev_width != app->term_width) ||
+        (prev_height > 0 && prev_height != app->term_height)) {
+        app->needs_screen_clear = TRUE;
+    }
+
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    app_book_preview_adjust_scroll(app, &layout);
+
+    if (app->suppress_full_clear) {
+        app->suppress_full_clear = FALSE;
+        printf("\033[H\033[0m");
+        if (app->ui_text_hidden) {
+            app_clear_single_view_ui_lines(app);
+        }
+        app->needs_screen_clear = FALSE;
+    } else if (app->needs_screen_clear) {
+        printf("\033[2J\033[H\033[0m");
+        app->needs_screen_clear = FALSE;
+    } else {
+        printf("\033[H\033[0m");
+    }
+
+    if (!app->ui_text_hidden) {
+        const char *title = "Book Preview";
+        gint title_len = strlen(title);
+        gint pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+        printf("\033[1;1H\033[2K");
+        for (gint i = 0; i < pad; i++) putchar(' ');
+        printf("%s", title);
+
+        printf("\033[2;1H\033[2K");
+        app_book_preview_render_page_indicator(app);
+    }
+
+    gint content_width = layout.cell_width - 2;
+    gint content_height = layout.cell_height - 2;
+    if (content_width < 1) content_width = 1;
+    if (content_height < 1) content_height = 1;
+    RendererConfig config = {
+        .max_width = MAX(2, content_width),
+        .max_height = MAX(2, content_height),
+        .preserve_aspect_ratio = TRUE,
+        .dither = app->dither_enabled,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = app->render_work_factor,
+        .force_text = app->force_text,
+        .force_sixel = app->force_sixel,
+        .force_kitty = app->force_kitty,
+        .force_iterm2 = app->force_iterm2,
+        .gamma = app->gamma,
+        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+    ImageRenderer *renderer = renderer_create();
+    if (!renderer) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
+        renderer_destroy(renderer);
+        return ERROR_CHAFA_INIT;
+    }
+
+    gint start_row = app->book_preview_scroll;
+    gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
+
+    for (gint row = start_row; row < end_row; row++) {
+        for (gint col = 0; col < layout.cols; col++) {
+            gint idx = row * layout.cols + col;
+            if (idx >= app->book_page_count) {
+                break;
+            }
+
+            gint cell_x = col * layout.cell_width + 1;
+            gint cell_y = layout.header_lines + vertical_offset + (row - start_row) * layout.cell_height + 1;
+            gboolean selected = (idx == app->book_preview_selected);
+            gboolean use_border = selected &&
+                                  layout.cell_width >= 4 &&
+                                  layout.cell_height >= 4;
+
+            gint content_x = cell_x + 1;
+            gint content_y = cell_y + 1;
+
+            for (gint line = 0; line < layout.cell_height; line++) {
+                gint y = cell_y + line;
+                printf("\033[%d;%dH", y, cell_x);
+                for (gint c = 0; c < layout.cell_width; c++) {
+                    putchar(' ');
+                }
+
+                if (use_border) {
+                    if (line == 0 || line == layout.cell_height - 1) {
+                        printf("\033[%d;%dH\033[34;1m+", y, cell_x);
+                        for (gint c = 0; c < layout.cell_width - 2; c++) putchar('-');
+                        printf("+\033[0m");
+                    } else {
+                        printf("\033[%d;%dH\033[34;1m|\033[0m", y, cell_x);
+                        printf("\033[%d;%dH\033[34;1m|\033[0m", y, cell_x + layout.cell_width - 1);
+                    }
+                }
+            }
+
+            BookPageImage page_image;
+            ErrorCode page_err = book_render_page(app->book_doc, idx, content_width, content_height, &page_image);
+            if (page_err != ERROR_NONE) {
+                const char *label = "PAGE";
+                gint label_len = (gint)strlen(label);
+                gint label_row = content_y + content_height / 2;
+                gint label_col = content_x + (content_width - label_len) / 2;
+                if (label_row < content_y) label_row = content_y;
+                if (label_col < content_x) label_col = content_x;
+                printf("\033[%d;%dH\033[33m%s\033[0m", label_row, label_col, label);
+                continue;
+            }
+
+            GString *rendered = renderer_render_image_data(renderer,
+                                                           page_image.pixels,
+                                                           page_image.width,
+                                                           page_image.height,
+                                                           page_image.stride,
+                                                           page_image.channels);
+            book_page_image_free(&page_image);
+
+            if (!rendered) {
+                const char *label = "PAGE";
+                gint label_len = (gint)strlen(label);
+                gint label_row = content_y + content_height / 2;
+                gint label_col = content_x + (content_width - label_len) / 2;
+                if (label_row < content_y) label_row = content_y;
+                if (label_col < content_x) label_col = content_x;
+                printf("\033[%d;%dH\033[33m%s\033[0m", label_row, label_col, label);
+                continue;
+            }
+
+            gint line_no = 0;
+            char *cursor = rendered->str;
+            while (cursor && line_no < content_height) {
+                char *newline = strchr(cursor, '\n');
+                gint line_len = newline ? (gint)(newline - cursor) : (gint)strlen(cursor);
+
+                gint visible_len = app_preview_visible_width(cursor, line_len);
+                gint pad_left = 0;
+                if (content_width > visible_len) {
+                    pad_left = (content_width - visible_len) / 2;
+                }
+
+                printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
+                fwrite(cursor, 1, line_len, stdout);
+
+                if (!newline) {
+                    break;
+                }
+                cursor = newline + 1;
+                line_no++;
+            }
+            printf("\033[0m");
+            g_string_free(rendered, TRUE);
+        }
+    }
+
+    app_book_preview_render_selected_info(app);
+    if (app->book_jump_active) {
+        app_book_jump_render_prompt(app);
+    }
+
+    if (app->term_height > 0 && !app->ui_text_hidden) {
+        const HelpSegment segments[] = {
+            {"←/→/↑/↓", "Move"},
+            {"PgUp/PgDn", "Page"},
+            {"P", "Page"},
+            {"Enter", "Open"},
+            {"TAB", "Toggle"},
+            {"+/-", "Zoom"},
+            {"~", "Zen"},
+            {"ESC", "Exit"}
+        };
+        print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+    }
+
+    fflush(stdout);
+    renderer_destroy(renderer);
+    return ERROR_NONE;
+}
+
+ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index) {
+    if (!app || !app->book_preview_mode) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    gint old_scroll = app->book_preview_scroll;
+    PreviewLayout layout = app_book_preview_calculate_layout(app);
+    app_book_preview_adjust_scroll(app, &layout);
+    if (app->book_preview_scroll != old_scroll) {
+        return app_render_book_preview(app);
+    }
+
+    gint selected_row = app->book_preview_selected / layout.cols;
+    if (selected_row < app->book_preview_scroll ||
+        selected_row >= app->book_preview_scroll + layout.visible_rows) {
+        return app_render_book_preview(app);
+    }
+
+    gint start_row = app->book_preview_scroll;
+    gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
+    gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
+
+    if (old_index != app->book_preview_selected) {
+        app_book_preview_clear_cell_border(app, &layout, old_index, start_row, vertical_offset);
+    }
+    app_book_preview_draw_cell_border(app, &layout, app->book_preview_selected, start_row, vertical_offset);
+    app_book_preview_render_page_indicator(app);
+    app_book_preview_render_selected_info(app);
+    if (app->book_jump_active) {
+        app_book_jump_render_prompt(app);
+    }
+
+    fflush(stdout);
+    return ERROR_NONE;
+}
+
+ErrorCode app_render_book_page(PixelTermApp *app) {
+    if (!app || !app->book_mode || !app->book_doc) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    if (app->book_page_count <= 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    gint target_width = 0;
+    gint target_height = 0;
+    app_get_image_target_dimensions(app, &target_width, &target_height);
+
+    BookPageImage base_image = {0};
+
+    gboolean double_page = app_book_use_double_page(app);
+    if (double_page) {
+        gint gutter_cols = k_book_spread_gutter_cols;
+        gint per_page_cols = (target_width - gutter_cols) / 2;
+        if (per_page_cols < 1) {
+            double_page = FALSE;
+        } else {
+            gint per_page_rows = target_height;
+            if (per_page_rows < 1) per_page_rows = 1;
+
+            BookPageImage left_image = {0};
+            ErrorCode left_err = book_render_page(app->book_doc, app->book_page, per_page_cols, per_page_rows, &left_image);
+            if (left_err != ERROR_NONE) {
+                return left_err;
+            }
+
+            BookPageImage right_image = {0};
+            gboolean has_right = (app->book_page + 1 < app->book_page_count);
+            if (has_right) {
+                ErrorCode right_err = book_render_page(app->book_doc, app->book_page + 1, per_page_cols, per_page_rows, &right_image);
+                if (right_err != ERROR_NONE) {
+                    has_right = FALSE;
+                }
+            }
+
+            ImageRenderer *renderer = renderer_create();
+            if (!renderer) {
+                book_page_image_free(&left_image);
+                book_page_image_free(&right_image);
+                return ERROR_MEMORY_ALLOC;
+            }
+
+            RendererConfig config = {
+                .max_width = per_page_cols,
+                .max_height = target_height,
+                .preserve_aspect_ratio = TRUE,
+                .dither = app->dither_enabled,
+                .color_space = CHAFA_COLOR_SPACE_RGB,
+                .work_factor = app->render_work_factor,
+                .force_text = app->force_text,
+                .force_sixel = app->force_sixel,
+                .force_kitty = app->force_kitty,
+                .force_iterm2 = app->force_iterm2,
+                .gamma = app->gamma,
+                .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+                .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+                .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+            };
+
+            ErrorCode error = renderer_initialize(renderer, &config);
+            if (error != ERROR_NONE) {
+                renderer_destroy(renderer);
+                book_page_image_free(&left_image);
+                book_page_image_free(&right_image);
+                return error;
+            }
+
+            GString *left_rendered = renderer_render_image_data(renderer,
+                                                                left_image.pixels,
+                                                                left_image.width,
+                                                                left_image.height,
+                                                                left_image.stride,
+                                                                left_image.channels);
+            if (!left_rendered) {
+                renderer_destroy(renderer);
+                book_page_image_free(&left_image);
+                book_page_image_free(&right_image);
+                return ERROR_INVALID_IMAGE;
+            }
+
+            gint left_width = 0;
+            gint left_height = 0;
+            renderer_get_rendered_dimensions(renderer, &left_width, &left_height);
+            if (left_height <= 0) {
+                left_height = app_count_rendered_lines(left_rendered);
+            }
+            if (left_height <= 0) {
+                left_height = 1;
+            }
+            if (left_width <= 0) {
+                left_width = per_page_cols;
+            }
+
+            GString *right_rendered = NULL;
+            gint right_width = 0;
+            gint right_height = 0;
+            if (has_right && right_image.pixels) {
+                right_rendered = renderer_render_image_data(renderer,
+                                                            right_image.pixels,
+                                                            right_image.width,
+                                                            right_image.height,
+                                                            right_image.stride,
+                                                            right_image.channels);
+                if (right_rendered) {
+                    renderer_get_rendered_dimensions(renderer, &right_width, &right_height);
+                    if (right_height <= 0) {
+                        right_height = app_count_rendered_lines(right_rendered);
+                    }
+                    if (right_height <= 0) {
+                        right_height = 1;
+                    }
+                    if (right_width <= 0) {
+                        right_width = per_page_cols;
+                    }
+                } else {
+                    has_right = FALSE;
+                }
+            }
+
+            book_page_image_free(&left_image);
+            book_page_image_free(&right_image);
+
+            if (app->suppress_full_clear) {
+                app->suppress_full_clear = FALSE;
+                if (app->ui_text_hidden) {
+                    app_clear_single_view_ui_lines(app);
+                }
+            } else {
+                app_clear_screen_for_refresh(app);
+            }
+
+            gint image_area_top_row = 4;
+            if (!app->ui_text_hidden && app->term_height > 0) {
+                const char *title = "Book View";
+                gchar *display_name = NULL;
+                if (app->book_path) {
+                    gchar *basename = g_path_get_basename(app->book_path);
+                    gchar *safe_basename = sanitize_for_terminal(basename);
+                    gint max_width = app_filename_max_width(app);
+                    if (max_width <= 0) {
+                        max_width = app->term_width;
+                    }
+                    display_name = truncate_utf8_middle_keep_suffix(safe_basename, max_width);
+                    g_free(safe_basename);
+                    g_free(basename);
+                }
+                gint title_len = (gint)strlen(title);
+                gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+                printf("\033[1;1H\033[2K");
+                for (gint i = 0; i < title_pad; i++) putchar(' ');
+                printf("%s", title);
+
+                printf("\033[2;1H\033[2K");
+
+                printf("\033[3;1H\033[2K");
+                if (display_name) {
+                    gint name_len = utf8_display_width(display_name);
+                    gint name_pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+                    for (gint i = 0; i < name_pad; i++) putchar(' ');
+                    printf("%s", display_name);
+                    g_free(display_name);
+                }
+            }
+
+            gint spread_cols = per_page_cols * 2 + gutter_cols;
+            gint spread_left_col = 1;
+            if (spread_cols > 0 && app->term_width > spread_cols) {
+                spread_left_col = (app->term_width - spread_cols) / 2 + 1;
+            }
+            gint left_half_start = spread_left_col;
+            gint right_half_start = spread_left_col + per_page_cols + gutter_cols;
+
+            gint left_col = left_half_start;
+            if (left_width > 0 && left_width < per_page_cols) {
+                left_col += (per_page_cols - left_width) / 2;
+            }
+            gint left_top_row = image_area_top_row;
+            if (target_height > 0 && left_height > 0 && left_height < target_height) {
+                gint vpad = (target_height - left_height) / 2;
+                if (vpad < 0) vpad = 0;
+                left_top_row = image_area_top_row + vpad;
+            }
+
+            gint right_col = right_half_start;
+            gint right_top_row = image_area_top_row;
+            if (right_rendered) {
+                if (right_width > 0 && right_width < per_page_cols) {
+                    right_col += (per_page_cols - right_width) / 2;
+                }
+                if (target_height > 0 && right_height > 0 && right_height < target_height) {
+                    gint vpad = (target_height - right_height) / 2;
+                    if (vpad < 0) vpad = 0;
+                    right_top_row = image_area_top_row + vpad;
+                }
+            }
+
+            app_print_rendered_at(left_rendered, left_top_row, left_col);
+            if (right_rendered) {
+                app_print_rendered_at(right_rendered, right_top_row, right_col);
+            }
+
+            gint top_row = left_top_row;
+            gint bottom_row = left_top_row + left_height - 1;
+            if (right_rendered && right_height > 0) {
+                top_row = MIN(top_row, right_top_row);
+                bottom_row = MAX(bottom_row, right_top_row + right_height - 1);
+            }
+            if (bottom_row < top_row) {
+                top_row = image_area_top_row;
+                bottom_row = image_area_top_row + (target_height > 0 ? target_height : 1) - 1;
+            }
+
+            app->last_render_top_row = top_row;
+            app->last_render_height = bottom_row - top_row + 1;
+
+            if (app->term_height > 0 && !app->ui_text_hidden) {
+                gint current = app->book_page + 1;
+                gint total = app->book_page_count;
+                if (current < 1) current = 1;
+                if (total < 1) total = 1;
+
+                char left_text[32];
+                g_snprintf(left_text, sizeof(left_text), "%d/%d", current, total);
+                gint left_len = (gint)strlen(left_text);
+
+                char right_text[32];
+                gboolean has_right_page = (current + 1 <= total);
+                gint right_len = 0;
+                if (has_right_page) {
+                    g_snprintf(right_text, sizeof(right_text), "%d/%d", current + 1, total);
+                    right_len = (gint)strlen(right_text);
+                }
+
+                gint idx_row = (app->term_height >= 2) ? (app->term_height - 2) : 1;
+                printf("\033[%d;1H\033[2K", idx_row);
+
+                gint left_idx_col = left_half_start;
+                if (left_len > 0 && left_len < per_page_cols) {
+                    left_idx_col += (per_page_cols - left_len) / 2;
+                }
+                printf("\033[%d;%dH", idx_row, left_idx_col);
+                printf("%s", left_text);
+
+                if (has_right_page) {
+                    gint right_idx_col = right_half_start;
+                    if (right_len > 0 && right_len < per_page_cols) {
+                        right_idx_col += (per_page_cols - right_len) / 2;
+                    }
+                    printf("\033[%d;%dH", idx_row, right_idx_col);
+                    printf("%s", right_text);
+                }
+
+                const HelpSegment segments[] = {
+                    {"←/→", "Prev/Next"},
+                    {"PgUp/PgDn", "Page"},
+                    {"P", "Page"},
+                    {"Enter", "Preview"},
+                    {"TAB", "Toggle"},
+                    {"~", "Zen"},
+                    {"ESC", "Exit"}
+                };
+                print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+            }
+
+            if (app->book_jump_active) {
+                app_book_jump_render_prompt(app);
+            }
+
+            fflush(stdout);
+            g_string_free(left_rendered, TRUE);
+            if (right_rendered) {
+                g_string_free(right_rendered, TRUE);
+            }
+            renderer_destroy(renderer);
+            return ERROR_NONE;
+        }
+    }
+
+    if (!double_page) {
+        gint page_cols = target_width > 0 ? target_width : 1;
+        gint page_rows = target_height > 0 ? target_height : 1;
+        ErrorCode page_err = book_render_page(app->book_doc, app->book_page, page_cols, page_rows, &base_image);
+        if (page_err != ERROR_NONE) {
+            return page_err;
+        }
+    }
+
+    ImageRenderer *renderer = renderer_create();
+    if (!renderer) {
+        book_page_image_free(&base_image);
+        return ERROR_MEMORY_ALLOC;
+    }
+
+    RendererConfig config = {
+        .max_width = target_width,
+        .max_height = target_height,
+        .preserve_aspect_ratio = TRUE,
+        .dither = app->dither_enabled,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = app->render_work_factor,
+        .force_text = app->force_text,
+        .force_sixel = app->force_sixel,
+        .force_kitty = app->force_kitty,
+        .force_iterm2 = app->force_iterm2,
+        .gamma = app->gamma,
+        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+
+    ErrorCode error = renderer_initialize(renderer, &config);
+    if (error != ERROR_NONE) {
+        renderer_destroy(renderer);
+        book_page_image_free(&base_image);
+        return error;
+    }
+
+    GString *rendered = renderer_render_image_data(renderer,
+                                                   base_image.pixels,
+                                                   base_image.width,
+                                                   base_image.height,
+                                                   base_image.stride,
+                                                   base_image.channels);
+    book_page_image_free(&base_image);
+
+    if (!rendered) {
+        renderer_destroy(renderer);
+        return ERROR_INVALID_IMAGE;
+    }
+
+    if (app->suppress_full_clear) {
+        app->suppress_full_clear = FALSE;
+        if (app->ui_text_hidden) {
+            app_clear_single_view_ui_lines(app);
+        }
+    } else {
+        app_clear_screen_for_refresh(app);
+    }
+
+    gint image_area_top_row = 4;
+    if (!app->ui_text_hidden && app->term_height > 0) {
+        const char *title = "Book View";
+        gchar *display_name = NULL;
+        if (app->book_path) {
+            gchar *basename = g_path_get_basename(app->book_path);
+            gchar *safe_basename = sanitize_for_terminal(basename);
+            gint max_width = app_filename_max_width(app);
+            if (max_width <= 0) {
+                max_width = app->term_width;
+            }
+            display_name = truncate_utf8_middle_keep_suffix(safe_basename, max_width);
+            g_free(safe_basename);
+            g_free(basename);
+        }
+        gint title_len = (gint)strlen(title);
+        gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+        printf("\033[1;1H\033[2K");
+        for (gint i = 0; i < title_pad; i++) putchar(' ');
+        printf("%s", title);
+
+        printf("\033[2;1H\033[2K");
+
+        printf("\033[3;1H\033[2K");
+        if (display_name) {
+            gint name_len = utf8_display_width(display_name);
+            gint name_pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
+            for (gint i = 0; i < name_pad; i++) putchar(' ');
+            printf("%s", display_name);
+            g_free(display_name);
+        }
+    }
+
+    gint image_width = 0;
+    gint image_height = 0;
+    renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+    if (image_height <= 0) {
+        image_height = 1;
+        for (gsize i = 0; i < rendered->len; i++) {
+            if (rendered->str[i] == '\n') {
+                image_height++;
+            }
+        }
+    }
+
+    gint effective_width = image_width > 0 ? image_width : target_width;
+    if (effective_width > app->term_width) {
+        effective_width = app->term_width;
+    }
+    if (effective_width < 0) {
+        effective_width = 0;
+    }
+    gint left_pad = (app->term_width > effective_width) ? (app->term_width - effective_width) / 2 : 0;
+    if (left_pad < 0) left_pad = 0;
+
+    gint image_top_row = image_area_top_row;
+    if (target_height > 0 && image_height > 0 && image_height < target_height) {
+        gint vpad = (target_height - image_height) / 2;
+        if (vpad < 0) vpad = 0;
+        image_top_row = image_area_top_row + vpad;
+    }
+    app->last_render_top_row = image_top_row;
+    app->last_render_height = image_height > 0 ? image_height : (target_height > 0 ? target_height : 1);
+
+    gchar *pad_buffer = NULL;
+    if (left_pad > 0) {
+        pad_buffer = g_malloc(left_pad);
+        memset(pad_buffer, ' ', left_pad);
+    }
+
+    const gchar *line_ptr = rendered->str;
+    gint row = image_top_row;
+    while (line_ptr && *line_ptr) {
+        const gchar *newline = strchr(line_ptr, '\n');
+        gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
+        printf("\033[%d;1H", row);
+        if (left_pad > 0) {
+            fwrite(pad_buffer, 1, left_pad, stdout);
+        }
+        if (line_len > 0) {
+            fwrite(line_ptr, 1, line_len, stdout);
+        }
+        if (!newline) {
+            break;
+        }
+        line_ptr = newline + 1;
+        row++;
+    }
+    g_free(pad_buffer);
+
+    if (app->term_height > 0 && !app->ui_text_hidden) {
+        gint current = app->book_page + 1;
+        gint total = app->book_page_count;
+        if (current < 1) current = 1;
+        if (total < 1) total = 1;
+        char idx_text[32];
+        if (double_page) {
+            gint right_page = MIN(total, current + 1);
+            g_snprintf(idx_text, sizeof(idx_text), "%d-%d/%d", current, right_page, total);
+        } else {
+            g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+        }
+        gint idx_len = (gint)strlen(idx_text);
+        gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+        gint idx_row = (app->term_height >= 2) ? (app->term_height - 2) : 1;
+        printf("\033[%d;1H\033[2K", idx_row);
+        for (gint i = 0; i < idx_pad; i++) putchar(' ');
+        printf("%s", idx_text);
+
+        const HelpSegment segments[] = {
+            {"←/→", "Prev/Next"},
+            {"PgUp/PgDn", "Page"},
+            {"P", "Page"},
+            {"Enter", "Preview"},
+            {"TAB", "Toggle"},
+            {"~", "Zen"},
+            {"ESC", "Exit"}
+        };
+        print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+    }
+
+    if (app->book_jump_active) {
+        app_book_jump_render_prompt(app);
+    }
+
+    fflush(stdout);
+    g_string_free(rendered, TRUE);
+    renderer_destroy(renderer);
     return ERROR_NONE;
 }
 
@@ -3560,8 +5400,10 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gint name_len = utf8_display_width(print_name);
         gboolean is_image = (!is_dir && is_image_file(entry));
         gboolean is_video = (!is_dir && is_video_file(entry));
+        gboolean is_book = (!is_dir && is_book_file(entry));
         gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
         gboolean is_dir_with_media = is_dir && directory_contains_media(entry);
+        gboolean is_dir_with_books = is_dir && directory_contains_books(entry);
 
         gint max_display_width = (app->term_width / 2) - 2;
         if (max_display_width < 15) max_display_width = 15;
@@ -3668,6 +5510,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         for (gint s = 0; s < pad; s++) putchar(' ');
 
         gboolean is_valid_media = (!is_dir && is_valid_media_file(entry));
+        gboolean is_valid_book = (!is_dir && is_valid_book_file(entry));
         gboolean selected = (idx == app->selected_entry);
         if ((is_image || is_video) && !is_valid_media) {
             if (selected) {
@@ -3675,11 +5518,15 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             } else {
                 printf("\033[31m%s [Invalid]\033[0m", print_name);
             }
+        } else if (is_book && !is_valid_book) {
+            if (selected) {
+                printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
+            } else {
+                printf("\033[31m%s [Invalid]\033[0m", print_name);
+            }
         } else if (selected) {
             printf("\033[47;30m%s\033[0m", print_name);
-        } else if (is_dir_with_images) {
-            printf("\033[33m%s\033[0m", print_name);
-        } else if (is_dir_with_media) {
+        } else if (is_dir_with_images || is_dir_with_media || is_dir_with_books) {
             printf("\033[33m%s\033[0m", print_name);
         } else if (is_dir) {
             printf("\033[34m%s\033[0m", print_name);
@@ -3687,6 +5534,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
             printf("\033[32m%s\033[0m", print_name);
         } else if (is_video) {
             printf("\033[35m%s\033[0m", print_name);
+        } else if (is_book) {
+            printf("\033[36m%s\033[0m", print_name);
         } else {
             printf("%s", print_name);
         }

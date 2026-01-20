@@ -5,6 +5,7 @@
 #include "preloader.h"
 #include "gif_player.h"
 #include "video_player.h"
+#include "book.h"
 
 typedef enum {
     RETURN_MODE_NONE = -1,
@@ -53,11 +54,22 @@ typedef struct {
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
     gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
+    gboolean book_mode;          // Single-page book view
+    gboolean book_preview_mode;  // Book multi-page preview grid
     ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
     gboolean delete_pending;     // Awaiting delete confirmation
     gint last_render_top_row;    // Single-view image top row for overlays
     gint last_render_height;     // Single-view image height for overlays
+    gdouble image_zoom;          // Zoom factor for single image view
+    gdouble image_pan_x;         // Pan offset in pixels for zoomed single image view
+    gdouble image_pan_y;
+    gint image_view_left_col;    // Single image render left column
+    gint image_view_top_row;     // Single image render top row
+    gint image_view_width;       // Single image render width in cells
+    gint image_view_height;      // Single image render height in cells
+    gint image_viewport_px_w;    // Single image viewport width in pixels
+    gint image_viewport_px_h;    // Single image viewport height in pixels
 
     // Terminal info
     gint term_width;
@@ -79,6 +91,19 @@ typedef struct {
     gint preview_scroll;
     gboolean needs_screen_clear; // Flag to indicate if screen needs full clear
 
+    // Book state
+    BookDocument *book_doc;
+    gchar *book_path;
+    gint book_page;
+    gint book_page_count;
+    gint book_preview_selected;
+    gint book_preview_scroll;
+    gint book_preview_zoom;
+    gboolean book_jump_active;
+    gboolean book_jump_dirty;
+    gint book_jump_len;
+    char book_jump_buf[16];
+
     // Input state
     gboolean pending_single_click; // For single image view
     gint64 pending_click_time;
@@ -92,6 +117,9 @@ typedef struct {
     gint64 pending_file_manager_click_time;
     gint pending_file_manager_click_x;
     gint pending_file_manager_click_y;
+
+    gint last_mouse_x;
+    gint last_mouse_y;
 } PixelTermApp;
 
 // Application lifecycle functions
@@ -331,6 +359,7 @@ ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter);
  *         directory cannot be opened or accessed.
  */
 ErrorCode app_file_manager_refresh(PixelTermApp *app);
+ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path);
 /**
  * @brief Toggles the visibility of hidden files in the file manager.
  * 
@@ -470,6 +499,11 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
  *         already at zoom limits.
  */
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta);
+ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col);
+ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction);
+ErrorCode app_book_preview_change_zoom(PixelTermApp *app, gint delta);
+ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction);
+ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index);
 /**
  * @brief Moves the preview grid selection by a full page.
  * 
@@ -543,6 +577,11 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
                                          gint mouse_y,
                                          gboolean *redraw_needed,
                                          gboolean *out_hit);
+ErrorCode app_handle_mouse_click_book_preview(PixelTermApp *app,
+                                              gint mouse_x,
+                                              gint mouse_y,
+                                              gboolean *redraw_needed,
+                                              gboolean *out_hit);
 
 // Display functions
 /**
@@ -557,6 +596,15 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
  *         if no images are loaded, the file is not found, or rendering fails.
  */
 ErrorCode app_render_current_image(PixelTermApp *app);
+ErrorCode app_open_book(PixelTermApp *app, const char *filepath);
+void app_close_book(PixelTermApp *app);
+ErrorCode app_enter_book_preview(PixelTermApp *app);
+ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index);
+ErrorCode app_render_book_preview(PixelTermApp *app);
+ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index);
+ErrorCode app_render_book_page(PixelTermApp *app);
+void app_book_jump_render_prompt(PixelTermApp *app);
+void app_book_jump_clear_prompt(PixelTermApp *app);
 /**
  * @brief Toggles the display of detailed information for the current image.
  * 
@@ -661,5 +709,6 @@ const gchar* app_get_current_filepath(const PixelTermApp *app);
  * @return `TRUE` if images are loaded, `FALSE` otherwise.
  */
 gboolean app_has_images(const PixelTermApp *app);
+gboolean app_book_use_double_page(const PixelTermApp *app);
 
 #endif // APP_H

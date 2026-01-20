@@ -337,6 +337,26 @@ gboolean is_media_file(const char *filename) {
     return is_image_file(filename) || is_video_file(filename);
 }
 
+// Check if a file is a book based on its extension
+gboolean is_book_file(const char *filename) {
+    if (!filename) {
+        return FALSE;
+    }
+
+    const char *ext = get_file_extension(filename);
+    if (!ext) {
+        return FALSE;
+    }
+
+    for (int i = 0; SUPPORTED_BOOK_EXTENSIONS[i] != NULL; i++) {
+        if (g_ascii_strcasecmp(ext, SUPPORTED_BOOK_EXTENSIONS[i]) == 0) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 // Check if a file is a video by reading its magic numbers
 static gboolean is_video_by_content(const char *filepath) {
     if (!filepath) {
@@ -409,6 +429,23 @@ gboolean is_valid_media_file(const char *filepath) {
     }
 
     return is_valid_video_file(filepath);
+}
+
+gboolean is_valid_book_file(const char *filepath) {
+    if (!filepath) {
+        return FALSE;
+    }
+
+    struct stat st;
+    if (stat(filepath, &st) != 0) {
+        return FALSE;
+    }
+
+    if (st.st_size == 0) {
+        return FALSE;
+    }
+
+    return is_book_file(filepath);
 }
 
 // Check if a file is an image by reading its magic numbers (for files without extensions)
