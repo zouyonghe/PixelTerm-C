@@ -5,7 +5,7 @@
 
 *English | [中文](README_zh.md)*
 
-🖼️ A high-performance terminal image browser written in C, based on the [Chafa](https://github.com/hpjansson/chafa) library.
+🖼️ A high-performance terminal image/video/book browser written in C, based on the [Chafa](https://github.com/hpjansson/chafa) library.
 
 ## Overview
 
@@ -18,6 +18,7 @@ Release notes: see [CHANGELOG.md](CHANGELOG.md).
 - 🖼️ **Multi-format Support** - Supports JPG, PNG, GIF, BMP, WebP, TIFF and other mainstream image formats
 - 🎬 **Animated GIF Support** - Play animated GIFs directly in the terminal with proper timing and high-quality rendering
 - 🎥 **Video Playback** - Play MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V videos in the terminal (video-only, no audio)
+- 📚 **Book Reading** - PDF/EPUB/CBZ support with page grid preview and reader (requires MuPDF)
 - 🎨 **TrueColor Rendering** - Full 24-bit color support with automatic detection and optimization
 - 📁 **Smart Browsing** - Automatically detects image files in directories with directory navigation support
 - ⌨️ **Keyboard Navigation** - Switch between images with arrow keys, supporting various terminal environments
@@ -27,6 +28,7 @@ Release notes: see [CHANGELOG.md](CHANGELOG.md).
 - 🔄 **Circular Navigation** - Seamless browsing with wrap-around between first and last images
 - 🏗️ **Multi-architecture Support** - Native support for both amd64 and aarch64 (ARM64) architectures
 - 🖱️ **Mouse Support** - Intuitive mouse navigation, selection, and scrolling across all modes
+- 🔎 **Image Zoom** - Mouse-wheel zoom in single image view (cursor over image; not for video/animated)
 - 📦 **Preloading** - Image preloading for faster navigation (enabled by default).
 - 🎨 **Dithering** - Improves visual quality in color-limited terminals (disabled by default).
 
@@ -61,9 +63,13 @@ Terminals with the best image quality and color accuracy tested so far:
 ```bash
 # Ubuntu/Debian
 sudo apt-get install libchafa-dev libglib2.0-dev libgdk-pixbuf2.0-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config build-essential
+# Optional (book support):
+sudo apt-get install libmupdf-dev
 
 # Arch Linux
 sudo pacman -S chafa glib2 gdk-pixbuf2 ffmpeg pkgconf base-devel
+# Optional (book support):
+sudo pacman -S mupdf
 ```
 
 ### Quick Install
@@ -102,6 +108,7 @@ make
 
 # The binary will be at pixelterm
 # (Or install system-wide with: sudo make install)
+# Note: Book support is enabled when MuPDF is available; otherwise it builds without it.
 
 # For cross-compilation to aarch64
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
@@ -116,6 +123,9 @@ pixelterm /path/to/image.jpg
 
 # Play a video (video-only; no audio)
 pixelterm /path/to/video.mp4
+
+# Read a book (PDF/EPUB/CBZ)
+pixelterm /path/to/book.pdf
 
 # Browse directory (launches file manager mode)
 pixelterm /path/to/directory
@@ -176,12 +186,18 @@ Mouse interaction significantly enhances navigation and selection across differe
 |---------|----------|------------------|-------|
 | Left Click | Advance to next image | Image View (Single Image Mode) | In Video View, toggles play/pause. |
 | Double Left Click | Switch to Grid Preview | Image View (Single Image Mode) | |
+| Mouse Scroll Up/Down | Zoom in/out (cursor over image) | Image View (Single Image Mode) | Not for video/animated; ignored outside image. |
 | Left Click | Select image | Grid Preview | Selects the image under the cursor. |
 | Double Left Click | Open selected image in Image View | Grid Preview | Opens the image at the cursor position. |
+| Mouse Scroll Up/Down | Page Up/Down | Grid Preview | Scroll through pages of images. |
+| Left Click | Select page | Book Preview | Selects the page under the cursor. |
+| Double Left Click | Open selected page in Book View | Book Preview | Opens the page at the cursor position. |
+| Mouse Scroll Up/Down | Page Up/Down | Book Preview | Scroll through pages. |
+| Left Click | Advance page | Book View | Advances by 1 or 2 pages depending on layout. |
+| Double Left Click | Switch to Book Preview | Book View | |
+| Mouse Scroll Up/Down | Previous/Next page | Book View | |
 | Left Click | Select entry | File Manager Mode | Selects the file or directory under the cursor. |
 | Double Left Click | Open selected entry (directory/file) | File Manager Mode | Navigates into a directory or opens an image. |
-| Mouse Scroll Up/Down | Previous/Next image | Image View (Single Image Mode) | Smoothly navigate through images. |
-| Mouse Scroll Up/Down | Page Up/Down | Grid Preview | Scroll through pages of images. |
 | Mouse Scroll Up/Down | Navigate entries up/down | File Manager Mode | Scroll through the list of files and directories. |
 
 ### Image View (Single Image Mode)
@@ -222,6 +238,35 @@ This mode displays multiple image thumbnails in a grid.
 | +/= | Zoom in |
 | - | Zoom out |
 
+### Book View (Reader Mode)
+
+| Key | Function |
+|-----|----------|
+| ←/→ | Previous/Next page |
+| ↑/↓ | Page up/down (single page: 1; double page: 2) |
+| h/j/k/l | Vim-style navigation (left/down/up/right) |
+| PgUp/PgDn | Page up/down |
+| P | Jump to page (type digits, Enter to jump, P/ESC to cancel) |
+| Enter | Switch to Book Preview |
+| TAB | Return to File Manager |
+| `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
+
+Note: Book view automatically switches between single-page and double-page layout based on terminal aspect ratio.
+
+### Book Preview (Page Grid)
+
+| Key | Function |
+|-----|----------|
+| ←/→ | Move selection left/right |
+| ↑/↓ | Move selection up/down |
+| h/j/k/l | Vim-style navigation (left/down/up/right) |
+| PgUp/PgDn | Page up/down through the grid |
+| P | Jump to page (type digits, Enter to jump, P/ESC to cancel) |
+| Enter | Open selected page in Book View |
+| TAB | Return to File Manager |
+| +/= | Zoom in |
+| - | Zoom out |
+
 ### File Manager Mode
 
 This mode allows browsing through directories and files. Note that Vim-style navigation (h/j/k/l) is not supported here, as letter keys are reserved for quickly jumping to file entries.
@@ -231,7 +276,7 @@ This mode allows browsing through directories and files. Note that Vim-style nav
 | ←/→ | Go to parent directory / Open selected directory/file |
 | ↑/↓ | Navigate entries up/down |
 | Enter | Open selected directory or file |
-| TAB | Cycle between Image View / Grid Preview / File Manager |
+| TAB | Open image preview/book preview or return |
 | Backspace | Toggle hidden files |
 | Any Letter (a-z/A-Z) | Jump to next entry starting with that letter |
 
