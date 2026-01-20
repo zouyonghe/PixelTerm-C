@@ -74,6 +74,9 @@ jobs:
         
         # Build PixelTerm-C
         make clean && make
+        if command -v strip >/dev/null; then
+          strip bin/pixelterm || true
+        fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
 
     - name: Build on macOS
@@ -90,6 +93,9 @@ jobs:
         
         # Build PixelTerm-C
         make clean && make
+        if command -v strip >/dev/null; then
+          strip bin/pixelterm || true
+        fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
 
     - name: Create release package

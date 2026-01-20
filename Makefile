@@ -22,6 +22,12 @@ LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 
 UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+  CFLAGS += -ffunction-sections -fdata-sections
+  LDFLAGS += -Wl,--gc-sections
+else ifeq ($(UNAME_S),Darwin)
+  LDFLAGS += -Wl,-dead_strip
+endif
 EXTRA_LIBS =
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists zlib >/dev/null 2>&1 && echo yes),)
   EXTRA_LIBS += $(shell $(PKG_CONFIG_CMD) --libs zlib)
@@ -44,7 +50,7 @@ else
 endif
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
-  MUPDF_LIBS := $(shell $(PKG_CONFIG_CMD) --libs --static mupdf)
+  MUPDF_LIBS := $(shell $(PKG_CONFIG_CMD) --libs mupdf)
   HARFBUZZ_LIBS :=
   ifneq ($(shell $(PKG_CONFIG_CMD) --exists harfbuzz >/dev/null 2>&1 && echo yes),)
     HARFBUZZ_LIBS := $(shell $(PKG_CONFIG_CMD) --libs harfbuzz)
