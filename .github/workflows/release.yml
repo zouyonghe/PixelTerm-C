@@ -43,13 +43,13 @@ jobs:
           pacman -Syu --noconfirm --needed archlinuxarm-keyring
         else
           pacman-key --populate archlinux
-          pacman -Syu --noconfirm --needed archlinux-keyring
+        pacman -Syu --noconfirm --needed --disable-sandbox archlinux-keyring
         fi
         deps=(base-devel pkgconf git glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
         if pacman -Si libmupdf >/dev/null 2>&1; then
           deps+=(libmupdf)
         fi
-        pacman -Syu --noconfirm --needed "${deps[@]}"
+        pacman -Syu --noconfirm --needed --disable-sandbox "${deps[@]}"
         
         # Build PixelTerm-C
         make clean && make
