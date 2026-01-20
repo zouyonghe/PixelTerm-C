@@ -43,7 +43,7 @@ jobs:
         
         # Install dependencies
         sudo apt-get update
-        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl libavformat-dev libavcodec-dev libswscale-dev libavutil-dev libmupdf-dev libopenjp2-7-dev
+        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl libavformat-dev libavcodec-dev libswscale-dev libavutil-dev libmupdf-dev libopenjp2-7-dev libharfbuzz-dev
         
         # Get Chafa version
         CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name' 2>/dev/null || true)
