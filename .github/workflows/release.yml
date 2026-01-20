@@ -24,7 +24,7 @@ jobs:
             container: archlinux:latest
           - arch: arm64
             runs-on: ubuntu-24.04-arm
-            container: archlinuxarm/archlinux-arm64:latest
+            container: menci/archlinuxarm:base-devel
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
