@@ -1,5 +1,14 @@
 # Changelog
 
+- v1.6.0: Book reader, preview grid, and input refinements.
+    - **Books**: Add PDF/EPUB/CBZ support via MuPDF with book preview grid and reader mode.
+    - **Books**: Page jump input (`P`) with inline prompt and fixed-width entry.
+    - **Books**: Double-page layout based on terminal aspect ratio.
+    - **Input**: Coalesce scroll events and apply a 200ms ignore window to reduce bursty wheel input.
+    - **Images**: Mouse-wheel zoom in single image view (cursor over image, videos/animated excluded).
+    - **Video**: Restore scaling controls and render flow to avoid artifacts.
+    - **Docs**: Split Usage and Controls into dedicated files.
+
 - v1.5.12: Test coverage and cleanup pass.
     - **Tests**: Add coverage for video/media helpers, animated-image detection, and GIF player edge cases.
     - **Tests**: Fix test target linking to include `video_player`.
