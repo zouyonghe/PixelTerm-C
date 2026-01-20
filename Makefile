@@ -22,13 +22,13 @@ LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
-  LIBS += $(shell $(PKG_CONFIG_CMD) --libs mupdf)
+  LIBS += $(shell $(PKG_CONFIG_CMD) --libs mupdf) -ljpeg
   INCLUDES += $(shell $(PKG_CONFIG_CMD) --cflags mupdf)
   CFLAGS += -DHAVE_MUPDF
 else
   MUPDF_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/mupdf /usr/local/opt/mupdf))
   ifneq ($(wildcard $(MUPDF_PREFIX)/include/mupdf/fitz.h),)
-    LIBS += -L$(MUPDF_PREFIX)/lib -lmupdf -lmupdf-third
+    LIBS += -L$(MUPDF_PREFIX)/lib -lmupdf -lmupdf-third -ljpeg
     INCLUDES += -I$(MUPDF_PREFIX)/include
     CFLAGS += -DHAVE_MUPDF
   else
