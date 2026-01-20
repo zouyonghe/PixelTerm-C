@@ -18,7 +18,7 @@ PKG_CONFIG ?= pkg-config
 PKG_CONFIG_CMD = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG)
 PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil
 
-LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
+LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm -lz
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
