@@ -12,29 +12,21 @@ on:
         type: string
 
 jobs:
-  build:
+  build-linux:
     runs-on: ${{ matrix.runs-on }}
+    container: archlinux:latest
     strategy:
       matrix:
         include:
           - arch: amd64
             runs-on: ubuntu-latest
-            os: linux
           - arch: arm64
             runs-on: ubuntu-24.04-arm
-            os: linux
-          - arch: amd64
-            runs-on: macos-latest
-            os: macos
-          - arch: arm64
-            runs-on: macos-latest
-            os: macos
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build on Linux
-      if: matrix.os == 'linux'
+    - name: Build on Linux (Arch)
       run: |
         mkdir -p release-${{ matrix.arch }}
         
@@ -42,35 +34,14 @@ jobs:
         echo "Native build for ${{ matrix.arch }}"
         
         # Install dependencies
-        sudo apt-get update
-        sudo apt-get install -y build-essential libglib2.0-dev libgdk-pixbuf2.0-dev pkg-config wget jq libfreetype6-dev git curl libavformat-dev libavcodec-dev libswscale-dev libavutil-dev libmupdf-dev libmujs-dev libgumbo-dev libopenjp2-7-dev libjbig2dec0-dev libharfbuzz-dev gir1.2-freedesktop-dev icu-devtools libgraphite2-dev libharfbuzz-cairo0 libicu-dev
-        
-        # Get Chafa version
-        CHAFA_VERSION=$(curl -s https://api.github.com/repos/hpjansson/chafa/releases/latest | jq -r '.tag_name' 2>/dev/null || true)
-        if [ -z "$CHAFA_VERSION" ] || [ "$CHAFA_VERSION" = "null" ]; then
-          CHAFA_VERSION='1.18.0'
+        pacman-key --init
+        pacman-key --populate archlinux
+        pacman -Syu --noconfirm --needed archlinux-keyring
+        deps=(base-devel pkgconf git glib2 gdk-pixbuf2 chafa ffmpeg mupdf)
+        if pacman -Si libmupdf >/dev/null 2>&1; then
+          deps+=(libmupdf)
         fi
-        CHAFA_VERSION_NO_V=${CHAFA_VERSION#v}
-        echo "Installing Chafa ${CHAFA_VERSION_NO_V}"
-        
-        # Download and build Chafa
-        wget "https://github.com/hpjansson/chafa/releases/download/${CHAFA_VERSION}/chafa-${CHAFA_VERSION_NO_V}.tar.xz" ||
-        wget "https://github.com/hpjansson/chafa/releases/download/1.18.0/chafa-1.18.0.tar.xz"
-        
-        if [ -f "chafa-${CHAFA_VERSION_NO_V}.tar.xz" ]; then
-          tar -xf chafa-${CHAFA_VERSION_NO_V}.tar.xz
-          cd chafa-${CHAFA_VERSION_NO_V}
-        else
-          tar -xf chafa-1.18.0.tar.xz
-          cd chafa-1.18.0
-        fi
-        
-        ./configure --prefix=/usr
-        make -j$(nproc)
-        sudo make install
-        sudo ldconfig
-        cd ..
-        rm -rf chafa-*
+        pacman -Syu --noconfirm --needed "${deps[@]}"
         
         # Build PixelTerm-C
         make clean && make
@@ -79,8 +50,38 @@ jobs:
         fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
 
+    - name: Create release package
+      run: |
+        mkdir -p release
+        cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
+        tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pixelterm-${{ matrix.arch }}-linux.tar.gz
+        path: release/pixelterm-${{ matrix.arch }}-linux.tar.gz
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pixelterm-${{ matrix.arch }}-linux
+        path: release/pixelterm-${{ matrix.arch }}-linux
+
+  build-macos:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runs-on: macos-latest
+          - arch: arm64
+            runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Build on macOS
-      if: matrix.os == 'macos'
       run: |
         mkdir -p release-${{ matrix.arch }}
         
@@ -101,28 +102,23 @@ jobs:
     - name: Create release package
       run: |
         mkdir -p release
-        if [ "${{ matrix.os }}" = "macos" ]; then
-          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
-        else
-          cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux release/
-          tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
-        fi
+        cp release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos release/
+        tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}-${{ matrix.os }}.tar.gz
-        path: release/pixelterm-${{ matrix.arch }}-${{ matrix.os }}.tar.gz
+        name: pixelterm-${{ matrix.arch }}-macos.tar.gz
+        path: release/pixelterm-${{ matrix.arch }}-macos.tar.gz
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pixelterm-${{ matrix.arch }}-${{ matrix.os }}
-        path: release/pixelterm-${{ matrix.arch }}-${{ matrix.os }}
+        name: pixelterm-${{ matrix.arch }}-macos
+        path: release/pixelterm-${{ matrix.arch }}-macos
 
   create-release:
-    needs: build
+    needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
