@@ -19,8 +19,29 @@ PKG_CONFIG_CMD = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG)
 PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil
 
 LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
-LIBS += -Wl,--no-as-needed -lz -lopenjp2 -Wl,--as-needed
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
+
+UNAME_S := $(shell uname -s)
+EXTRA_LIBS =
+ifneq ($(shell $(PKG_CONFIG_CMD) --exists zlib >/dev/null 2>&1 && echo yes),)
+  EXTRA_LIBS += $(shell $(PKG_CONFIG_CMD) --libs zlib)
+else
+  EXTRA_LIBS += -lz
+endif
+OPENJP2_PKG =
+ifneq ($(shell $(PKG_CONFIG_CMD) --exists openjp2 >/dev/null 2>&1 && echo yes),)
+  OPENJP2_PKG = openjp2
+else ifneq ($(shell $(PKG_CONFIG_CMD) --exists libopenjp2 >/dev/null 2>&1 && echo yes),)
+  OPENJP2_PKG = libopenjp2
+endif
+ifneq ($(OPENJP2_PKG),)
+  EXTRA_LIBS += $(shell $(PKG_CONFIG_CMD) --libs $(OPENJP2_PKG))
+endif
+ifeq ($(UNAME_S),Linux)
+  LIBS += -Wl,--no-as-needed $(EXTRA_LIBS) -Wl,--as-needed
+else
+  LIBS += $(EXTRA_LIBS)
+endif
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
   LIBS += $(shell $(PKG_CONFIG_CMD) --libs mupdf) -ljpeg
