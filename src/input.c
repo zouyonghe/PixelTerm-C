@@ -10,6 +10,16 @@
 static gboolean input_discard_kitty_apc(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
 
+static void input_write_query(const char *buf, size_t len) {
+    if (!buf || len == 0) {
+        return;
+    }
+    ssize_t ret = write(STDOUT_FILENO, buf, len);
+    if (ret < 0) {
+        return;
+    }
+}
+
 static gint64 input_now_us(void) {
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -636,7 +646,7 @@ gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
     input_flush_buffer(handler);
 
     const char query[] = "\033[c";
-    (void)write(STDOUT_FILENO, query, sizeof(query) - 1);
+    input_write_query(query, sizeof(query) - 1);
 
     gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
     char buffer[128];
@@ -673,7 +683,7 @@ gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
     input_flush_buffer(handler);
 
     const char query[] = "\033[>q\033[5n";
-    (void)write(STDOUT_FILENO, query, sizeof(query) - 1);
+    input_write_query(query, sizeof(query) - 1);
 
     gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
     char buffer[256];
@@ -707,7 +717,7 @@ gboolean input_probe_iterm2_support(InputHandler *handler, gint timeout_ms) {
     input_flush_buffer(handler);
 
     const char query[] = "\033[>q\033[5n";
-    (void)write(STDOUT_FILENO, query, sizeof(query) - 1);
+    input_write_query(query, sizeof(query) - 1);
 
     gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
     char buffer[256];
