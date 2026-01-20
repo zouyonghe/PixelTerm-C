@@ -37,18 +37,6 @@ endif
 ifneq ($(OPENJP2_PKG),)
   EXTRA_LIBS += $(shell $(PKG_CONFIG_CMD) --libs $(OPENJP2_PKG))
 endif
-FREETYPE_LIBS =
-ifneq ($(shell $(PKG_CONFIG_CMD) --exists freetype2 >/dev/null 2>&1 && echo yes),)
-  FREETYPE_LIBS = $(shell $(PKG_CONFIG_CMD) --libs freetype2)
-else
-  FREETYPE_LIBS = -lfreetype
-endif
-HARFBUZZ_LIBS =
-ifneq ($(shell $(PKG_CONFIG_CMD) --exists harfbuzz >/dev/null 2>&1 && echo yes),)
-  HARFBUZZ_LIBS = $(shell $(PKG_CONFIG_CMD) --libs harfbuzz)
-else
-  HARFBUZZ_LIBS = -lharfbuzz
-endif
 ifeq ($(UNAME_S),Linux)
   LIBS += -Wl,--no-as-needed $(EXTRA_LIBS) -Wl,--as-needed
 else
@@ -56,12 +44,24 @@ else
 endif
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
-  LIBS += $(shell $(PKG_CONFIG_CMD) --libs mupdf) -ljpeg $(FREETYPE_LIBS) $(HARFBUZZ_LIBS)
+  LIBS += $(shell $(PKG_CONFIG_CMD) --libs --static mupdf)
   INCLUDES += $(shell $(PKG_CONFIG_CMD) --cflags mupdf)
   CFLAGS += -DHAVE_MUPDF
 else
   MUPDF_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/mupdf /usr/local/opt/mupdf))
   ifneq ($(wildcard $(MUPDF_PREFIX)/include/mupdf/fitz.h),)
+    FREETYPE_LIBS =
+    ifneq ($(shell $(PKG_CONFIG_CMD) --exists freetype2 >/dev/null 2>&1 && echo yes),)
+      FREETYPE_LIBS = $(shell $(PKG_CONFIG_CMD) --libs freetype2)
+    else
+      FREETYPE_LIBS = -lfreetype
+    endif
+    HARFBUZZ_LIBS =
+    ifneq ($(shell $(PKG_CONFIG_CMD) --exists harfbuzz >/dev/null 2>&1 && echo yes),)
+      HARFBUZZ_LIBS = $(shell $(PKG_CONFIG_CMD) --libs harfbuzz)
+    else
+      HARFBUZZ_LIBS = -lharfbuzz
+    endif
     LIBS += -L$(MUPDF_PREFIX)/lib -lmupdf -lmupdf-third -ljpeg $(FREETYPE_LIBS) $(HARFBUZZ_LIBS)
     INCLUDES += -I$(MUPDF_PREFIX)/include
     CFLAGS += -DHAVE_MUPDF
