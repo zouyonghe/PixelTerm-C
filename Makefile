@@ -51,12 +51,11 @@ endif
 
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
   MUPDF_LIBS := $(shell $(PKG_CONFIG_CMD) --libs mupdf)
-  MUPDF_DEPS := $(shell $(PKG_CONFIG_CMD) --libs --static mupdf)
   HARFBUZZ_LIBS :=
   ifneq ($(shell $(PKG_CONFIG_CMD) --exists harfbuzz >/dev/null 2>&1 && echo yes),)
     HARFBUZZ_LIBS := $(shell $(PKG_CONFIG_CMD) --libs harfbuzz)
   endif
-  LIBS += $(MUPDF_LIBS) $(MUPDF_DEPS) $(HARFBUZZ_LIBS)
+  LIBS += $(MUPDF_LIBS) $(HARFBUZZ_LIBS)
   INCLUDES += $(shell $(PKG_CONFIG_CMD) --cflags mupdf)
   CFLAGS += -DHAVE_MUPDF
 else
