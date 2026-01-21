@@ -1,6 +1,6 @@
 # PixelTerm-C - High Performance Terminal Image/Video/Book Browser
 
-![Version](https://img.shields.io/badge/Version-v1.6.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.6.2-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](README_zh.md)*
