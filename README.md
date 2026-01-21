@@ -1,4 +1,4 @@
-# PixelTerm-C - High Performance Terminal Image Viewer
+# PixelTerm-C - High Performance Terminal Image/Video/Book Browser
 
 ![Version](https://img.shields.io/badge/Version-v1.6.0-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
@@ -130,4 +130,4 @@ This project is licensed under the same license as [Chafa](https://github.com/hp
 
 ---
 
-**PixelTerm-C** - Making terminals excellent image viewers with lightning speed! 🖼️
+**PixelTerm-C** - Making terminals excellent image/video/book browsers with lightning speed! 🖼️

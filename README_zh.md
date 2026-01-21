@@ -1,4 +1,4 @@
-# PixelTerm-C - 高性能终端图像查看器
+# PixelTerm-C - 高性能终端图像/视频/电子书浏览器
 
 ![Version](https://img.shields.io/badge/Version-v1.6.0-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
@@ -130,4 +130,4 @@ LGPL-3.0或更高版本 - 详见LICENSE文件
 
 ---
 
-**PixelTerm-C** - 让终端成为出色的图像查看器！🖼️
+**PixelTerm-C** - 让终端成为出色的图像/视频/电子书浏览器！🖼️
