@@ -150,7 +150,7 @@ test: $(TEST_TARGET)
 
 # Run with sample image
 run: $(TARGET)
-	@echo "Run with: ./$(TARGET) [path/to/image/or/directory]"
+	@if [ -n "$(ARGS)" ]; then ./$(TARGET) $(ARGS); else ./$(TARGET); fi
 
 # Check dependencies
 check-deps:
@@ -171,7 +171,7 @@ help:
 	@echo "  clean     - Remove build artifacts"
 	@echo "  install   - Install to system"
 	@echo "  test      - Run tests"
-	@echo "  run       - Show run instructions"
+	@echo "  run       - Build and run (use ARGS=... to pass args)"
 	@echo "  check-deps- Check dependencies"
 	@echo "  help      - Show this help"
 	@echo ""
@@ -183,6 +183,7 @@ help:
 	@echo "  make                     # Build for x86_64"
 	@echo "  make ARCH=aarch64        # Cross-compile for ARM64"
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
+	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
 .PHONY: all debug clean install test run check-deps help
 

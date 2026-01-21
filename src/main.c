@@ -743,7 +743,7 @@ static void book_change_page(PixelTermApp *app, gint delta) {
     if (new_page == app->book_page) {
         return;
     }
-    app->suppress_full_clear = TRUE;
+    app->suppress_full_clear = FALSE;
     if (app_enter_book_page(app, new_page) == ERROR_NONE) {
         app_render_book_page(app);
     }
