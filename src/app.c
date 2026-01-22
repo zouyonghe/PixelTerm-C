@@ -4919,7 +4919,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
 
             gint image_area_top_row = 4;
             if (!app->ui_text_hidden && app->term_height > 0) {
-                const char *title = "Book View";
+                const char *title = "Book Reader";
                 gchar *display_name = NULL;
                 if (app->book_path) {
                     gchar *basename = g_path_get_basename(app->book_path);
@@ -5127,7 +5127,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
 
     gint image_area_top_row = 4;
     if (!app->ui_text_hidden && app->term_height > 0) {
-        const char *title = "Book View";
+        const char *title = "Book Reader";
         gchar *display_name = NULL;
         if (app->book_path) {
             gchar *basename = g_path_get_basename(app->book_path);

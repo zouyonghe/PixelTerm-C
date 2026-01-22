@@ -20,11 +20,11 @@ Mouse interaction significantly enhances navigation and selection across differe
 | Double Left Click | Open selected image in Image View | Grid Preview | Opens the image at the cursor position. |
 | Mouse Scroll Up/Down | Page Up/Down | Grid Preview | Scroll through pages of images. |
 | Left Click | Select page | Book Preview | Selects the page under the cursor. |
-| Double Left Click | Open selected page in Book View | Book Preview | Opens the page at the cursor position. |
+| Double Left Click | Open selected page in Book Reader | Book Preview | Opens the page at the cursor position. |
 | Mouse Scroll Up/Down | Page Up/Down | Book Preview | Scroll through pages. |
-| Left Click | Advance page | Book View | Advances by 1 or 2 pages depending on layout. |
-| Double Left Click | Switch to Book Preview | Book View | |
-| Mouse Scroll Up/Down | Previous/Next page | Book View | |
+| Left Click | Advance page | Book Reader | Advances by 1 or 2 pages depending on layout. |
+| Double Left Click | Switch to Book Preview | Book Reader | |
+| Mouse Scroll Up/Down | Previous/Next page | Book Reader | |
 | Left Click | Select entry | File Manager Mode | Selects the file or directory under the cursor. |
 | Double Left Click | Open selected entry (directory/file) | File Manager Mode | Navigates into a directory or opens an image. |
 | Mouse Scroll Up/Down | Navigate entries up/down | File Manager Mode | Scroll through the list of files and directories. |
@@ -67,7 +67,7 @@ This mode displays multiple image thumbnails in a grid.
 | +/= | Zoom in |
 | - | Zoom out |
 
-### Book View (Reader Mode)
+### Book Reader (Reader Mode)
 
 | Key | Function |
 |-----|----------|
@@ -91,7 +91,7 @@ Note: Book view automatically switches between single-page and double-page layou
 | h/j/k/l | Vim-style navigation (left/down/up/right) |
 | PgUp/PgDn | Page up/down through the grid |
 | P | Jump to page (type digits, Enter to jump, P/ESC to cancel) |
-| Enter | Open selected page in Book View |
+| Enter | Open selected page in Book Reader |
 | TAB | Return to File Manager |
 | +/= | Zoom in |
 | - | Zoom out |
