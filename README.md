@@ -53,6 +53,7 @@ Terminals with the best image quality and color accuracy tested so far:
 - [rio](https://github.com/raphamorim/rio)
 - [ghostty](https://github.com/ghostty-org/ghostty)
 - [warp](https://www.warp.dev/)
+- [wezterm](https://github.com/wezterm/wezterm)
 - [iterm2](https://github.com/gnachman/iTerm2)
 - [contour](https://github.com/contour-terminal/contour)
 
