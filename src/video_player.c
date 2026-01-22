@@ -1045,7 +1045,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
 
         if (player->show_stats) {
-            gint stats_row = 4;
+            gint stats_row = 3;
             if (stats_row >= 1 && (term_h <= 0 || stats_row <= term_h)) {
                 char proto_line[24];
                 char fps_line[24];
