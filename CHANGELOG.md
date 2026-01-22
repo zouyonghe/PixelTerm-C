@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.6.5: Book TOC UI and navigation polish.
+    - **Books**: Add Table of Contents panel with file-manager-style layout and mouse support.
+    - **Books**: Center selection within the TOC viewport and align page numbers.
+    - **Books**: Sync TOC selection to current page and support wrapping navigation.
+    - **Stability**: Harden TOC parsing against invalid outline links.
+
 - v1.6.4: Code cleanup and optimization.
     - **Maintenance**: Remove unused `ImageInfo` and `MediaDimensions` structures.
     - **Maintenance**: Remove unused `browser_get_file_info()` function.
