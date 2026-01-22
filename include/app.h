@@ -103,6 +103,10 @@ typedef struct {
     gboolean book_jump_dirty;
     gint book_jump_len;
     char book_jump_buf[16];
+    BookToc *book_toc;
+    gint book_toc_selected;
+    gint book_toc_scroll;
+    gboolean book_toc_visible;
 
     // Input state
     gboolean pending_single_click; // For single image view
@@ -582,6 +586,11 @@ ErrorCode app_handle_mouse_click_book_preview(PixelTermApp *app,
                                               gint mouse_y,
                                               gboolean *redraw_needed,
                                               gboolean *out_hit);
+ErrorCode app_handle_mouse_click_book_toc(PixelTermApp *app,
+                                          gint mouse_x,
+                                          gint mouse_y,
+                                          gboolean *redraw_needed,
+                                          gboolean *out_hit);
 
 // Display functions
 /**
@@ -603,6 +612,11 @@ ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index);
 ErrorCode app_render_book_preview(PixelTermApp *app);
 ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index);
 ErrorCode app_render_book_page(PixelTermApp *app);
+ErrorCode app_render_book_toc(PixelTermApp *app);
+ErrorCode app_book_toc_move_selection(PixelTermApp *app, gint delta);
+ErrorCode app_book_toc_page_move(PixelTermApp *app, gint direction);
+ErrorCode app_book_toc_sync_to_page(PixelTermApp *app, gint page_index);
+gint app_book_toc_get_selected_page(PixelTermApp *app);
 void app_book_jump_render_prompt(PixelTermApp *app);
 void app_book_jump_clear_prompt(PixelTermApp *app);
 /**

@@ -337,6 +337,90 @@ void book_page_image_free(BookPageImage *image) {
     book_reset_image(image);
 }
 
+static void book_outline_to_list(BookDocument *doc,
+                                 fz_outline *outline,
+                                 gint level,
+                                 BookTocItem **head,
+                                 BookTocItem **tail,
+                                 gint *count) {
+    if (!head || !tail || !count) {
+        return;
+    }
+    while (outline) {
+        BookTocItem *item = g_new0(BookTocItem, 1);
+        item->title = g_strdup(outline->title ? outline->title : "");
+        item->level = level;
+
+        gint resolved_page = 0;
+        fz_try(doc->ctx) {
+            fz_location loc = fz_resolve_link(doc->ctx, doc->doc, outline->uri, NULL, NULL);
+            resolved_page = fz_page_number_from_location(doc->ctx, doc->doc, loc);
+        }
+        fz_catch(doc->ctx) {
+            resolved_page = 0;
+        }
+        if (resolved_page < 0) resolved_page = 0;
+        item->page = resolved_page;
+
+        item->next = NULL;
+
+        if (*tail) {
+            (*tail)->next = item;
+        } else {
+            *head = item;
+        }
+        *tail = item;
+        (*count)++;
+
+        if (outline->down) {
+            book_outline_to_list(doc, outline->down, level + 1, head, tail, count);
+        }
+
+        outline = outline->next;
+    }
+}
+
+BookToc* book_load_toc(BookDocument *doc) {
+    if (!doc || !doc->ctx || !doc->doc) {
+        return NULL;
+    }
+
+    fz_outline *outline = NULL;
+    fz_try(doc->ctx) {
+        outline = fz_load_outline(doc->ctx, doc->doc);
+    }
+    fz_catch(doc->ctx) {
+        return NULL;
+    }
+
+    if (!outline) {
+        return NULL;
+    }
+
+    BookToc *toc = g_new0(BookToc, 1);
+    toc->items = NULL;
+    toc->count = 0;
+
+    BookTocItem *tail = NULL;
+    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count);
+
+    fz_drop_outline(doc->ctx, outline);
+    return toc;
+}
+
+void book_toc_free(BookToc *toc) {
+    if (!toc) return;
+
+    BookTocItem *item = toc->items;
+    while (item) {
+        BookTocItem *next = item->next;
+        g_free(item->title);
+        g_free(item);
+        item = next;
+    }
+    g_free(toc);
+}
+
 #else
 
 struct BookDocument {

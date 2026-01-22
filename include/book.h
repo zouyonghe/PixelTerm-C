@@ -13,6 +13,18 @@ typedef struct {
     gint channels;
 } BookPageImage;
 
+typedef struct BookTocItem {
+    gchar *title;
+    gint page;
+    gint level;
+    struct BookTocItem *next;
+} BookTocItem;
+
+typedef struct {
+    BookTocItem *items;
+    gint count;
+} BookToc;
+
 BookDocument* book_open(const char *filepath, ErrorCode *out_error);
 void book_close(BookDocument *doc);
 
@@ -25,5 +37,8 @@ ErrorCode book_render_page(BookDocument *doc,
                            gint target_rows,
                            BookPageImage *out_image);
 void book_page_image_free(BookPageImage *image);
+
+BookToc* book_load_toc(BookDocument *doc);
+void book_toc_free(BookToc *toc);
 
 #endif
