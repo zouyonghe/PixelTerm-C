@@ -3,6 +3,19 @@
 #include <fcntl.h>
 #include <limits.h>
 
+// Supported file format extensions
+const char* const SUPPORTED_EXTENSIONS[] = {
+    ".jpg", ".jpeg", ".png", ".apng", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
+};
+
+const char* const SUPPORTED_VIDEO_EXTENSIONS[] = {
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg", ".mpg", ".m4v", NULL
+};
+
+const char* const SUPPORTED_BOOK_EXTENSIONS[] = {
+    ".pdf", ".epub", ".cbz", NULL
+};
+
 typedef enum {
     IMAGE_MAGIC_UNKNOWN = 0,
     IMAGE_MAGIC_JPEG,

@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.6.4: Code cleanup and optimization.
+    - **Maintenance**: Remove unused `ImageInfo` and `MediaDimensions` structures.
+    - **Maintenance**: Remove unused `browser_get_file_info()` function.
+    - **Optimization**: Fix static constant arrays in header to avoid duplicate copies in each translation unit.
+
 - v1.6.0: Book reader, preview grid, and input refinements.
     - **Books**: Add PDF/EPUB/CBZ support via MuPDF with book preview grid and reader mode.
     - **Books**: Page jump input (`P`) with inline prompt and fixed-width entry.

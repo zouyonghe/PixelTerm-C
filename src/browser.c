@@ -229,35 +229,6 @@ ErrorCode browser_delete_current_file(FileBrowser *browser) {
     return ERROR_NONE;
 }
 
-// Get file information for current file
-ImageInfo* browser_get_file_info(const FileBrowser *browser) {
-    if (!browser || !browser_has_files(browser)) {
-        return NULL;
-    }
-
-    const gchar *filepath = browser_get_current_file(browser);
-    if (!filepath) {
-        return NULL;
-    }
-
-    ImageInfo *info = g_new0(ImageInfo, 1);
-    if (!info) {
-        return NULL;
-    }
-
-    // Basic file information
-    info->filepath = g_strdup(filepath);
-    info->filename = g_path_get_basename(filepath);
-    info->file_size = get_file_size(filepath);
-    info->modification_time = get_file_mtime(filepath);
-    info->format = g_strdup(get_file_extension(filepath));
-
-    // Get image/video dimensions
-    renderer_get_media_dimensions(filepath, &info->width, &info->height);
-
-    return info;
-}
-
 // Get all files
 GList* browser_get_all_files(const FileBrowser *browser) {
     return browser ? browser->image_files : NULL;

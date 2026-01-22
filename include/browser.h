@@ -139,16 +139,6 @@ gboolean browser_has_files(const FileBrowser *browser);
  */
 ErrorCode browser_delete_current_file(FileBrowser *browser);
 /**
- * @brief Retrieves detailed information about the currently selected file.
- * 
- * @param browser A pointer to the constant `FileBrowser` instance.
- * @return A pointer to an `ImageInfo` structure containing details about
- *         the current file, or NULL if no file is selected or information
- *         cannot be retrieved. The returned structure is dynamically allocated
- *         and should be freed by the caller.
- */
-ImageInfo* browser_get_file_info(const FileBrowser *browser);
-/**
  * @brief Retrieves a list of all file paths currently managed by the browser.
  * 
  * @param browser A pointer to the constant `FileBrowser` instance.

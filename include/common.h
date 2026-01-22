@@ -23,19 +23,13 @@
 #define PRELOAD_QUEUE_SIZE 10
 
 // Supported image formats
-static const char* SUPPORTED_EXTENSIONS[] = {
-    ".jpg", ".jpeg", ".png", ".apng", ".gif", ".webp", ".bmp", ".tiff", ".tif", NULL
-};
+extern const char* const SUPPORTED_EXTENSIONS[];
 
 // Supported video formats
-static const char* SUPPORTED_VIDEO_EXTENSIONS[] = {
-    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg", ".mpg", ".m4v", NULL
-};
+extern const char* const SUPPORTED_VIDEO_EXTENSIONS[];
 
 // Supported book formats
-static const char* SUPPORTED_BOOK_EXTENSIONS[] = {
-    ".pdf", ".epub", ".cbz", NULL
-};
+extern const char* const SUPPORTED_BOOK_EXTENSIONS[];
 
 // Key codes are defined in input.h as KeyCode enum
 
@@ -52,19 +46,6 @@ typedef enum {
     ERROR_VERSION_EXIT,
     ERROR_INVALID_ARGS
 } ErrorCode;
-
-// Image information structure
-typedef struct {
-    gchar *filepath;
-    gchar *filename;
-    gint width;
-    gint height;
-    gint file_size;
-    gchar *format;
-    gint64 modification_time;
-} ImageInfo;
-
-
 
 // Function declarations
 /**
@@ -86,12 +67,6 @@ gboolean is_image_file(const char *filename);
  * @return `TRUE` if the file is identified as a video, `FALSE` otherwise.
  */
 gboolean is_video_file(const char *filename);
-
-typedef struct {
-    gboolean is_video;
-    gint width;
-    gint height;
-} MediaDimensions;
 
 /**
  * @brief Checks if a file is an image or video based on its file extension.
