@@ -3713,6 +3713,12 @@ static void app_book_preview_render_selected_info(PixelTermApp *app) {
     }
 
     gchar *base = g_path_get_basename(app->book_path);
+    if (base) {
+        char *dot = strrchr(base, '.');
+        if (dot && dot != base) {
+            *dot = '\0';
+        }
+    }
     gchar *safe = sanitize_for_terminal(base);
     gint max_width = app_filename_max_width(app);
     if (max_width <= 0) {
@@ -4937,6 +4943,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
             {"←/→/↑/↓", "Move"},
             {"PgUp/PgDn", "Page"},
             {"P", "Page"},
+            {"T", "TOC"},
             {"Enter", "Open"},
             {"TAB", "Toggle"},
             {"+/-", "Zoom"},
@@ -5133,6 +5140,12 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
                 gchar *display_name = NULL;
                 if (app->book_path) {
                     gchar *basename = g_path_get_basename(app->book_path);
+                    if (basename) {
+                        char *dot = strrchr(basename, '.');
+                        if (dot && dot != basename) {
+                            *dot = '\0';
+                        }
+                    }
                     gchar *safe_basename = sanitize_for_terminal(basename);
                     gint max_width = app_filename_max_width(app);
                     if (max_width <= 0) {
@@ -5252,6 +5265,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
                     {"←/→", "Prev/Next"},
                     {"PgUp/PgDn", "Page"},
                     {"P", "Page"},
+                    {"T", "TOC"},
                     {"Enter", "Preview"},
                     {"TAB", "Toggle"},
                     {"~", "Zen"},
@@ -5344,6 +5358,12 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
         gchar *display_name = NULL;
         if (app->book_path) {
             gchar *basename = g_path_get_basename(app->book_path);
+            if (basename) {
+                char *dot = strrchr(basename, '.');
+                if (dot && dot != basename) {
+                    *dot = '\0';
+                }
+            }
             gchar *safe_basename = sanitize_for_terminal(basename);
             gint max_width = app_filename_max_width(app);
             if (max_width <= 0) {
@@ -5451,6 +5471,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
             {"←/→", "Prev/Next"},
             {"PgUp/PgDn", "Page"},
             {"P", "Page"},
+            {"T", "TOC"},
             {"Enter", "Preview"},
             {"TAB", "Toggle"},
             {"~", "Zen"},
@@ -5917,9 +5938,8 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
         gint visible_end = viewport.end_row;
 
         gint line_content_width = 0;
-        BookTocItem *scan = app_book_toc_item_at(app->book_toc, visible_start);
-        gint scan_index = visible_start;
-        while (scan && scan_index < visible_end) {
+        BookTocItem *scan = app->book_toc->items;
+        while (scan) {
             gint indent = scan->level * 2;
             gint max_indent = cols / 4;
             if (indent > max_indent) indent = max_indent;
@@ -5939,7 +5959,6 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
             g_free(display_title);
             g_free(safe_title);
             scan = scan->next;
-            scan_index++;
         }
         if (line_content_width < 1) {
             line_content_width = MIN(max_line_width, prefix_width + gap_width + page_width + 1);
