@@ -5665,7 +5665,8 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     }
 
     get_terminal_size(&app->term_width, &app->term_height);
-    printf("\033[H\033[0m");
+    app_begin_sync_update();
+    app_clear_screen_for_refresh(app);
 
     gint rows = app->term_height;
     gint cols = app->term_width;
@@ -5681,7 +5682,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     BookTocViewport viewport = app_book_toc_compute_viewport(app, content_rows);
     app->book_toc_scroll = viewport.start_row;
 
-    const char *header_title = "PixelTerm Book Contents";
+    const char *header_title = "Table of Contents";
     gint title_len = (gint)strlen(header_title);
     gint title_pad = (cols > title_len) ? (cols - title_len) / 2 : 0;
     printf("\033[1;1H\033[2K");
@@ -5835,6 +5836,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
         print_centered_help_line(rows, cols, segments, G_N_ELEMENTS(segments));
     }
 
+    app_end_sync_update();
     fflush(stdout);
     return ERROR_NONE;
 }
