@@ -892,6 +892,8 @@ static void process_pending_clicks(PixelTermApp *app) {
             } else {
                 app_next_image(app);
                 if (app->needs_redraw) {
+                    app->suppress_full_clear = TRUE;
+                    app->async_render_request = TRUE;
                     app_refresh_display(app);
                     app->needs_redraw = FALSE;
                 }
@@ -1924,6 +1926,8 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             gint old_index = app_get_current_index(app);
             app_previous_image(app);
             if (old_index != app_get_current_index(app)) {
+                app->suppress_full_clear = TRUE;
+                app->async_render_request = TRUE;
                 app_refresh_display(app);
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
@@ -1934,6 +1938,8 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             gint old_index = app_get_current_index(app);
             app_next_image(app);
             if (old_index != app_get_current_index(app)) {
+                app->suppress_full_clear = TRUE;
+                app->async_render_request = TRUE;
                 app_refresh_display(app);
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
@@ -1944,6 +1950,8 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             gint old_index = app_get_current_index(app);
             app_previous_image(app);
             if (old_index != app_get_current_index(app)) {
+                app->suppress_full_clear = TRUE;
+                app->async_render_request = TRUE;
                 app_refresh_display(app);
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
@@ -1954,6 +1962,8 @@ static void handle_key_press_single(PixelTermApp *app, InputHandler *input_handl
             gint old_index = app_get_current_index(app);
             app_next_image(app);
             if (old_index != app_get_current_index(app)) {
+                app->suppress_full_clear = TRUE;
+                app->async_render_request = TRUE;
                 app_refresh_display(app);
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
@@ -2111,6 +2121,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         
         process_pending_clicks(app);
         process_animation_events(app);
+        app_process_async_render(app);
 
         
         // Check if we have pending input with timeout to allow signal checking

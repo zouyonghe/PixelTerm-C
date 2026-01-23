@@ -58,6 +58,11 @@ typedef struct {
     gboolean book_preview_mode;  // Book multi-page preview grid
     ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
+    gboolean async_render_request; // Request async render on next single-image refresh
+    gboolean async_image_pending; // Awaiting cached render for current image
+    gboolean async_render_force_sync; // Force sync render to consume async result
+    gint async_image_index;      // Index for pending async render
+    gchar *async_image_path;     // Path for pending async render
     gboolean delete_pending;     // Awaiting delete confirmation
     gint last_render_top_row;    // Single-view image top row for overlays
     gint last_render_height;     // Single-view image height for overlays
@@ -656,6 +661,7 @@ ErrorCode app_refresh_display(PixelTermApp *app);
  *         of the current mode fails.
  */
 ErrorCode app_render_by_mode(PixelTermApp *app);
+void app_process_async_render(PixelTermApp *app);
 
 // State management
 /**

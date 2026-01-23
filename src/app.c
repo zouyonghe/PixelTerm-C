@@ -66,6 +66,11 @@ PixelTermApp* app_create(void) {
     app->book_preview_mode = FALSE;
     app->return_to_mode = RETURN_MODE_NONE;
     app->delete_pending = FALSE;
+    app->async_render_request = FALSE;
+    app->async_image_pending = FALSE;
+    app->async_render_force_sync = FALSE;
+    app->async_image_index = -1;
+    app->async_image_path = NULL;
     app->last_render_top_row = 0;
     app->last_render_height = 0;
     app->image_zoom = 1.0;
@@ -438,6 +443,102 @@ static void app_begin_sync_update(void) {
 
 static void app_end_sync_update(void) {
     printf("\033[?2026l");
+}
+
+static void app_clear_kitty_images(const PixelTermApp *app) {
+    if (!app || !app->force_kitty) {
+        return;
+    }
+    // Delete all kitty image placements (quiet) so old images don't linger.
+    printf("\033_Ga=d,q=2\033\\");
+}
+
+static void app_clear_async_render_state(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    app->async_image_pending = FALSE;
+    app->async_image_index = -1;
+    g_clear_pointer(&app->async_image_path, g_free);
+}
+
+static void app_queue_async_render(PixelTermApp *app, const gchar *filepath,
+                                   gint target_width, gint target_height) {
+    if (!app || !filepath) {
+        return;
+    }
+    app->async_image_pending = TRUE;
+    app->async_image_index = app->current_index;
+    g_free(app->async_image_path);
+    app->async_image_path = g_strdup(filepath);
+    if (app->preloader && app->preload_enabled) {
+        preloader_add_task(app->preloader, filepath, 0, target_width, target_height);
+    }
+}
+
+static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepath) {
+    if (!app || !filepath || app->ui_text_hidden) {
+        return;
+    }
+    get_terminal_size(&app->term_width, &app->term_height);
+
+    app_begin_sync_update();
+    printf("\033[H\033[0m");
+
+    const char *title = "Image View";
+    gint title_len = (gint)strlen(title);
+    gint title_pad = (app->term_width > title_len) ? (app->term_width - title_len) / 2 : 0;
+    printf("\033[1;1H\033[2K");
+    for (gint i = 0; i < title_pad; i++) putchar(' ');
+    printf("%s", title);
+
+    printf("\033[2;1H\033[2K");
+
+    gint current = app_get_current_index(app) + 1;
+    gint total = app_get_total_images(app);
+    if (current < 1) current = 1;
+    if (total < 1) total = 1;
+    char idx_text[32];
+    g_snprintf(idx_text, sizeof(idx_text), "%d/%d", current, total);
+    gint idx_len = (gint)strlen(idx_text);
+    gint idx_pad = (app->term_width > idx_len) ? (app->term_width - idx_len) / 2 : 0;
+    printf("\033[3;1H\033[2K");
+    for (gint i = 0; i < idx_pad; i++) putchar(' ');
+    printf("%s", idx_text);
+
+    gchar *basename = g_path_get_basename(filepath);
+    gchar *safe_basename = sanitize_for_terminal(basename);
+    gint max_width = app_filename_max_width(app);
+    if (max_width <= 0) {
+        max_width = app->term_width;
+    }
+    gchar *display_name = truncate_utf8_middle_keep_suffix(safe_basename, max_width);
+    gint filename_len = utf8_display_width(display_name);
+    gint filename_start_col = (app->term_width - filename_len) / 2;
+    if (filename_start_col < 0) filename_start_col = 0;
+    gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
+    printf("\033[%d;1H\033[2K", filename_row);
+    for (gint i = 0; i < filename_start_col; i++) putchar(' ');
+    printf("\033[34m%s\033[0m", display_name);
+    g_free(display_name);
+    g_free(safe_basename);
+    g_free(basename);
+
+    if (app->term_height > 0) {
+        const HelpSegment segments[] = {
+            {"←/→", "Prev/Next"},
+            {"Enter", "Preview"},
+            {"TAB", "Toggle"},
+            {"i", "Info"},
+            {"r", "Delete"},
+            {"~", "Zen"},
+            {"ESC", "Exit"}
+        };
+        print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+    }
+
+    app_end_sync_update();
+    fflush(stdout);
 }
 
 static void app_clear_screen_for_refresh(const PixelTermApp *app) {
@@ -1093,6 +1194,7 @@ void app_destroy(PixelTermApp *app) {
         g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
     }
     g_free(app->file_manager_directory);
+    g_free(app->async_image_path);
 
     // Cleanup error
     if (app->gerror) {
@@ -1524,6 +1626,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
+    gint image_area_height = target_height;
     if (is_video) {
         gdouble scale = app->video_scale;
         if (scale < 0.3) {
@@ -1558,35 +1661,53 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         app->image_pan_y = 0.0;
     }
 
-    // Clear screen and reset terminal state
-    if (app && app->suppress_full_clear) {
-        app->suppress_full_clear = FALSE;
-        printf("\033[H\033[0m");
-        if (app->ui_text_hidden) {
-            app_clear_single_view_ui_lines(app);
+    gboolean async_request = app->async_render_request;
+    app->async_render_request = FALSE;
+    gboolean use_zoom = (!is_video && !gif_is_animated && image_zoom > 1.0 + 0.001);
+    if (!app->async_render_force_sync &&
+        async_request &&
+        app->preloader &&
+        app->preload_enabled &&
+        !is_video &&
+        !gif_is_animated &&
+        !use_zoom) {
+        gint cached_width = 0, cached_height = 0;
+        if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
+                                                   &cached_width, &cached_height)) {
+            app_queue_async_render(app, filepath, target_width, target_height);
+            app_render_single_placeholder(app, filepath);
+            return ERROR_NONE;
         }
-    } else {
-        app_clear_screen_for_refresh(app);
+    }
+    if (app->async_render_force_sync) {
+        app->async_render_force_sync = FALSE;
+    }
+    if (app->async_image_pending &&
+        app->async_image_index == app->current_index &&
+        g_strcmp0(app->async_image_path, filepath) == 0) {
+        app_clear_async_render_state(app);
     }
 
     // Title + index area (single image view)
     gint image_area_top_row = 4; // Keep layout stable even in Zen (UI hidden)
-    if (is_video && app) {
-        gint available_height = (app->term_height > 0) ? app->term_height : 24;
-        if (app->info_visible) {
-            available_height -= 10;
-        } else {
-            available_height -= 6;
+    gint image_render_top_row = image_area_top_row;
+    if (is_video && target_height > 0 && image_area_height > target_height) {
+        gint vpad = (image_area_height - target_height) / 2;
+        if (vpad > 0) {
+            image_render_top_row += vpad;
         }
-        if (available_height < 1) {
-            available_height = 1;
-        }
-        if (target_height > 0 && available_height > target_height) {
-            gint vpad = (available_height - target_height) / 2;
-            if (vpad > 0) {
-                image_area_top_row += vpad;
-            }
-        }
+    }
+
+    app_begin_sync_update();
+    app_clear_kitty_images(app);
+    // Clear screen and reset terminal state
+    if (app && app->suppress_full_clear) {
+        app->suppress_full_clear = FALSE;
+        printf("\033[H\033[0m");
+        app_clear_single_view_ui_lines(app);
+        app_clear_image_area(app, image_area_top_row, image_area_height);
+    } else {
+        app_clear_screen_for_refresh(app);
     }
     if (app->gif_player) {
         gif_player_set_render_area(app->gif_player,
@@ -1601,7 +1722,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         video_player_set_render_area(app->video_player,
                                      app->term_width,
                                      app->term_height,
-                                     image_area_top_row,
+                                     image_render_top_row,
                                      target_height,
                                      target_width,
                                      target_height);
@@ -1692,9 +1813,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             video_player_play(app->video_player);
             app->needs_redraw = FALSE;
         } else {
+            app_end_sync_update();
             return ERROR_INVALID_IMAGE;
         }
 
+        app_end_sync_update();
         fflush(stdout);
         return ERROR_NONE;
     }
@@ -1703,7 +1826,6 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     GString *rendered = NULL;
     gint image_width = 0;
     gint image_height = 0;
-    gboolean use_zoom = (!is_video && !gif_is_animated && image_zoom > 1.0 + 0.001);
 
     if (use_zoom) {
         GError *load_error = NULL;
@@ -1712,6 +1834,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             if (load_error) {
                 g_error_free(load_error);
             }
+            app_end_sync_update();
             return ERROR_INVALID_IMAGE;
         }
 
@@ -1751,6 +1874,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pixbuf, scaled_px_w, scaled_px_h, GDK_INTERP_BILINEAR);
         g_object_unref(pixbuf);
         if (!scaled) {
+            app_end_sync_update();
             return ERROR_MEMORY_ALLOC;
         }
 
@@ -1780,6 +1904,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             render_pixbuf = gdk_pixbuf_new_subpixbuf(scaled, crop_x, crop_y, crop_w, crop_h);
             if (!render_pixbuf) {
                 g_object_unref(scaled);
+                app_end_sync_update();
                 return ERROR_MEMORY_ALLOC;
             }
         } else {
@@ -1790,6 +1915,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (!renderer) {
             g_object_unref(render_pixbuf);
             g_object_unref(scaled);
+            app_end_sync_update();
             return ERROR_MEMORY_ALLOC;
         }
 
@@ -1815,6 +1941,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             renderer_destroy(renderer);
             g_object_unref(render_pixbuf);
             g_object_unref(scaled);
+            app_end_sync_update();
             return error;
         }
 
@@ -1831,6 +1958,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         g_object_unref(scaled);
 
         if (!rendered) {
+            app_end_sync_update();
             return ERROR_INVALID_IMAGE;
         }
     } else {
@@ -1843,6 +1971,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             // Create renderer
             ImageRenderer *renderer = renderer_create();
             if (!renderer) {
+                app_end_sync_update();
                 return ERROR_MEMORY_ALLOC;
             }
 
@@ -1867,6 +1996,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             ErrorCode error = renderer_initialize(renderer, &config);
             if (error != ERROR_NONE) {
                 renderer_destroy(renderer);
+                app_end_sync_update();
                 return error;
             }
 
@@ -1874,6 +2004,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             rendered = renderer_render_image_file(renderer, filepath);
             if (!rendered) {
                 renderer_destroy(renderer);
+                app_end_sync_update();
                 return ERROR_INVALID_IMAGE;
             }
 
@@ -2018,6 +2149,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
+    app_end_sync_update();
     fflush(stdout);
 
     g_string_free(rendered, TRUE);
@@ -2135,6 +2267,45 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     }
 
     return app_render_current_image(app);
+}
+
+void app_process_async_render(PixelTermApp *app) {
+    if (!app || !app->async_image_pending) {
+        return;
+    }
+    if (app->file_manager_mode || app->preview_mode || app->book_mode || app->book_preview_mode) {
+        app_clear_async_render_state(app);
+        return;
+    }
+    if (!app->preloader || !app->preload_enabled) {
+        app_clear_async_render_state(app);
+        return;
+    }
+
+    const gchar *filepath = app_get_current_filepath(app);
+    if (!filepath) {
+        app_clear_async_render_state(app);
+        return;
+    }
+    if (app->current_index != app->async_image_index ||
+        g_strcmp0(filepath, app->async_image_path) != 0) {
+        return;
+    }
+
+    gint target_width = 0, target_height = 0;
+    app_get_image_target_dimensions(app, &target_width, &target_height);
+    gint cached_width = 0, cached_height = 0;
+    if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
+                                               &cached_width, &cached_height)) {
+        return;
+    }
+    (void)cached_width;
+    (void)cached_height;
+
+    app->async_render_force_sync = TRUE;
+    app->suppress_full_clear = TRUE;
+    app_clear_async_render_state(app);
+    app_render_current_image(app);
 }
 
 ErrorCode app_render_by_mode(PixelTermApp *app) {
@@ -4579,6 +4750,7 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     app_preview_draw_cell_border(app, &layout, app->preview_selected, start_row, vertical_offset);
     app_preview_render_selected_filename(app);
 
+    app_end_sync_update();
     fflush(stdout);
     return ERROR_NONE;
 }
@@ -4945,6 +5117,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
             book_page_image_free(&right_image);
 
             app_begin_sync_update();
+            app_clear_kitty_images(app);
             gint image_area_top_row = 4;
             if (app->suppress_full_clear) {
                 app->suppress_full_clear = FALSE;
@@ -5155,6 +5328,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
     }
 
     app_begin_sync_update();
+    app_clear_kitty_images(app);
     gint image_area_top_row = 4;
     if (app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
@@ -5666,6 +5840,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
 
     get_terminal_size(&app->term_width, &app->term_height);
     app_begin_sync_update();
+    app_clear_kitty_images(app);
     app_clear_screen_for_refresh(app);
 
     gint rows = app->term_height;
