@@ -431,6 +431,15 @@ static void print_centered_help_line(gint row, gint term_width, const HelpSegmen
     }
 }
 
+static void app_begin_sync_update(void) {
+    // Use terminal synchronized output to reduce flicker during full-frame draws.
+    printf("\033[?2026h");
+}
+
+static void app_end_sync_update(void) {
+    printf("\033[?2026l");
+}
+
 static void app_clear_screen_for_refresh(const PixelTermApp *app) {
     if (!app) {
         printf("\033[2J\033[H\033[0m");
@@ -471,6 +480,18 @@ static void app_clear_single_view_ui_lines(const PixelTermApp *app) {
         if (row < 1) {
             continue;
         }
+        printf("\033[%d;1H\033[2K", row);
+    }
+}
+
+static void app_clear_image_area(const PixelTermApp *app, gint top_row, gint height) {
+    if (!app || app->term_height <= 0 || height <= 0) {
+        return;
+    }
+
+    gint start_row = MAX(1, top_row);
+    gint end_row = MIN(app->term_height, top_row + height - 1);
+    for (gint row = start_row; row <= end_row; row++) {
         printf("\033[%d;1H\033[2K", row);
     }
 }
@@ -4923,16 +4944,17 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
             book_page_image_free(&left_image);
             book_page_image_free(&right_image);
 
+            app_begin_sync_update();
+            gint image_area_top_row = 4;
             if (app->suppress_full_clear) {
                 app->suppress_full_clear = FALSE;
                 if (app->ui_text_hidden) {
                     app_clear_single_view_ui_lines(app);
                 }
+                app_clear_image_area(app, image_area_top_row, target_height);
             } else {
                 app_clear_screen_for_refresh(app);
             }
-
-            gint image_area_top_row = 4;
             if (!app->ui_text_hidden && app->term_height > 0) {
                 const char *title = "Book Reader";
                 gchar *display_name = NULL;
@@ -5069,6 +5091,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
                 app_book_jump_render_prompt(app);
             }
 
+            app_end_sync_update();
             fflush(stdout);
             g_string_free(left_rendered, TRUE);
             if (right_rendered) {
@@ -5131,16 +5154,17 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    app_begin_sync_update();
+    gint image_area_top_row = 4;
     if (app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
         if (app->ui_text_hidden) {
             app_clear_single_view_ui_lines(app);
         }
+        app_clear_image_area(app, image_area_top_row, target_height);
     } else {
         app_clear_screen_for_refresh(app);
     }
-
-    gint image_area_top_row = 4;
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = "Book Reader";
         gchar *display_name = NULL;
@@ -5265,6 +5289,7 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
         app_book_jump_render_prompt(app);
     }
 
+    app_end_sync_update();
     fflush(stdout);
     g_string_free(rendered, TRUE);
     renderer_destroy(renderer);

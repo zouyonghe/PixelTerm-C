@@ -13,6 +13,7 @@
 #include "app.h"
 #include "input.h"
 #include "common.h"
+#include "terminal_protocols.h"
 #include "video_player.h"
 
 // Global application instance
@@ -244,6 +245,9 @@ static void app_toggle_video_playback(PixelTermApp *app) {
 }
 
 static gboolean probe_sixel_support(void) {
+    if (terminal_env_supports_sixel()) {
+        return TRUE;
+    }
     InputHandler *probe = input_handler_create();
     if (!probe) {
         return FALSE;
@@ -266,27 +270,8 @@ static gboolean probe_sixel_support(void) {
     return sixel_supported;
 }
 
-static gboolean is_kitty_terminal_env(void) {
-    const char *term = getenv("TERM");
-    if (term && (strcmp(term, "xterm-kitty") == 0 || strcmp(term, "kitty") == 0)) {
-        return TRUE;
-    }
-
-    const char *kitty_window_id = getenv("KITTY_WINDOW_ID");
-    if (kitty_window_id && *kitty_window_id) {
-        return TRUE;
-    }
-
-    const char *term_program = getenv("TERM_PROGRAM");
-    if (term_program && strcmp(term_program, "kitty") == 0) {
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
 static gboolean probe_kitty_support(void) {
-    if (is_kitty_terminal_env()) {
+    if (terminal_env_supports_kitty()) {
         return TRUE;
     }
 
@@ -313,8 +298,7 @@ static gboolean probe_kitty_support(void) {
 }
 
 static gboolean probe_iterm2_support(void) {
-    const char *term_program = getenv("TERM_PROGRAM");
-    if (term_program && (strcmp(term_program, "iTerm.app") == 0 || strcmp(term_program, "iTerm2") == 0)) {
+    if (terminal_env_supports_iterm2()) {
         return TRUE;
     }
 
@@ -790,7 +774,7 @@ static void book_change_page(PixelTermApp *app, gint delta) {
     if (new_page == app->book_page) {
         return;
     }
-    app->suppress_full_clear = FALSE;
+    app->suppress_full_clear = TRUE;
     if (app_enter_book_page(app, new_page) == ERROR_NONE) {
         app_render_book_page(app);
     }
@@ -1154,6 +1138,7 @@ static void book_jump_commit(PixelTermApp *app) {
         }
         book_jump_cancel(app);
         if (app_enter_book_page(app, value - 1) == ERROR_NONE) {
+            app->suppress_full_clear = TRUE;
             app_render_book_page(app);
         }
     }
@@ -2228,8 +2213,11 @@ int main(int argc, char *argv[]) {
         g_force_sixel = FALSE;
     }
 #if defined(__linux__)
-    if (!gamma_set && g_force_kitty && is_kitty_terminal_env()) {
-        gamma = 0.5;
+    if (!gamma_set && g_force_kitty) {
+        const TerminalProtocolHint *hint = terminal_protocol_env_match();
+        if (hint && g_strcmp0(hint->name, "kitty") == 0) {
+            gamma = 0.5;
+        }
     }
 #endif
 
