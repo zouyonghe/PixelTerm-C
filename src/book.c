@@ -346,12 +346,14 @@ static void book_outline_to_list(BookDocument *doc,
     if (!head || !tail || !count) {
         return;
     }
+    fz_var(outline);
     while (outline) {
         BookTocItem *item = g_new0(BookTocItem, 1);
         item->title = g_strdup(outline->title ? outline->title : "");
         item->level = level;
 
         gint resolved_page = 0;
+        fz_var(resolved_page);
         fz_try(doc->ctx) {
             fz_location loc = fz_resolve_link(doc->ctx, doc->doc, outline->uri, NULL, NULL);
             resolved_page = fz_page_number_from_location(doc->ctx, doc->doc, loc);
@@ -386,6 +388,7 @@ BookToc* book_load_toc(BookDocument *doc) {
     }
 
     fz_outline *outline = NULL;
+    fz_var(outline);
     fz_try(doc->ctx) {
         outline = fz_load_outline(doc->ctx, doc->doc);
     }
