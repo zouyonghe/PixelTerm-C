@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.6.6: Terminal protocol detection and render stability.
+    - **Rendering**: Reduce page-turn flicker with synchronized output and local clear handling.
+    - **Protocols**: Centralize terminal protocol hints and extend env-based detection across more terminals.
+    - **Protocols**: Prefer kitty on WezTerm in auto mode.
+
 - v1.6.5: Book TOC UI and navigation polish.
     - **Books**: Add Table of Contents panel with file-manager-style layout and mouse support.
     - **Books**: Center selection within the TOC viewport and align page numbers.
