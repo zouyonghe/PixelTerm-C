@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.6.7: Image switching responsiveness and book UI refinements.
+    - **Rendering**: Add async image switching with placeholder and clear kitty placements to reduce ghosting.
+    - **Books**: Show book titles without file extensions in reader/preview headers.
+    - **Books**: TOC column width uses the full outline; add `T` TOC hint in reader/preview.
+
 - v1.6.6: Terminal protocol detection and render stability.
     - **Rendering**: Reduce page-turn flicker with synchronized output and local clear handling.
     - **Protocols**: Centralize terminal protocol hints and extend env-based detection across more terminals.
