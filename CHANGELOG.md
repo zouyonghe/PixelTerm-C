@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.6.8: Mode and CLI refactor cleanup.
+    - **App State**: Replace per-mode booleans with `AppMode` helpers for consistent routing.
+    - **CLI**: Move argument parsing and protocol resolution into `app_cli` with `AppConfig`.
+    - **Rendering**: Deduplicate preview/book grid renderer setup and draw helpers.
+    - **Maintenance**: Ignore external tool directories and refresh development docs.
+
 - v1.6.7: Image switching responsiveness and book UI refinements.
     - **Rendering**: Add async image switching with placeholder and clear kitty placements to reduce ghosting.
     - **Books**: Show book titles without file extensions in reader/preview headers.
