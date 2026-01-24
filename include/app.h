@@ -14,6 +14,37 @@ typedef enum {
     RETURN_MODE_PREVIEW_VIRTUAL = 2
 } ReturnMode;
 
+typedef enum {
+    APP_MODE_SINGLE = 0,
+    APP_MODE_PREVIEW,
+    APP_MODE_FILE_MANAGER,
+    APP_MODE_BOOK,
+    APP_MODE_BOOK_PREVIEW
+} AppMode;
+
+typedef enum {
+    APP_PROTOCOL_AUTO = 0,
+    APP_PROTOCOL_TEXT,
+    APP_PROTOCOL_SIXEL,
+    APP_PROTOCOL_KITTY,
+    APP_PROTOCOL_ITERM2
+} AppProtocolMode;
+
+typedef struct {
+    gboolean preload_enabled;
+    gboolean dither_enabled;
+    gboolean alt_screen_enabled;
+    gboolean clear_workaround_enabled;
+    gint work_factor;
+    gdouble gamma;
+    gboolean gamma_set;
+    AppProtocolMode protocol_mode;
+    gboolean force_text;
+    gboolean force_sixel;
+    gboolean force_kitty;
+    gboolean force_iterm2;
+} AppConfig;
+
 // Main application structure
 typedef struct {
     // Chafa integration
@@ -50,12 +81,9 @@ typedef struct {
     gboolean force_kitty;
     gboolean force_iterm2;
     gboolean needs_redraw;
-    gboolean file_manager_mode;  // Track if file manager is active
+    AppMode mode;  // Current UI mode (single/preview/file manager/book)
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
-    gboolean preview_mode;       // Grid preview mode
     gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
-    gboolean book_mode;          // Single-page book view
-    gboolean book_preview_mode;  // Book multi-page preview grid
     ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
     gboolean async_render_request; // Request async render on next single-image refresh
@@ -130,6 +158,30 @@ typedef struct {
     gint last_mouse_x;
     gint last_mouse_y;
 } PixelTermApp;
+
+static inline gboolean app_is_mode(const PixelTermApp *app, AppMode mode) {
+    return app && app->mode == mode;
+}
+
+static inline gboolean app_is_single_mode(const PixelTermApp *app) {
+    return app_is_mode(app, APP_MODE_SINGLE);
+}
+
+static inline gboolean app_is_preview_mode(const PixelTermApp *app) {
+    return app_is_mode(app, APP_MODE_PREVIEW);
+}
+
+static inline gboolean app_is_file_manager_mode(const PixelTermApp *app) {
+    return app_is_mode(app, APP_MODE_FILE_MANAGER);
+}
+
+static inline gboolean app_is_book_mode(const PixelTermApp *app) {
+    return app_is_mode(app, APP_MODE_BOOK);
+}
+
+static inline gboolean app_is_book_preview_mode(const PixelTermApp *app) {
+    return app_is_mode(app, APP_MODE_BOOK_PREVIEW);
+}
 
 // Application lifecycle functions
 /**
@@ -673,6 +725,7 @@ void app_process_async_render(PixelTermApp *app);
  * @param app A pointer to the `PixelTermApp` instance.
  */
 void app_toggle_preload(PixelTermApp *app);
+void app_set_mode(PixelTermApp *app, AppMode mode);
 /**
  * @brief Checks if the application should terminate.
  * 

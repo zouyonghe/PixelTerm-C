@@ -58,12 +58,9 @@ PixelTermApp* app_create(void) {
     app->force_kitty = FALSE;
     app->force_iterm2 = FALSE;
     app->needs_redraw = TRUE;
-    app->file_manager_mode = FALSE;
+    app->mode = APP_MODE_SINGLE;
     app->show_hidden_files = FALSE;
-    app->preview_mode = FALSE;
     app->preview_zoom = 0; // 0 indicates uninitialized target cell width
-    app->book_mode = FALSE;
-    app->book_preview_mode = FALSE;
     app->return_to_mode = RETURN_MODE_NONE;
     app->delete_pending = FALSE;
     app->async_render_request = FALSE;
@@ -123,8 +120,15 @@ PixelTermApp* app_create(void) {
     return app;
 }
 
+void app_set_mode(PixelTermApp *app, AppMode mode) {
+    if (!app) {
+        return;
+    }
+    app->mode = mode;
+}
+
 gboolean app_book_use_double_page(const PixelTermApp *app) {
-    if (!app || !app->book_mode) {
+    if (!app_is_book_mode(app)) {
         return FALSE;
     }
     gint width = 0;
@@ -977,7 +981,7 @@ static FileManagerViewport app_file_manager_compute_viewport(PixelTermApp *app) 
 
 static gboolean app_file_manager_hit_test(PixelTermApp *app, gint mouse_x, gint mouse_y, gint *out_index) {
     (void)mouse_x; // Currently unused because layout is single column
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return FALSE;
     }
 
@@ -1090,7 +1094,7 @@ static void app_file_manager_select_current_image(PixelTermApp *app) {
 
 // Jump to next entry starting with a letter
 ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -1468,8 +1472,7 @@ void app_close_book(PixelTermApp *app) {
     app->book_toc_selected = 0;
     app->book_toc_scroll = 0;
     app->book_toc_visible = FALSE;
-    app->book_mode = FALSE;
-    app->book_preview_mode = FALSE;
+    app_set_mode(app, APP_MODE_SINGLE);
 }
 
 // Navigate to next image
@@ -2240,16 +2243,16 @@ ErrorCode app_refresh_display(PixelTermApp *app) {
     // Update terminal size
     get_terminal_size(&app->term_width, &app->term_height);
     
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         return app_render_book_preview(app);
     }
-    if (app->book_mode) {
+    if (app_is_book_mode(app)) {
         return app_render_book_page(app);
     }
-    if (app->preview_mode) {
+    if (app_is_preview_mode(app)) {
         return app_render_preview_grid(app);
     }
-    if (app->file_manager_mode) {
+    if (app_is_file_manager_mode(app)) {
         return app_render_file_manager(app);
     }
 
@@ -2273,7 +2276,7 @@ void app_process_async_render(PixelTermApp *app) {
     if (!app || !app->async_image_pending) {
         return;
     }
-    if (app->file_manager_mode || app->preview_mode || app->book_mode || app->book_preview_mode) {
+    if (!app_is_single_mode(app)) {
         app_clear_async_render_state(app);
         return;
     }
@@ -2313,16 +2316,16 @@ ErrorCode app_render_by_mode(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         return app_render_book_preview(app);
     }
-    if (app->book_mode) {
+    if (app_is_book_mode(app)) {
         return app_render_book_page(app);
     }
-    if (app->preview_mode) {
+    if (app_is_preview_mode(app)) {
         return app_render_preview_grid(app);
     }
-    if (app->file_manager_mode) {
+    if (app_is_file_manager_mode(app)) {
         return app_render_file_manager(app);
     }
     return app_refresh_display(app);
@@ -2491,7 +2494,7 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
         video_player_stop(app->video_player);
     }
 
-    app->file_manager_mode = TRUE;
+    app_set_mode(app, APP_MODE_FILE_MANAGER);
     app->selected_entry = 0;
     app->scroll_offset = 0;
     
@@ -2522,7 +2525,7 @@ ErrorCode app_exit_file_manager(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    app->file_manager_mode = FALSE;
+    app_set_mode(app, APP_MODE_SINGLE);
     app->pending_file_manager_single_click = FALSE;
     
     // Cleanup directory entries
@@ -2541,7 +2544,7 @@ ErrorCode app_exit_file_manager(PixelTermApp *app) {
 
 // Move selection up in file manager
 ErrorCode app_file_manager_up(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2567,7 +2570,7 @@ ErrorCode app_file_manager_up(PixelTermApp *app) {
 
 // Move selection down in file manager
 ErrorCode app_file_manager_down(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2594,7 +2597,7 @@ ErrorCode app_file_manager_down(PixelTermApp *app) {
 
 // Move selection left in file manager
 ErrorCode app_file_manager_left(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2654,7 +2657,7 @@ ErrorCode app_file_manager_left(PixelTermApp *app) {
 
 // Move selection right in file manager
 ErrorCode app_file_manager_right(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2663,7 +2666,7 @@ ErrorCode app_file_manager_right(PixelTermApp *app) {
 
 // Enter selected directory or open file in file manager
 ErrorCode app_file_manager_enter(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2699,7 +2702,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             printf("\033[2J\033[H\033[0m");
             fflush(stdout);
 
-            app->file_manager_mode = FALSE;
+            app_set_mode(app, APP_MODE_SINGLE);
             if (app->directory_entries) {
                 g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
                 app->directory_entries = NULL;
@@ -2729,7 +2732,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             fflush(stdout);
 
             // Exit file manager mode
-            app->file_manager_mode = FALSE;
+            app_set_mode(app, APP_MODE_SINGLE);
             // Cleanup directory entries
             if (app->directory_entries) {
                 g_list_free_full(app->directory_entries, (GDestroyNotify)g_free);
@@ -2749,7 +2752,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
 
 // Refresh file manager directory listing
 ErrorCode app_file_manager_refresh(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -2868,7 +2871,7 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
 }
 
 ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!path || !app->directory_entries) {
@@ -2921,7 +2924,7 @@ gboolean app_file_manager_has_images(PixelTermApp *app) {
 
 // Check if current file manager selection is an image file
 gboolean app_file_manager_selection_is_image(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode || !app->directory_entries) {
+    if (!app_is_file_manager_mode(app) || !app->directory_entries) {
         return FALSE;
     }
 
@@ -2939,7 +2942,7 @@ gboolean app_file_manager_selection_is_image(PixelTermApp *app) {
 
 // Get the image index of the currently selected file in file manager
 gint app_file_manager_get_selected_image_index(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode || !app->directory_entries || !app->image_files) {
+    if (!app_is_file_manager_mode(app) || !app->directory_entries || !app->image_files) {
         return -1;
     }
 
@@ -2966,7 +2969,7 @@ gint app_file_manager_get_selected_image_index(PixelTermApp *app) {
 
 // Toggle hidden files visibility while preserving selection when possible
 ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -3009,7 +3012,7 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
 
 // Handle mouse click in file manager
 ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mouse_y) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -3032,7 +3035,7 @@ ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mo
 }
 
 ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -3046,7 +3049,7 @@ ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gi
     app->selected_entry = hit_index;
     ErrorCode err = app_file_manager_enter(app);
 
-    if (err != ERROR_NONE && app->file_manager_mode) {
+    if (err != ERROR_NONE && app_is_file_manager_mode(app)) {
         app->selected_entry = prev_selected;
         app->scroll_offset = prev_scroll;
     }
@@ -3335,7 +3338,7 @@ static void app_preview_draw_cell_border(const PixelTermApp *app,
 
 // Print brief info for the currently selected preview item on the status line
 ErrorCode app_preview_print_info(PixelTermApp *app) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
@@ -3345,7 +3348,7 @@ ErrorCode app_preview_print_info(PixelTermApp *app) {
     // Use current selection (preview) or current image index if available
     const gchar *filepath = NULL;
     gint display_index = 0;
-    if (app->preview_mode) {
+    if (app_is_preview_mode(app)) {
         filepath = (const gchar*)g_list_nth_data(app->image_files, app->preview_selected);
         display_index = app->preview_selected;
     } else {
@@ -3429,9 +3432,118 @@ static gint app_preview_visible_width(const char *str, gint len) {
     return width;
 }
 
+static ImageRenderer* app_create_grid_renderer(const PixelTermApp *app,
+                                               gint content_width,
+                                               gint content_height,
+                                               ErrorCode *out_error) {
+    if (out_error) {
+        *out_error = ERROR_NONE;
+    }
+    if (!app) {
+        if (out_error) {
+            *out_error = ERROR_MEMORY_ALLOC;
+        }
+        return NULL;
+    }
+
+    RendererConfig config = {
+        .max_width = MAX(2, content_width),
+        .max_height = MAX(2, content_height),
+        .preserve_aspect_ratio = TRUE,
+        .dither = app->dither_enabled,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = app->render_work_factor,
+        .force_text = app->force_text,
+        .force_sixel = app->force_sixel,
+        .force_kitty = app->force_kitty,
+        .force_iterm2 = app->force_iterm2,
+        .gamma = app->gamma,
+        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+
+    ImageRenderer *renderer = renderer_create();
+    if (!renderer) {
+        if (out_error) {
+            *out_error = ERROR_MEMORY_ALLOC;
+        }
+        return NULL;
+    }
+    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
+        renderer_destroy(renderer);
+        if (out_error) {
+            *out_error = ERROR_CHAFA_INIT;
+        }
+        return NULL;
+    }
+
+    return renderer;
+}
+
+static void app_draw_grid_cell_background(const PreviewLayout *layout,
+                                          gint cell_x,
+                                          gint cell_y,
+                                          gboolean use_border,
+                                          const char *border_style) {
+    if (!layout) {
+        return;
+    }
+    for (gint line = 0; line < layout->cell_height; line++) {
+        gint y = cell_y + line;
+        printf("\033[%d;%dH", y, cell_x);
+        for (gint c = 0; c < layout->cell_width; c++) {
+            putchar(' ');
+        }
+
+        if (use_border && border_style) {
+            if (line == 0 || line == layout->cell_height - 1) {
+                printf("\033[%d;%dH%s+", y, cell_x, border_style);
+                for (gint c = 0; c < layout->cell_width - 2; c++) putchar('-');
+                printf("+\033[0m");
+            } else {
+                printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
+                printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout->cell_width - 1, border_style);
+            }
+        }
+    }
+}
+
+static void app_draw_rendered_lines(gint content_x,
+                                    gint content_y,
+                                    gint content_width,
+                                    gint content_height,
+                                    const GString *rendered) {
+    if (!rendered) {
+        return;
+    }
+    gint line_no = 0;
+    char *cursor = rendered->str;
+    while (cursor && line_no < content_height) {
+        char *newline = strchr(cursor, '\n');
+        gint line_len = newline ? (gint)(newline - cursor) : (gint)strlen(cursor);
+
+        gint visible_len = app_preview_visible_width(cursor, line_len);
+        gint pad_left = 0;
+        if (content_width > visible_len) {
+            pad_left = (content_width - visible_len) / 2;
+        }
+
+        printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
+        fwrite(cursor, 1, line_len, stdout);
+
+        if (!newline) {
+            break;
+        }
+        cursor = newline + 1;
+        line_no++;
+    }
+    printf("\033[0m");
+}
+
 // Move selection inside preview grid
 ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
@@ -3510,7 +3622,7 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
 
 // Jump a page up/down based on visible rows
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
@@ -3572,7 +3684,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
 
 // Change preview zoom (target cell width) by stepping column count
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -3814,7 +3926,7 @@ void app_book_jump_render_prompt(PixelTermApp *app) {
     if (!app || !app->book_jump_active) {
         return;
     }
-    if (!app->book_mode && !app->book_preview_mode) {
+    if (!app_is_book_mode(app) && !app_is_book_preview_mode(app)) {
         return;
     }
 
@@ -3835,7 +3947,7 @@ void app_book_jump_render_prompt(PixelTermApp *app) {
 
     gint term_h = app->term_height > 0 ? app->term_height : 24;
     gint term_w = app->term_width > 0 ? app->term_width : 80;
-    gint input_row = app->book_preview_mode ? term_h - 3 : term_h - 2;
+    gint input_row = app_is_book_preview_mode(app) ? term_h - 3 : term_h - 2;
     if (input_row < 1) input_row = 1;
 
     printf("\033[%d;1H\033[2K", input_row);
@@ -3871,20 +3983,20 @@ void app_book_jump_clear_prompt(PixelTermApp *app) {
     if (!app) {
         return;
     }
-    if (!app->book_mode && !app->book_preview_mode) {
+    if (!app_is_book_mode(app) && !app_is_book_preview_mode(app)) {
         return;
     }
 
     gint term_h = app->term_height > 0 ? app->term_height : 24;
-    gint input_row = app->book_preview_mode ? term_h - 3 : term_h - 2;
+    gint input_row = app_is_book_preview_mode(app) ? term_h - 3 : term_h - 2;
     if (input_row < 1) input_row = 1;
     printf("\033[%d;1H\033[2K", input_row);
     printf("\033[?25l");
 
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         app_book_preview_render_selected_info(app);
         app_book_preview_render_page_indicator(app);
-    } else if (app->book_mode && !app->ui_text_hidden) {
+    } else if (app_is_book_mode(app) && !app->ui_text_hidden) {
         app_book_render_page_indicator(app);
     }
 
@@ -3981,7 +4093,7 @@ static void app_book_preview_draw_cell_border(const PixelTermApp *app,
 }
 
 ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4057,7 +4169,7 @@ ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gin
 }
 
 ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4114,7 +4226,7 @@ ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
 }
 
 ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4148,7 +4260,7 @@ ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index) {
 }
 
 ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4178,7 +4290,7 @@ ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
 }
 
 ErrorCode app_book_preview_change_zoom(PixelTermApp *app, gint delta) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->term_width <= 0) {
@@ -4209,7 +4321,7 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
                                          gint mouse_y,
                                          gboolean *redraw_needed,
                                          gboolean *out_hit) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         if (redraw_needed) *redraw_needed = FALSE;
         if (out_hit) *out_hit = FALSE;
         return ERROR_MEMORY_ALLOC;
@@ -4260,7 +4372,7 @@ ErrorCode app_handle_mouse_click_book_preview(PixelTermApp *app,
                                               gint mouse_y,
                                               gboolean *redraw_needed,
                                               gboolean *out_hit) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         if (redraw_needed) *redraw_needed = FALSE;
         if (out_hit) *out_hit = FALSE;
         return ERROR_MEMORY_ALLOC;
@@ -4359,8 +4471,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         video_player_stop(app->video_player);
     }
 
-    app->preview_mode = TRUE;
-    app->file_manager_mode = FALSE; // ensure we are not in file manager
+    app_set_mode(app, APP_MODE_PREVIEW);
     app->preview_selected = app->current_index >= 0 ? app->current_index : 0;
 
     // For yellow border mode (RETURN_MODE_PREVIEW_VIRTUAL), always select first image
@@ -4393,10 +4504,7 @@ ErrorCode app_enter_book_preview(PixelTermApp *app) {
         video_player_stop(app->video_player);
     }
 
-    app->book_preview_mode = TRUE;
-    app->book_mode = FALSE;
-    app->preview_mode = FALSE;
-    app->file_manager_mode = FALSE;
+    app_set_mode(app, APP_MODE_BOOK_PREVIEW);
     app->book_preview_selected = app->book_page >= 0 ? app->book_page : 0;
     if (app->book_preview_selected >= app->book_page_count) {
         app->book_preview_selected = MAX(0, app->book_page_count - 1);
@@ -4429,10 +4537,7 @@ ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
     }
 
     app->book_page = page_index;
-    app->book_mode = TRUE;
-    app->book_preview_mode = FALSE;
-    app->preview_mode = FALSE;
-    app->file_manager_mode = FALSE;
+    app_set_mode(app, APP_MODE_BOOK);
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
 
@@ -4447,7 +4552,7 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
-    if (!app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_NONE;
     }
 
@@ -4460,7 +4565,7 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
         app->image_pan_y = 0.0;
     }
 
-    app->preview_mode = FALSE;
+    app_set_mode(app, APP_MODE_SINGLE);
     app->info_visible = FALSE;
     app->needs_redraw = TRUE;
     if (app->preloader && app->preload_enabled && app_has_images(app)) {
@@ -4474,7 +4579,7 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
 
 // Render preview grid of images
 ErrorCode app_render_preview_grid(PixelTermApp *app) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
@@ -4507,29 +4612,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     gint content_height = layout.cell_height - 2;
     if (content_width < 1) content_width = 1;
     if (content_height < 1) content_height = 1;
-    RendererConfig config = {
-        .max_width = MAX(2, content_width),
-        .max_height = MAX(2, content_height),
-        .preserve_aspect_ratio = TRUE,
-        .dither = app->dither_enabled,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = app->render_work_factor,
-        .force_text = app->force_text,
-        .force_sixel = app->force_sixel,
-        .force_kitty = app->force_kitty,
-        .force_iterm2 = app->force_iterm2,
-        .gamma = app->gamma,
-        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
-        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
-    };
-    ImageRenderer *renderer = renderer_create();
+    ErrorCode renderer_error = ERROR_NONE;
+    ImageRenderer *renderer = app_create_grid_renderer(app, content_width, content_height, &renderer_error);
     if (!renderer) {
-        return ERROR_MEMORY_ALLOC;
-    }
-    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
-        renderer_destroy(renderer);
-        return ERROR_CHAFA_INIT;
+        return renderer_error != ERROR_NONE ? renderer_error : ERROR_MEMORY_ALLOC;
     }
 
     if (!app->ui_text_hidden) {
@@ -4595,24 +4681,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             // Clear cell and draw border without occupying content area
             const char *border_style =
                 (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) ? "\033[33;1m" : "\033[34;1m";
-            for (gint line = 0; line < layout.cell_height; line++) {
-                gint y = cell_y + line;
-                printf("\033[%d;%dH", y, cell_x);
-                for (gint c = 0; c < layout.cell_width; c++) {
-                    putchar(' ');
-                }
-
-                if (use_border) {
-                    if (line == 0 || line == layout.cell_height - 1) {
-                        printf("\033[%d;%dH%s+", y, cell_x, border_style);
-                        for (gint c = 0; c < layout.cell_width - 2; c++) putchar('-');
-                        printf("+\033[0m");
-                    } else {
-                        printf("\033[%d;%dH%s|\033[0m", y, cell_x, border_style);
-                        printf("\033[%d;%dH%s|\033[0m", y, cell_x + layout.cell_width - 1, border_style);
-                    }
-                }
-            }
+            app_draw_grid_cell_background(&layout, cell_x, cell_y, use_border, border_style);
 
             gboolean rendered_from_preload = FALSE;
             gboolean rendered_from_renderer_cache = FALSE;
@@ -4669,30 +4738,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             }
 
             // Draw image lines within the cell bounds, horizontally centered
-            gint line_no = 0;
-            char *cursor = rendered->str;
-            while (cursor && line_no < content_height) {
-                char *newline = strchr(cursor, '\n');
-                gint line_len = newline ? (gint)(newline - cursor) : (gint)strlen(cursor);
-
-                gint visible_len = app_preview_visible_width(cursor, line_len);
-                gint pad_left = 0;
-                if (content_width > visible_len) {
-                    pad_left = (content_width - visible_len) / 2;
-                }
-
-                printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
-                fwrite(cursor, 1, line_len, stdout);
-
-                if (!newline) {
-                    break;
-                }
-                cursor = newline + 1;
-                line_no++;
-            }
-
-            // Ensure attributes reset after each cell
-            printf("\033[0m");
+            app_draw_rendered_lines(content_x, content_y, content_width, content_height, rendered);
 
             // Free when we own the buffer (renderer output or preloader copy).
             if (!rendered_from_renderer_cache) {
@@ -4724,7 +4770,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 }
 
 ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index) {
-    if (!app || !app->preview_mode) {
+    if (!app_is_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app_has_images(app)) {
@@ -4762,7 +4808,7 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
 }
 
 ErrorCode app_render_book_preview(PixelTermApp *app) {
-    if (!app || !app->book_preview_mode || !app->book_doc) {
+    if (!app_is_book_preview_mode(app) || !app->book_doc) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4810,29 +4856,10 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
     gint content_height = layout.cell_height - 2;
     if (content_width < 1) content_width = 1;
     if (content_height < 1) content_height = 1;
-    RendererConfig config = {
-        .max_width = MAX(2, content_width),
-        .max_height = MAX(2, content_height),
-        .preserve_aspect_ratio = TRUE,
-        .dither = app->dither_enabled,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = app->render_work_factor,
-        .force_text = app->force_text,
-        .force_sixel = app->force_sixel,
-        .force_kitty = app->force_kitty,
-        .force_iterm2 = app->force_iterm2,
-        .gamma = app->gamma,
-        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
-        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
-    };
-    ImageRenderer *renderer = renderer_create();
+    ErrorCode renderer_error = ERROR_NONE;
+    ImageRenderer *renderer = app_create_grid_renderer(app, content_width, content_height, &renderer_error);
     if (!renderer) {
-        return ERROR_MEMORY_ALLOC;
-    }
-    if (renderer_initialize(renderer, &config) != ERROR_NONE) {
-        renderer_destroy(renderer);
-        return ERROR_CHAFA_INIT;
+        return renderer_error != ERROR_NONE ? renderer_error : ERROR_MEMORY_ALLOC;
     }
 
     gint start_row = app->book_preview_scroll;
@@ -4856,24 +4883,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
             gint content_x = cell_x + 1;
             gint content_y = cell_y + 1;
 
-            for (gint line = 0; line < layout.cell_height; line++) {
-                gint y = cell_y + line;
-                printf("\033[%d;%dH", y, cell_x);
-                for (gint c = 0; c < layout.cell_width; c++) {
-                    putchar(' ');
-                }
-
-                if (use_border) {
-                    if (line == 0 || line == layout.cell_height - 1) {
-                        printf("\033[%d;%dH\033[34;1m+", y, cell_x);
-                        for (gint c = 0; c < layout.cell_width - 2; c++) putchar('-');
-                        printf("+\033[0m");
-                    } else {
-                        printf("\033[%d;%dH\033[34;1m|\033[0m", y, cell_x);
-                        printf("\033[%d;%dH\033[34;1m|\033[0m", y, cell_x + layout.cell_width - 1);
-                    }
-                }
-            }
+            app_draw_grid_cell_background(&layout, cell_x, cell_y, use_border, "\033[34;1m");
 
             BookPageImage page_image;
             ErrorCode page_err = book_render_page(app->book_doc, idx, content_width, content_height, &page_image);
@@ -4907,28 +4917,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
                 continue;
             }
 
-            gint line_no = 0;
-            char *cursor = rendered->str;
-            while (cursor && line_no < content_height) {
-                char *newline = strchr(cursor, '\n');
-                gint line_len = newline ? (gint)(newline - cursor) : (gint)strlen(cursor);
-
-                gint visible_len = app_preview_visible_width(cursor, line_len);
-                gint pad_left = 0;
-                if (content_width > visible_len) {
-                    pad_left = (content_width - visible_len) / 2;
-                }
-
-                printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
-                fwrite(cursor, 1, line_len, stdout);
-
-                if (!newline) {
-                    break;
-                }
-                cursor = newline + 1;
-                line_no++;
-            }
-            printf("\033[0m");
+            app_draw_rendered_lines(content_x, content_y, content_width, content_height, rendered);
             g_string_free(rendered, TRUE);
         }
     }
@@ -4959,7 +4948,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
 }
 
 ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index) {
-    if (!app || !app->book_preview_mode) {
+    if (!app_is_book_preview_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -4998,7 +4987,7 @@ ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_i
 }
 
 ErrorCode app_render_book_page(PixelTermApp *app) {
-    if (!app || !app->book_mode || !app->book_doc) {
+    if (!app_is_book_mode(app) || !app->book_doc) {
         return ERROR_MEMORY_ALLOC;
     }
     if (app->book_page_count <= 0) {
@@ -6037,7 +6026,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
 
 // Render file manager interface
 ErrorCode app_render_file_manager(PixelTermApp *app) {
-    if (!app || !app->file_manager_mode) {
+    if (!app_is_file_manager_mode(app)) {
         return ERROR_MEMORY_ALLOC;
     }
 

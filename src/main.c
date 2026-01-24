@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <getopt.h>
 #include <signal.h>
 #include <locale.h>
 #include <unistd.h>
@@ -11,19 +10,15 @@
 #include <glib.h>
 
 #include "app.h"
+#include "app_cli.h"
 #include "input.h"
 #include "common.h"
-#include "terminal_protocols.h"
 #include "video_player.h"
 
 // Global application instance
 static PixelTermApp *g_app = NULL;
 static volatile sig_atomic_t g_terminate_requested = 0;
 static volatile sig_atomic_t g_last_signal = 0;
-static gboolean g_force_sixel = FALSE;
-static gboolean g_force_kitty = FALSE;
-static gboolean g_force_iterm2 = FALSE;
-static gboolean g_force_text = FALSE;
 static const gint64 k_click_threshold_us = 400000;
 static const useconds_t k_input_poll_sleep_us = 10000;
 static const useconds_t k_resize_sleep_us = 100000;
@@ -51,7 +46,7 @@ static void handle_mouse_press_book_toc(PixelTermApp *app, const InputEvent *eve
 static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEvent *event);
 
 static gboolean app_current_is_video(const PixelTermApp *app) {
-    if (!app || app->preview_mode || app->file_manager_mode || app->book_mode || app->book_preview_mode) {
+    if (!app_is_single_mode(app)) {
         return FALSE;
     }
     const gchar *filepath = app_get_current_filepath(app);
@@ -70,7 +65,7 @@ static gboolean app_current_is_video(const PixelTermApp *app) {
 }
 
 static gboolean app_current_is_animated_image(const PixelTermApp *app) {
-    if (!app || app->preview_mode || app->file_manager_mode || app->book_mode || app->book_preview_mode) {
+    if (!app_is_single_mode(app)) {
         return FALSE;
     }
     const gchar *filepath = app_get_current_filepath(app);
@@ -117,7 +112,7 @@ static gint delete_prompt_row(const PixelTermApp *app) {
     gint term_height = app->term_height > 0 ? app->term_height : 24;
     gint row = term_height - 1;
 
-    if (!app->preview_mode && !app->file_manager_mode) {
+    if (app_is_single_mode(app)) {
         if (app_current_is_video(app) && app->video_player && app->video_player->last_frame_height > 0) {
             row = app->video_player->last_frame_top_row + app->video_player->last_frame_height;
         } else if (app->last_render_height > 0 && app->last_render_top_row > 0) {
@@ -172,7 +167,7 @@ static void handle_delete_current_in_preview(PixelTermApp *app) {
         app->needs_screen_clear = TRUE;
         app_render_preview_grid(app);
     } else {
-        app->preview_mode = FALSE;
+        app_set_mode(app, APP_MODE_SINGLE);
         app->needs_screen_clear = TRUE;
         if (app_enter_file_manager(app) == ERROR_NONE) {
             app_render_file_manager(app);
@@ -187,7 +182,7 @@ static gboolean handle_delete_request(PixelTermApp *app, const InputEvent *event
         return FALSE;
     }
 
-    if (app->file_manager_mode || app->book_preview_mode || app->book_mode) {
+    if (app_is_file_manager_mode(app) || app_is_book_preview_mode(app) || app_is_book_mode(app)) {
         if (app->delete_pending) {
             app->delete_pending = FALSE;
             app_clear_delete_prompt(app);
@@ -198,7 +193,7 @@ static gboolean handle_delete_request(PixelTermApp *app, const InputEvent *event
     if (app->delete_pending) {
         app->delete_pending = FALSE;
         if (event->key_code == (KeyCode)'r') {
-            if (app->preview_mode) {
+            if (app_is_preview_mode(app)) {
                 handle_delete_current_in_preview(app);
             } else {
                 handle_delete_current_image(app);
@@ -244,234 +239,12 @@ static void app_toggle_video_playback(PixelTermApp *app) {
     }
 }
 
-static gboolean probe_sixel_support(void) {
-    if (terminal_env_supports_sixel()) {
-        return TRUE;
-    }
-    InputHandler *probe = input_handler_create();
-    if (!probe) {
-        return FALSE;
-    }
-
-    if (input_handler_initialize(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    gboolean sixel_supported = input_probe_sixel_support(probe, 120);
-    input_disable_raw_mode(probe);
-    input_handler_destroy(probe);
-
-    return sixel_supported;
-}
-
-static gboolean probe_kitty_support(void) {
-    if (terminal_env_supports_kitty()) {
-        return TRUE;
-    }
-
-    InputHandler *probe = input_handler_create();
-    if (!probe) {
-        return FALSE;
-    }
-
-    if (input_handler_initialize(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    gboolean kitty_supported = input_probe_kitty_support(probe, 120);
-    input_disable_raw_mode(probe);
-    input_handler_destroy(probe);
-
-    return kitty_supported;
-}
-
-static gboolean probe_iterm2_support(void) {
-    if (terminal_env_supports_iterm2()) {
-        return TRUE;
-    }
-
-    InputHandler *probe = input_handler_create();
-    if (!probe) {
-        return FALSE;
-    }
-
-    if (input_handler_initialize(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
-    gboolean iterm2_supported = input_probe_iterm2_support(probe, 120);
-    input_disable_raw_mode(probe);
-    input_handler_destroy(probe);
-
-    return iterm2_supported;
-}
-
 // Signal handler for graceful shutdown
 static void signal_handler(int sig) {
     (void)sig; // Suppress unused parameter warning
     g_terminate_requested = 1;
     g_last_signal = sig;
 }
-
-// Print usage information
-static void print_usage(const char *program_name) {
-    printf("PixelTerm-C: A high-performance terminal image browser written in C.\n");
-    printf("\n");
-    printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
-    printf("\n");
-    printf("Arguments:\n");
-    printf("  PATH    Path to an image file or directory containing images\n");
-    printf("\n");
-    printf("Options:\n");
-    printf("  %-29s %s\n", "-h, --help", "Show this help message");
-    printf("  %-29s %s\n", "-v, --version", "Show version information");
-    printf("  %-29s %s\n", "-D, --dither", "Enable image dithering (default: disabled)");
-    printf("  %-29s %s\n", "--no-preload", "Disable image preloading (default: enabled)");
-    printf("  %-29s %s\n", "--no-alt-screen", "Disable alternate screen buffer (default: enabled)");
-    printf("  %-29s %s\n", "--clear-workaround", "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
-    printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
-    printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
-    printf("  %-29s %s\n", "--gamma G", "Gamma correction for image rendering (default: 0.5 in kitty on Linux, 1.0 otherwise)");
-    printf("\n");
-}
-
-// Print version information
-static void print_version(void) {
-    printf("%s\n", APP_VERSION);
-}
-
-// Parse command line arguments
-static ErrorCode parse_arguments(int argc, char *argv[], char **path, gboolean *preload_enabled, gboolean *dither_enabled, gboolean *alt_screen_enabled, gboolean *clear_workaround_enabled, gint *work_factor, gchar **protocol, gdouble *gamma, gboolean *gamma_set) {
-    static struct option long_options[] = {
-        {"help",      no_argument,       0, 'h'},
-        {"version",   no_argument,       0, 'v'},
-        {"Version",   no_argument,       0, 'V'},
-        {"no-preload", no_argument,      0, 1000},
-        {"dither",     no_argument,      0, 1001},
-        {"no-alt-screen", no_argument,   0, 1002},
-        {"clear-workaround", no_argument, 0, 1003},
-        {"work-factor", required_argument, 0, 1004},
-        {"protocol", required_argument, 0, 1005},
-        {"gamma", required_argument, 0, 1006},
-        {0, 0, 0, 0}
-    };
-
-    // Disable getopt error messages
-    opterr = 0;
-    
-    int c;
-    while ((c = getopt_long(argc, argv, "hvVD", long_options, NULL)) != -1) {
-        switch (c) {
-            case 'h':
-                print_usage(argv[0]);
-                return ERROR_HELP_EXIT;
-            case 'v':
-                print_version();
-                return ERROR_VERSION_EXIT;
-            case 'V':
-                print_version();
-                return ERROR_VERSION_EXIT;
-            case 'D': // -D option for dithering
-                *dither_enabled = TRUE;
-                break;
-            case 1000:  // --no-preload
-                *preload_enabled = FALSE;
-                break;
-            case 1001: // --dither
-                *dither_enabled = TRUE;
-                break;
-            case 1002: // --no-alt-screen
-                *alt_screen_enabled = FALSE;
-                break;
-            case 1003: // --clear-workaround
-                *clear_workaround_enabled = TRUE;
-                break;
-            case 1004: { // --work-factor
-                char *end = NULL;
-                long value = strtol(optarg, &end, 10);
-                if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
-                    fprintf(stderr, "Invalid --work-factor value: %s (expected 1-9)\n", optarg ? optarg : "");
-                    return ERROR_INVALID_ARGS;
-                }
-                if (value < 1 || value > 9) {
-                    fprintf(stderr, "Invalid --work-factor value: %ld (expected 1-9)\n", value);
-                    return ERROR_INVALID_ARGS;
-                }
-                *work_factor = (gint)value;
-                break;
-            }
-            case 1005: { // --protocol
-                if (protocol) {
-                    g_free(*protocol);
-                    *protocol = g_ascii_strdown(optarg, -1);
-                }
-                break;
-            }
-            case 1006: { // --gamma
-                char *end = NULL;
-                double value = strtod(optarg, &end);
-                if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
-                    fprintf(stderr, "Invalid --gamma value: %s (expected float)\n", optarg ? optarg : "");
-                    return ERROR_INVALID_ARGS;
-                }
-                if (value <= 0.0 || value > 5.0) {
-                    fprintf(stderr, "Invalid --gamma value: %.2f (expected >0 and <=5)\n", value);
-                    return ERROR_INVALID_ARGS;
-                }
-                if (gamma) {
-                    *gamma = value;
-                }
-                if (gamma_set) {
-                    *gamma_set = TRUE;
-                }
-                break;
-            }
-            case '?':
-                // Check if it's a long option (starts with --)
-                if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {
-                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
-                } 
-                // Check if it's a short option (starts with - but not --)
-                else if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "-", 1) == 0) {
-                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
-                }
-                // Fallback for unknown cases
-                else {
-                    fprintf(stderr, "Invalid option\n");
-                }
-                fprintf(stderr, "Use --help for usage information\n");
-                return ERROR_INVALID_ARGS;
-            default:
-                break;
-        }
-    }
-
-    // Get path from remaining arguments
-    if (optind < argc) {
-        *path = g_strdup(argv[optind]);
-    }
-
-    return ERROR_NONE;
-}
-
 // Validate path and determine if it's a file or directory
 static ErrorCode validate_path(const char *path, gboolean *is_directory) {
     if (!path) {
@@ -555,13 +328,11 @@ static void handle_mouse_press(PixelTermApp *app, const InputEvent *event) {
         handle_mouse_press_book_toc(app, event);
         return;
     }
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app) || app_is_preview_mode(app)) {
         handle_mouse_press_preview(app, event);
-    } else if (app->preview_mode) {
-        handle_mouse_press_preview(app, event);
-    } else if (app->file_manager_mode) {
+    } else if (app_is_file_manager_mode(app)) {
         handle_mouse_press_file_manager(app, event);
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         app->pending_single_click = TRUE;
         app->pending_click_time = g_get_monotonic_time();
     } else {
@@ -582,7 +353,7 @@ static void handle_mouse_double_click_preview(PixelTermApp *app, const InputEven
     if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
         app->return_to_mode = RETURN_MODE_PREVIEW;
     }
-    app->preview_mode = FALSE;
+    app_set_mode(app, APP_MODE_SINGLE);
     app_render_current_image(app);
 }
 
@@ -602,7 +373,7 @@ static void handle_mouse_double_click_book_preview(PixelTermApp *app, const Inpu
 static void handle_mouse_double_click_file_manager(PixelTermApp *app, const InputEvent *event) {
     app->pending_file_manager_single_click = FALSE;
     ErrorCode err = app_file_manager_enter_at_position(app, event->mouse_x, event->mouse_y);
-    if (err == ERROR_NONE && app->file_manager_mode) {
+    if (err == ERROR_NONE && app_is_file_manager_mode(app)) {
         app_render_file_manager(app);
     }
 }
@@ -630,7 +401,7 @@ static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEve
     app->book_toc_visible = FALSE;
     if (page >= 0 && app_enter_book_page(app, page) == ERROR_NONE) {
         app_render_book_page(app);
-    } else if (app->book_preview_mode) {
+    } else if (app_is_book_preview_mode(app)) {
         app_render_book_preview(app);
     } else {
         app_render_book_page(app);
@@ -654,13 +425,13 @@ static void handle_mouse_double_click(PixelTermApp *app, const InputEvent *event
         handle_mouse_double_click_book_toc(app, event);
         return;
     }
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         handle_mouse_double_click_book_preview(app, event);
-    } else if (app->preview_mode) {
+    } else if (app_is_preview_mode(app)) {
         handle_mouse_double_click_preview(app, event);
-    } else if (app->file_manager_mode) {
+    } else if (app_is_file_manager_mode(app)) {
         handle_mouse_double_click_file_manager(app, event);
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         handle_mouse_double_click_book(app, event);
     } else {
         handle_mouse_double_click_single(app, event);
@@ -715,7 +486,7 @@ static gboolean image_get_mouse_anchor(PixelTermApp *app, gdouble *rel_px_x, gdo
 }
 
 static void image_adjust_zoom(PixelTermApp *app, gdouble delta) {
-    if (!app || app->preview_mode || app->file_manager_mode || app->book_mode || app->book_preview_mode) {
+    if (!app_is_single_mode(app)) {
         return;
     }
     const gchar *filepath = app_get_current_filepath(app);
@@ -762,7 +533,7 @@ static void image_adjust_zoom(PixelTermApp *app, gdouble delta) {
 }
 
 static void book_change_page(PixelTermApp *app, gint delta) {
-    if (!app || !app->book_mode) {
+    if (!app_is_book_mode(app)) {
         return;
     }
     gint new_page = app->book_page + delta;
@@ -855,13 +626,13 @@ static void handle_mouse_scroll_book_toc(PixelTermApp *app, const InputEvent *ev
 static void handle_mouse_scroll(PixelTermApp *app, const InputEvent *event) {
     if (app->book_toc_visible) {
         handle_mouse_scroll_book_toc(app, event);
-    } else if (app->book_preview_mode) {
+    } else if (app_is_book_preview_mode(app)) {
         handle_mouse_scroll_book_preview(app, event);
-    } else if (app->preview_mode) {
+    } else if (app_is_preview_mode(app)) {
         handle_mouse_scroll_preview(app, event);
-    } else if (app->file_manager_mode) {
+    } else if (app_is_file_manager_mode(app)) {
         handle_mouse_scroll_file_manager(app, event);
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         handle_mouse_scroll_book(app, event);
     } else {
         handle_mouse_scroll_single(app, event);
@@ -880,13 +651,11 @@ static void process_pending_clicks(PixelTermApp *app) {
 
     // Process pending single click action (Single Image / Book Mode).
     if (app->pending_single_click &&
-        !app->preview_mode &&
-        !app->file_manager_mode &&
-        !app->book_preview_mode) {
+        (app_is_single_mode(app) || app_is_book_mode(app))) {
         gint64 current_time = g_get_monotonic_time();
         if (current_time - app->pending_click_time > k_click_threshold_us) {
             app->pending_single_click = FALSE;
-            if (app->book_mode) {
+            if (app_is_book_mode(app)) {
                 gint page_step = app_book_use_double_page(app) ? 2 : 1;
                 book_change_page(app, page_step);
             } else {
@@ -909,7 +678,7 @@ static void process_pending_clicks(PixelTermApp *app) {
         if (current_time - app->pending_grid_click_time > k_click_threshold_us) {
             app->pending_grid_single_click = FALSE;
             gboolean redraw_needed = FALSE;
-            if (app->book_preview_mode) {
+            if (app_is_book_preview_mode(app)) {
                 gint old_selected = app->book_preview_selected;
                 gint old_scroll = app->book_preview_scroll;
                 app_handle_mouse_click_book_preview(app,
@@ -924,7 +693,7 @@ static void process_pending_clicks(PixelTermApp *app) {
                         app_render_book_preview_selection_change(app, old_selected);
                     }
                 }
-            } else if (app->preview_mode) {
+            } else if (app_is_preview_mode(app)) {
                 gint old_selected = app->preview_selected;
                 gint old_scroll = app->preview_scroll;
                 app_handle_mouse_click_preview(app,
@@ -944,7 +713,7 @@ static void process_pending_clicks(PixelTermApp *app) {
     }
 
     // Process pending single click action (File Manager Mode).
-    if (app->file_manager_mode && app->pending_file_manager_single_click) {
+    if (app_is_file_manager_mode(app) && app->pending_file_manager_single_click) {
         gint64 current_time = g_get_monotonic_time();
         if (current_time - app->pending_file_manager_click_time > k_click_threshold_us) {
             app->pending_file_manager_single_click = FALSE;
@@ -957,7 +726,7 @@ static void process_pending_clicks(PixelTermApp *app) {
                 app_render_file_manager(app);
             }
         }
-    } else if (!app->file_manager_mode && app->pending_file_manager_single_click) {
+    } else if (!app_is_file_manager_mode(app) && app->pending_file_manager_single_click) {
         app->pending_file_manager_single_click = FALSE;
     }
 }
@@ -1080,9 +849,9 @@ static void book_jump_start(PixelTermApp *app) {
         return;
     }
     gint current = 1;
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         current = app->book_preview_selected + 1;
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         current = app->book_page + 1;
     }
     if (current < 1) current = 1;
@@ -1123,7 +892,7 @@ static void book_jump_commit(PixelTermApp *app) {
     if (value < 1) value = 1;
     if (value > total) value = total;
 
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         gint old_selected = app->book_preview_selected;
         gint old_scroll = app->book_preview_scroll;
         book_jump_cancel(app);
@@ -1133,7 +902,7 @@ static void book_jump_commit(PixelTermApp *app) {
         } else if (app->book_preview_selected != old_selected) {
             app_render_book_preview_selection_change(app, old_selected);
         }
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         if (value - 1 == app->book_page) {
             book_jump_cancel(app);
             return;
@@ -1260,7 +1029,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             return TRUE;
         case (KeyCode)'d':
         case (KeyCode)'D':
-            if (app->file_manager_mode || app->preview_mode || app->book_mode || app->book_preview_mode) {
+            if (!app_is_single_mode(app)) {
                 return FALSE;
             }
             app->dither_enabled = !app->dither_enabled;
@@ -1275,10 +1044,10 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             app_render_by_mode(app);
             return TRUE;
         case (KeyCode)'i':
-            if (app_current_is_video(app) || app->book_mode || app->book_preview_mode) {
+            if (app_current_is_video(app) || app_is_book_mode(app) || app_is_book_preview_mode(app)) {
                 return TRUE;
             }
-            if (!app->preview_mode) {
+            if (!app_is_preview_mode(app)) {
                 if (app->ui_text_hidden) {
                     return TRUE;
                 }
@@ -1296,16 +1065,16 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             return TRUE;
         case (KeyCode)'~':
         case (KeyCode)'`':
-            if (!app->file_manager_mode) {
+            if (!app_is_file_manager_mode(app)) {
                 gboolean info_was_visible = app->info_visible;
                 app->ui_text_hidden = !app->ui_text_hidden;
                 if (app->ui_text_hidden) {
                     app->info_visible = FALSE;
                 }
-                if (app->book_preview_mode) {
+                if (app_is_book_preview_mode(app)) {
                     app->suppress_full_clear = TRUE;
                     app->needs_screen_clear = FALSE;
-                } else if (app->preview_mode) {
+                } else if (app_is_preview_mode(app)) {
                     app->needs_screen_clear = TRUE;
                 } else if (!info_was_visible) {
                     app->suppress_full_clear = TRUE;
@@ -1708,7 +1477,7 @@ static void handle_key_press_book_toc(PixelTermApp *app,
             app->book_toc_visible = FALSE;
             if (page >= 0 && app_enter_book_page(app, page) == ERROR_NONE) {
                 app_render_book_page(app);
-            } else if (app->book_preview_mode) {
+            } else if (app_is_book_preview_mode(app)) {
                 app_render_book_preview(app);
             } else {
                 app_render_book_page(app);
@@ -1719,7 +1488,7 @@ static void handle_key_press_book_toc(PixelTermApp *app,
         case (KeyCode)'t':
         case (KeyCode)'T':
             app->book_toc_visible = FALSE;
-            if (app->book_preview_mode) {
+            if (app_is_book_preview_mode(app)) {
                 app_render_book_preview(app);
             } else {
                 app_render_book_page(app);
@@ -1782,11 +1551,11 @@ static void handle_key_press_file_manager(PixelTermApp *app,
                                      (app->selected_entry != old_selected) ||
                                      (app->scroll_offset != old_scroll);
             g_free(old_dir);
-            if (err == ERROR_NONE && app->file_manager_mode) {
+            if (err == ERROR_NONE && app_is_file_manager_mode(app)) {
                 if (state_changed) {
                     app_render_file_manager(app);
                 }
-            } else if (app->file_manager_mode) {
+            } else if (app_is_file_manager_mode(app)) {
                 app_render_file_manager(app);
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
@@ -1877,7 +1646,7 @@ static void handle_key_press_file_manager(PixelTermApp *app,
                 error = app_file_manager_enter(app);
                 if (error != ERROR_NONE) {
                     app_render_file_manager(app);
-                } else if (app->file_manager_mode) {
+                } else if (app_is_file_manager_mode(app)) {
                     app_render_file_manager(app);
                 }
             }
@@ -1992,7 +1761,7 @@ static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, con
     if (handle_delete_request(app, event)) {
         return;
     }
-    if (app && app->book_jump_active && (app->book_mode || app->book_preview_mode)) {
+    if (app && app->book_jump_active && (app_is_book_mode(app) || app_is_book_preview_mode(app))) {
         if (handle_book_jump_input(app, event)) {
             return;
         }
@@ -2000,13 +1769,13 @@ static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, con
     if (handle_key_press_common(app, input_handler, event)) {
         return;
     }
-    if (app->book_preview_mode) {
+    if (app_is_book_preview_mode(app)) {
         handle_key_press_book_preview(app, input_handler, event);
-    } else if (app->book_mode) {
+    } else if (app_is_book_mode(app)) {
         handle_key_press_book(app, input_handler, event);
-    } else if (app->preview_mode) {
+    } else if (app_is_preview_mode(app)) {
         handle_key_press_preview(app, input_handler, event);
-    } else if (app->file_manager_mode) {
+    } else if (app_is_file_manager_mode(app)) {
         handle_key_press_file_manager(app, input_handler, event);
     } else {
         handle_key_press_single(app, input_handler, event);
@@ -2111,7 +1880,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             get_terminal_size(&app->term_width, &app->term_height);
 
             app_pause_video_for_resize(app);
-            if (app->preview_mode) {
+            if (app_is_preview_mode(app)) {
                 app->needs_screen_clear = TRUE;
             }
             app_render_by_mode(app);
@@ -2160,21 +1929,12 @@ int main(int argc, char *argv[]) {
 
     // Parse command line arguments
     char *path = NULL;
-    gboolean preload_enabled = TRUE;
-    gboolean dither_enabled = FALSE;
-    gboolean alt_screen_enabled = TRUE;
-    gboolean clear_workaround_enabled = FALSE;
-    gint work_factor = 9;
-    gchar *protocol = NULL;
-    gdouble gamma = 1.0;
-    gboolean gamma_set = FALSE;
+    AppConfig config;
+    app_config_init(&config);
     
-    ErrorCode error = parse_arguments(argc, argv, &path, &preload_enabled, &dither_enabled,
-                                      &alt_screen_enabled, &clear_workaround_enabled, &work_factor,
-                                      &protocol, &gamma, &gamma_set);
+    ErrorCode error = app_parse_arguments(argc, argv, &path, &config);
     if (error != ERROR_NONE) {
         if (path) g_free(path);
-        g_free(protocol);
         if (error == ERROR_HELP_EXIT || error == ERROR_VERSION_EXIT) {
             return 0;
         }
@@ -2186,79 +1946,32 @@ int main(int argc, char *argv[]) {
         path = g_get_current_dir();
     }
 
-    if (protocol && *protocol) {
-        if (strcmp(protocol, "auto") == 0) {
-            // Fall through to auto detection below.
-        } else if (strcmp(protocol, "text") == 0) {
-            g_force_text = TRUE;
-        } else if (strcmp(protocol, "sixel") == 0) {
-            g_force_sixel = TRUE;
-        } else if (strcmp(protocol, "kitty") == 0) {
-            g_force_kitty = TRUE;
-        } else if (strcmp(protocol, "iterm2") == 0) {
-            g_force_iterm2 = TRUE;
-        } else {
-            fprintf(stderr, "Unknown protocol: %s\n", protocol);
-            g_free(protocol);
-            if (path) g_free(path);
-            return 1;
-        }
-    }
-    if (!g_force_text && !g_force_kitty && !g_force_iterm2 && !g_force_sixel) {
-        g_force_kitty = probe_kitty_support();
-        if (g_force_kitty) {
-            g_force_iterm2 = FALSE;
-            g_force_sixel = FALSE;
-        } else {
-            g_force_iterm2 = probe_iterm2_support();
-            if (g_force_iterm2) {
-                g_force_sixel = FALSE;
-            } else {
-                g_force_sixel = probe_sixel_support();
-            }
-        }
-    }
-    if (g_force_text) {
-        g_force_kitty = FALSE;
-        g_force_iterm2 = FALSE;
-        g_force_sixel = FALSE;
-    }
-#if defined(__linux__)
-    if (!gamma_set && g_force_kitty) {
-        const TerminalProtocolHint *hint = terminal_protocol_env_match();
-        if (hint && g_strcmp0(hint->name, "kitty") == 0) {
-            gamma = 0.5;
-        }
-    }
-#endif
+    app_config_resolve_protocol(&config);
 
     // Create and initialize application
     g_app = app_create();
     if (!g_app) {
         g_free(path);
-        g_free(protocol);
         return 1;
     }
-    g_app->force_sixel = g_force_sixel;
-    g_app->force_kitty = g_force_kitty;
-    g_app->force_iterm2 = g_force_iterm2;
-    g_app->force_text = g_force_text;
-    g_app->gamma = gamma;
+    g_app->force_sixel = config.force_sixel;
+    g_app->force_kitty = config.force_kitty;
+    g_app->force_iterm2 = config.force_iterm2;
+    g_app->force_text = config.force_text;
+    g_app->gamma = config.gamma;
 
-    g_app->render_work_factor = work_factor;
-    error = app_initialize(g_app, dither_enabled);
+    g_app->render_work_factor = config.work_factor;
+    error = app_initialize(g_app, config.dither_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);
         app_destroy(g_app);
         g_free(path);
-        g_free(protocol);
         return 1;
     }
 
     // Configure application settings
-    g_app->preload_enabled = preload_enabled;
-    g_app->clear_workaround_enabled = clear_workaround_enabled;
-    g_free(protocol);
+    g_app->preload_enabled = config.preload_enabled;
+    g_app->clear_workaround_enabled = config.clear_workaround_enabled;
 
     // Validate and load path
     gboolean is_directory;
@@ -2305,7 +2018,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (!app_has_images(g_app) && !g_app->book_mode && !g_app->book_preview_mode) {
+    if (!app_has_images(g_app) && !app_is_book_mode(g_app) && !app_is_book_preview_mode(g_app)) {
         if (is_directory) {
             // Directory provided but no images: go to file manager in that directory
             error = app_enter_file_manager(g_app);
@@ -2315,7 +2028,7 @@ int main(int argc, char *argv[]) {
                 g_free(path);
                 return 1;
             }
-            error = run_application(g_app, alt_screen_enabled);
+            error = run_application(g_app, config.alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
             g_app = NULL;
@@ -2335,7 +2048,7 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             // Continue into main loop with file manager active
-            error = run_application(g_app, alt_screen_enabled);
+            error = run_application(g_app, config.alt_screen_enabled);
             app_destroy(g_app);
             g_free(path);
             g_app = NULL;
@@ -2349,7 +2062,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Run main application loop
-    error = run_application(g_app, alt_screen_enabled);
+    error = run_application(g_app, config.alt_screen_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Application error: %d (%s)\n", error, 
                 error_code_to_string(error));

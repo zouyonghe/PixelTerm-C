@@ -30,8 +30,7 @@ typedef struct {
     ImagePreloader *preloader;
     GifPlayer *gif_player;
 
-    gboolean preview_mode;
-    gboolean file_manager_mode;
+    AppMode mode;
     gboolean preload_enabled;
     gboolean dither_enabled;
     gint render_work_factor;
