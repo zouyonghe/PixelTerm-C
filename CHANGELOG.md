@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.6.9: Single image footer stability.
+    - **Rendering**: Keep filename/footer lines intact during image switches to eliminate bottom UI flicker.
+    - **Rendering**: Clear footer/filename rows right before repainting to avoid leftover text artifacts.
+
 - v1.6.8: Mode and CLI refactor cleanup.
     - **App State**: Replace per-mode booleans with `AppMode` helpers for consistent routing.
     - **CLI**: Move argument parsing and protocol resolution into `app_cli` with `AppConfig`.

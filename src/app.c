@@ -538,6 +538,7 @@ static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepa
             {"~", "Zen"},
             {"ESC", "Exit"}
         };
+        printf("\033[%d;1H\033[2K", app->term_height);
         print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
@@ -1707,7 +1708,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (app && app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
         printf("\033[H\033[0m");
-        app_clear_single_view_ui_lines(app);
+        if (app->ui_text_hidden) {
+            app_clear_single_view_ui_lines(app);
+        }
         app_clear_image_area(app, image_area_top_row, image_area_height);
     } else {
         app_clear_screen_for_refresh(app);
@@ -1785,6 +1788,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 }
                 if (filename_start_col < 0) filename_start_col = 0;
                 gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
+                printf("\033[%d;1H\033[2K", filename_row);
                 printf("\033[%d;%dH", filename_row, filename_start_col + 1);
                 printf("\033[34m%s\033[0m", display_name);
                 g_free(display_name);
@@ -1806,6 +1810,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 {"~", "Zen"},
                 {"ESC", "Exit"}
             };
+            printf("\033[%d;1H\033[2K", app->term_height);
             print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
         }
 
@@ -2114,6 +2119,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
             // Keep filename on the third-to-last line to keep it outside the image area
             gint filename_row = (app->term_height >= 3) ? (app->term_height - 2) : 1;
+            printf("\033[%d;1H\033[2K", filename_row);
             printf("\033[%d;%dH", filename_row, filename_start_col + 1);
             printf("\033[34m%s\033[0m", display_name); // Blue filename with reset
             g_free(display_name);
@@ -2133,6 +2139,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             {"~", "Zen"},
             {"ESC", "Exit"}
         };
+        printf("\033[%d;1H\033[2K", app->term_height);
         print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
