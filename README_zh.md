@@ -1,6 +1,6 @@
 # PixelTerm-C - 高性能终端图像/视频/电子书浏览器
 
-![Version](https://img.shields.io/badge/Version-v1.6.10-blue)
+![Version](https://img.shields.io/badge/Version-v1.6.11-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](README.md) | 中文*

@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.6.11: Tooling, tests, and stability polish.
+    - **Stability**: Harden null checks and error handling across input, GIF/video playback, and book rendering paths.
+    - **Testing**: Add UTF-8 text utility coverage and include the new tests in the test target.
+    - **Tooling**: Add `.clang-format`, a Doxygen configuration, and a CONTRIBUTING guide; expand media/text utility API docs.
+    - **CI**: Add a cppcheck static analysis workflow.
+
 - v1.6.10: Internal refactor and modularization.
     - **App State**: Split `PixelTermApp` into `PreviewState`, `FileManagerState`, `BookState`, `InputState`, `AsyncState`.
     - **Input**: Move input handling into `input_dispatch` to slim down `main.c`.
