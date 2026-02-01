@@ -45,6 +45,61 @@ typedef struct {
     gboolean force_iterm2;
 } AppConfig;
 
+typedef struct {
+    gint selected;
+    gint scroll;
+    gint zoom;
+} PreviewState;
+
+typedef struct {
+    gchar *directory;
+    GList *entries;
+    gint selected_entry;
+    gint scroll_offset;
+    gint previous_selected_entry;
+} FileManagerState;
+
+typedef struct {
+    BookDocument *doc;
+    gchar *path;
+    gint page;
+    gint page_count;
+    gint preview_selected;
+    gint preview_scroll;
+    gint preview_zoom;
+    gboolean jump_active;
+    gboolean jump_dirty;
+    gint jump_len;
+    char jump_buf[16];
+    BookToc *toc;
+    gint toc_selected;
+    gint toc_scroll;
+    gboolean toc_visible;
+} BookState;
+
+typedef struct {
+    gboolean pending_single_click;
+    gint64 pending_click_time;
+    gboolean pending_grid_single_click;
+    gint64 pending_grid_click_time;
+    gint pending_grid_click_x;
+    gint pending_grid_click_y;
+    gboolean pending_file_manager_single_click;
+    gint64 pending_file_manager_click_time;
+    gint pending_file_manager_click_x;
+    gint pending_file_manager_click_y;
+    gint last_mouse_x;
+    gint last_mouse_y;
+} InputState;
+
+typedef struct {
+    gboolean render_request;
+    gboolean image_pending;
+    gboolean render_force_sync;
+    gint image_index;
+    gchar *image_path;
+} AsyncState;
+
 // Main application structure
 typedef struct {
     // Chafa integration
@@ -83,14 +138,8 @@ typedef struct {
     gboolean needs_redraw;
     AppMode mode;  // Current UI mode (single/preview/file manager/book)
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager
-    gint preview_zoom;           // Preview zoom level (legacy, kept for compatibility)
     ReturnMode return_to_mode;   // Return mode after file manager
     gboolean suppress_full_clear; // Skip full clear on next single-image refresh
-    gboolean async_render_request; // Request async render on next single-image refresh
-    gboolean async_image_pending; // Awaiting cached render for current image
-    gboolean async_render_force_sync; // Force sync render to consume async result
-    gint async_image_index;      // Index for pending async render
-    gchar *async_image_path;     // Path for pending async render
     gboolean delete_pending;     // Awaiting delete confirmation
     gint last_render_top_row;    // Single-view image top row for overlays
     gint last_render_height;     // Single-view image height for overlays
@@ -113,50 +162,20 @@ typedef struct {
     GError *gerror;
     
     // File manager state
-    gchar *file_manager_directory;
-    GList *directory_entries;
-    gint selected_entry;
-    gint scroll_offset;
-    gint previous_selected_entry; // Remember previous selection when entering yellow preview mode
+    FileManagerState file_manager;
 
     // Preview grid state
-    gint preview_selected;
-    gint preview_scroll;
+    PreviewState preview;
     gboolean needs_screen_clear; // Flag to indicate if screen needs full clear
 
     // Book state
-    BookDocument *book_doc;
-    gchar *book_path;
-    gint book_page;
-    gint book_page_count;
-    gint book_preview_selected;
-    gint book_preview_scroll;
-    gint book_preview_zoom;
-    gboolean book_jump_active;
-    gboolean book_jump_dirty;
-    gint book_jump_len;
-    char book_jump_buf[16];
-    BookToc *book_toc;
-    gint book_toc_selected;
-    gint book_toc_scroll;
-    gboolean book_toc_visible;
+    BookState book;
 
     // Input state
-    gboolean pending_single_click; // For single image view
-    gint64 pending_click_time;
+    InputState input;
 
-    gboolean pending_grid_single_click; // For preview grid view
-    gint64 pending_grid_click_time;
-    gint pending_grid_click_x;
-    gint pending_grid_click_y;
-
-    gboolean pending_file_manager_single_click;
-    gint64 pending_file_manager_click_time;
-    gint pending_file_manager_click_x;
-    gint pending_file_manager_click_y;
-
-    gint last_mouse_x;
-    gint last_mouse_y;
+    // Async rendering state
+    AsyncState async;
 } PixelTermApp;
 
 static inline gboolean app_is_mode(const PixelTermApp *app, AppMode mode) {
@@ -783,5 +802,6 @@ const gchar* app_get_current_filepath(const PixelTermApp *app);
  */
 gboolean app_has_images(const PixelTermApp *app);
 gboolean app_book_use_double_page(const PixelTermApp *app);
+void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height);
 
 #endif // APP_H
