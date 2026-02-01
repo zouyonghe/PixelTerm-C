@@ -126,8 +126,12 @@ $(OBJDIR)/test_gif_player.o: tests/test_gif_player.c | $(OBJDIR)
 $(OBJDIR)/test_renderer.o: tests/test_renderer.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
+# Compile test sources
+$(OBJDIR)/test_text_utils.o: tests/test_text_utils.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
+
 # Build test executable
-$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/test_browser.o $(OBJDIR)/test_gif_player.o $(OBJDIR)/test_renderer.o $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o $(OBJDIR)/gif_player.o $(OBJDIR)/video_player.o $(OBJDIR)/input.o | $(BINDIR)
+$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/test_browser.o $(OBJDIR)/test_gif_player.o $(OBJDIR)/test_renderer.o $(OBJDIR)/test_text_utils.o $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o $(OBJDIR)/gif_player.o $(OBJDIR)/video_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o | $(BINDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Debug build

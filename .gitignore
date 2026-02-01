@@ -8,6 +8,9 @@ bin/
 *.so
 *.a
 
+# Documentation
+docs/api/
+
 # Editor files
 *~
 *.swp
