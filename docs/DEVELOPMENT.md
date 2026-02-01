@@ -91,6 +91,16 @@ See `include/app.h` for the full state definition.
 - [x] Advanced configuration options
 - [x] Comprehensive testing
 
+## Refactoring Roadmap
+
+The current codebase is stable but concentrated in `src/app.c` and `src/main.c`.
+For a structured refactor plan with safe, incremental steps, see:
+
+- `docs/REFACTORING_PLAN.md`
+
+Performance changes should follow the workflow diagram in:
+- `docs/performance-workflow.png` (SVG: `docs/performance-workflow.svg`)
+
 ## Key Design Decisions
 
 ### 1. Direct Chafa Integration
