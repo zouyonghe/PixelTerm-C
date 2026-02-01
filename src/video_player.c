@@ -685,7 +685,11 @@ static void video_player_stop_worker(VideoPlayer *player) {
 
 static gboolean video_player_tick(gpointer user_data) {
     VideoPlayer *player = (VideoPlayer *)user_data;
-    if (!player || !player->is_playing) {
+    if (!player) {
+        return G_SOURCE_REMOVE;
+    }
+
+    if (!player->is_playing) {
         player->timer_id = 0;
         return G_SOURCE_REMOVE;
     }

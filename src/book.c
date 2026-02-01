@@ -228,6 +228,7 @@ ErrorCode book_render_page(BookDocument *doc,
     fz_page *page = NULL;
     fz_pixmap *pix = NULL;
     fz_device *dev = NULL;
+    guint8 *buffer = NULL;
 
     ErrorCode status = ERROR_NONE;
     StderrSilencer silencer = {0};
@@ -269,26 +270,14 @@ ErrorCode book_render_page(BookDocument *doc,
 
         if (pix->n != 3 && pix->n != 4) {
             status = ERROR_INVALID_IMAGE;
-            fz_drop_device(ctx, dev);
-            dev = NULL;
-            fz_drop_pixmap(ctx, pix);
-            pix = NULL;
-            fz_drop_page(ctx, page);
-            page = NULL;
-            fz_throw(ctx, FZ_ERROR_GENERIC, "Unsupported pixmap format");
+            goto render_done;
         }
 
         gsize bytes = (gsize)pix->stride * (gsize)pix->h;
-        guint8 *buffer = g_malloc(bytes);
+        buffer = g_malloc(bytes);
         if (!buffer) {
             status = ERROR_MEMORY_ALLOC;
-            fz_drop_device(ctx, dev);
-            dev = NULL;
-            fz_drop_pixmap(ctx, pix);
-            pix = NULL;
-            fz_drop_page(ctx, page);
-            page = NULL;
-            fz_throw(ctx, FZ_ERROR_GENERIC, "Allocation failure");
+            goto render_done;
         }
         memcpy(buffer, pix->samples, bytes);
 
@@ -297,6 +286,8 @@ ErrorCode book_render_page(BookDocument *doc,
         out_image->height = pix->h;
         out_image->stride = pix->stride;
         out_image->channels = pix->n;
+render_done:
+        ;
     }
     fz_catch(ctx) {
         if (silencer.active) {

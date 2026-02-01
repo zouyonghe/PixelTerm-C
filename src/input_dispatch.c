@@ -879,7 +879,7 @@ static gboolean handle_book_jump_input(PixelTermApp *app, const InputEvent *even
         book_jump_commit(app);
         return TRUE;
     }
-    if (event->key_code == KEY_BACKSPACE || event->key_code == KEY_DELETE || event->key_code == 127) {
+    if (event->key_code == KEY_BACKSPACE || event->key_code == KEY_DELETE) {
         if (app->book.jump_len > 0) {
             app->book.jump_len--;
             app->book.jump_buf[app->book.jump_len] = '\0';
@@ -1730,7 +1730,11 @@ static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, con
 }
 
 static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
-    if (app && event) {
+    if (!event) {
+        return;
+    }
+
+    if (app) {
         if (event->type == INPUT_MOUSE_PRESS ||
             event->type == INPUT_MOUSE_DOUBLE_CLICK ||
             event->type == INPUT_MOUSE_SCROLL) {

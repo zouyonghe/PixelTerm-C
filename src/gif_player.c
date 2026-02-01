@@ -342,7 +342,11 @@ static void render_current_frame_internal(GifPlayer *player) {
 static gboolean render_next_frame(gpointer user_data) {
     GifPlayer *player = (GifPlayer *)user_data;
     
-    if (!player || !player->is_playing || !player->iter) {
+    if (!player) {
+        return G_SOURCE_REMOVE;
+    }
+
+    if (!player->is_playing || !player->iter) {
         player->timer_id = 0;
         return G_SOURCE_REMOVE;
     }

@@ -449,19 +449,17 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     }
 
 finish_event:
-    if (handler) {
-        gint64 now_us = 0;
-        gboolean check_ignore = (handler->ignore_input_until_us > 0 || event->type == INPUT_MOUSE_SCROLL);
-        if (check_ignore) {
-            now_us = input_now_us();
-        }
-        if (handler->ignore_input_until_us > 0 && now_us > 0 &&
-            now_us < handler->ignore_input_until_us) {
-            event->type = INPUT_KEY_PRESS;
-            event->key_code = KEY_UNKNOWN;
-        } else if (event->type == INPUT_MOUSE_SCROLL && now_us > 0) {
-            handler->ignore_input_until_us = now_us + 200000;
-        }
+    gint64 now_us = 0;
+    gboolean check_ignore = (handler->ignore_input_until_us > 0 || event->type == INPUT_MOUSE_SCROLL);
+    if (check_ignore) {
+        now_us = input_now_us();
+    }
+    if (handler->ignore_input_until_us > 0 && now_us > 0 &&
+        now_us < handler->ignore_input_until_us) {
+        event->type = INPUT_KEY_PRESS;
+        event->key_code = KEY_UNKNOWN;
+    } else if (event->type == INPUT_MOUSE_SCROLL && now_us > 0) {
+        handler->ignore_input_until_us = now_us + 200000;
     }
     // Update terminal size in event
     event->terminal_width = handler->terminal_width;

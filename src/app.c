@@ -859,13 +859,13 @@ static void app_file_manager_adjust_scroll(PixelTermApp *app, gint cols, gint vi
 
 // Select the current image in file manager (only when appropriate)
 static void app_file_manager_select_current_image(PixelTermApp *app) {
-    // Only select current image if we're returning from image view.
-    // For initial file manager entry (RETURN_MODE_NONE), keep selected_entry = 0.
-    if (app->return_to_mode == RETURN_MODE_NONE) {
+    if (!app || !app->current_directory || !app->file_manager.directory) {
         return;
     }
 
-    if (!app || !app->current_directory || !app->file_manager.directory) {
+    // Only select current image if we're returning from image view.
+    // For initial file manager entry (RETURN_MODE_NONE), keep selected_entry = 0.
+    if (app->return_to_mode == RETURN_MODE_NONE) {
         return;
     }
 
