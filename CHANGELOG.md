@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.6.10: Internal refactor and modularization.
+    - **App State**: Split `PixelTermApp` into `PreviewState`, `FileManagerState`, `BookState`, `InputState`, `AsyncState`.
+    - **Input**: Move input handling into `input_dispatch` to slim down `main.c`.
+    - **Rendering**: Share preview/book grid cell rendering via `grid_render`.
+    - **Performance**: Centralize preloader lifecycle control in `preload_control`.
+    - **Maintenance**: Extract media/text utilities into `media_utils` and `text_utils`.
+
 - v1.6.9: Single image footer stability.
     - **Rendering**: Keep filename/footer lines intact during image switches to eliminate bottom UI flicker.
     - **Rendering**: Clear footer/filename rows right before repainting to avoid leftover text artifacts.
