@@ -52,7 +52,9 @@ static void test_utf8_prefix_by_width_truncate(void) {
     gchar *result = utf8_prefix_by_width("Hello World", 5);
     g_assert_nonnull(result);
     // Should return first 5 characters worth of width
-    g_assert_cmpint(strlen(result), <=, 11);
+    g_assert_cmpint(utf8_display_width(result), <=, 5);
+    // Verify it's a proper prefix
+    g_assert_true(g_str_has_prefix("Hello World", result));
     g_free(result);
 }
 
@@ -75,7 +77,9 @@ static void test_utf8_suffix_by_width_truncate(void) {
     gchar *result = utf8_suffix_by_width("Hello World", 5);
     g_assert_nonnull(result);
     // Should return last 5 characters worth of width
-    g_assert_cmpint(strlen(result), <=, 11);
+    g_assert_cmpint(utf8_display_width(result), <=, 5);
+    // Verify it's a proper suffix
+    g_assert_true(g_str_has_suffix("Hello World", result));
     g_free(result);
 }
 
@@ -92,6 +96,8 @@ static void test_truncate_utf8_for_display_truncate(void) {
     g_assert_nonnull(result);
     // Should be truncated with ellipsis
     g_assert_cmpint(utf8_display_width(result), <=, 8);
+    // Should contain ellipsis when truncated
+    g_assert_true(strstr(result, "...") != NULL || g_utf8_strlen(result, -1) < 11);
     g_free(result);
 }
 
@@ -113,8 +119,10 @@ static void test_truncate_utf8_middle_truncate(void) {
     g_assert_nonnull(result);
     // Should be truncated in the middle with ellipsis
     g_assert_cmpint(utf8_display_width(result), <=, 15);
-    // Should still contain parts of the original text
-    g_assert_cmpint(strlen(result), >, 0);
+    // Should contain the suffix (end of path)
+    g_assert_true(g_str_has_suffix(result, "file.txt"));
+    // Should start with the prefix
+    g_assert_true(g_str_has_prefix(result, "/very"));
     g_free(result);
 }
 

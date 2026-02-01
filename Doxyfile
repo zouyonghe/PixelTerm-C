@@ -6,7 +6,7 @@
 
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "PixelTerm-C"
-PROJECT_NUMBER         = v1.6.10
+PROJECT_NUMBER         = 
 PROJECT_BRIEF          = "High Performance Terminal Image/Video/Book Browser"
 PROJECT_LOGO           = 
 OUTPUT_DIRECTORY       = docs/api
