@@ -99,7 +99,7 @@ For a structured refactor plan with safe, incremental steps, see:
 - `docs/REFACTORING_PLAN.md`
 
 Performance changes should follow the workflow diagram in:
-- `docs/performance-workflow.png` (SVG: `docs/performance-workflow.svg`)
+See the performance workflow notes in this section and keep benchmarks consistent across runs.
 
 ## Key Design Decisions
 
