@@ -59,8 +59,9 @@ ifneq ($(shell $(PKG_CONFIG_CMD) --exists mupdf >/dev/null 2>&1 && echo yes),)
   INCLUDES += $(shell $(PKG_CONFIG_CMD) --cflags mupdf)
   CFLAGS += -DHAVE_MUPDF
 else
-  MUPDF_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/mupdf /usr/local/opt/mupdf))
-  ifneq ($(wildcard $(MUPDF_PREFIX)/include/mupdf/fitz.h),)
+  MUPDF_PREFIXES = /usr/local /usr/local/opt/mupdf /opt/homebrew/opt/mupdf
+  MUPDF_PREFIX ?= $(firstword $(foreach p,$(MUPDF_PREFIXES),$(if $(wildcard $(p)/include/mupdf/fitz.h),$(p),)))
+  ifneq ($(MUPDF_PREFIX),)
     FREETYPE_LIBS =
     ifneq ($(shell $(PKG_CONFIG_CMD) --exists freetype2 >/dev/null 2>&1 && echo yes),)
       FREETYPE_LIBS = $(shell $(PKG_CONFIG_CMD) --libs freetype2)
@@ -73,7 +74,15 @@ else
     else
       HARFBUZZ_LIBS = -lharfbuzz
     endif
-    LIBS += -L$(MUPDF_PREFIX)/lib -lmupdf -lmupdf-third -ljpeg $(FREETYPE_LIBS) $(HARFBUZZ_LIBS)
+    MUPDF_LIBDIR ?= $(firstword $(foreach p,$(MUPDF_PREFIX)/lib $(MUPDF_PREFIX)/lib64,$(if $(wildcard $(p)/libmupdf.so)$(wildcard $(p)/libmupdf.a),$(p),)))
+    ifeq ($(MUPDF_LIBDIR),)
+      MUPDF_LIBDIR = $(MUPDF_PREFIX)/lib
+    endif
+    MUPDF_THIRD_LIBS =
+    ifneq ($(wildcard $(MUPDF_LIBDIR)/libmupdf-third.*),)
+      MUPDF_THIRD_LIBS = -lmupdf-third
+    endif
+    LIBS += -L$(MUPDF_LIBDIR) -lmupdf $(MUPDF_THIRD_LIBS) -ljpeg $(FREETYPE_LIBS) $(HARFBUZZ_LIBS)
     INCLUDES += -I$(MUPDF_PREFIX)/include
     CFLAGS += -DHAVE_MUPDF
   else
