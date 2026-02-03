@@ -120,6 +120,20 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 见 [USAGE_zh.md](USAGE_zh.md)。
 
+## ⚙️ 配置（可选）
+
+PixelTerm-C 会在 `$XDG_CONFIG_HOME/pixelterm/config.ini` 存在时自动加载配置文件，也可以用
+`--config` 指定自定义路径。可用字段见 `config.example.ini`。
+使用 `[default]` 作为基础配置，然后按终端名新增分组（与 `TERM_PROGRAM`、`LC_TERMINAL`、
+`TERMINAL_NAME` 或 `TERM` 匹配）覆盖对应设置，未配置项会回退到 `[default]`（例如 `[xterm-kitty]`、
+`[alacritty]`、`[WarpTerminal]`）。
+
+快速开始：
+```bash
+mkdir -p ~/.config/pixelterm
+cp config.example.ini ~/.config/pixelterm/config.ini
+```
+
 ## 🎮 控制
 
 见 [CONTROLS_zh.md](CONTROLS_zh.md)。

@@ -120,6 +120,20 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 
 See [USAGE.md](USAGE.md).
 
+## ⚙️ Configuration (Optional)
+
+PixelTerm-C loads a config file from `$XDG_CONFIG_HOME/pixelterm/config.ini` if it exists. You can also
+pass a custom path with `--config`. See `config.example.ini` for available keys.
+Use `[default]` for baseline settings, then add sections named after your terminal (matching
+`TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`) to override per-terminal values. Missing
+keys fall back to `[default]` (e.g. `[xterm-kitty]`, `[alacritty]`, `[WarpTerminal]`).
+
+Quick start:
+```bash
+mkdir -p ~/.config/pixelterm
+cp config.example.ini ~/.config/pixelterm/config.ini
+```
+
 ## 🎮 Controls
 
 See [CONTROLS.md](CONTROLS.md).

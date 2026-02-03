@@ -7,9 +7,12 @@ _pixelterm() {
         '(-v --version -V --Version)'{-V,--version}'[Show version]'
         '(-D --dither)'{-D,--dither}'[Enable dithering (default: off)]'
         '--no-preload[Disable preloading (default: on)]'
-        '--no-alt-screen[Disable alternate screen buffer (default: on)]'
+        '--alt-screen[Use alternate screen buffer (default: true)]:state:(true false)'
         '--clear-workaround[Improve UI rendering on some terminals but may reduce performance (default: off)]'
         '--work-factor[Quality/speed tradeoff (1-9, default: 9)]:factor:(1 2 3 4 5 6 7 8 9)'
+        '--protocol[Output protocol: auto, text, sixel, kitty, iterm2]:mode:(auto text sixel kitty iterm2)'
+        '--gamma[Gamma correction for image rendering]:gamma:'
+        '--config[Load configuration file]:config file:_files'
         '::File or directory:_files'
     )
 

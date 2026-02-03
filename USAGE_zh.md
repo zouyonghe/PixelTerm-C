@@ -25,8 +25,8 @@ pixelterm --help
 # 禁用预加载
 pixelterm --no-preload /path/to/images
 
-# 禁用备用屏幕缓冲区
-pixelterm --no-alt-screen /path/to/images
+# 控制备用屏幕缓冲区
+pixelterm --alt-screen false /path/to/images
 # 说明：主要用于 Warp 终端，通常情况下不需要。
 
 # 改善部分终端的界面显示（可能降低性能）
@@ -45,6 +45,13 @@ pixelterm --work-factor 7 /path/to/image.jpg
 pixelterm --protocol kitty /path/to/image.jpg
 
 # 图像渲染伽马校正
-# 说明：kitty 下默认 0.5，其他终端默认 1.0
+# 说明：默认 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
+
+# 加载配置文件（默认：$XDG_CONFIG_HOME/pixelterm/config.ini）
+pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
+
+# 配置文件格式：用 [default] 作为基础配置，按终端名新增分组
+# （匹配 TERM_PROGRAM/LC_TERMINAL/TERMINAL_NAME/TERM）覆盖。
+# 见 config.example.ini
 ```
