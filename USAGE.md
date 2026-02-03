@@ -22,8 +22,8 @@ pixelterm --version
 # Show help
 pixelterm --help
 
-# Disable preloading
-pixelterm --no-preload /path/to/images
+# Control preloading
+pixelterm --preload false /path/to/images
 
 # Control alternate screen buffer
 pixelterm --alt-screen false /path/to/images

@@ -1,7 +1,7 @@
 complete -c pixelterm -s h -l help -d "Show help"
 complete -c pixelterm -s V -l version -d "Show version"
 complete -c pixelterm -s D -l dither -d "Enable dithering"
-complete -c pixelterm -l no-preload -d "Disable preloading"
+complete -c pixelterm -l preload -r -a "true false" -d "Enable preloading"
 complete -c pixelterm -l alt-screen -r -a "true false" -d "Use alternate screen buffer"
 complete -c pixelterm -l clear-workaround -d "Enable clear workaround"
 complete -c pixelterm -l work-factor -r -d "Quality/speed tradeoff (1-9, default: 9)"

@@ -21,7 +21,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "-h, --help", "Show this help message");
     printf("  %-29s %s\n", "-v, --version", "Show version information");
     printf("  %-29s %s\n", "-D, --dither", "Enable image dithering (default: disabled)");
-    printf("  %-29s %s\n", "--no-preload", "Disable image preloading (default: enabled)");
+    printf("  %-29s %s\n", "--preload BOOL", "Enable image preloading (default: true)");
     printf("  %-29s %s\n", "--alt-screen BOOL", "Use alternate screen buffer (default: true)");
     printf("  %-29s %s\n", "--clear-workaround",
            "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
@@ -427,7 +427,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
         {"help",      no_argument,       0, 'h'},
         {"version",   no_argument,       0, 'v'},
         {"Version",   no_argument,       0, 'V'},
-        {"no-preload", no_argument,      0, 1000},
+        {"preload", required_argument,   0, 1000},
         {"dither",     no_argument,      0, 1001},
         {"alt-screen", required_argument,   0, 1002},
         {"clear-workaround", no_argument, 0, 1003},
@@ -465,9 +465,16 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 'D': // -D option for dithering
                 config->dither_enabled = TRUE;
                 break;
-            case 1000:  // --no-preload
-                config->preload_enabled = FALSE;
+            case 1000: { // --preload
+                gboolean value = TRUE;
+                if (!app_parse_boolean(optarg, &value)) {
+                    fprintf(stderr, "Invalid --preload value: %s (expected true/false)\n",
+                            optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                config->preload_enabled = value;
                 break;
+            }
             case 1001: // --dither
                 config->dither_enabled = TRUE;
                 break;

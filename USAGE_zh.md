@@ -22,8 +22,8 @@ pixelterm --version
 # 显示帮助
 pixelterm --help
 
-# 禁用预加载
-pixelterm --no-preload /path/to/images
+# 控制预加载
+pixelterm --preload false /path/to/images
 
 # 控制备用屏幕缓冲区
 pixelterm --alt-screen false /path/to/images
