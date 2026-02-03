@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.6.12: Config files and CLI flag alignment.
+    - **Config**: Load `$XDG_CONFIG_HOME/pixelterm/config.ini` (or `--config` path) and support terminal-specific override sections keyed by `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`, with `[default]` as the baseline.
+    - **CLI**: Align boolean flags with config keys (`--preload true|false`, `--alt-screen true|false`) and drop the `--no-*` variants.
+    - **Gamma**: Remove kitty-specific default gamma; default is now 1.0 unless configured.
+    - **Docs**: Add `config.example.ini` and refresh usage/completion docs to match the new config and flag behavior.
+
 - v1.6.11: Tooling, tests, and stability polish.
     - **Stability**: Harden null checks and error handling across input, GIF/video playback, and book rendering paths.
     - **Testing**: Add UTF-8 text utility coverage and include the new tests in the test target.
