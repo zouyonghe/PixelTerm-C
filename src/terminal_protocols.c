@@ -117,7 +117,7 @@ static const TerminalProtocolHint k_terminal_protocol_hints[] = {
         {NULL},
         {NULL},
         {"KONSOLE_VERSION", NULL},
-        FALSE,
+        TRUE,
         FALSE,
         FALSE
     },

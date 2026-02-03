@@ -5,6 +5,7 @@
     - **CLI**: Align boolean flags with config keys (`--preload true|false`, `--alt-screen true|false`) and drop the `--no-*` variants.
     - **Gamma**: Remove kitty-specific default gamma; default is now 1.0 unless configured.
     - **Docs**: Add `config.example.ini` and refresh usage/completion docs to match the new config and flag behavior.
+    - **Protocols**: Prefer kitty output on Konsole in auto mode to avoid sixel ghosting artifacts.
 
 - v1.6.11: Tooling, tests, and stability polish.
     - **Stability**: Harden null checks and error handling across input, GIF/video playback, and book rendering paths.
