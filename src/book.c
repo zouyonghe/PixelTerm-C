@@ -273,7 +273,12 @@ ErrorCode book_render_page(BookDocument *doc,
             goto render_done;
         }
 
+        // Check for integer overflow in stride * height calculation
         gsize bytes = (gsize)pix->stride * (gsize)pix->h;
+        if (pix->h > 0 && bytes / (gsize)pix->h != (gsize)pix->stride) {
+            status = ERROR_INVALID_IMAGE;
+            goto render_done;
+        }
         buffer = g_malloc(bytes);
         if (!buffer) {
             status = ERROR_MEMORY_ALLOC;
