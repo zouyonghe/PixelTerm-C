@@ -448,7 +448,7 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         g_scroll_coalesce_active = FALSE;
     }
 
-finish_event:
+finish_event: {
     gint64 now_us = 0;
     gboolean check_ignore = (handler->ignore_input_until_us > 0 || event->type == INPUT_MOUSE_SCROLL);
     if (check_ignore) {
@@ -466,6 +466,7 @@ finish_event:
     event->terminal_height = handler->terminal_height;
 
     return ERROR_NONE;
+}
 }
 
 // Check if there's pending input
