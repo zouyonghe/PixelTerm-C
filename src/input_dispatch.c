@@ -937,15 +937,15 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     gboolean next_sixel = FALSE;
 
     if (force_text) {
-        next_kitty = TRUE;
-    } else if (force_kitty) {
-        next_iterm2 = TRUE;
-    } else if (force_iterm2) {
         next_sixel = TRUE;
     } else if (force_sixel) {
+        next_iterm2 = TRUE;
+    } else if (force_iterm2) {
+        next_kitty = TRUE;
+    } else if (force_kitty) {
         next_text = TRUE;
     } else {
-        next_kitty = TRUE;
+        next_sixel = TRUE;
     }
 
     app->video_player->renderer->config.force_text = next_text;

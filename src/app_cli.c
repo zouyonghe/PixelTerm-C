@@ -590,16 +590,16 @@ void app_config_resolve_protocol(AppConfig *config) {
     }
 
     if (!config->force_text && !config->force_kitty && !config->force_iterm2 && !config->force_sixel) {
-        config->force_kitty = probe_kitty_support();
-        if (config->force_kitty) {
+        config->force_sixel = probe_sixel_support();
+        if (config->force_sixel) {
             config->force_iterm2 = FALSE;
-            config->force_sixel = FALSE;
+            config->force_kitty = FALSE;
         } else {
             config->force_iterm2 = probe_iterm2_support();
             if (config->force_iterm2) {
-                config->force_sixel = FALSE;
+                config->force_kitty = FALSE;
             } else {
-                config->force_sixel = probe_sixel_support();
+                config->force_kitty = probe_kitty_support();
             }
         }
     }
