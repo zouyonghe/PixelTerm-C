@@ -273,6 +273,10 @@ ErrorCode book_render_page(BookDocument *doc,
             goto render_done;
         }
 
+        if (pix->h > 0 && (gsize)pix->stride > G_MAXSIZE / (gsize)pix->h) {
+            status = ERROR_INVALID_IMAGE;
+            goto render_done;
+        }
         gsize bytes = (gsize)pix->stride * (gsize)pix->h;
         buffer = g_malloc(bytes);
         if (!buffer) {
