@@ -6,6 +6,49 @@
 #include "video_player.h"
 #include "pixbuf_utils.h"
 
+#if defined(CHAFA_MAJOR_VERSION) && defined(CHAFA_MINOR_VERSION)
+#define PIXELTERM_CHAFA_AT_LEAST(major, minor) \
+    ((CHAFA_MAJOR_VERSION > (major)) || \
+     (CHAFA_MAJOR_VERSION == (major) && CHAFA_MINOR_VERSION >= (minor)))
+#else
+#define PIXELTERM_CHAFA_AT_LEAST(major, minor) 0
+#endif
+
+static ChafaCanvasMode renderer_get_best_canvas_mode(ChafaTermInfo *term_info) {
+#if PIXELTERM_CHAFA_AT_LEAST(1, 16)
+    return chafa_term_info_get_best_canvas_mode(term_info);
+#else
+    (void)term_info;
+    return CHAFA_CANVAS_MODE_TRUECOLOR;
+#endif
+}
+
+static ChafaPixelMode renderer_get_best_pixel_mode(ChafaTermInfo *term_info) {
+#if PIXELTERM_CHAFA_AT_LEAST(1, 16)
+    return chafa_term_info_get_best_pixel_mode(term_info);
+#else
+    (void)term_info;
+    return CHAFA_PIXEL_MODE_SYMBOLS;
+#endif
+}
+
+static ChafaSymbolTags renderer_get_safe_symbol_tags(ChafaTermInfo *term_info) {
+#if PIXELTERM_CHAFA_AT_LEAST(1, 16)
+    return chafa_term_info_get_safe_symbol_tags(term_info);
+#else
+    (void)term_info;
+    return CHAFA_SYMBOL_TAG_ALL;
+#endif
+}
+
+static ChafaDitherMode renderer_get_sixel_default_dither_mode(void) {
+#ifdef CHAFA_DITHER_MODE_NOISE
+    return CHAFA_DITHER_MODE_NOISE;
+#else
+    return CHAFA_DITHER_MODE_NONE;
+#endif
+}
+
 static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
     if (!renderer) {
         return FALSE;
@@ -165,8 +208,8 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
 
     // Configure canvas with terminal-adaptive settings
-    ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
-    ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
+    ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
+    ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
     if (force_text_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
@@ -192,7 +235,7 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
 
     // Set symbol map with safe symbols for the terminal
     ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-    chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
+    chafa_symbol_map_add_by_tags(symbol_map, renderer_get_safe_symbol_tags(renderer->term_info));
     chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
     chafa_symbol_map_unref(symbol_map);
 
@@ -201,7 +244,7 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     if (renderer->config.dither) {
         dither_mode = renderer->config.dither_mode;
     } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
-        dither_mode = CHAFA_DITHER_MODE_NOISE;
+        dither_mode = renderer_get_sixel_default_dither_mode();
     }
     chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
     if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
@@ -433,8 +476,8 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
     // Apply best modes from the new terminal info
     if (renderer->canvas_config) {
-        ChafaCanvasMode mode = chafa_term_info_get_best_canvas_mode(renderer->term_info);
-        ChafaPixelMode pixel_mode = chafa_term_info_get_best_pixel_mode(renderer->term_info);
+        ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
+        ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
         if (force_text_mode) {
             pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
@@ -459,7 +502,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
         // Refresh symbol map based on new terminal capabilities
         ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-        chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
+        chafa_symbol_map_add_by_tags(symbol_map, renderer_get_safe_symbol_tags(renderer->term_info));
         chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
         chafa_symbol_map_unref(symbol_map);
 
@@ -467,7 +510,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         if (renderer->config.dither) {
             dither_mode = renderer->config.dither_mode;
         } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
-            dither_mode = CHAFA_DITHER_MODE_NOISE;
+            dither_mode = renderer_get_sixel_default_dither_mode();
         }
         chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
         if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
