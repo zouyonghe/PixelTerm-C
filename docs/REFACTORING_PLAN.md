@@ -66,6 +66,7 @@ Embed one tracker per mode:
 This removes repeated logic in `main.c` and makes timeouts consistent.
 
 ## Refactor Sequence (Incremental)
+0. **Mode transition guardrail**: introduce `app_transition_mode()` and migrate call sites off raw `app_set_mode()`.
 1. **State grouping only**: introduce sub-structs and move initialization to helper functions.
 2. **Extract file manager**: move `app_file_manager_*` to `file_manager.c`.
 3. **Extract preview grid**: move grid layout and render logic to `preview_grid.c`.
@@ -84,3 +85,52 @@ Each step should compile and keep tests passing.
 ## Documentation Updates
 - Update `docs/DEVELOPMENT.md` to link this plan.
 - After each extraction, update `docs/ARCHITECTURE.md` with new module boundaries.
+
+## Progress Snapshot (2026-02-16)
+- Completed:
+  - Unified mode transition entry via `app_transition_mode()` in `src/app_mode.c`, now backed by a table-driven transition mask plus per-mode enter/exit hooks.
+  - Extracted file manager mode code from `src/app.c` into `src/app_file_manager.c`.
+  - Further split file manager responsibilities into `src/app_file_manager.c` (state/navigation/refresh) and `src/app_file_manager_render.c` (viewport/hit-test/render + mouse entry flow).
+  - Extracted preview/book mode code from `src/app.c` into `src/app_preview_book.c`.
+  - Further split preview/book-preview responsibilities:
+    - `src/app_preview_grid.c` for preview-grid interaction/render flow.
+    - `src/app_preview_book.c` reduced to book-preview interaction/render flow.
+    - `src/app_preview_shared.c` for shared grid helpers (layout offsets, grid borders, grid renderer creation, rendered-line drawing).
+  - Extracted core app state/navigation APIs from `src/app.c` into `src/app_core.c` (directory/file loading, image navigation, current-file accessors, book open/close, delete flow).
+  - Introduced `src/ui_render_utils.c` to centralize duplicated terminal UI helper logic used by single-view and preview/book rendering paths.
+  - Introduced mode-based input handler routing in `src/input_dispatch_core.c` (`ModeInputHandlers` table) while keeping `src/input_dispatch.c` as a stable API wrapper.
+  - Started decoupling `src/input_dispatch_core.c` by extracting media-state checks into `src/input_dispatch_media.c`.
+  - Extracted book page-change helper into `src/input_dispatch_book.c`.
+  - Extracted mode key handlers into `src/input_dispatch_key_modes.c` (including single-mode video key actions).
+  - Further split key handlers by responsibility: `src/input_dispatch_key_single.c` (single/video keys) and `src/input_dispatch_key_file_manager.c` (file-manager keys).
+  - Further split book-related key handlers into `src/input_dispatch_key_book.c` (book/book-preview + jump/TOC).
+  - Extracted mode mouse handlers and single-view zoom helpers into `src/input_dispatch_mouse_modes.c`.
+  - Consolidated duplicated stream pixbuf loading helper into `src/pixbuf_utils.c`.
+  - Extracted single-view render/refresh flow from `src/app.c` into `src/app_single_render.c`.
+  - Further split book-mode modules by responsibility:
+    - `src/app_book_toc.c` for TOC layout/hit-test/selection/render flow.
+    - `src/app_book_page_render.c` for single/double-page book rendering flow.
+  - Reduced duplication by moving kitty image cleanup helper into `src/ui_render_utils.c`.
+  - Reduced preview/book-preview duplication by unifying shared cell-origin and border draw/clear helpers in `src/app_preview_book.c`.
+  - Replaced repeated pending-click fields with a shared `ClickTracker` model in `InputState`:
+    - `single_click`
+    - `preview_click`
+    - `file_manager_click`
+  - Split state/type definitions into `include/app_state.h`; `include/app.h` now centers on API declarations.
+  - Split API declarations into module headers:
+    - `include/app_core.h`
+    - `include/app_file_manager.h`
+    - `include/app_preview.h`
+    - `include/app_book_mode.h`
+    - `include/app_render.h`
+    - `include/app_runtime.h`
+    while keeping `include/app.h` as an umbrella header for compatibility.
+  - Added list-selection caches (`selected_link + selected_link_index`) to `PreviewState` and `FileManagerState` and migrated preview/file-manager lookups to hint-based traversal.
+  - Added `FileBrowser.current_index` and switched browser index navigation to cached/hint traversal.
+  - Removed remaining `g_list_nth*` / `g_list_length()` hotspots from `src/app.c`, `src/app_preview_book.c`, `src/app_file_manager.c`, `src/preloader.c`, `src/browser.c`, and `src/input_dispatch_key_file_manager.c`.
+  - Normalized mode guard error semantics: mode mismatch now returns `ERROR_INVALID_ARGS` in mode-scoped file-manager/preview/book-preview handlers.
+  - Hardened CI/build gates (`cppcheck` non-optional, `-Werror` + tests).
+- Verification baseline:
+  - `make`
+  - `make test`
+  - `make clean && make EXTRA_CFLAGS=-Werror && make EXTRA_CFLAGS=-Werror test`

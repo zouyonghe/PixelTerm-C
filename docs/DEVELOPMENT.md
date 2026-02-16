@@ -15,7 +15,7 @@ PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image b
 - Command line argument parsing
 - Main event loop
 
-#### 2. Core Application (src/app.h, src/app.c)
+#### 2. Core Application (src/app.h, src/app_state.h, src/app.c, src/app_core.c)
 ```c
 typedef struct {
     ChafaCanvas *canvas;
@@ -40,33 +40,93 @@ typedef struct {
     gint term_height;
 } PixelTermApp;
 ```
-See `include/app.h` for the full state definition.
+State and mode data types now live in `include/app_state.h`; `include/app.h` focuses on public app APIs.
+Public API declarations are now split by module:
+- `include/app_core.h`
+- `include/app_file_manager.h`
+- `include/app_preview.h`
+- `include/app_book_mode.h`
+- `include/app_render.h`
+- `include/app_runtime.h`
+`include/app.h` remains the compatibility umbrella include.
+- `src/app_core.c` owns core state/navigation APIs (`app_load_*`, `app_*image`, `app_get_current_*`, `app_delete_current_image`, `app_open_book`/`app_close_book`).
 
 #### 3. File Browser (src/browser.h, src/browser.c)
 - Image directory scanning
 - Image file filtering/validation
 - File list management for the viewer
+- Cached cursor/index navigation (`current` + `current_index`) for lower-cost index jumps
 
-#### 4. File Manager (src/app.c)
+#### 4. File Manager Core (src/app_file_manager.c)
 - Directory listing for mixed files/folders
 - Hidden file toggling and AaBb sorting
-- Selection, paging, and navigation logic
+- Directory refresh, selection, paging, and navigation logic
+- Selection cache (`selected_link + selected_link_index`) to avoid repeated full-list lookups
 
-#### 5. Image Renderer (src/renderer.h, src/renderer.c)
+#### 4.1 File Manager Render (src/app_file_manager_render.c)
+- File manager viewport computation and hit-testing
+- Terminal rendering of file manager header/list/footer
+- Mouse selection and enter-at-position handling
+
+#### 5. Preview Grid Mode (src/app_preview_grid.c)
+- Preview grid rendering/navigation helpers
+- Preview selection cache (`selected_link + selected_link_index`) for grid hot paths
+
+#### 5.1 Preview Shared Helpers (src/app_preview_shared.c)
+- Shared preview/book-preview grid helpers:
+- Grid renderer creation and rendered-line drawing
+- Grid cell border/origin helpers and vertical layout offsets
+
+#### 5.2 Book-Preview Mode (src/app_preview_book.c)
+- Book-preview rendering/navigation helpers and jump prompt UI
+
+#### 5.3 Book TOC Mode (src/app_book_toc.c)
+- Book TOC viewport/layout, hit-test, selection, and rendering helpers
+
+#### 5.4 Book Page Render (src/app_book_page_render.c)
+- Book single/double-page rendering pipeline and page image composition
+
+#### 6. Image Renderer (src/renderer.h, src/renderer.c)
 - Direct Chafa canvas integration
 - Image processing and display
 - Caching system
 
-#### 6. GIF Player (src/gif_player.h, src/gif_player.c)
+#### 7. Pixbuf Utilities (src/pixbuf_utils.c)
+- Shared stream-based pixbuf loading helper used by both app and renderer paths
+
+#### 7.5 UI Render Utilities (src/ui_render_utils.c)
+- Shared terminal UI rendering helpers (sync update markers, centered help line, clear helpers, kitty image cleanup, filename width policy)
+- Reused by single-image and preview/book rendering paths to avoid duplicate implementations
+
+#### 8. GIF Player (src/gif_player.h, src/gif_player.c)
 - Animated GIF decoding and playback
 - Frame timing and render window management
 
-#### 7. Input Handler (src/input.h, src/input.c)
+#### 9. Input Handler (src/input.h, src/input.c)
 - Keyboard input processing
 - Terminal mode management
 - Key mapping
 
-#### 8. Preloading System (src/preloader.h, src/preloader.c)
+#### 9.5 Input Dispatch (src/input_dispatch.c, src/input_dispatch_core.c)
+- `src/input_dispatch.c` keeps the public API (`include/input_dispatch.h`) stable.
+- `src/input_dispatch_core.c` now focuses on event routing, pending-click processing, and shared guard logic.
+
+#### 9.6 Input Dispatch Media Helpers (src/input_dispatch_media.c)
+- Shared media-type checks used by input dispatch paths (`single` video/animated-image detection).
+
+#### 9.7 Input Dispatch Key Modes
+- `src/input_dispatch_key_modes.c`: preview-mode key handlers.
+- `src/input_dispatch_key_book.c`: book/book-preview key handlers and book jump/TOC routing.
+- `src/input_dispatch_key_single.c`: single-mode key handlers and video key-side helpers.
+- `src/input_dispatch_key_file_manager.c`: file-manager key handlers.
+
+#### 9.8 Input Dispatch Mouse Modes (src/input_dispatch_mouse_modes.c)
+- Mode-specific mouse press/double-click/scroll handlers and single-view zoom anchor logic.
+
+#### 11. App Mode Transition (src/app_mode.c)
+- `app_transition_mode()` centralizes mode switching and validation, backed by a table-driven transition mask and per-mode enter/exit hooks.
+
+#### 10. Preloading System (src/preloader.h, src/preloader.c)
 - Multi-threaded image preloading
 - Memory management
 - Cache coordination
@@ -93,10 +153,11 @@ See `include/app.h` for the full state definition.
 
 ## Refactoring Roadmap
 
-The current codebase is stable but concentrated in `src/app.c` and `src/main.c`.
+The codebase is now split into mode-focused modules and routed input handlers, while keeping `app_*` APIs stable.
 For a structured refactor plan with safe, incremental steps, see:
 
 - `docs/REFACTORING_PLAN.md`
+- `docs/refactor-plan.md` (execution-focused companion plan)
 
 Performance changes should follow the workflow diagram in:
 See the performance workflow notes in this section and keep benchmarks consistent across runs.

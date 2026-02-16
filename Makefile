@@ -5,6 +5,7 @@ INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
 CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
+EXTRA_CFLAGS ?=
 DEPFLAGS = -MMD -MP
 # Prefer the locally installed Chafa when both system and /usr/local versions exist
 LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
@@ -100,6 +101,11 @@ SOURCES += $(SRCDIR)/video_player.c
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)
 TARGET = $(BINDIR)/pixelterm
 TEST_TARGET = $(BINDIR)/pixelterm-tests
+TEST_SOURCES = $(wildcard tests/test_*.c)
+TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
+TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o \
+		$(OBJDIR)/gif_player.o $(OBJDIR)/video_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o \
+		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/app_mode.o
 
 # Default target
 all: $(TARGET)
@@ -113,35 +119,19 @@ $(BINDIR):
 
 # Build the main executable
 $(TARGET): $(OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Compile source files
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
-$(OBJDIR)/test_common.o: tests/test_common.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
-
-# Compile test sources
-$(OBJDIR)/test_browser.o: tests/test_browser.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
-
-# Compile test sources
-$(OBJDIR)/test_gif_player.o: tests/test_gif_player.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
-
-# Compile test sources
-$(OBJDIR)/test_renderer.o: tests/test_renderer.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
-
-# Compile test sources
-$(OBJDIR)/test_text_utils.o: tests/test_text_utils.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
+$(OBJDIR)/test_%.o: tests/test_%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Build test executable
-$(TEST_TARGET): $(OBJDIR)/test_common.o $(OBJDIR)/test_browser.o $(OBJDIR)/test_gif_player.o $(OBJDIR)/test_renderer.o $(OBJDIR)/test_text_utils.o $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o $(OBJDIR)/gif_player.o $(OBJDIR)/video_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o | $(BINDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(TEST_TARGET): $(TEST_OBJECTS) $(TEST_LINK_OBJECTS) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 # Debug build
 debug: CFLAGS += $(DEBUG_CFLAGS)
@@ -201,5 +191,4 @@ help:
 .PHONY: all debug clean install test run check-deps help
 
 # Auto-generated dependencies
--include $(OBJECTS:.o=.d) $(OBJDIR)/test_common.d $(OBJDIR)/test_browser.d \
-  $(OBJDIR)/test_gif_player.d $(OBJDIR)/test_renderer.d
+-include $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)

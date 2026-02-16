@@ -21,28 +21,66 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
 
 ## Core Data Structures
 
+### Mode Transition Control
+
+- `src/app_mode.c` provides `app_transition_mode(PixelTermApp*, AppMode)` as the unified mode switch entry.
+- Current guardrail stage uses a table-driven transition mask (currently all valid transitions allowed) and per-mode enter/exit hooks for side effects (transient input state cleanup and media stop when entering non-single modes).
+- `app_set_mode()` remains as a low-level compatibility API and should not be used for new code paths.
+- Core app state/navigation APIs have been split into `src/app_core.c` (`app_load_*`, `app_*image` navigation, current-file accessors, book open/close, and delete flow).
+- File manager mode implementation has been split into:
+  - `src/app_file_manager.c` for directory refresh/navigation and selection state logic.
+  - `src/app_file_manager_render.c` for viewport/hit-test and terminal rendering logic.
+- Single-image render/refresh flow has been split into `src/app_single_render.c`.
+- Preview grid interaction/render logic has been split into `src/app_preview_grid.c`.
+- Shared preview/book-preview grid helpers now live in `src/app_preview_shared.c`.
+- Book-preview interaction/render logic now lives in `src/app_preview_book.c`.
+- Book TOC interaction/render logic has been split into `src/app_book_toc.c`.
+- Book page render logic has been split into `src/app_book_page_render.c`.
+- Shared terminal UI helper logic has been centralized in `src/ui_render_utils.c` (sync-update wrappers, centered help rendering, clear-area helpers, and kitty image cleanup), reducing duplicated rendering glue across modes.
+- Input dispatch now uses split helpers:
+  - `src/input_dispatch_media.c` for media checks (single-mode video/animated detection),
+  - `src/input_dispatch_key_modes.c` for preview-mode key flows,
+  - `src/input_dispatch_key_book.c` for book/book-preview key flows and book jump state handling,
+  - `src/input_dispatch_key_single.c` for single-mode key flows and video key actions,
+  - `src/input_dispatch_key_file_manager.c` for file-manager key flows,
+  - `src/input_dispatch_mouse_modes.c` for mode mouse handlers and single-image zoom interactions.
+  This keeps `src/input_dispatch_core.c` focused on routing and shared flow control.
+- List-navigation hot paths now use index+pointer hints instead of repeated head-based lookup:
+  - `FileManagerState.selected_link` / `selected_link_index`
+  - `PreviewState.selected_link` / `selected_link_index`
+  - `FileBrowser.current_index`
+  This reduces repeated linear random-access calls in high-frequency render/input paths.
+
 ### Main Application Structure
+
+State and mode definitions are isolated in `include/app_state.h`.
+Public app APIs are split into `include/app_core.h`, `include/app_file_manager.h`,
+`include/app_preview.h`, `include/app_book_mode.h`, `include/app_render.h`, and
+`include/app_runtime.h`; `include/app.h` remains the umbrella compatibility header.
+
 ```c
 typedef struct {
-    // Chafa integration
+    // Rendering + terminal integration
     ChafaCanvas *canvas;
-    ChafaCanvasConfig *config;
+    ChafaCanvasConfig *canvas_config;
     ChafaTermInfo *term_info;
-    
-    // File management
+
+    // Media list + navigation
     GList *image_files;
     gchar *current_directory;
     gint current_index;
-    
-    // Threading and caching
-    GThread *preload_thread;
-    
-    // Application state
-    gboolean running;
-    gboolean show_info;
-    gboolean preload_enabled;
+    gint total_images;
+
+    // Mode/state buckets (see include/app.h for full details)
+    FileManagerState file_manager;
+    PreviewState preview;
+    BookState book;
+    InputState input;
+    AsyncState async;
 } PixelTermApp;
 ```
+
+`InputState` uses three `ClickTracker` instances (`single_click`, `preview_click`, `file_manager_click`) to keep click timeout handling consistent across modes.
 
 ### Memory Management Strategy
 

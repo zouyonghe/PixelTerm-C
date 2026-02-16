@@ -1,32 +1,10 @@
 #include "renderer.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
-#include <gio/gio.h>
 #include <sys/ioctl.h>
 #include <math.h>
 
 #include "video_player.h"
-
-// Load pixbuf using a GInputStream to avoid path-length limits in gdk_pixbuf_new_from_file
-static GdkPixbuf* renderer_load_pixbuf_from_stream(const char *filepath, GError **error) {
-    if (!filepath) {
-        return NULL;
-    }
-
-    GFile *file = g_file_new_for_path(filepath);
-    if (!file) {
-        return NULL;
-    }
-
-    GFileInputStream *stream = g_file_read(file, NULL, error);
-    g_object_unref(file);
-    if (!stream) {
-        return NULL;
-    }
-
-    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(G_INPUT_STREAM(stream), NULL, error);
-    g_object_unref(stream);
-    return pixbuf;
-}
+#include "pixbuf_utils.h"
 
 static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
     if (!renderer) {
@@ -84,9 +62,9 @@ ImageRenderer* renderer_create(void) {
     renderer->canvas = NULL;
     renderer->canvas_config = NULL;
     renderer->term_info = NULL;
-    renderer->cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, 
+    renderer->cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free,
                                            (GDestroyNotify)gstring_destroy);
-    
+
     g_mutex_init(&renderer->cache_mutex);
 
     // Set default configuration
@@ -100,7 +78,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.force_kitty = FALSE;
     renderer->config.force_iterm2 = FALSE;
     renderer->config.gamma = 1.0;
-    
+
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
     renderer->config.dither_mode = CHAFA_DITHER_MODE_NONE;
@@ -119,11 +97,11 @@ void renderer_destroy(ImageRenderer *renderer) {
     if (renderer->canvas) {
         chafa_canvas_unref(renderer->canvas);
     }
-    
+
     if (renderer->canvas_config) {
         chafa_canvas_config_unref(renderer->canvas_config);
     }
-    
+
     if (renderer->term_info) {
         chafa_term_info_unref(renderer->term_info);
     }
@@ -163,7 +141,7 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
     renderer->term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
-    
+
     if (!renderer->term_info) {
         return ERROR_CHAFA_INIT;
     }
@@ -204,20 +182,20 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     }
-    
+
     chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
     chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
-    chafa_canvas_config_set_geometry(renderer->canvas_config, 
-                                    renderer->config.max_width, 
+    chafa_canvas_config_set_geometry(renderer->canvas_config,
+                                    renderer->config.max_width,
                                     renderer->config.max_height);
     chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
-    
+
     // Set symbol map with safe symbols for the terminal
     ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
     chafa_symbol_map_add_by_tags(symbol_map, chafa_term_info_get_safe_symbol_tags(renderer->term_info));
     chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
     chafa_symbol_map_unref(symbol_map);
-    
+
     // Apply quality settings
     ChafaDitherMode dither_mode = CHAFA_DITHER_MODE_NONE;
     if (renderer->config.dither) {
@@ -259,7 +237,7 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
     g_mutex_lock(&renderer->cache_mutex);
     GString *cached = renderer_cache_get(renderer, filepath);
     g_mutex_unlock(&renderer->cache_mutex);
-    
+
     if (cached) {
         // Return a copy so callers can own/free it without affecting cache
         return g_string_new_len(cached->str, cached->len);
@@ -267,7 +245,7 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
 
     // Load image using stream-based loader to support very long paths
     GError *error = NULL;
-    GdkPixbuf *pixbuf = renderer_load_pixbuf_from_stream(filepath, &error);
+    GdkPixbuf *pixbuf = pixbuf_utils_load_from_stream(filepath, &error);
     if (!pixbuf) {
         if (error) {
             g_error_free(error);
@@ -284,7 +262,7 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
 
     // Render the image
     GString *result = renderer_render_image_data(renderer, pixels, width, height, rowstride, n_channels);
-    
+
     g_object_unref(pixbuf);
 
     if (result) {
@@ -298,10 +276,10 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
 }
 
 // Render image data directly
-GString* renderer_render_image_data(ImageRenderer *renderer, 
-                                   const guint8 *pixel_data, 
-                                   gint width, 
-                                   gint height, 
+GString* renderer_render_image_data(ImageRenderer *renderer,
+                                   const guint8 *pixel_data,
+                                   gint width,
+                                   gint height,
                                    gint rowstride,
                                    gint n_channels) {
     if (!renderer || !pixel_data || width <= 0 || height <= 0) {
@@ -341,7 +319,7 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
 
     // Generate output - use NULL for term_info to force generic ANSI output with RGB
     GString *output = chafa_canvas_print(renderer->canvas, renderer->term_info);
-    
+
     return output;
 }
 
@@ -358,9 +336,9 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
     if (renderer->config.preserve_aspect_ratio) {
         // Calculate font aspect ratio dynamically based on terminal pixel dimensions
         gdouble font_ratio = get_terminal_cell_aspect_ratio();
-        
+
         // Calculate geometry that fits within bounds
-        chafa_calc_canvas_geometry(width, height, &output_width, &output_height, 
+        chafa_calc_canvas_geometry(width, height, &output_width, &output_height,
                                    font_ratio, TRUE, FALSE);
     }
 
@@ -372,7 +350,7 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
     if (cell_w > 0 && cell_h > 0) {
         chafa_canvas_config_set_cell_geometry(renderer->canvas_config, cell_w, cell_h);
     }
-    
+
     // Re-create canvas with new configuration
     if (renderer->canvas) {
         chafa_canvas_unref(renderer->canvas);
@@ -390,7 +368,7 @@ void renderer_cache_add(ImageRenderer *renderer, const char *filepath, GString *
 
     gchar *key = g_strdup(filepath);
     GString *value = g_string_new_len(rendered->str, rendered->len);
-    
+
     g_hash_table_insert(renderer->cache, key, value);
 }
 
@@ -472,10 +450,10 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         } else if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         }
-        
+
         chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
         chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
-        
+
         // Ensure color space is maintained
         chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
 
@@ -500,7 +478,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     // Update canvas configuration with new terminal size
     gint width, height;
     get_terminal_size(&width, &height);
-    
+
     renderer->config.max_width = width;
     renderer->config.max_height = height - 3; // Leave space for UI
 
@@ -519,7 +497,7 @@ ErrorCode renderer_get_image_dimensions(const char *filepath, gint *width, gint 
     }
 
     GError *error = NULL;
-    GdkPixbuf *pixbuf = renderer_load_pixbuf_from_stream(filepath, &error);
+    GdkPixbuf *pixbuf = pixbuf_utils_load_from_stream(filepath, &error);
     if (!pixbuf) {
         if (error) {
             g_error_free(error);
@@ -560,7 +538,7 @@ void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint
     if (!renderer || !width || !height) {
         return;
     }
-    
+
     if (renderer->canvas) {
         chafa_canvas_config_get_geometry(renderer->canvas_config, width, height);
     } else {

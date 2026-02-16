@@ -7,6 +7,8 @@
 void register_browser_tests(void);
 void register_gif_player_tests(void);
 void register_renderer_tests(void);
+void register_text_utils_tests(void);
+void register_app_mode_tests(void);
 
 static void remove_path(gpointer data) {
     if (!data) {
@@ -260,6 +262,8 @@ int main(int argc, char **argv) {
     register_browser_tests();
     register_gif_player_tests();
     register_renderer_tests();
+    register_text_utils_tests();
+    register_app_mode_tests();
 
     return g_test_run();
 }

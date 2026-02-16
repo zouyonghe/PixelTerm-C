@@ -1,6 +1,39 @@
 #include "browser.h"
 #include "renderer.h"
 
+static GList* browser_find_link_with_hint(const FileBrowser *browser, gint target_index) {
+    if (!browser || !browser->image_files || target_index < 0 || target_index >= browser->total_files) {
+        return NULL;
+    }
+
+    GList *cursor = browser->current;
+    gint idx = browser->current_index;
+    if (!cursor || idx < 0 || idx >= browser->total_files) {
+        cursor = browser->image_files;
+        idx = 0;
+    }
+
+    while (cursor && idx < target_index) {
+        cursor = cursor->next;
+        idx++;
+    }
+    while (cursor && idx > target_index) {
+        cursor = cursor->prev;
+        idx--;
+    }
+    if (cursor && idx == target_index) {
+        return cursor;
+    }
+
+    cursor = browser->image_files;
+    idx = 0;
+    while (cursor && idx < target_index) {
+        cursor = cursor->next;
+        idx++;
+    }
+    return (cursor && idx == target_index) ? cursor : NULL;
+}
+
 // Create a new file browser
 FileBrowser* browser_create(void) {
     FileBrowser *browser = g_new0(FileBrowser, 1);
@@ -11,6 +44,7 @@ FileBrowser* browser_create(void) {
     browser->directory_path = NULL;
     browser->image_files = NULL;
     browser->current = NULL;
+    browser->current_index = -1;
     browser->total_files = 0;
 
     return browser;
@@ -23,7 +57,7 @@ void browser_destroy(FileBrowser *browser) {
     }
 
     g_free(browser->directory_path);
-    
+
     if (browser->image_files) {
         g_list_free_full(browser->image_files, (GDestroyNotify)g_free);
     }
@@ -51,6 +85,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
 
     browser->directory_path = g_strdup(directory);
     browser->current = NULL;
+    browser->current_index = -1;
     browser->total_files = 0;
 
     // Open directory
@@ -61,15 +96,17 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
 
     // Collect all files
     GList *all_files = NULL;
+    gint media_count = 0;
     const gchar *filename;
 
     while ((filename = g_dir_read_name(dir)) != NULL) {
         gchar *full_path = g_build_filename(directory, filename, NULL);
-        
+
         // Check if it's a regular file and a valid image
-        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && 
+        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) &&
             is_valid_media_file(full_path)) {
             all_files = g_list_prepend(all_files, full_path);
+            media_count++;
         } else {
             g_free(full_path);
         }
@@ -83,7 +120,8 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
     // Store the filtered and sorted list
     browser->image_files = all_files;
     browser->current = browser->image_files;
-    browser->total_files = g_list_length(browser->image_files);
+    browser->current_index = browser->current ? 0 : -1;
+    browser->total_files = media_count;
 
     return ERROR_NONE;
 }
@@ -96,6 +134,7 @@ ErrorCode browser_next_file(FileBrowser *browser) {
 
     if (browser->current->next) {
         browser->current = browser->current->next;
+        browser->current_index++;
         return ERROR_NONE;
     }
 
@@ -110,6 +149,7 @@ ErrorCode browser_previous_file(FileBrowser *browser) {
 
     if (browser->current->prev) {
         browser->current = browser->current->prev;
+        browser->current_index--;
         return ERROR_NONE;
     }
 
@@ -126,8 +166,14 @@ ErrorCode browser_goto_index(FileBrowser *browser, gint index) {
         return ERROR_INVALID_IMAGE;
     }
 
-    browser->current = g_list_nth(browser->image_files, index);
-    return browser->current ? ERROR_NONE : ERROR_INVALID_IMAGE;
+    GList *target = browser_find_link_with_hint(browser, index);
+    if (!target) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    browser->current = target;
+    browser->current_index = index;
+    return ERROR_NONE;
 }
 
 // Go to file by filename
@@ -139,20 +185,23 @@ ErrorCode browser_goto_filename(FileBrowser *browser, const char *filename) {
     GList *current = browser->image_files;
     gchar *target_basename = g_path_get_basename(filename);
 
+    gint idx = 0;
     while (current) {
         gchar *current_file = (gchar*)current->data;
         gchar *current_basename = g_path_get_basename(current_file);
-        
+
         gboolean match = (g_strcmp0(current_basename, target_basename) == 0);
         g_free(current_basename);
-        
+
         if (match) {
             browser->current = current;
+            browser->current_index = idx;
             g_free(target_basename);
             return ERROR_NONE;
         }
-        
+
         current = g_list_next(current);
+        idx++;
     }
 
     g_free(target_basename);
@@ -179,7 +228,7 @@ gint browser_get_current_index(const FileBrowser *browser) {
         return -1;
     }
 
-    return g_list_position(browser->image_files, browser->current);
+    return browser->current_index;
 }
 
 // Get total files count
@@ -211,19 +260,27 @@ ErrorCode browser_delete_current_file(FileBrowser *browser) {
     // Remove from list
     GList *to_remove = browser->current;
     gchar *file_data = (gchar*)to_remove->data;
-    
+
     // Update current pointer
     if (to_remove->prev) {
         browser->current = to_remove->prev;
+        browser->current_index--;
     } else if (to_remove->next) {
         browser->current = to_remove->next;
+        browser->current_index = 0;
     } else {
         browser->current = NULL;
+        browser->current_index = -1;
     }
 
     // Remove from list and free memory
     browser->image_files = g_list_delete_link(browser->image_files, to_remove);
     browser->total_files--;
+    if (browser->total_files <= 0) {
+        browser->current = NULL;
+        browser->current_index = -1;
+        browser->total_files = 0;
+    }
     g_free(file_data);
 
     return ERROR_NONE;
@@ -259,4 +316,5 @@ void browser_reset(FileBrowser *browser) {
     }
 
     browser->current = browser->image_files;
+    browser->current_index = browser->current ? 0 : -1;
 }

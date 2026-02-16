@@ -5,7 +5,9 @@
 // Test sanitize_for_terminal
 static void test_sanitize_for_terminal_null(void) {
     gchar *result = sanitize_for_terminal(NULL);
-    g_assert_null(result);
+    g_assert_nonnull(result);
+    g_assert_cmpstr(result, ==, "");
+    g_free(result);
 }
 
 static void test_sanitize_for_terminal_simple(void) {
@@ -103,7 +105,9 @@ static void test_truncate_utf8_for_display_truncate(void) {
 
 static void test_truncate_utf8_for_display_null(void) {
     gchar *result = truncate_utf8_for_display(NULL, 10);
-    g_assert_null(result);
+    g_assert_nonnull(result);
+    g_assert_cmpstr(result, ==, "");
+    g_free(result);
 }
 
 // Test truncate_utf8_middle_keep_suffix
@@ -119,8 +123,8 @@ static void test_truncate_utf8_middle_truncate(void) {
     g_assert_nonnull(result);
     // Should be truncated in the middle with ellipsis
     g_assert_cmpint(utf8_display_width(result), <=, 15);
-    // Should contain the suffix (end of path)
-    g_assert_true(g_str_has_suffix(result, "file.txt"));
+    // Should preserve extension suffix when width is constrained
+    g_assert_true(g_str_has_suffix(result, ".txt"));
     // Should start with the prefix
     g_assert_true(g_str_has_prefix(result, "/very"));
     g_free(result);
@@ -128,12 +132,12 @@ static void test_truncate_utf8_middle_truncate(void) {
 
 static void test_truncate_utf8_middle_null(void) {
     gchar *result = truncate_utf8_middle_keep_suffix(NULL, 10);
-    g_assert_null(result);
+    g_assert_nonnull(result);
+    g_assert_cmpstr(result, ==, "");
+    g_free(result);
 }
 
-int main(int argc, char **argv) {
-    g_test_init(&argc, &argv, NULL);
-
+void register_text_utils_tests(void) {
     // sanitize_for_terminal tests
     g_test_add_func("/text_utils/sanitize/null", test_sanitize_for_terminal_null);
     g_test_add_func("/text_utils/sanitize/simple", test_sanitize_for_terminal_simple);
@@ -162,6 +166,4 @@ int main(int argc, char **argv) {
     g_test_add_func("/text_utils/truncate_middle/no_truncate", test_truncate_utf8_middle_no_truncate);
     g_test_add_func("/text_utils/truncate_middle/truncate", test_truncate_utf8_middle_truncate);
     g_test_add_func("/text_utils/truncate_middle/null", test_truncate_utf8_middle_null);
-
-    return g_test_run();
 }

@@ -76,10 +76,10 @@ ImagePreloader* preloader_create(void) {
                                                     preload_cache_key_destroy,
                                                     (GDestroyNotify)cached_image_data_destroy);
     preloader->lru_queue = g_queue_new();
-    
+
     g_mutex_init(&preloader->mutex);
     g_cond_init(&preloader->condition);
-    
+
     preloader->status = PRELOADER_IDLE;
     preloader->enabled = TRUE;
     preloader->max_queue_size = PRELOAD_QUEUE_SIZE;
@@ -91,7 +91,7 @@ ImagePreloader* preloader_create(void) {
     preloader->force_kitty = FALSE;
     preloader->force_iterm2 = FALSE;
     preloader->gamma = 1.0;
-    
+
     // Default terminal dimensions
     preloader->term_width = 80;
     preloader->term_height = 24;
@@ -168,12 +168,12 @@ ErrorCode preloader_start(ImagePreloader *preloader) {
     g_mutex_unlock(&preloader->mutex);
 
     preloader->thread = g_thread_new("preloader", preloader_worker_thread, preloader);
-    
+
     if (!preloader->thread) {
         g_mutex_lock(&preloader->mutex);
         preloader->status = PRELOADER_IDLE;
         g_mutex_unlock(&preloader->mutex);
-        
+
         return ERROR_THREAD_CREATE;
     }
 
@@ -187,12 +187,12 @@ ErrorCode preloader_stop(ImagePreloader *preloader) {
     }
 
     g_mutex_lock(&preloader->mutex);
-    
+
     if (preloader->status == PRELOADER_ACTIVE) {
         preloader->status = PRELOADER_STOPPING;
         g_cond_signal(&preloader->condition);
     }
-    
+
     g_mutex_unlock(&preloader->mutex);
 
     // Wait for thread to finish
@@ -269,7 +269,7 @@ ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gi
         // Find insertion point based on priority
         GList *current = preloader->task_queue->head;
         gint position = 0;
-        
+
         while (current) {
             PreloadTask *current_task = (PreloadTask*)current->data;
             if (current_task->priority > priority) {
@@ -278,7 +278,7 @@ ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gi
             current = current->next;
             position++;
         }
-        
+
         g_queue_push_nth(preloader->task_queue, task, position);
     }
 
@@ -298,12 +298,20 @@ ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *fi
     gint task_height = target_height;
     preloader_normalize_dims(preloader, &task_width, &task_height);
 
-    gint total_files = g_list_length(files);
-    if (total_files <= 1 || current_index < 0 || current_index >= total_files) {
+    if (current_index < 0) {
         return ERROR_NONE;
     }
 
-    GList *current = g_list_nth(files, current_index);
+    GList *current = files;
+    for (gint idx = 0; current && idx < current_index; idx++) {
+        current = current->next;
+    }
+    if (!current) {
+        return ERROR_NONE;
+    }
+    if (!current->prev && !current->next) {
+        return ERROR_NONE;
+    }
     GList *walker = current ? current->next : NULL;
     for (gint priority = 1; walker && priority <= 3; priority++) {
         if (is_image_file((gchar*)walker->data)) {
@@ -594,7 +602,7 @@ void preloader_update_terminal_size(ImagePreloader *preloader, gint width, gint 
 // Worker thread function
 gpointer preloader_worker_thread(gpointer data) {
     ImagePreloader *preloader = (ImagePreloader*)data;
-    
+
     if (!preloader) {
         return NULL;
     }
@@ -691,12 +699,12 @@ gpointer preloader_worker_thread(gpointer data) {
 
             // Render the image
             GString *rendered = renderer_render_image_file(renderer, task->filepath);
-            
+
             if (rendered) {
                 // Get the actual rendered dimensions
                 gint rendered_width, rendered_height;
                 renderer_get_rendered_dimensions(renderer, &rendered_width, &rendered_height);
-                
+
                 // Add to cache with dimensions (makes its own copy)
                 preloader_cache_add(preloader, task->filepath, rendered, rendered_width, rendered_height, task_width, task_height);
 
