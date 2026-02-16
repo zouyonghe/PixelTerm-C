@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.7.0: Full modular refactor, mode-transition hardening, and release engineering updates.
+    - **Architecture**: Split the former monolithic `app.c` and `input_dispatch.c` into focused modules (`app_core`, file-manager/render split, preview/book-preview split, book TOC/page render split, and mode-routed input handlers).
+    - **State Model**: Introduce `app_state.h`, group click tracking under `ClickTracker`, and split app API declarations into module headers while keeping `app.h` as a compatibility umbrella.
+    - **Mode Safety**: Centralize mode switching with `app_transition_mode()` tests, add transition-path regression coverage, and normalize mode-guard errors to `ERROR_INVALID_ARGS`.
+    - **Performance**: Remove remaining list random-access hotspots from critical paths and use cached pointer/index hints in preview, file manager, and browser navigation.
+    - **Quality Gates**: Harden CI/build checks (`cppcheck` gate + `-Werror` test flow) and refresh architecture/refactor documentation in English.
+
 - v1.6.12: Config files and CLI flag alignment.
     - **Config**: Load `$XDG_CONFIG_HOME/pixelterm/config.ini` (or `--config` path) and support terminal-specific override sections keyed by `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`, with `[default]` as the baseline.
     - **CLI**: Align boolean flags with config keys (`--preload true|false`, `--alt-screen true|false`) and drop the `--no-*` variants.
