@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "app.h"
 
 #include "app_file_manager_internal.h"
