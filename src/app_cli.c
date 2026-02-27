@@ -10,12 +10,12 @@
 #include <string.h>
 
 static void print_usage(const char *program_name) {
-    printf("PixelTerm-C: A high-performance terminal image browser written in C.\n");
+    printf("PixelTerm-C: A high-performance terminal image/video/book browser written in C.\n");
     printf("\n");
     printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
     printf("\n");
     printf("Arguments:\n");
-    printf("  PATH    Path to an image file or directory containing images\n");
+    printf("  PATH    Path to an image/video/book file or a directory to browse\n");
     printf("\n");
     printf("Options:\n");
     printf("  %-29s %s\n", "-h, --help", "Show this help message");
