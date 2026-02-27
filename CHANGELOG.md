@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.7.1: Build runner correction and CLI help text refresh.
+    - **CI**: Build `amd64` macOS artifacts on Intel runner (`macos-15-intel`) while keeping `arm64` on `macos-latest`.
+    - **CLI**: Update help description and `PATH` argument text to explicitly cover image/video/book files and directory browsing.
+
 - v1.7.0: Full modular refactor, mode-transition hardening, and release engineering updates.
     - **Architecture**: Split the former monolithic `app.c` and `input_dispatch.c` into focused modules (`app_core`, file-manager/render split, preview/book-preview split, book TOC/page render split, and mode-routed input handlers).
     - **State Model**: Introduce `app_state.h`, group click tracking under `ClickTracker`, and split app API declarations into module headers while keeping `app.h` as a compatibility umbrella.
