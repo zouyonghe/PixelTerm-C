@@ -70,8 +70,8 @@ static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *la
     if (visible_rows < 1) visible_rows = 1;
 
     // Clamp scroll to valid range
-    // Allow scrolling until the last row is at the top (pagination style)
-    gint max_offset = MAX(0, total_rows - 1);
+    // Keep the viewport full whenever possible to avoid layout jumps near the end.
+    gint max_offset = MAX(0, total_rows - visible_rows);
     if (app->preview.scroll > max_offset) {
         app->preview.scroll = max_offset;
     }
@@ -498,6 +498,8 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     PreviewLayout layout = app_preview_calculate_layout(app);
     gint cols = layout.cols;
     gint rows = layout.rows;
+    gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
+    gint max_scroll = MAX(0, rows - visible_rows);
 
     gint old_scroll = app->preview.scroll;
 
@@ -520,20 +522,10 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
         row = 0;
         app->preview.scroll = 0;
     } else if (delta_row < 0 && row < 0) {
-        gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
-        gint last_page_scroll = 0;
-        if (rows > 0) {
-            last_page_scroll = ((rows - 1) / visible_rows) * visible_rows;
-            if (last_page_scroll < 0) {
-                last_page_scroll = 0;
-            } else if (last_page_scroll > rows - 1) {
-                last_page_scroll = rows - 1;
-            }
-        }
         row = rows - 1;
-        app->preview.scroll = last_page_scroll;
+        app->preview.scroll = max_scroll;
     } else if (delta_row > 0 && row >= app->preview.scroll + layout.visible_rows) {
-        gint new_scroll = MIN(app->preview.scroll + layout.visible_rows, MAX(rows - 1, 0));
+        gint new_scroll = MIN(app->preview.scroll + layout.visible_rows, max_scroll);
         app->preview.scroll = new_scroll;
         row = new_scroll; // first row of next page, keep column
     } else if (delta_row < 0 && row < app->preview.scroll) {
@@ -589,6 +581,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     gint old_scroll = app->preview.scroll;
     gint rows = layout.rows;
     gint cols = layout.cols;
+    gint max_scroll = MAX(0, rows - rows_per_page);
 
     gint current_row = cols > 0 ? app->preview.selected / cols : 0;
     gint current_col = cols > 0 ? app->preview.selected % cols : 0;
@@ -598,10 +591,8 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
 
     gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
     gint new_scroll = app->preview.scroll + delta_scroll;
-    gint last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
-    if (last_page_scroll < 0) last_page_scroll = 0;
     if (new_scroll < 0) new_scroll = 0;
-    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
+    if (new_scroll > max_scroll) new_scroll = max_scroll;
 
     gint new_row = new_scroll + relative_row;
     if (new_row < 0) new_row = 0;

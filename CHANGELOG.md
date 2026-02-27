@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.7.2: Preview grid navigation stability fix.
+    - **Preview**: Stabilize grid placement when navigating forward/backward near the end of long lists.
+    - **Scrolling**: Clamp preview scroll range to full-page bounds (`rows - visible_rows`) to prevent partial-page jumpiness.
+
 - v1.7.1: Build runner correction and CLI help text refresh.
     - **CI**: Build `amd64` macOS artifacts on Intel runner (`macos-15-intel`) while keeping `arm64` on `macos-latest`.
     - **CLI**: Update help description and `PATH` argument text to explicitly cover image/video/book files and directory browsing.
