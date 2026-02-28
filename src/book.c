@@ -482,4 +482,24 @@ void book_page_image_free(BookPageImage *image) {
     book_reset_image(image);
 }
 
+BookToc* book_load_toc(BookDocument *doc) {
+    (void)doc;
+    return NULL;
+}
+
+void book_toc_free(BookToc *toc) {
+    if (!toc) {
+        return;
+    }
+
+    BookTocItem *item = toc->items;
+    while (item) {
+        BookTocItem *next = item->next;
+        g_free(item->title);
+        g_free(item);
+        item = next;
+    }
+    g_free(toc);
+}
+
 #endif
