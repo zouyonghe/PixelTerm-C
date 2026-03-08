@@ -130,17 +130,72 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
         pattern: pixelterm*
         merge-multiple: true
 
+    - name: Prepare release notes inputs
+      id: release_notes_inputs
+      env:
+        workflow_dispatch_version: ${{ github.event.inputs.version }}
+        event_name: ${{ github.event_name }}
+      run: |
+        if [ "${event_name}" = "workflow_dispatch" ] && [ -z "${workflow_dispatch_version}" ]; then
+          echo "workflow_dispatch version input is required for manual release-note generation" >&2
+          exit 1
+        fi
+
+        if [ "${event_name}" = "workflow_dispatch" ] && [[ "${GITHUB_REF}" == refs/tags/* ]] && [ "${workflow_dispatch_version}" != "${GITHUB_REF_NAME}" ]; then
+          echo "workflow_dispatch version input must match the tag ref being released" >&2
+          exit 1
+        fi
+
+        current_tag="${workflow_dispatch_version:-$GITHUB_REF_NAME}"
+        previous_tag=""
+        output_file="${RUNNER_TEMP}/release-notes.md"
+        : > "${output_file}"
+
+        {
+          echo "current_tag=${current_tag}"
+          echo "previous_tag=${previous_tag}"
+          echo "output_file=${output_file}"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Generate release notes
+      env:
+        current_tag: ${{ steps.release_notes_inputs.outputs.current_tag }}
+        previous_tag: ${{ steps.release_notes_inputs.outputs.previous_tag }}
+        output_file: ${{ steps.release_notes_inputs.outputs.output_file }}
+        RELEASE_NOTES_USE_GITHUB_API: "1"
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: |
+        args=(
+          --current-tag "${current_tag}"
+          --output "${output_file}"
+          --repo .
+        )
+
+        if [ -n "${previous_tag}" ]; then
+          args+=(--previous-tag "${previous_tag}")
+        fi
+
+        python3 scripts/generate_release_notes.py "${args[@]}"
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
+        body_path: ${{ steps.release_notes_inputs.outputs.output_file }}
         files: |
           pixelterm-amd64-linux.tar.gz
           pixelterm-amd64-linux
