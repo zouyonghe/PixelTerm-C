@@ -178,8 +178,8 @@ ErrorCode preloader_clear_queue(ImagePreloader *preloader);
  * @param filepath The path of the image file.
  * @param target_width The target width (in characters) the image was rendered for.
  * @param target_height The target height (in characters) the image was rendered for.
- * @return A `GString` containing the ANSI-rendered image on cache hit, or NULL on cache miss.
- *         The returned `GString` is owned by the cache and should not be freed by the caller.
+ * @return A newly allocated `GString` copy of the cached ANSI-rendered image on cache hit,
+ *         or NULL on cache miss. The caller owns the returned `GString` and must free it.
  */
 GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filepath, gint target_width, gint target_height);
 /**
@@ -207,7 +207,8 @@ gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const 
  * @param preloader A pointer to the `ImagePreloader` instance.
  * @param filepath The path of the image file.
  * @param rendered A `GString` containing the ANSI-rendered image. The preloader
- *                 takes ownership of this `GString` and will free it.
+ *                 copies the contents into its cache; the caller retains ownership
+ *                 of the provided `GString`.
  * @param rendered_width The original pixel width of the image.
  * @param rendered_height The original pixel height of the image.
  * @param target_width The target width (in characters) the image was rendered for.

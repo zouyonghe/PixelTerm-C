@@ -3,14 +3,14 @@
 > Goal: document the refactor direction first, then implement in incremental phases with behavior parity, easy rollback, and testability at every step.
 
 ## Background and Current State
-- Complexity is concentrated in `src/app.c` (historically 6k+ LOC), mixing UI rendering, file management, book preview, text utilities, and preload scheduling.
-- `PixelTermApp` is still large and state boundaries are not fully isolated.
-- Repetition still exists across some rendering and mode flows.
+- Complexity is now concentrated in `src/input_dispatch_core.c` (~408 LOC) and `src/app_preview_grid.c` (~716 LOC); the historical `src/app.c` monolith has already been split.
+- `PixelTermApp` is still a large state container, but module headers and mode-specific helpers are now mostly in place.
+- This pass has already removed repetition around delete prompt flow, pending-click processing, and preview render-only helpers; the remaining work is smaller follow-up cleanup and regression hardening.
 
 ## Objectives
-1. Reduce file size and responsibility overlap, with clear module boundaries.
-2. Consolidate duplicated logic (text/path handling, media checks, preloader control, grid rendering helpers).
-3. Keep every step behavior-preserving and independently verifiable.
+1. Reduce the remaining hotspot files with small internal extractions.
+2. Keep every step behavior-preserving and independently verifiable.
+3. Keep docs aligned with the shipped release (`v1.7.2`) and Makefile output (`bin/pixelterm`).
 
 ## Constraints (Must Follow)
 - Ship in minimal, rollback-friendly steps; each step must pass `make` and `make test`.
@@ -23,56 +23,36 @@
 - No new third-party dependencies for this refactor.
 
 ## Module Split Plan
-1. Text/path utilities
-- `src/text_utils.c`, `include/text_utils.h`
-- Centralized UTF-8 width/truncation and terminal-safe text helpers.
+1. Delete prompt/delete confirmation extraction
+- `src/input_dispatch_delete.c`, `include/input_dispatch_delete_internal.h`
+- Move delete prompt layout/clear helpers and preview-delete flow out of `src/input_dispatch_core.c`.
 
-2. Media classification unification
-- `src/media_utils.c`, `include/media_utils.h`
-- Unified media kind checks and mode-dependent behavior guards.
+2. Pending click extraction
+- `src/input_dispatch_pending_clicks.c`, `include/input_dispatch_pending_clicks_internal.h`
+- Move delayed click timeout processing out of `src/input_dispatch_core.c`.
 
-3. Preloader lifecycle encapsulation
-- `src/preload_control.c`, `include/preload_control.h`
-- Consolidated start/stop/reset/queue logic.
+3. Preview render extraction
+- `src/app_preview_render.c`, `include/app_preview_render_internal.h`
+- Move render-only preview helpers out of `src/app_preview_grid.c` while keeping layout/navigation local.
 
-4. Grid render skeleton extraction
-- `src/grid_render.c`, `include/grid_render.h`
-- Shared grid traversal with callback-based cell renderers.
-
-5. Input dispatch decomposition
-- Wrapper in `src/input_dispatch.c`
-- Core routing in `src/input_dispatch_core.c`
-- Mode helpers split by concern:
-  - `src/input_dispatch_media.c`
-  - `src/input_dispatch_book.c`
-  - `src/input_dispatch_key_modes.c`
-  - `src/input_dispatch_key_single.c`
-  - `src/input_dispatch_key_file_manager.c`
-  - `src/input_dispatch_key_book.c`
-  - `src/input_dispatch_mouse_modes.c`
-
-6. App mode/state decomposition (ongoing)
-- Keep behavior stable while progressively isolating mode-specific logic and shared helpers.
+4. Documentation follow-through
+- Refresh README/project/development/architecture docs after the landed module boundaries are in place.
 
 ## Phased Execution
-### Phase 0: Mode transition guardrail
-- Introduce and enforce `app_transition_mode()`.
-- Centralize mode enter/exit side effects.
+### Phase 0: Doc consistency pass
+- Update version/build/layout references to the current shipped state.
 
-### Phase 1: Utility convergence
-- Move text/media shared logic into dedicated modules.
+### Phase 1: Delete flow extraction
+- Keep the public input-dispatch API stable while moving delete helpers into an internal module.
 
-### Phase 2: Preloader convergence
-- Replace scattered preloader lifecycle logic with centralized helpers.
+### Phase 2: Pending click extraction
+- Move timeout processing without changing click behavior.
 
-### Phase 3: Rendering decomposition
-- Split rendering by mode and extract shared render helper layers.
+### Phase 3: Preview render extraction
+- Split render-only preview helpers from grid layout/navigation.
 
-### Phase 4: Input decomposition
-- Replace monolithic mode branching with routed handlers.
-
-### Phase 5: State boundary cleanup
-- Continue reducing state coupling and narrow mutable surfaces.
+### Phase 4: Final doc sync and verification
+- Refresh module-boundary docs and re-run `make`, `make test`, and `make EXTRA_CFLAGS=-Werror test`.
 
 ## Risk Controls
 - Preserve public behavior and external app APIs.
@@ -81,7 +61,7 @@
 
 ## Validation Strategy
 - Baseline for each step:
-  - `make -j4`
+  - `make`
   - `make test`
   - `make EXTRA_CFLAGS=-Werror test`
 - Targeted smoke checks across mode transitions:
@@ -89,8 +69,19 @@
   - preview <-> file manager
   - single/book <-> book preview/TOC
 
-## Progress Snapshot (2026-02-16)
+## Progress Snapshot (2026-03-08)
 Completed:
+- Historical monolith splitting is complete; the current pass focuses on `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
+- Docs are synced to release `v1.7.2`, the current repository layout, and the `bin/pixelterm` source-build output.
+- Delete prompt/delete confirmation flow is now isolated in:
+  - `src/input_dispatch_delete.c`
+  - `include/input_dispatch_delete_internal.h`
+- Delayed click timeout processing is now isolated in:
+  - `src/input_dispatch_pending_clicks.c`
+  - `include/input_dispatch_pending_clicks_internal.h`
+- Preview render-only helpers are now isolated in:
+  - `src/app_preview_render.c`
+  - `include/app_preview_render_internal.h`
 - Unified mode transitions via `app_transition_mode()` with table-driven transition guards and per-mode hooks.
 - Makefile cleanup with shared test object rules and auto-dependencies.
 - CI hardening (`cppcheck` non-optional, `-Werror` + tests).
@@ -138,5 +129,5 @@ Completed:
   - Kept `include/app.h` as an umbrella include for compatibility.
 
 Current next steps:
-- Continue tightening `PixelTermApp` state boundaries (internal grouping/access patterns).
-- Add targeted regression tests for complex mode round-trips and book-preview edge paths.
+- Continue tightening internal boundaries only where they reduce coupling without changing behavior.
+- Add targeted regression coverage for input-dispatch and preview-mode round trips if future changes touch those paths.

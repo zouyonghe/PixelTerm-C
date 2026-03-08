@@ -1,6 +1,6 @@
 # PixelTerm-C - 高性能终端图像/视频/电子书浏览器
 
-![Version](https://img.shields.io/badge/Version-v1.7.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.2-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](README.md) | 中文*
@@ -107,7 +107,7 @@ git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
 
-# 可执行文件输出在 pixelterm
+# 可执行文件输出在 bin/pixelterm
 # （或使用：sudo make install 安装到系统）
 # 说明：若系统没有 MuPDF，会自动以无电子书支持的方式构建。
 
