@@ -35,6 +35,7 @@ Thumbs.db
 *.temp
 
 # Other
+.worktrees/
 .grok/
 .iflow/
 auto-aur-update/
