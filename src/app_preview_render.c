@@ -44,6 +44,7 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                                   border_style);
 
     gboolean rendered_from_preload = FALSE;
+    gboolean rendered_owned = FALSE;
     GString *rendered = NULL;
 
     if (app->preloader && app->preload_enabled) {
@@ -52,6 +53,7 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                                               context->content_width,
                                               context->content_height);
         rendered_from_preload = (rendered != NULL);
+        rendered_owned = rendered_from_preload;
     }
 
     if (!rendered) {
@@ -71,10 +73,12 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                                                       frame_height,
                                                       frame_rowstride,
                                                       4);
+                rendered_owned = (rendered != NULL);
             }
             g_free(frame_pixels);
         } else {
             rendered = renderer_render_image_file(render_ctx->renderer, filepath);
+            rendered_owned = (rendered != NULL);
         }
     }
 
@@ -109,7 +113,9 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                             context->content_width,
                             context->content_height,
                             rendered);
-    g_string_free(rendered, TRUE);
+    if (rendered_owned) {
+        g_string_free(rendered, TRUE);
+    }
 
     return GRID_RENDER_CONTINUE;
 }
@@ -220,15 +226,8 @@ ErrorCode app_preview_print_info(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    const gchar *filepath = NULL;
-    gint display_index = 0;
-    if (app_is_preview_mode(app)) {
-        filepath = app_preview_get_selected_filepath(app);
-        display_index = app->preview.selected;
-    } else {
-        filepath = app_get_current_filepath(app);
-        display_index = app_get_current_index(app);
-    }
+    const gchar *filepath = app_preview_get_selected_filepath(app);
+    gint display_index = app->preview.selected;
     if (!filepath) {
         return ERROR_FILE_NOT_FOUND;
     }
