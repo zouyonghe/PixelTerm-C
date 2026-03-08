@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.7.3: Documentation redesign, protocol notes, and refactor hardening.
+    - **Docs**: Redesign the English and Chinese README files for end users, add a Japanese README, and move terminal-specific guidance into a dedicated protocol support reference.
+    - **Compatibility**: Add `docs/TERMINAL_PROTOCOL_SUPPORT.md` to document current terminal/protocol notes and manual override guidance without maintaining a ranked terminal list.
+    - **Testing**: Add focused regression coverage for pending preview clicks, delete dispatch flows, last-image transitions back to file manager, and preloader cached-image ownership.
+    - **Refactor Hardening**: Follow up on the input/preview refactor with safer cached-render ownership handling and stale pending-click cleanup across mode changes.
+    - **Repo Hygiene**: Ignore local `.worktrees/` directories to keep isolated workspaces out of repository status.
+
 - v1.7.2: Preview grid navigation stability fix.
     - **Preview**: Stabilize grid placement when navigating forward/backward near the end of long lists.
     - **Scrolling**: Clamp preview scroll range to full-page bounds (`rows - visible_rows`) to prevent partial-page jumpiness.
