@@ -38,7 +38,8 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
         app->input.single_click.pending = FALSE;
     }
 
-    if (app->input.preview_click.pending) {
+    if (app->input.preview_click.pending &&
+        (app_is_book_preview_mode(app) || app_is_preview_mode(app))) {
         gint64 current_time = g_get_monotonic_time();
         if (current_time - app->input.preview_click.pending_time > k_click_threshold_us) {
             app->input.preview_click.pending = FALSE;
@@ -75,6 +76,8 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
                 }
             }
         }
+    } else if (app->input.preview_click.pending) {
+        app->input.preview_click.pending = FALSE;
     }
 
     if (app_is_file_manager_mode(app) && app->input.file_manager_click.pending) {

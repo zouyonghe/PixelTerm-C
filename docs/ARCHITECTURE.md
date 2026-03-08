@@ -31,7 +31,7 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
   - `src/app_file_manager.c` for directory refresh/navigation and selection state logic.
   - `src/app_file_manager_render.c` for viewport/hit-test and terminal rendering logic.
 - Single-image render/refresh flow has been split into `src/app_single_render.c`.
-- Preview grid interaction/render logic has been split into `src/app_preview_grid.c`.
+- Preview grid interaction/state logic has been split into `src/app_preview_grid.c`, with render-only helpers in `src/app_preview_render.c`.
 - Shared preview/book-preview grid helpers now live in `src/app_preview_shared.c`.
 - Book-preview interaction/render logic now lives in `src/app_preview_book.c`.
 - Book TOC interaction/render logic has been split into `src/app_book_toc.c`.

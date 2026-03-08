@@ -105,7 +105,7 @@ TEST_SOURCES = $(wildcard tests/test_*.c)
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o \
 		$(OBJDIR)/gif_player.o $(OBJDIR)/video_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o \
-		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/app_mode.o
+		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/app_mode.o $(OBJDIR)/input_dispatch_pending_clicks.o
 
 # Default target
 all: $(TARGET)

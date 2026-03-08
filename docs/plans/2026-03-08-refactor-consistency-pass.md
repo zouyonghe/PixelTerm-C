@@ -15,6 +15,7 @@
 **Files:**
 - Create: `docs/plans/2026-03-08-refactor-consistency-design.md`
 - Modify: `README.md`
+- Modify: `README_zh.md`
 - Modify: `docs/PROJECT_STATUS.md`
 - Modify: `docs/DEVELOPMENT.md`
 - Modify: `docs/ARCHITECTURE.md`
@@ -28,7 +29,7 @@ Expected: PASS with the current baseline test count.
 
 **Step 2: Identify stale version/build/layout text**
 
-Run: `rg "v1\.4\.0|v1\.7\.0|pixelterm$|stage/|Current Status" README.md docs`
+Run: `rg "v1\.4\.0|v1\.7\.0|pixelterm$|stage/|Current Status" README.md README_zh.md docs`
 Expected: Hits in the current docs that need updating.
 
 **Step 3: Update only factual inconsistencies first**
@@ -44,13 +45,13 @@ Make these edits:
 
 **Step 4: Re-run the stale-text search**
 
-Run: `rg "v1\.4\.0|v1\.7\.0|stage/" README.md docs`
+Run: `rg "v1\.4\.0|v1\.7\.0|stage/" README.md README_zh.md docs`
 Expected: No matches.
 
 **Step 5: Commit**
 
 ```bash
-git add README.md docs/PROJECT_STATUS.md docs/DEVELOPMENT.md docs/ARCHITECTURE.md docs/REFACTORING_PLAN.md docs/refactor-plan.md docs/plans/2026-03-08-refactor-consistency-design.md docs/plans/2026-03-08-refactor-consistency-pass.md
+git add README.md README_zh.md docs/PROJECT_STATUS.md docs/DEVELOPMENT.md docs/ARCHITECTURE.md docs/REFACTORING_PLAN.md docs/refactor-plan.md docs/plans/2026-03-08-refactor-consistency-design.md docs/plans/2026-03-08-refactor-consistency-pass.md
 git commit -m "docs: sync repository docs with current codebase"
 ```
 
@@ -214,6 +215,7 @@ git commit -m "refactor: extract preview render helpers"
 
 **Files:**
 - Modify: `README.md`
+- Modify: `README_zh.md`
 - Modify: `docs/PROJECT_STATUS.md`
 - Modify: `docs/DEVELOPMENT.md`
 - Modify: `docs/ARCHITECTURE.md`
@@ -237,13 +239,13 @@ Replace stale or misleading comments with concise explanations of non-obvious be
 
 **Step 3: Run doc consistency checks**
 
-Run: `rg "v1\.4\.0|v1\.7\.0|stage/|src/app\.c \(~5\.5k LOC\)" README.md docs`
+Run: `rg "v1\.4\.0|v1\.7\.0|stage/|src/app\.c \(~5\.5k LOC\)" README.md README_zh.md docs`
 Expected: No stale matches that contradict the current codebase.
 
 **Step 4: Commit**
 
 ```bash
-git add README.md docs/PROJECT_STATUS.md docs/DEVELOPMENT.md docs/ARCHITECTURE.md docs/REFACTORING_PLAN.md docs/refactor-plan.md
+git add README.md README_zh.md docs/PROJECT_STATUS.md docs/DEVELOPMENT.md docs/ARCHITECTURE.md docs/REFACTORING_PLAN.md docs/refactor-plan.md
 git commit -m "docs: update architecture and refactor notes"
 ```
 
