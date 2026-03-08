@@ -1,6 +1,6 @@
 # PixelTerm-C - High Performance Terminal Image/Video/Book Browser
 
-![Version](https://img.shields.io/badge/Version-v1.7.0-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.2-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](README_zh.md)*
@@ -107,7 +107,7 @@ git clone https://github.com/zouyonghe/PixelTerm-C.git
 cd PixelTerm-C
 make
 
-# The binary will be at pixelterm
+# The binary will be at bin/pixelterm
 # (Or install system-wide with: sudo make install)
 # Note: Book support is enabled when MuPDF is available; otherwise it builds without it.
 

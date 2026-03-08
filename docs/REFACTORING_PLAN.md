@@ -1,53 +1,45 @@
 # PixelTerm-C Refactoring Plan
 
 ## Goals
-- Reduce file size and responsibility overload in `src/app.c` and `src/main.c`.
-- Keep behavior identical while isolating UI modes and state.
-- Make performance work easier by separating hot paths from UI glue.
+- Reduce file size and responsibility overload in `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
+- Keep behavior identical while isolating the remaining internal helpers.
+- Make performance work easier by separating routing/prompt logic from render-only code.
 
 ## Current Hotspots
-- `src/app.c` (~5.5k LOC) mixes lifecycle, rendering, file manager, preview grid, and book preview logic.
-- `src/main.c` (~2.1k LOC) mixes event loop, input dispatch, UI overlays, and media decisions.
-- `include/app.h` has a large monolithic `PixelTermApp` with unrelated state groups.
-- Click handling repeats the same pattern for single view, preview grid, and file manager.
-- Grid layout/paging logic is duplicated between preview and book preview.
+- `src/input_dispatch_core.c` (~408 LOC) is now a narrower router, but it still coordinates mode dispatch and shared event flow.
+- `src/app_preview_grid.c` (~716 LOC) now focuses on preview interaction/state, but it remains one of the larger mode-specific files.
+- `src/app.c` and `src/main.c` are now thin coordination layers compared with the earlier monoliths.
+- Shared click tracking already lives in `InputState`, so the next steps are selective follow-up cleanup and regression coverage rather than another large state redesign.
 
 ## Proposed Module Split (Low-Risk)
 
-### 1. App Core
-- `src/app_core.c` + `include/app_core.h`
-- Lifecycle (`app_create`, `app_destroy`, `app_initialize`) and directory loading.
-- Navigation APIs (`app_next_image`, `app_previous_image`, `app_goto_image`).
+### 1. Input Dispatch Delete Flow
+- `src/input_dispatch_delete.c` + `include/input_dispatch_delete_internal.h`
+- Delete prompt layout/clear helpers and delete confirmation flow.
 
-### 2. UI Modes
-- `src/file_manager.c` + `include/file_manager.h`
-  - Selection, paging, layout, and render for file manager.
-- `src/preview_grid.c` + `include/preview_grid.h`
-  - Grid layout, selection, render for preview mode.
-- `src/book_preview.c` + `include/book_preview.h`
-  - Book grid layout, selection, render, and jump logic.
+### 2. Pending Click Processing
+- `src/input_dispatch_pending_clicks.c` + `include/input_dispatch_pending_clicks_internal.h`
+- Click timeout checks and mode-specific single-click dispatch.
 
-### 3. Input Dispatch
-- `src/input_actions.c` + `include/input_actions.h`
-  - Translate `InputEvent` -> App action.
-  - Move key/mouse mode handling out of `main.c`.
+### 3. Preview Render Helpers
+- `src/app_preview_render.c` + `include/app_preview_render_internal.h`
+- Preview info/status rendering, filename redraw, border draw/clear, and shared grid cell rendering callback.
 
-### 4. UI Overlays
-- `src/ui_overlays.c` + `include/ui_overlays.h`
-  - Delete prompt, FPS overlay, info text, and status lines.
+### 4. Documentation Sync
+- Keep `README.md`, `docs/PROJECT_STATUS.md`, and `docs/DEVELOPMENT.md` aligned with release `v1.7.2`, `bin/pixelterm`, and the landed repository layout.
 
 ## Suggested State Decomposition
-Create sub-structs and embed them into `PixelTermApp`:
-- `AppRenderState`: `canvas`, `canvas_config`, `term_info`, `render_work_factor`, `gamma`, `dither_enabled`, `last_render_*`.
-- `AppMediaState`: `gif_player`, `video_player`, `show_fps`, `video_scale`, `image_zoom`, `image_pan_*`.
-- `AppUiState`: `info_visible`, `ui_text_hidden`, `needs_redraw`, `needs_screen_clear`, `suppress_full_clear`.
-- `FileManagerState`: `file_manager_directory`, `directory_entries`, `selected_entry`, `scroll_offset`, `show_hidden_files`.
-- `PreviewState`: `preview_mode`, `preview_selected`, `preview_scroll`, `preview_zoom`.
-- `BookState`: `book_doc`, `book_path`, `book_page`, `book_page_count`, `book_preview_*`, `book_jump_*`.
+State grouping is partially complete today:
+- `FileManagerState`: file-manager directory/list/selection state.
+- `PreviewState`: preview selection, scroll, zoom, and cached link hints.
+- `BookState`: book reader, preview, jump, and TOC state.
 - `InputState`: mouse and click tracking (see below).
+- `AsyncState`: deferred render/image request state.
+
+Render/media/UI flags still live directly on `PixelTermApp`, so this pass focuses on helper extraction rather than another state-layout change.
 
 ## Click Handling Refactor
-Replace the triplicated pending-click fields with a shared struct:
+Shared click tracking is already in place:
 
 ```
 typedef struct {
@@ -63,16 +55,14 @@ Embed one tracker per mode:
 - `InputState.preview_click`
 - `InputState.file_manager_click`
 
-This removes repeated logic in `main.c` and makes timeouts consistent.
+This keeps timeouts consistent across modes. With the pending-click extraction now landed, the next low-risk step is adding targeted regression coverage around those mode transitions.
 
 ## Refactor Sequence (Incremental)
-0. **Mode transition guardrail**: introduce `app_transition_mode()` and migrate call sites off raw `app_set_mode()`.
-1. **State grouping only**: introduce sub-structs and move initialization to helper functions.
-2. **Extract file manager**: move `app_file_manager_*` to `file_manager.c`.
-3. **Extract preview grid**: move grid layout and render logic to `preview_grid.c`.
-4. **Extract book preview**: move book grid logic to `book_preview.c`.
-5. **Input dispatch split**: move key/mouse handling from `main.c` into `input_actions.c`.
-6. **UI overlays**: isolate prompt rendering to `ui_overlays.c`.
+0. **Doc sync**: update version/build/layout text to the current repository state.
+1. **Extract delete flow**: move delete prompt/delete confirmation helpers out of `src/input_dispatch_core.c`.
+2. **Extract pending clicks**: move pending-click processing out of `src/input_dispatch_core.c`.
+3. **Extract preview render helpers**: move render-only preview helpers out of `src/app_preview_grid.c`.
+4. **Refresh architecture docs**: update module-boundary docs after the code moves land.
 
 Each step should compile and keep tests passing.
 
@@ -83,11 +73,22 @@ Each step should compile and keep tests passing.
 - Preserve behavior in book mode and file manager, which are sensitive to layout calculations.
 
 ## Documentation Updates
-- Update `docs/DEVELOPMENT.md` to link this plan.
-- After each extraction, update `docs/ARCHITECTURE.md` with new module boundaries.
+- Keep build/install text aligned with `Makefile` (`bin/pixelterm`, `make install` -> `$(PREFIX)/bin/pixelterm`).
+- After each extraction, update `docs/ARCHITECTURE.md` and the companion refactor notes with the landed module boundaries.
 
-## Progress Snapshot (2026-02-16)
+## Progress Snapshot (2026-03-08)
 - Completed:
+  - Current pass targets the remaining large helper files: `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
+  - Synced README/project/development/architecture docs to shipped release `v1.7.2`, current repository layout, and `bin/pixelterm` build output.
+  - Extracted delete prompt/delete confirmation helpers from `src/input_dispatch_core.c` into:
+    - `src/input_dispatch_delete.c`
+    - `include/input_dispatch_delete_internal.h`
+  - Extracted delayed click timeout handling from `src/input_dispatch_core.c` into:
+    - `src/input_dispatch_pending_clicks.c`
+    - `include/input_dispatch_pending_clicks_internal.h`
+  - Extracted preview render-only helpers from `src/app_preview_grid.c` into:
+    - `src/app_preview_render.c`
+    - `include/app_preview_render_internal.h`
   - Unified mode transition entry via `app_transition_mode()` in `src/app_mode.c`, now backed by a table-driven transition mask plus per-mode enter/exit hooks.
   - Extracted file manager mode code from `src/app.c` into `src/app_file_manager.c`.
   - Further split file manager responsibilities into `src/app_file_manager.c` (state/navigation/refresh) and `src/app_file_manager_render.c` (viewport/hit-test/render + mouse entry flow).

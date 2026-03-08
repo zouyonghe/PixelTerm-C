@@ -38,13 +38,18 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
 - Book page render logic has been split into `src/app_book_page_render.c`.
 - Shared terminal UI helper logic has been centralized in `src/ui_render_utils.c` (sync-update wrappers, centered help rendering, clear-area helpers, and kitty image cleanup), reducing duplicated rendering glue across modes.
 - Input dispatch now uses split helpers:
+  - `src/input_dispatch_delete.c` for delete prompt layout, prompt rendering, and delete confirmation/delete-refresh flow,
   - `src/input_dispatch_media.c` for media checks (single-mode video/animated detection),
   - `src/input_dispatch_key_modes.c` for preview-mode key flows,
   - `src/input_dispatch_key_book.c` for book/book-preview key flows and book jump state handling,
   - `src/input_dispatch_key_single.c` for single-mode key flows and video key actions,
   - `src/input_dispatch_key_file_manager.c` for file-manager key flows,
-  - `src/input_dispatch_mouse_modes.c` for mode mouse handlers and single-image zoom interactions.
+  - `src/input_dispatch_mouse_modes.c` for mode mouse handlers and single-image zoom interactions,
+  - `src/input_dispatch_pending_clicks.c` for delayed single-click timeout handling across single/book, preview/book-preview, and file-manager modes.
   This keeps `src/input_dispatch_core.c` focused on routing and shared flow control.
+- Preview mode now splits state/navigation from render-only helpers:
+  - `src/app_preview_grid.c` owns layout, selection movement, selection cache hints, page movement, zoom, and preview hit-testing.
+  - `src/app_preview_render.c` owns preview grid cell rendering, selection border repaint helpers, selected filename redraw, and preview info/status output.
 - List-navigation hot paths now use index+pointer hints instead of repeated head-based lookup:
   - `FileManagerState.selected_link` / `selected_link_index`
   - `PreviewState.selected_link` / `selected_link_index`
@@ -71,7 +76,7 @@ typedef struct {
     gint current_index;
     gint total_images;
 
-    // Mode/state buckets (see include/app.h for full details)
+    // Mode/state buckets (see include/app_state.h for full details)
     FileManagerState file_manager;
     PreviewState preview;
     BookState book;
@@ -137,10 +142,12 @@ typedef struct {
 - **Static**: PNG, JPEG, GIF, WebP, TIFF, BMP
 - **Optional**: SVG (via librsvg), AVIF (via libavif)
 - **Animated**: GIF, WebP animation
+- **Video**: MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V via FFmpeg-backed decoding
+- **Books**: PDF, EPUB, and CBZ when MuPDF support is enabled at build time
 
 ### Directory Scanning
 - **Single-Threaded Scan**: Directory traversal happens on the main thread.
-- **Filtering**: Image lists rely on `is_valid_image_file` (magic header checks).
+- **Filtering**: Media lists rely on `is_valid_media_file`, with format validation delegated to the underlying image/video/book checks.
 - **Sorting**: File manager groups directories before files and sorts entries in AaBb order; image lists reuse the same AaBb ordering for consistency.
 
 ## Error Handling Strategy
@@ -190,7 +197,7 @@ typedef struct {
 - **Windows**: Experimental, requires WSL or similar
 
 ### Build System
-- **Makefile**: Uses pkg-config for Chafa/GLib/GDK-Pixbuf/GIO and outputs `bin/pixelterm`.
+- **Makefile**: Uses pkg-config for Chafa/GLib/GDK-Pixbuf/GIO/FFmpeg, enables MuPDF support when available, builds `bin/pixelterm`, and installs `$(PREFIX)/bin/pixelterm` via `make install`.
 - **Cross-Compile**: `ARCH=aarch64` switches pkg-config paths for ARM64 builds.
 
 ## Future Optimization Opportunities

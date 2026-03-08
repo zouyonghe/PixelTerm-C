@@ -1,21 +1,14 @@
 #define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
 #include <glib.h>
 
 #include "input_dispatch.h"
-#include "input_dispatch_book_internal.h"
 #include "input_dispatch_core.h"
+#include "input_dispatch_delete_internal.h"
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_media_internal.h"
 #include "input_dispatch_mouse_modes_internal.h"
+#include "input_dispatch_pending_clicks_internal.h"
 #include "common.h"
-#include "text_utils.h"
-
-static const gint64 k_click_threshold_us = 400000;
 
 typedef void (*ModeKeyPressHandler)(PixelTermApp *app,
                                     InputHandler *input_handler,
@@ -29,123 +22,9 @@ typedef struct {
     ModeMouseHandler mouse_scroll;
 } ModeInputHandlers;
 
-static void handle_delete_current_image(PixelTermApp *app);
 static void handle_mouse_press_book_toc(PixelTermApp *app, const InputEvent *event);
 static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEvent *event);
 static const ModeInputHandlers* get_mode_input_handlers(const PixelTermApp *app);
-
-static gint delete_prompt_display_width(const char *text) {
-    return utf8_display_width(text);
-}
-
-static gint delete_prompt_row(const PixelTermApp *app) {
-    if (!app) {
-        return 1;
-    }
-
-    gint term_height = app->term_height > 0 ? app->term_height : 24;
-    gint row = term_height - 1;
-
-    if (app_is_single_mode(app)) {
-        if (input_dispatch_current_is_video(app) && app->video_player && app->video_player->last_frame_height > 0) {
-            row = app->video_player->last_frame_top_row + app->video_player->last_frame_height;
-        } else if (app->last_render_height > 0 && app->last_render_top_row > 0) {
-            row = app->last_render_top_row + app->last_render_height;
-        }
-    }
-
-    if (row < 1) {
-        row = 1;
-    } else if (row > term_height - 1) {
-        row = term_height - 1;
-    }
-
-    return row;
-}
-
-static void app_show_delete_prompt(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-    const char *message = "Press r again to delete";
-    gint term_width = app->term_width > 0 ? app->term_width : 80;
-    gint row = delete_prompt_row(app);
-
-    gint message_len = delete_prompt_display_width(message);
-    gint col = term_width > message_len ? (term_width - message_len) / 2 + 1 : 1;
-
-    printf("\033[%d;1H\033[2K", row);
-    printf("\033[%d;%dH\033[31m%s\033[0m", row, col, message);
-    fflush(stdout);
-}
-
-static void app_clear_delete_prompt(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-    gint row = delete_prompt_row(app);
-    printf("\033[%d;1H\033[2K", row);
-    fflush(stdout);
-}
-
-static void handle_delete_current_in_preview(PixelTermApp *app) {
-    if (app_has_images(app)) {
-        app->current_index = app->preview.selected;
-        app_delete_current_image(app);
-    }
-
-    if (app_has_images(app)) {
-        if (app->current_index < 0) app->current_index = 0;
-        if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
-        app->preview.selected = app->current_index;
-        app->needs_screen_clear = TRUE;
-        app_render_preview_grid(app);
-    } else {
-        (void)app_transition_mode(app, APP_MODE_SINGLE);
-        app->needs_screen_clear = TRUE;
-        if (app_enter_file_manager(app) == ERROR_NONE) {
-            app_render_file_manager(app);
-        } else {
-            app_refresh_display(app);
-        }
-    }
-}
-
-static gboolean handle_delete_request(PixelTermApp *app, const InputEvent *event) {
-    if (!app || !event || event->type != INPUT_KEY_PRESS) {
-        return FALSE;
-    }
-
-    if (app_is_file_manager_mode(app) || app_is_book_preview_mode(app) || app_is_book_mode(app)) {
-        if (app->delete_pending) {
-            app->delete_pending = FALSE;
-            app_clear_delete_prompt(app);
-        }
-        return FALSE;
-    }
-
-    if (app->delete_pending) {
-        app->delete_pending = FALSE;
-        if (event->key_code == (KeyCode)'r') {
-            if (app_is_preview_mode(app)) {
-                handle_delete_current_in_preview(app);
-            } else {
-                handle_delete_current_image(app);
-            }
-            return TRUE;
-        }
-        app_clear_delete_prompt(app);
-        return FALSE;
-    }
-
-    if (event->key_code == (KeyCode)'r') {
-        app->delete_pending = TRUE;
-        app_show_delete_prompt(app);
-        return TRUE;
-    }
-
-    return FALSE;
-}
 
 static void app_pause_video_for_resize(PixelTermApp *app) {
     if (!app || !app->video_player) {
@@ -302,98 +181,6 @@ static void handle_mouse_scroll(PixelTermApp *app, const InputEvent *event) {
     }
 }
 
-static void process_pending_clicks(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-    if (app->book.toc_visible) {
-        app->input.single_click.pending = FALSE;
-        app->input.preview_click.pending = FALSE;
-        return;
-    }
-
-    // Process pending single click action (Single Image / Book Mode).
-    if (app->input.single_click.pending &&
-        (app_is_single_mode(app) || app_is_book_mode(app))) {
-        gint64 current_time = g_get_monotonic_time();
-        if (current_time - app->input.single_click.pending_time > k_click_threshold_us) {
-            app->input.single_click.pending = FALSE;
-            if (app_is_book_mode(app)) {
-                gint page_step = app_book_use_double_page(app) ? 2 : 1;
-                input_dispatch_book_change_page(app, page_step);
-            } else {
-                app_next_image(app);
-                if (app->needs_redraw) {
-                    app->suppress_full_clear = TRUE;
-                    app->async.render_request = TRUE;
-                    app_refresh_display(app);
-                    app->needs_redraw = FALSE;
-                }
-            }
-        }
-    } else if (app->input.single_click.pending) {
-        app->input.single_click.pending = FALSE;
-    }
-
-    // Process pending single click action (Preview Grid Mode).
-    if (app->input.preview_click.pending) {
-        gint64 current_time = g_get_monotonic_time();
-        if (current_time - app->input.preview_click.pending_time > k_click_threshold_us) {
-            app->input.preview_click.pending = FALSE;
-            gboolean redraw_needed = FALSE;
-            if (app_is_book_preview_mode(app)) {
-                gint old_selected = app->book.preview_selected;
-                gint old_scroll = app->book.preview_scroll;
-                app_handle_mouse_click_book_preview(app,
-                                                    app->input.preview_click.x,
-                                                    app->input.preview_click.y,
-                                                    &redraw_needed,
-                                                    NULL);
-                if (redraw_needed) {
-                    if (app->book.preview_scroll != old_scroll) {
-                        app_render_book_preview(app);
-                    } else if (app->book.preview_selected != old_selected) {
-                        app_render_book_preview_selection_change(app, old_selected);
-                    }
-                }
-            } else if (app_is_preview_mode(app)) {
-                gint old_selected = app->preview.selected;
-                gint old_scroll = app->preview.scroll;
-                app_handle_mouse_click_preview(app,
-                                               app->input.preview_click.x,
-                                               app->input.preview_click.y,
-                                               &redraw_needed,
-                                               NULL);
-                if (redraw_needed) {
-                    if (app->preview.scroll != old_scroll) {
-                        app_render_preview_grid(app);
-                    } else if (app->preview.selected != old_selected) {
-                        app_render_preview_selection_change(app, old_selected);
-                    }
-                }
-            }
-        }
-    }
-
-    // Process pending single click action (File Manager Mode).
-    if (app_is_file_manager_mode(app) && app->input.file_manager_click.pending) {
-        gint64 current_time = g_get_monotonic_time();
-        if (current_time - app->input.file_manager_click.pending_time > k_click_threshold_us) {
-            app->input.file_manager_click.pending = FALSE;
-            gint old_selected = app->file_manager.selected_entry;
-            gint old_scroll = app->file_manager.scroll_offset;
-            app_handle_mouse_file_manager(app,
-                                          app->input.file_manager_click.x,
-                                          app->input.file_manager_click.y);
-            if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-                app_render_file_manager(app);
-            }
-        }
-    } else if (!app_is_file_manager_mode(app) && app->input.file_manager_click.pending) {
-        app->input.file_manager_click.pending = FALSE;
-    }
-}
-
 static void drain_main_context_if_playing(gboolean is_playing) {
     if (!is_playing) {
         return;
@@ -411,30 +198,6 @@ static void process_animation_events(PixelTermApp *app) {
 
     drain_main_context_if_playing(app->gif_player && gif_player_is_playing(app->gif_player));
     drain_main_context_if_playing(app->video_player && video_player_is_playing(app->video_player));
-}
-
-static void handle_delete_current_image(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-
-    ErrorCode err = app_delete_current_image(app);
-    if (err != ERROR_NONE) {
-        app_render_by_mode(app);
-        return;
-    }
-
-    if (!app_has_images(app)) {
-        app->needs_screen_clear = TRUE;
-        if (app_enter_file_manager(app) == ERROR_NONE) {
-            app_render_file_manager(app);
-        } else {
-            app_refresh_display(app);
-        }
-        return;
-    }
-
-    app_render_by_mode(app);
 }
 
 static gboolean handle_key_press_common(PixelTermApp *app,
@@ -576,7 +339,7 @@ static const ModeInputHandlers* get_mode_input_handlers(const PixelTermApp *app)
 }
 
 static void handle_key_press(PixelTermApp *app, InputHandler *input_handler, const InputEvent *event) {
-    if (handle_delete_request(app, event)) {
+    if (input_dispatch_handle_delete_request(app, event)) {
         return;
     }
     if (app && app->book.jump_active && (app_is_book_mode(app) || app_is_book_preview_mode(app))) {
@@ -633,7 +396,7 @@ void input_dispatch_core_handle_event(PixelTermApp *app,
 }
 
 void input_dispatch_core_process_pending(PixelTermApp *app) {
-    process_pending_clicks(app);
+    input_dispatch_process_pending_clicks(app);
 }
 
 void input_dispatch_core_process_animations(PixelTermApp *app) {

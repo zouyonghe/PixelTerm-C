@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.4.0 with mouse support, animated GIF playback, dithering control, input refactor, and preview paging polish.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.2 with image/video/book browsing, modular app/input layers, and the latest preview paging fixes.
 
 ## Technical Architecture
 
@@ -15,31 +15,14 @@ PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image b
 - Command line argument parsing
 - Main event loop
 
-#### 2. Core Application (src/app.h, src/app_state.h, src/app.c, src/app_core.c)
-```c
-typedef struct {
-    ChafaCanvas *canvas;
-    ChafaCanvasConfig *canvas_config;
-    ChafaTermInfo *term_info;
+#### 2. Core Application (include/app.h, include/app_state.h, src/app.c, src/app_core.c)
+`PixelTermApp` now keeps shared render/media state at the top level and embeds mode-specific state buckets from `include/app_state.h`:
+- `FileManagerState`
+- `PreviewState`
+- `BookState`
+- `InputState`
+- `AsyncState`
 
-    GList *image_files;
-    gchar *current_directory;
-    gint current_index;
-    gint total_images;
-
-    ImagePreloader *preloader;
-    GifPlayer *gif_player;
-
-    AppMode mode;
-    gboolean preload_enabled;
-    gboolean dither_enabled;
-    gint render_work_factor;
-    gboolean force_sixel;
-
-    gint term_width;
-    gint term_height;
-} PixelTermApp;
-```
 State and mode data types now live in `include/app_state.h`; `include/app.h` focuses on public app APIs.
 Public API declarations are now split by module:
 - `include/app_core.h`
@@ -51,7 +34,7 @@ Public API declarations are now split by module:
 `include/app.h` remains the compatibility umbrella include.
 - `src/app_core.c` owns core state/navigation APIs (`app_load_*`, `app_*image`, `app_get_current_*`, `app_delete_current_image`, `app_open_book`/`app_close_book`).
 
-#### 3. File Browser (src/browser.h, src/browser.c)
+#### 3. File Browser (include/browser.h, src/browser.c)
 - Image directory scanning
 - Image file filtering/validation
 - File list management for the viewer
@@ -69,24 +52,29 @@ Public API declarations are now split by module:
 - Mouse selection and enter-at-position handling
 
 #### 5. Preview Grid Mode (src/app_preview_grid.c)
-- Preview grid rendering/navigation helpers
+- Preview grid layout, selection/navigation, zoom, paging, and mouse hit-testing
 - Preview selection cache (`selected_link + selected_link_index`) for grid hot paths
 
-#### 5.1 Preview Shared Helpers (src/app_preview_shared.c)
+#### 5.1 Preview Render Helpers (src/app_preview_render.c)
+- Preview cell rendering and preloader/renderer handoff
+- Selection border repaint helpers and selected filename redraw
+- Preview info/status block output
+
+#### 5.2 Preview Shared Helpers (src/app_preview_shared.c)
 - Shared preview/book-preview grid helpers:
 - Grid renderer creation and rendered-line drawing
 - Grid cell border/origin helpers and vertical layout offsets
 
-#### 5.2 Book-Preview Mode (src/app_preview_book.c)
+#### 5.3 Book-Preview Mode (src/app_preview_book.c)
 - Book-preview rendering/navigation helpers and jump prompt UI
 
-#### 5.3 Book TOC Mode (src/app_book_toc.c)
+#### 5.4 Book TOC Mode (src/app_book_toc.c)
 - Book TOC viewport/layout, hit-test, selection, and rendering helpers
 
-#### 5.4 Book Page Render (src/app_book_page_render.c)
+#### 5.5 Book Page Render (src/app_book_page_render.c)
 - Book single/double-page rendering pipeline and page image composition
 
-#### 6. Image Renderer (src/renderer.h, src/renderer.c)
+#### 6. Image Renderer (include/renderer.h, src/renderer.c)
 - Direct Chafa canvas integration
 - Image processing and display
 - Caching system
@@ -98,35 +86,41 @@ Public API declarations are now split by module:
 - Shared terminal UI rendering helpers (sync update markers, centered help line, clear helpers, kitty image cleanup, filename width policy)
 - Reused by single-image and preview/book rendering paths to avoid duplicate implementations
 
-#### 8. GIF Player (src/gif_player.h, src/gif_player.c)
+#### 8. GIF Player (include/gif_player.h, src/gif_player.c)
 - Animated GIF decoding and playback
 - Frame timing and render window management
 
-#### 9. Input Handler (src/input.h, src/input.c)
+#### 9. Input Handler (include/input.h, src/input.c)
 - Keyboard input processing
 - Terminal mode management
 - Key mapping
 
-#### 9.5 Input Dispatch (src/input_dispatch.c, src/input_dispatch_core.c)
+#### 9.5 Input Dispatch (include/input_dispatch.h, src/input_dispatch.c, src/input_dispatch_core.c)
 - `src/input_dispatch.c` keeps the public API (`include/input_dispatch.h`) stable.
-- `src/input_dispatch_core.c` now focuses on event routing, pending-click processing, and shared guard logic.
+- `src/input_dispatch_core.c` now focuses on event routing and shared guard logic.
 
-#### 9.6 Input Dispatch Media Helpers (src/input_dispatch_media.c)
+#### 9.6 Input Dispatch Delete Flow (src/input_dispatch_delete.c)
+- Delete prompt placement, prompt rendering/clearing, and delete confirmation orchestration
+
+#### 9.7 Input Dispatch Pending Clicks (src/input_dispatch_pending_clicks.c)
+- Delayed single-click timeout handling for single/book, preview/book-preview, and file-manager modes
+
+#### 9.8 Input Dispatch Media Helpers (src/input_dispatch_media.c)
 - Shared media-type checks used by input dispatch paths (`single` video/animated-image detection).
 
-#### 9.7 Input Dispatch Key Modes
+#### 9.9 Input Dispatch Key Modes
 - `src/input_dispatch_key_modes.c`: preview-mode key handlers.
 - `src/input_dispatch_key_book.c`: book/book-preview key handlers and book jump/TOC routing.
 - `src/input_dispatch_key_single.c`: single-mode key handlers and video key-side helpers.
 - `src/input_dispatch_key_file_manager.c`: file-manager key handlers.
 
-#### 9.8 Input Dispatch Mouse Modes (src/input_dispatch_mouse_modes.c)
+#### 9.10 Input Dispatch Mouse Modes (src/input_dispatch_mouse_modes.c)
 - Mode-specific mouse press/double-click/scroll handlers and single-view zoom anchor logic.
 
 #### 11. App Mode Transition (src/app_mode.c)
 - `app_transition_mode()` centralizes mode switching and validation, backed by a table-driven transition mask and per-mode enter/exit hooks.
 
-#### 10. Preloading System (src/preloader.h, src/preloader.c)
+#### 10. Preloading System (include/preloader.h, src/preloader.c)
 - Multi-threaded image preloading
 - Memory management
 - Cache coordination
@@ -159,8 +153,7 @@ For a structured refactor plan with safe, incremental steps, see:
 - `docs/REFACTORING_PLAN.md`
 - `docs/refactor-plan.md` (execution-focused companion plan)
 
-Performance changes should follow the workflow diagram in:
-See the performance workflow notes in this section and keep benchmarks consistent across runs.
+Performance changes should follow the workflow notes in this section and keep benchmarks consistent across runs.
 
 ## Key Design Decisions
 
@@ -210,6 +203,9 @@ GString *output = chafa_canvas_print(canvas, term_info);
 - GLib 2.0 development libraries
 - GDK-Pixbuf development libraries
 - GIO development libraries (glib)
+- FFmpeg development libraries (`libavformat`, `libavcodec`, `libswscale`, `libavutil`)
+- MuPDF development libraries for book support (optional)
+- `pkg-config`
 - Make or compatible build system
 
 ### Build System
@@ -218,6 +214,9 @@ The project ships a Makefile using pkg-config. Typical commands:
 make
 # Outputs: bin/pixelterm
 
+sudo make install
+# Installs: /usr/local/bin/pixelterm by default
+
 make debug
 make ARCH=aarch64
 ```
@@ -225,8 +224,8 @@ make ARCH=aarch64
 ## Testing Strategy
 
 ### Unit Tests
-- Manual spot checks for core workflows
-- Targeted testing when adding new rendering logic
+- `make test` covers common utilities plus browser, renderer, GIF player, and app-mode transitions
+- Targeted automated coverage should be added when refactors touch routing, rendering, or state helpers
 
 ### Integration Tests
 - Manual end-to-end testing in supported terminals
@@ -235,6 +234,11 @@ make ARCH=aarch64
 - Startup time measurement
 - Image switching latency
 - Memory usage profiling
+
+### Verification Baseline
+- `make`
+- `make test`
+- `make EXTRA_CFLAGS=-Werror test`
 
 ## Code Style Guidelines
 
@@ -272,9 +276,9 @@ make ARCH=aarch64
 - Change log maintenance
 
 ### Distribution
-- Static binary compilation
-- Dependency checking
-- Installation scripts
+- GitHub release binaries for supported platform/architecture combinations
+- Source builds that produce `bin/pixelterm`
+- `make install` support for installing `$(PREFIX)/bin/pixelterm`
 
 ## Future Enhancements
 
