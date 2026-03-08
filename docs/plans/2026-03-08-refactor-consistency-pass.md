@@ -1,6 +1,6 @@
 # Refactor Consistency Pass Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> Work through this plan task-by-task and verify each step before moving on.
 
 **Goal:** Bring the repository docs and comments back in sync with the current codebase while shrinking `src/input_dispatch_core.c` and `src/app_preview_grid.c` through low-risk internal extractions that preserve behavior.
 

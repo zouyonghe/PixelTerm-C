@@ -14,12 +14,14 @@ static void test_preloader_get_cached_image_returns_caller_owned_copy(void) {
     g_assert_nonnull(first);
     g_assert_cmpstr(first->str, ==, "cached-image");
 
-    g_string_assign(first, "caller-mutation");
-    g_string_free(first, TRUE);
-
     GString *second = preloader_get_cached_image(preloader, "image.png", 10, 5);
     g_assert_nonnull(second);
+    g_assert_true(first != second);
+    g_assert_cmpstr(first->str, ==, second->str);
+
+    g_string_assign(first, "caller-mutation");
     g_assert_cmpstr(second->str, ==, "cached-image");
+    g_string_free(first, TRUE);
     g_string_free(second, TRUE);
 
     preloader_destroy(preloader);
