@@ -7,6 +7,7 @@
 void register_browser_tests(void);
 void register_gif_player_tests(void);
 void register_renderer_tests(void);
+void register_preloader_tests(void);
 void register_text_utils_tests(void);
 void register_app_mode_tests(void);
 void register_input_dispatch_pending_clicks_tests(void);
@@ -264,6 +265,7 @@ int main(int argc, char **argv) {
     register_browser_tests();
     register_gif_player_tests();
     register_renderer_tests();
+    register_preloader_tests();
     register_text_utils_tests();
     register_app_mode_tests();
     register_input_dispatch_pending_clicks_tests();

@@ -93,6 +93,27 @@ static void test_delete_request_executes_preview_delete_on_second_r(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, 1);
 }
 
+static void test_delete_request_deletes_last_preview_image_and_enters_file_manager(void) {
+    PixelTermApp app = {0};
+    InputEvent event = make_key_event((KeyCode)'r');
+
+    input_dispatch_test_reset_stubs();
+    app.mode = APP_MODE_PREVIEW;
+    app.total_images = 1;
+    app.current_index = 0;
+    app.preview.selected = 0;
+
+    g_assert_true(input_dispatch_handle_delete_request(&app, &event));
+    g_assert_true(input_dispatch_handle_delete_request(&app, &event));
+
+    g_assert_false(app.delete_pending);
+    g_assert_cmpint(g_input_dispatch_stub_state.delete_calls, ==, 1);
+    g_assert_false(app_has_images(&app));
+    g_assert_cmpint(app.total_images, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.enter_file_manager_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 1);
+}
+
 static void test_delete_request_clears_pending_when_mode_becomes_unsupported(void) {
     PixelTermApp app = {0};
     InputEvent arm = make_key_event((KeyCode)'r');
@@ -121,6 +142,8 @@ void register_input_dispatch_delete_tests(void) {
                     test_delete_request_executes_single_mode_delete_on_second_r);
     g_test_add_func("/input_dispatch_delete/request/executes_preview_delete_on_second_r",
                     test_delete_request_executes_preview_delete_on_second_r);
+    g_test_add_func("/input_dispatch_delete/request/deletes_last_preview_image_and_enters_file_manager",
+                    test_delete_request_deletes_last_preview_image_and_enters_file_manager);
     g_test_add_func("/input_dispatch_delete/request/clears_pending_when_mode_becomes_unsupported",
                     test_delete_request_clears_pending_when_mode_becomes_unsupported);
 }
