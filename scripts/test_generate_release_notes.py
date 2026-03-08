@@ -373,6 +373,8 @@ class GenerateReleaseNotesCLITest(unittest.TestCase):
         output_path = repo_path / "release_notes.md"
         tracked_file = repo_path / "notes.txt"
 
+        # Put both a release tag and a non-release tag on the same commit to
+        # ensure previous-tag resolution inspects all tags that point at it.
         tracked_file.write_text("one\n", encoding="utf-8")
         git(repo_path, "add", tracked_file.name)
         git(repo_path, "commit", "-m", "Initial release")
