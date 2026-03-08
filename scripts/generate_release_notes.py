@@ -28,6 +28,7 @@ CONVENTIONAL_PREFIX_PATTERN = re.compile(
 PR_SUFFIX_PATTERN = re.compile(r"\s*\(#\d+\)$")
 MERGE_SUBJECT_PATTERN = re.compile(r"^(Merge|Merged)\b", re.IGNORECASE)
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
+ASSOCIATED_PR_QUERY_LIMIT = 100
 
 DOC_TYPES = {"docs", "chore", "ci", "build", "test", "tests", "style", "refactor"}
 FIX_TYPES = {"fix"}
@@ -55,6 +56,28 @@ IMPROVEMENT_LABELS = {"enhancement", "improvement", "perf", "performance"}
 
 class ReleaseNotesError(RuntimeError):
     pass
+
+
+class GitHubAPIRequestError(ReleaseNotesError):
+    def __init__(
+        self,
+        path: str,
+        *,
+        status_code: int | None = None,
+        reason: str | None = None,
+        details: str | None = None,
+    ) -> None:
+        self.path = path
+        self.status_code = status_code
+        self.reason = reason
+        self.details = details
+
+        if status_code is None:
+            status_text = reason or "request failed"
+        else:
+            status_text = f"{status_code} {reason or 'request failed'}"
+        suffix = f": {details}" if details else ""
+        super().__init__(f"GitHub API request failed for {path}: {status_text}{suffix}")
 
 
 @dataclass(frozen=True)
@@ -130,6 +153,13 @@ def ensure_git_repo(repo_path: Path) -> None:
         raise ReleaseNotesError(f"Not a git repository: {repo_path}")
 
 
+def validate_release_tag(tag_name: str, description: str) -> None:
+    if not RELEASE_TAG_PATTERN.match(tag_name):
+        raise ReleaseNotesError(
+            f"{description} does not match the release tag pattern: {tag_name}"
+        )
+
+
 def tag_exists(repo_path: Path, tag_name: str) -> bool:
     result = subprocess.run(
         ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag_name}"],
@@ -156,15 +186,8 @@ def previous_reachable_tag(repo_path: Path, current_tag: str) -> str | None:
     commits = [line for line in traversed.splitlines() if line]
 
     for commit in commits[1:]:
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--exact-match", commit],
-            cwd=repo_path,
-            text=True,
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            continue
-        for tag in result.stdout.strip().splitlines():
+        tags_output = run_git(repo_path, "tag", "--points-at", commit)
+        for tag in tags_output.splitlines():
             if RELEASE_TAG_PATTERN.match(tag):
                 return tag
     return None
@@ -279,13 +302,16 @@ def github_api_get_json(config: GitHubAPIConfig, path: str) -> object:
             payload = response.read().decode("utf-8")
     except urllib.error.HTTPError as error:
         details = error.read().decode("utf-8", errors="replace").strip()
-        suffix = f": {details}" if details else ""
-        raise ReleaseNotesError(
-            f"GitHub API request failed for {path}: {error.code} {error.reason}{suffix}"
+        raise GitHubAPIRequestError(
+            path,
+            status_code=error.code,
+            reason=error.reason,
+            details=details or None,
         ) from error
     except urllib.error.URLError as error:
-        raise ReleaseNotesError(
-            f"GitHub API request failed for {path}: {error.reason}"
+        raise GitHubAPIRequestError(
+            path,
+            reason=str(error.reason),
         ) from error
 
     try:
@@ -304,9 +330,28 @@ def fetch_associated_pull_requests(
 
     repository = urllib.parse.quote(config.repository or "", safe="/")
     associations: dict[str, list[PullRequestInfo]] = {}
-    for commit in commits:
+    query_limit = max(0, ASSOCIATED_PR_QUERY_LIMIT)
+    commits_to_query = commits[:query_limit]
+    skipped_commits = len(commits) - len(commits_to_query)
+    if skipped_commits > 0:
+        print(
+            "GitHub associated-PR lookup capped at "
+            f"{query_limit} commits; using commit fallback for {skipped_commits} later commits.",
+            file=sys.stderr,
+        )
+
+    for commit in commits_to_query:
         path = f"/repos/{repository}/commits/{urllib.parse.quote(commit.sha)}/pulls"
-        payload = github_api_get_json(config, path)
+        try:
+            payload = github_api_get_json(config, path)
+        except GitHubAPIRequestError as error:
+            if should_fallback_to_commit_only(error):
+                print(
+                    fallback_message_for_api_error(commit.sha, error),
+                    file=sys.stderr,
+                )
+                continue
+            raise
         if not isinstance(payload, list):
             raise ReleaseNotesError(
                 f"GitHub API returned unexpected data for commit {commit.sha}"
@@ -349,6 +394,42 @@ def fetch_associated_pull_requests(
             associations[commit.sha] = pull_requests
 
     return associations
+
+
+def is_benign_missing_commit_error(error: GitHubAPIRequestError) -> bool:
+    if error.status_code not in {404, 422}:
+        return False
+    details = (error.details or "").casefold()
+    return "no commit found for sha" in details
+
+
+def should_fallback_to_commit_only(error: GitHubAPIRequestError) -> bool:
+    if is_benign_missing_commit_error(error):
+        return True
+    if error.status_code in {401, 403, 429}:
+        return True
+    if error.status_code is None:
+        return True
+    return False
+
+
+def fallback_message_for_api_error(
+    commit_sha: str, error: GitHubAPIRequestError
+) -> str:
+    if is_benign_missing_commit_error(error):
+        return (
+            "GitHub associated-PR lookup returned no commit metadata for "
+            f"{commit_sha}; using commit fallback."
+        )
+    if error.status_code in {401, 403, 429}:
+        return (
+            "GitHub associated-PR lookup is unavailable "
+            f"({error.status_code} {error.reason or 'request failed'}) for {commit_sha}; using commit fallback."
+        )
+    return (
+        "GitHub associated-PR lookup is unavailable for "
+        f"{commit_sha}; using commit fallback."
+    )
 
 
 def conventional_type(text: str) -> str | None:
@@ -600,6 +681,9 @@ def main() -> int:
 
     try:
         ensure_git_repo(repo_path)
+        validate_release_tag(args.current_tag, "Current tag")
+        if args.previous_tag is not None:
+            validate_release_tag(args.previous_tag, "Previous tag")
         if not tag_exists(repo_path, args.current_tag):
             raise ReleaseNotesError(f"Current tag does not exist: {args.current_tag}")
         if args.previous_tag is not None and not tag_exists(
