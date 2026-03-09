@@ -37,7 +37,15 @@ gboolean video_player_debug_has_current_stream_for_test(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
 void video_player_debug_reset_for_test(void);
 
+typedef enum {
+    VIDEO_PLAYER_TEST_QUEUE_RENDER,
+    VIDEO_PLAYER_TEST_QUEUE_DECODE,
+} VideoPlayerTestQueueKind;
+
 typedef void (*VideoPlayerQueueWaitHook)(void *user_data);
-void video_player_set_queue_wait_hook_for_test(VideoPlayerQueueWaitHook hook, void *user_data);
+void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
+                                               VideoPlayerTestQueueKind queue_kind,
+                                               VideoPlayerQueueWaitHook hook,
+                                               void *user_data);
 
 #endif

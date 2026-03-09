@@ -28,6 +28,10 @@ static void video_player_debug_log(VideoPlayer *player,
 static gint video_player_live_instances = 0;
 
 typedef void (*VideoPlayerQueueWaitHook)(void *user_data);
+typedef enum {
+    VIDEO_PLAYER_TEST_QUEUE_RENDER,
+    VIDEO_PLAYER_TEST_QUEUE_DECODE,
+} VideoPlayerTestQueueKind;
 
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
@@ -41,25 +45,37 @@ enum {
 
 gboolean video_player_debug_has_current_stream_for_test(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
-void video_player_set_queue_wait_hook_for_test(VideoPlayerQueueWaitHook hook, void *user_data);
+void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
+                                               VideoPlayerTestQueueKind queue_kind,
+                                               VideoPlayerQueueWaitHook hook,
+                                               void *user_data);
 
 static GMutex video_player_queue_wait_hook_mutex;
+static VideoPlayer *video_player_queue_wait_hook_player = NULL;
+static VideoPlayerTestQueueKind video_player_queue_wait_hook_kind = VIDEO_PLAYER_TEST_QUEUE_RENDER;
 static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
 static void *video_player_queue_wait_hook_data = NULL;
 
-static void video_player_notify_queue_wait_hook(void) {
+static void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQueueKind queue_kind) {
     g_mutex_lock(&video_player_queue_wait_hook_mutex);
+    VideoPlayer *hook_player = video_player_queue_wait_hook_player;
+    VideoPlayerTestQueueKind hook_kind = video_player_queue_wait_hook_kind;
     VideoPlayerQueueWaitHook hook = video_player_queue_wait_hook;
     void *hook_data = video_player_queue_wait_hook_data;
     g_mutex_unlock(&video_player_queue_wait_hook_mutex);
 
-    if (hook) {
+    if (hook && hook_player == player && hook_kind == queue_kind) {
         hook(hook_data);
     }
 }
 
-void video_player_set_queue_wait_hook_for_test(VideoPlayerQueueWaitHook hook, void *user_data) {
+void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
+                                               VideoPlayerTestQueueKind queue_kind,
+                                               VideoPlayerQueueWaitHook hook,
+                                               void *user_data) {
     g_mutex_lock(&video_player_queue_wait_hook_mutex);
+    video_player_queue_wait_hook_player = player;
+    video_player_queue_wait_hook_kind = queue_kind;
     video_player_queue_wait_hook = hook;
     video_player_queue_wait_hook_data = user_data;
     g_mutex_unlock(&video_player_queue_wait_hook_mutex);
@@ -257,7 +273,7 @@ void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
             logged_full = TRUE;
             continue;
         }
-        video_player_notify_queue_wait_hook();
+        video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_RENDER);
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {
@@ -304,7 +320,7 @@ void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *frame) {
             logged_full = TRUE;
             continue;
         }
-        video_player_notify_queue_wait_hook();
+        video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_RENDER);
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {
@@ -415,7 +431,7 @@ void video_player_decode_queue_push(VideoPlayer *player, DecodedFrame *frame) {
 
     g_mutex_lock(&player->queue_mutex);
     while (!player->worker_stop && g_queue_get_length(player->decode_queue) >= 4) {
-        video_player_notify_queue_wait_hook();
+        video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_DECODE);
         g_cond_wait(&player->decode_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {
@@ -1203,6 +1219,7 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
     gint max_width = 0;
     gint max_height = 0;
     gboolean layout_valid = FALSE;
+    RendererConfig config = video_player_render_worker_config(player);
 
     g_mutex_lock(&player->state_mutex);
     current_generation = player->render_layout_generation;
@@ -1218,6 +1235,7 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
     }
 
     renderer_update_terminal_size(renderer);
+    renderer->config = config;
 
     if (layout_valid) {
         renderer->config.max_width = max_width;
