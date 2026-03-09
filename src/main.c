@@ -122,6 +122,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             continue;
         }
         
+        gboolean handled_input = FALSE;
+
         input_dispatch_process_pending(app);
 
         if (input_has_pending_input(input_handler)) {
@@ -131,11 +133,15 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             }
 
             input_dispatch_handle_event(app, input_handler, &event);
-            continue;
+            handled_input = TRUE;
         }
 
         input_dispatch_process_animations(app);
         app_process_async_render(app);
+
+        if (handled_input) {
+            continue;
+        }
 
         if (!input_has_pending_input(input_handler)) {
             usleep(k_input_poll_sleep_us);
