@@ -69,10 +69,11 @@ static gint cached_render_width(const ImagePreloader *preloader,
 }
 
 static gint cached_text_render_height(const GString *rendered) {
-    gint height = 1;
-    if (!rendered) {
-        return height;
+    if (!rendered || rendered->len == 0) {
+        return 0;
     }
+
+    gint height = 1;
     for (gsize i = 0; i < rendered->len; i++) {
         if (rendered->str[i] == '\n') {
             height++;
@@ -480,6 +481,9 @@ gboolean preloader_get_cached_render_info(ImagePreloader *preloader,
                                           gboolean *graphics_mode) {
     if (!preloader || !filepath || !width || !height) {
         return FALSE;
+    }
+    if (graphics_mode) {
+        *graphics_mode = FALSE;
     }
 
     g_mutex_lock(&preloader->mutex);
