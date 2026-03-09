@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.5: Video playback pipeline and interaction responsiveness.
+    - **Video Playback**: Split video playback into a decode stage plus parallel render workers so high-resolution sixel output keeps moving under load.
+    - **Responsiveness**: Prioritize pending input before redraw work and limit animation event draining to one main-context iteration at a time so keyboard and mouse actions stay responsive.
+    - **Stability**: Refresh worker render layouts when the terminal geometry changes, resync timing after rewind, and harden queue backpressure handling to avoid stalled render workers.
+    - **Testing**: Add focused regression coverage for video queue blocking, animation scheduling, and debug logging filters around the new playback pipeline.
+
 - v1.7.4: Release automation and protocol-safe preview rendering.
     - **Releases**: Add automated release-note generation with a GitHub Actions workflow, a dedicated release-notes script, and regression coverage for tag and PR aggregation.
     - **Previews**: Keep image and book preview cells centered correctly for kitty, sixel, and iTerm2 graphics protocols by drawing graphics payloads as single blocks.
