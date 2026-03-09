@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.4: Release automation and protocol-safe preview rendering.
+    - **Releases**: Add automated release-note generation with a GitHub Actions workflow, a dedicated release-notes script, and regression coverage for tag and PR aggregation.
+    - **Previews**: Keep image and book preview cells centered correctly for kitty, sixel, and iTerm2 graphics protocols by drawing graphics payloads as single blocks.
+    - **Caching**: Preserve rendered dimensions and graphics-mode metadata in the preloader cache so preloaded previews align the same way as freshly rendered ones.
+    - **Stability**: Reset cached preview metadata on cache misses and restore terminal attributes after graphics preview output to avoid stale terminal state.
+
 - v1.7.3: Documentation redesign, protocol notes, and refactor hardening.
     - **Docs**: Redesign the English and Chinese README files for end users, add a Japanese README, and move terminal-specific guidance into a dedicated protocol support reference.
     - **Compatibility**: Add `docs/TERMINAL_PROTOCOL_SUPPORT.md` to document current terminal/protocol notes and manual override guidance without maintaining a ranked terminal list.

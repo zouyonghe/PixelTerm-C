@@ -10,7 +10,7 @@
 ## Objectives
 1. Reduce the remaining hotspot files with small internal extractions.
 2. Keep every step behavior-preserving and independently verifiable.
-3. Keep docs aligned with the shipped release (`v1.7.2`) and Makefile output (`bin/pixelterm`).
+3. Keep docs aligned with the shipped release (`v1.7.4`) and Makefile output (`bin/pixelterm`).
 
 ## Constraints (Must Follow)
 - Ship in minimal, rollback-friendly steps; each step must pass `make` and `make test`.
@@ -72,7 +72,7 @@
 ## Progress Snapshot (2026-03-08)
 Completed:
 - Historical monolith splitting is complete; the current pass focuses on `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
-- Docs are synced to release `v1.7.2`, the current repository layout, and the `bin/pixelterm` source-build output.
+- Docs are synced to release `v1.7.4`, the current repository layout, and the `bin/pixelterm` source-build output.
 - Delete prompt/delete confirmation flow is now isolated in:
   - `src/input_dispatch_delete.c`
   - `include/input_dispatch_delete_internal.h`
