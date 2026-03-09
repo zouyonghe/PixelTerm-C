@@ -13,6 +13,7 @@
 #include <libswscale/swscale.h>
 
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef RenderedFrame VideoFrame;
@@ -25,7 +26,8 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 c,
                                    gint64 d);
 static void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h);
-static gboolean video_player_prefers_latest_decoded_frames(VideoPlayer *player);
+static FILE *video_player_debug_get_stream(void) G_GNUC_UNUSED;
+static gint video_player_live_instances = 0;
 
 static void video_player_reset_timing_state(VideoPlayer *player) {
     if (!player) {
@@ -43,6 +45,7 @@ static void video_player_reset_timing_state(VideoPlayer *player) {
     player->io_avg_ms = 0.0;
     player->io_avg_valid = FALSE;
     player->last_present_us = 0;
+    player->last_presented_pts_ms = G_MININT64;
     player->present_fps = 0.0;
     player->present_fps_valid = FALSE;
     g_mutex_unlock(&player->state_mutex);
@@ -92,6 +95,8 @@ static void video_player_update_present_fps(VideoPlayer *player, gint64 now_us) 
     if (!player || now_us <= 0) {
         return;
     }
+
+    g_mutex_lock(&player->state_mutex);
     if (player->last_present_us > 0) {
         gint64 delta_us = now_us - player->last_present_us;
         if (delta_us > 0) {
@@ -106,6 +111,7 @@ static void video_player_update_present_fps(VideoPlayer *player, gint64 now_us) 
         }
     }
     player->last_present_us = now_us;
+    g_mutex_unlock(&player->state_mutex);
 }
 
 static void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h) {
@@ -114,6 +120,7 @@ static void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w
     }
 
     gint area = rendered_w * rendered_h;
+    g_mutex_lock(&player->queue_mutex);
     if (area >= 3000) {
         player->max_queue_size = 4;
     } else if (area >= 1500) {
@@ -121,20 +128,22 @@ static void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w
     } else {
         player->max_queue_size = 8;
     }
+    g_cond_broadcast(&player->frame_queue_has_space);
+    g_mutex_unlock(&player->queue_mutex);
 }
 
 static guint video_player_generation_get(VideoPlayer *player) {
     if (!player) {
         return 0;
     }
-    return (guint)g_atomic_int_get((gint *)&player->playback_generation);
+    return (guint)g_atomic_int_get(&player->playback_generation);
 }
 
 static guint video_player_generation_bump(VideoPlayer *player) {
     if (!player) {
         return 0;
     }
-    return (guint)g_atomic_int_add((gint *)&player->playback_generation, 1) + 1;
+    return (guint)(g_atomic_int_add(&player->playback_generation, 1) + 1);
 }
 
 static void decoded_frame_destroy(DecodedFrame *frame) {
@@ -164,6 +173,7 @@ static void video_player_queue_clear(VideoPlayer *player) {
         VideoFrame *frame = (VideoFrame *)g_queue_pop_head(player->frame_queue);
         video_frame_destroy(frame);
     }
+    g_cond_broadcast(&player->frame_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
 }
 
@@ -176,32 +186,39 @@ static void video_player_decode_queue_clear(VideoPlayer *player) {
         DecodedFrame *frame = (DecodedFrame *)g_queue_pop_head(player->decode_queue);
         decoded_frame_destroy(frame);
     }
+    g_cond_broadcast(&player->decode_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
 }
 
-static void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
+static G_GNUC_UNUSED void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
     if (!player || !player->frame_queue || !frame) {
         video_frame_destroy(frame);
         return;
     }
-    while (TRUE) {
-        g_mutex_lock(&player->queue_mutex);
-        if (player->worker_stop) {
+
+    gboolean logged_full = FALSE;
+    g_mutex_lock(&player->queue_mutex);
+    while (!player->worker_stop &&
+           player->max_queue_size > 0 &&
+           g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size) {
+        if (!logged_full) {
+            gint64 pts_ms = frame->pts_ms;
             g_mutex_unlock(&player->queue_mutex);
-            video_frame_destroy(frame);
-            return;
+            video_player_debug_log(player, "worker-skip-full", pts_ms, 0, 0, 0);
+            g_mutex_lock(&player->queue_mutex);
+            logged_full = TRUE;
+            continue;
         }
-        if (!(player->max_queue_size > 0 &&
-              g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size)) {
-            g_queue_push_tail(player->frame_queue, frame);
-            g_mutex_unlock(&player->queue_mutex);
-            return;
-        }
-        g_mutex_unlock(&player->queue_mutex);
-        video_player_debug_log(player, "worker-skip-full", frame->pts_ms, 0, 0, 0);
-        g_thread_yield();
-        g_usleep(250);
+        g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
+    if (player->worker_stop) {
+        g_mutex_unlock(&player->queue_mutex);
+        video_frame_destroy(frame);
+        return;
+    }
+
+    g_queue_push_tail(player->frame_queue, frame);
+    g_mutex_unlock(&player->queue_mutex);
 }
 
 static VideoFrame *video_player_queue_take_first(VideoPlayer *player) {
@@ -214,24 +231,7 @@ static VideoFrame *video_player_queue_take_first(VideoPlayer *player) {
         return NULL;
     }
     VideoFrame *frame = (VideoFrame *)g_queue_pop_head(player->frame_queue);
-    g_mutex_unlock(&player->queue_mutex);
-    return frame;
-}
-
-static VideoFrame *video_player_queue_take_latest(VideoPlayer *player) {
-    if (!player || !player->frame_queue) {
-        return NULL;
-    }
-    g_mutex_lock(&player->queue_mutex);
-    if (g_queue_is_empty(player->frame_queue)) {
-        g_mutex_unlock(&player->queue_mutex);
-        return NULL;
-    }
-    while (g_queue_get_length(player->frame_queue) > 1) {
-        VideoFrame *old = (VideoFrame *)g_queue_pop_head(player->frame_queue);
-        video_frame_destroy(old);
-    }
-    VideoFrame *frame = (VideoFrame *)g_queue_pop_head(player->frame_queue);
+    g_cond_broadcast(&player->frame_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
     return frame;
 }
@@ -242,36 +242,51 @@ static void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *fr
         return;
     }
 
-    while (TRUE) {
-        g_mutex_lock(&player->queue_mutex);
-        if (player->worker_stop) {
+    gboolean logged_full = FALSE;
+    g_mutex_lock(&player->queue_mutex);
+    while (!player->worker_stop &&
+           player->max_queue_size > 0 &&
+           g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size) {
+        if (!logged_full) {
+            gint64 pts_ms = frame->pts_ms;
             g_mutex_unlock(&player->queue_mutex);
-            video_frame_destroy(frame);
-            return;
+            video_player_debug_log(player, "worker-skip-full", pts_ms, 0, 0, 0);
+            g_mutex_lock(&player->queue_mutex);
+            logged_full = TRUE;
+            continue;
         }
-        if (!(player->max_queue_size > 0 &&
-              g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size)) {
-            GList *insert_before = player->frame_queue->head;
-            while (insert_before) {
-                VideoFrame *existing = (VideoFrame *)insert_before->data;
-                if (existing && existing->pts_ms > frame->pts_ms) {
-                    break;
-                }
-                insert_before = insert_before->next;
-            }
-            if (insert_before) {
-                g_queue_insert_before(player->frame_queue, insert_before, frame);
-            } else {
-                g_queue_push_tail(player->frame_queue, frame);
-            }
-            g_mutex_unlock(&player->queue_mutex);
-            return;
-        }
-        g_mutex_unlock(&player->queue_mutex);
-        video_player_debug_log(player, "worker-skip-full", frame->pts_ms, 0, 0, 0);
-        g_thread_yield();
-        g_usleep(250);
+        g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
+    if (player->worker_stop) {
+        g_mutex_unlock(&player->queue_mutex);
+        video_frame_destroy(frame);
+        return;
+    }
+
+    gint64 last_presented_pts_ms = G_MININT64;
+    g_mutex_lock(&player->state_mutex);
+    last_presented_pts_ms = player->last_presented_pts_ms;
+    g_mutex_unlock(&player->state_mutex);
+    if (last_presented_pts_ms != G_MININT64 && frame->pts_ms <= last_presented_pts_ms) {
+        g_mutex_unlock(&player->queue_mutex);
+        video_frame_destroy(frame);
+        return;
+    }
+
+    GList *insert_before = player->frame_queue->head;
+    while (insert_before) {
+        VideoFrame *existing = (VideoFrame *)insert_before->data;
+        if (existing && existing->pts_ms > frame->pts_ms) {
+            break;
+        }
+        insert_before = insert_before->next;
+    }
+    if (insert_before) {
+        g_queue_insert_before(player->frame_queue, insert_before, frame);
+    } else {
+        g_queue_push_tail(player->frame_queue, frame);
+    }
+    g_mutex_unlock(&player->queue_mutex);
 }
 
 static VideoFrame *video_player_queue_take_for_time(VideoPlayer *player,
@@ -300,6 +315,7 @@ static VideoFrame *video_player_queue_take_for_time(VideoPlayer *player,
         max_late_ms = 0;
     }
     VideoFrame *fallback = NULL;
+    gboolean removed_frames = FALSE;
     while (!g_queue_is_empty(player->frame_queue)) {
         VideoFrame *peek = (VideoFrame *)g_queue_peek_head(player->frame_queue);
         if (!peek) {
@@ -310,17 +326,25 @@ static VideoFrame *video_player_queue_take_for_time(VideoPlayer *player,
         }
         if ((target_pts_ms - peek->pts_ms) <= max_late_ms) {
             VideoFrame *frame = (VideoFrame *)g_queue_pop_head(player->frame_queue);
+            removed_frames = TRUE;
             if (fallback) {
                 video_frame_destroy(fallback);
+            }
+            if (removed_frames) {
+                g_cond_broadcast(&player->frame_queue_has_space);
             }
             g_mutex_unlock(&player->queue_mutex);
             return frame;
         }
         VideoFrame *old = (VideoFrame *)g_queue_pop_head(player->frame_queue);
+        removed_frames = TRUE;
         if (fallback) {
             video_frame_destroy(fallback);
         }
         fallback = old;
+    }
+    if (removed_frames) {
+        g_cond_broadcast(&player->frame_queue_has_space);
     }
     g_mutex_unlock(&player->queue_mutex);
     return fallback;
@@ -338,22 +362,19 @@ static void video_player_decode_queue_push(VideoPlayer *player, DecodedFrame *fr
         return;
     }
 
-    while (TRUE) {
-        g_mutex_lock(&player->queue_mutex);
-        if (player->worker_stop) {
-            g_mutex_unlock(&player->queue_mutex);
-            decoded_frame_destroy(frame);
-            return;
-        }
-        if (g_queue_get_length(player->decode_queue) < 4) {
-            g_queue_push_tail(player->decode_queue, frame);
-            g_mutex_unlock(&player->queue_mutex);
-            return;
-        }
-        g_mutex_unlock(&player->queue_mutex);
-        g_thread_yield();
-        g_usleep(250);
+
+    g_mutex_lock(&player->queue_mutex);
+    while (!player->worker_stop && g_queue_get_length(player->decode_queue) >= 4) {
+        g_cond_wait(&player->decode_queue_has_space, &player->queue_mutex);
     }
+    if (player->worker_stop) {
+        g_mutex_unlock(&player->queue_mutex);
+        decoded_frame_destroy(frame);
+        return;
+    }
+
+    g_queue_push_tail(player->decode_queue, frame);
+    g_mutex_unlock(&player->queue_mutex);
 }
 
 static DecodedFrame *video_player_decode_queue_take(VideoPlayer *player) {
@@ -367,6 +388,7 @@ static DecodedFrame *video_player_decode_queue_take(VideoPlayer *player) {
         return NULL;
     }
     DecodedFrame *frame = (DecodedFrame *)g_queue_pop_head(player->decode_queue);
+    g_cond_broadcast(&player->decode_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
     return frame;
 }
@@ -503,6 +525,14 @@ static gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 
 
     guint backlog = video_player_queue_length(player);
     if (backlog < 5) {
+        return FALSE;
+    }
+
+    gint64 last_presented_pts_ms = G_MININT64;
+    g_mutex_lock(&player->state_mutex);
+    last_presented_pts_ms = player->last_presented_pts_ms;
+    g_mutex_unlock(&player->state_mutex);
+    if (last_presented_pts_ms != G_MININT64 && pts_ms < last_presented_pts_ms) {
         return FALSE;
     }
 
@@ -705,6 +735,8 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     g_mutex_init(&player->render_mutex);
     g_mutex_init(&player->state_mutex);
     g_mutex_init(&player->queue_mutex);
+    g_cond_init(&player->frame_queue_has_space);
+    g_cond_init(&player->decode_queue_has_space);
     player->frame_queue = g_queue_new();
     player->decode_queue = g_queue_new();
     player->worker_thread = NULL;
@@ -728,6 +760,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->io_avg_ms = 0.0;
     player->io_avg_valid = FALSE;
     player->last_present_us = 0;
+    player->last_presented_pts_ms = G_MININT64;
     player->present_fps = 0.0;
     player->present_fps_valid = FALSE;
     player->show_stats = FALSE;
@@ -762,6 +795,8 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
             player->renderer = NULL;
         }
     }
+
+    g_atomic_int_inc(&video_player_live_instances);
 
     return player;
 }
@@ -871,18 +906,44 @@ static gpointer video_player_render_worker_thread(gpointer user_data);
 
 static FILE *video_player_debug_stream = NULL;
 static GMutex video_player_debug_mutex;
+static void video_player_debug_register_atexit(void);
+
+static void video_player_debug_close_stream_unlocked(void) {
+    if (!video_player_debug_stream) {
+        return;
+    }
+
+    fflush(video_player_debug_stream);
+    fclose(video_player_debug_stream);
+    video_player_debug_stream = NULL;
+}
+
+static void video_player_debug_close_stream(void) {
+    g_mutex_lock(&video_player_debug_mutex);
+    video_player_debug_close_stream_unlocked();
+    g_mutex_unlock(&video_player_debug_mutex);
+}
 
 static gboolean video_player_debug_enabled(void) {
     const gchar *env = g_getenv("PIXELTERM_DEBUG_VIDEO");
     return env && *env && g_strcmp0(env, "0") != 0;
 }
 
-static FILE *video_player_debug_get_stream(void) {
+static void video_player_debug_register_atexit(void) {
+    static gsize registered = 0;
+
+    if (g_once_init_enter(&registered)) {
+        atexit(video_player_debug_close_stream);
+        g_once_init_leave(&registered, 1);
+    }
+}
+
+static FILE *video_player_debug_get_stream_unlocked(void) {
     if (!video_player_debug_enabled()) {
         return NULL;
     }
 
-    g_mutex_lock(&video_player_debug_mutex);
+    video_player_debug_register_atexit();
     if (!video_player_debug_stream) {
         const gchar *path = g_getenv("PIXELTERM_DEBUG_VIDEO_LOG");
         if (!path || !*path) {
@@ -890,7 +951,12 @@ static FILE *video_player_debug_get_stream(void) {
         }
         video_player_debug_stream = fopen(path, "a");
     }
-    FILE *stream = video_player_debug_stream;
+    return video_player_debug_stream;
+}
+
+static FILE *video_player_debug_get_stream(void) {
+    g_mutex_lock(&video_player_debug_mutex);
+    FILE *stream = video_player_debug_get_stream_unlocked();
     g_mutex_unlock(&video_player_debug_mutex);
     return stream;
 }
@@ -928,8 +994,10 @@ static void video_player_debug_log(VideoPlayer *player,
     guint backlog = video_player_queue_length(player);
     gint frame_delay = player ? player->frame_delay_ms : 0;
     gint slow_level = video_player_get_slow_level(player);
-    FILE *stream = video_player_debug_get_stream();
+    g_mutex_lock(&video_player_debug_mutex);
+    FILE *stream = video_player_debug_get_stream_unlocked();
     if (!stream) {
+        g_mutex_unlock(&video_player_debug_mutex);
         return;
     }
     fprintf(stream,
@@ -943,6 +1011,7 @@ static void video_player_debug_log(VideoPlayer *player,
             frame_delay,
             slow_level);
     fflush(stream);
+    g_mutex_unlock(&video_player_debug_mutex);
 }
 
 static void video_player_start_worker(VideoPlayer *player) {
@@ -996,21 +1065,25 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
         return;
     }
 
-    guint current_generation = player->render_layout_generation;
+    guint current_generation = 0;
+    gint max_width = 0;
+    gint max_height = 0;
+    gboolean layout_valid = FALSE;
+
+    g_mutex_lock(&player->state_mutex);
+    current_generation = player->render_layout_generation;
+    if (*layout_generation_inout != current_generation) {
+        max_width = player->render_max_width;
+        max_height = player->render_max_height;
+        layout_valid = player->render_layout_valid;
+    }
+    g_mutex_unlock(&player->state_mutex);
+
     if (*layout_generation_inout == current_generation) {
         return;
     }
 
     renderer_update_terminal_size(renderer);
-
-    gint max_width = 0;
-    gint max_height = 0;
-    gboolean layout_valid = FALSE;
-    g_mutex_lock(&player->state_mutex);
-    max_width = player->render_max_width;
-    max_height = player->render_max_height;
-    layout_valid = player->render_layout_valid;
-    g_mutex_unlock(&player->state_mutex);
 
     if (layout_valid) {
         renderer->config.max_width = max_width;
@@ -1021,14 +1094,18 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
 }
 
 static void video_player_stop_worker(VideoPlayer *player) {
-    if (!player || !player->worker_thread) {
+    if (!player) {
         return;
     }
     g_mutex_lock(&player->queue_mutex);
     player->worker_stop = TRUE;
+    g_cond_broadcast(&player->frame_queue_has_space);
+    g_cond_broadcast(&player->decode_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
-    g_thread_join(player->worker_thread);
-    player->worker_thread = NULL;
+    if (player->worker_thread) {
+        g_thread_join(player->worker_thread);
+        player->worker_thread = NULL;
+    }
     if (player->render_workers_started) {
         if (player->render_workers[0]) {
             g_thread_join(player->render_workers[0]);
@@ -1226,9 +1303,6 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
 
     ImageRenderer *renderer = renderer_create();
     if (!renderer) {
-        if (renderer) {
-            renderer_destroy(renderer);
-        }
         return NULL;
     }
 
@@ -1339,6 +1413,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         player->clock_start_pts_ms = frame->pts_ms;
         player->clock_started = TRUE;
         player->rewind_needs_resync = FALSE;
+        player->last_presented_pts_ms = G_MININT64;
         g_mutex_unlock(&player->state_mutex);
     }
 
@@ -1517,6 +1592,9 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
 
     fflush(stdout);
     gint64 io_end_us = g_get_monotonic_time();
+    g_mutex_lock(&player->state_mutex);
+    player->last_presented_pts_ms = frame->pts_ms;
+    g_mutex_unlock(&player->state_mutex);
     video_player_debug_log(player, "render-draw-time", frame->pts_ms, io_end_us - io_start_us, rendered_w, rendered_h);
     video_player_update_present_fps(player, io_end_us);
     video_player_update_io_avg(player, (io_end_us - io_start_us) / 1000);
@@ -1995,9 +2073,15 @@ void video_player_destroy(VideoPlayer *player) {
         video_player_decode_queue_clear(player);
         g_queue_free(player->decode_queue);
     }
+    g_cond_clear(&player->decode_queue_has_space);
+    g_cond_clear(&player->frame_queue_has_space);
     g_mutex_clear(&player->queue_mutex);
     g_mutex_clear(&player->state_mutex);
     g_mutex_clear(&player->render_mutex);
+
+    if (g_atomic_int_dec_and_test(&video_player_live_instances)) {
+        video_player_debug_close_stream();
+    }
 
     g_free(player);
 }

@@ -47,7 +47,7 @@ typedef struct {
     guint timer_id;
     gchar *filepath;
     gint max_queue_size;
-    guint playback_generation;
+    gint playback_generation;
     guint render_layout_generation;
 
     // Renderer reference
@@ -72,6 +72,7 @@ typedef struct {
     gdouble io_avg_ms;
     gboolean io_avg_valid;
     gint64 last_present_us;
+    gint64 last_presented_pts_ms;
     gdouble present_fps;
     gboolean present_fps_valid;
     gboolean show_stats;
@@ -93,6 +94,8 @@ typedef struct {
     GThread *worker_thread;
     GThread *render_workers[2];
     GMutex queue_mutex;
+    GCond frame_queue_has_space;
+    GCond decode_queue_has_space;
     GQueue *frame_queue;
     GQueue *decode_queue;
     gboolean worker_stop;

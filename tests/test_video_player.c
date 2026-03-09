@@ -1,10 +1,8 @@
 #include <glib.h>
 
-#define static
 #include "../src/video_player.c"
-#undef static
 
-static VideoFrame *make_test_frame(gint64 pts_ms) {
+static VideoFrame *make_test_frame_with_generation(gint64 pts_ms, guint generation) {
     VideoFrame *frame = g_new0(VideoFrame, 1);
     g_assert_nonnull(frame);
     frame->rendered = g_string_new("frame");
@@ -12,7 +10,12 @@ static VideoFrame *make_test_frame(gint64 pts_ms) {
     frame->rendered_height = 1;
     frame->pts_ms = pts_ms;
     frame->pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    frame->generation = generation;
     return frame;
+}
+
+static VideoFrame *make_test_frame(gint64 pts_ms) {
+    return make_test_frame_with_generation(pts_ms, 1);
 }
 
 static guint video_player_queue_length_for_test(VideoPlayer *player) {
@@ -170,6 +173,22 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
     video_player_decode_queue_push(player, d);
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
+
+    GThread *thread = g_thread_new("decode-queue-push-test", decode_queue_push_thread_main, player);
+    g_usleep(10 * 1000);
+
+    g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
+    g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
+
+    DecodedFrame *oldest = video_player_decode_queue_take(player);
+    g_assert_nonnull(oldest);
+    g_assert_cmpint(oldest->pts_ms, ==, 100);
+    decoded_frame_destroy(oldest);
+
+    g_thread_join(thread);
+
+    g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
+    g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 133);
 
     video_player_destroy(player);
 }
@@ -465,6 +484,35 @@ static void test_should_not_drop_late_frame_when_backlog_is_medium(void) {
     video_player_destroy(player);
 }
 
+static void test_should_not_drop_late_frame_when_backlog_is_deep_and_silence_exceeded(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    gint64 now_us = g_get_monotonic_time();
+    g_mutex_lock(&player->state_mutex);
+    player->clock_started = TRUE;
+    player->clock_start_us = now_us - 200 * 1000;
+    player->clock_start_pts_ms = 0;
+    player->last_present_us = now_us - 2 * 1000 * 1000;
+    player->io_avg_valid = TRUE;
+    player->io_avg_ms = (gdouble)player->frame_delay_ms;
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_queue_push(player, make_test_frame(250));
+    video_player_queue_push(player, make_test_frame(260));
+    video_player_queue_push(player, make_test_frame(270));
+    video_player_queue_push(player, make_test_frame(280));
+    video_player_queue_push(player, make_test_frame(290));
+
+    g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 5);
+    g_assert_false(video_player_should_drop_late_frame(player, 10));
+
+    video_player_destroy(player);
+}
+
 static gpointer queue_push_thread_main(gpointer user_data) {
     VideoPlayer *player = (VideoPlayer *)user_data;
     video_player_queue_push(player, make_test_frame(167));
@@ -659,6 +707,23 @@ static void test_debug_logging_honors_environment_toggle(void) {
     video_player_destroy(player);
 }
 
+static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    g_setenv("PIXELTERM_DEBUG_VIDEO", "1", TRUE);
+    g_assert_nonnull(video_player_debug_get_stream());
+    g_assert_nonnull(video_player_debug_stream);
+
+    video_player_destroy(player);
+
+    g_assert_null(video_player_debug_stream);
+    g_unsetenv("PIXELTERM_DEBUG_VIDEO");
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -684,6 +749,8 @@ void register_video_player_tests(void) {
                     test_should_not_drop_late_frame_when_backlog_is_medium);
     g_test_add_func("/video_player/drop_late_frame/drops_when_backlog_is_deep",
                     test_should_drop_late_frame_when_backlog_is_deep);
+    g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_silence_exceeded",
+                    test_should_not_drop_late_frame_when_backlog_is_deep_and_silence_exceeded);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_without_clock",
                     test_should_not_drop_late_frame_without_clock);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_before_rewind_resync",
@@ -702,6 +769,8 @@ void register_video_player_tests(void) {
                     test_rewind_reset_clears_timing_and_queue_state);
     g_test_add_func("/video_player/debug_logging/honors_environment_toggle",
                     test_debug_logging_honors_environment_toggle);
+    g_test_add_func("/video_player/debug_logging/closes_stream_when_last_player_is_destroyed",
+                    test_debug_logging_closes_stream_when_last_player_is_destroyed);
     g_test_add_func("/video_player/queue_take_for_playback/waits_even_when_future_queue_is_full",
                     test_queue_take_for_playback_waits_even_when_future_queue_is_full);
     g_test_add_func("/video_player/queue_take_for_playback/waits_when_future_queue_is_not_full",
