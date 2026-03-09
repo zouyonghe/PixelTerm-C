@@ -569,14 +569,25 @@ static void test_calc_delay_uses_queue_head_even_with_high_io_avg(void) {
     player->clock_start_pts_ms = 0;
     player->io_avg_valid = TRUE;
     player->io_avg_ms = 80.0;
+    gint64 clock_start_us = player->clock_start_us;
+    gint64 clock_start_pts_ms = player->clock_start_pts_ms;
     g_mutex_unlock(&player->state_mutex);
 
     video_player_queue_push(player, make_test_frame(120));
     video_player_queue_push(player, make_test_frame(153));
 
+    gint64 queue_head_pts_ms = video_player_queue_head_pts_for_test(player);
+    gint64 before_call_us = g_get_monotonic_time();
     gint delay = video_player_calc_delay_ms(player);
-    g_assert_cmpint(delay, >=, 0);
-    g_assert_cmpint(delay, <=, 60);
+    gint64 after_call_us = g_get_monotonic_time();
+
+    gint64 target_before_ms = clock_start_pts_ms + ((before_call_us - clock_start_us) / 1000);
+    gint64 target_after_ms = clock_start_pts_ms + ((after_call_us - clock_start_us) / 1000);
+    gint64 min_expected_delay = queue_head_pts_ms - target_after_ms;
+    gint64 max_expected_delay = queue_head_pts_ms - target_before_ms;
+
+    g_assert_cmpint(delay, >=, (gint)min_expected_delay);
+    g_assert_cmpint(delay, <=, (gint)max_expected_delay);
 
     video_player_destroy(player);
 }
