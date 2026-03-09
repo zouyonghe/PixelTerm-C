@@ -120,6 +120,24 @@ static gint app_preview_visible_width(const char *str, gint len) {
     return width;
 }
 
+static gint app_preview_visible_line_count(const GString *rendered) {
+    if (!rendered || !rendered->str || rendered->str[0] == '\0') {
+        return 0;
+    }
+
+    gint lines = 0;
+    char *cursor = rendered->str;
+    while (cursor && *cursor) {
+        char *newline = strchr(cursor, '\n');
+        lines++;
+        if (!newline) {
+            break;
+        }
+        cursor = newline + 1;
+    }
+    return lines;
+}
+
 ImageRenderer* app_create_grid_renderer(const PixelTermApp *app,
                                         gint content_width,
                                         gint content_height,
@@ -205,6 +223,12 @@ void app_draw_rendered_lines(gint content_x,
     if (!rendered) {
         return;
     }
+    gint rendered_height = app_preview_visible_line_count(rendered);
+    gint pad_top = 0;
+    if (content_height > rendered_height) {
+        pad_top = (content_height - rendered_height) / 2;
+    }
+
     gint line_no = 0;
     char *cursor = rendered->str;
     while (cursor && line_no < content_height) {
@@ -217,7 +241,7 @@ void app_draw_rendered_lines(gint content_x,
             pad_left = (content_width - visible_len) / 2;
         }
 
-        printf("\033[%d;%dH", content_y + line_no, content_x + pad_left);
+        printf("\033[%d;%dH", content_y + pad_top + line_no, content_x + pad_left);
         fwrite(cursor, 1, line_len, stdout);
 
         if (!newline) {
@@ -227,4 +251,66 @@ void app_draw_rendered_lines(gint content_x,
         line_no++;
     }
     printf("\033[0m");
+}
+
+void app_draw_rendered_graphics(gint content_x,
+                                gint content_y,
+                                gint content_width,
+                                gint content_height,
+                                gint rendered_width,
+                                gint rendered_height,
+                                const GString *rendered) {
+    if (!rendered) {
+        return;
+    }
+
+    gint effective_width = rendered_width > 0 ? rendered_width : content_width;
+    gint effective_height = rendered_height > 0 ? rendered_height : content_height;
+    if (effective_width < 0) {
+        effective_width = 0;
+    }
+    if (effective_height < 0) {
+        effective_height = 0;
+    }
+
+    gint pad_left = 0;
+    gint pad_top = 0;
+    if (content_width > effective_width) {
+        pad_left = (content_width - effective_width) / 2;
+    }
+    if (content_height > effective_height) {
+        pad_top = (content_height - effective_height) / 2;
+    }
+
+    printf("\033[%d;%dH", content_y + pad_top, content_x + pad_left);
+    if (rendered->len > 0) {
+        fwrite(rendered->str, 1, rendered->len, stdout);
+    }
+    printf("\033[0m");
+}
+
+void app_draw_preview_content(gint content_x,
+                              gint content_y,
+                              gint content_width,
+                              gint content_height,
+                              gint rendered_width,
+                              gint rendered_height,
+                              gboolean graphics_mode,
+                              const GString *rendered) {
+    if (graphics_mode) {
+        app_draw_rendered_graphics(content_x,
+                                   content_y,
+                                   content_width,
+                                   content_height,
+                                   rendered_width,
+                                   rendered_height,
+                                   rendered);
+        return;
+    }
+
+    app_draw_rendered_lines(content_x,
+                            content_y,
+                            content_width,
+                            content_height,
+                            rendered);
 }

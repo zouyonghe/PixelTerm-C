@@ -118,6 +118,60 @@ static void test_renderer_get_rendered_dimensions_defaults(void) {
     renderer_destroy(renderer);
 }
 
+static void test_renderer_is_graphics_mode_false_for_text_mode(void) {
+    ImageRenderer *renderer = renderer_create();
+    g_assert_nonnull(renderer);
+
+    RendererConfig config = {
+        .max_width = 20,
+        .max_height = 10,
+        .preserve_aspect_ratio = TRUE,
+        .dither = FALSE,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = 6,
+        .force_text = TRUE,
+        .force_sixel = FALSE,
+        .force_kitty = FALSE,
+        .force_iterm2 = FALSE,
+        .gamma = 1.0,
+        .dither_mode = CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+
+    g_assert_cmpint(renderer_initialize(renderer, &config), ==, ERROR_NONE);
+    g_assert_false(renderer_is_graphics_mode(renderer));
+
+    renderer_destroy(renderer);
+}
+
+static void test_renderer_is_graphics_mode_true_for_forced_kitty_mode(void) {
+    ImageRenderer *renderer = renderer_create();
+    g_assert_nonnull(renderer);
+
+    RendererConfig config = {
+        .max_width = 20,
+        .max_height = 10,
+        .preserve_aspect_ratio = TRUE,
+        .dither = FALSE,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = 6,
+        .force_text = FALSE,
+        .force_sixel = FALSE,
+        .force_kitty = TRUE,
+        .force_iterm2 = FALSE,
+        .gamma = 1.0,
+        .dither_mode = CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+
+    g_assert_cmpint(renderer_initialize(renderer, &config), ==, ERROR_NONE);
+    g_assert_true(renderer_is_graphics_mode(renderer));
+
+    renderer_destroy(renderer);
+}
+
 static void test_renderer_get_image_dimensions_valid(void) {
     gchar *path = create_png_file();
 
@@ -156,6 +210,10 @@ static void test_renderer_is_image_supported(void) {
 void register_renderer_tests(void) {
     g_test_add_func("/renderer/cache_roundtrip", test_renderer_cache_roundtrip);
     g_test_add_func("/renderer/get_rendered_dimensions", test_renderer_get_rendered_dimensions_defaults);
+    g_test_add_func("/renderer/is_graphics_mode/text_mode",
+                    test_renderer_is_graphics_mode_false_for_text_mode);
+    g_test_add_func("/renderer/is_graphics_mode/forced_kitty_mode",
+                    test_renderer_is_graphics_mode_true_for_forced_kitty_mode);
     g_test_add_func("/renderer/get_image_dimensions/valid", test_renderer_get_image_dimensions_valid);
     g_test_add_func("/renderer/get_image_dimensions/invalid", test_renderer_get_image_dimensions_invalid);
     g_test_add_func("/renderer/is_image_supported", test_renderer_is_image_supported);

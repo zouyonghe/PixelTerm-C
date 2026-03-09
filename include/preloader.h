@@ -17,6 +17,7 @@ typedef struct {
     GString *rendered;
     gint width;
     gint height;
+    gboolean graphics_mode;
 } CachedImageData;
 
 // Preloader status
@@ -197,6 +198,13 @@ GString* preloader_get_cached_image(ImagePreloader *preloader, const char *filep
  * @return `TRUE` if the dimensions were successfully retrieved from cache, `FALSE` otherwise.
  */
 gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const char *filepath, gint target_width, gint target_height, gint *width, gint *height);
+gboolean preloader_get_cached_render_info(ImagePreloader *preloader,
+                                          const char *filepath,
+                                          gint target_width,
+                                          gint target_height,
+                                          gint *width,
+                                          gint *height,
+                                          gboolean *graphics_mode);
 /**
  * @brief Adds a rendered image to the preloader's cache.
  * 
@@ -214,7 +222,14 @@ gboolean preloader_get_cached_image_dimensions(ImagePreloader *preloader, const 
  * @param target_width The target width (in characters) the image was rendered for.
  * @param target_height The target height (in characters) the image was rendered for.
  */
-void preloader_cache_add(ImagePreloader *preloader, const char *filepath, GString *rendered, gint rendered_width, gint rendered_height, gint target_width, gint target_height);
+void preloader_cache_add(ImagePreloader *preloader,
+                         const char *filepath,
+                         GString *rendered,
+                         gint rendered_width,
+                         gint rendered_height,
+                         gboolean graphics_mode,
+                         gint target_width,
+                         gint target_height);
 /**
  * @brief Removes a specific rendered image from the preloader's cache.
  * 

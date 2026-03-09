@@ -12,6 +12,7 @@ void register_text_utils_tests(void);
 void register_app_mode_tests(void);
 void register_input_dispatch_pending_clicks_tests(void);
 void register_input_dispatch_delete_tests(void);
+void register_preview_shared_tests(void);
 
 static void remove_path(gpointer data) {
     if (!data) {
@@ -270,6 +271,7 @@ int main(int argc, char **argv) {
     register_app_mode_tests();
     register_input_dispatch_pending_clicks_tests();
     register_input_dispatch_delete_tests();
+    register_preview_shared_tests();
 
     return g_test_run();
 }

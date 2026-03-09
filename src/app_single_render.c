@@ -535,7 +535,14 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
             // Add to cache if preloader is available
             if (app->preloader && app->preload_enabled) {
-                preloader_cache_add(app->preloader, filepath, rendered, image_width, image_height, target_width, target_height);
+                preloader_cache_add(app->preloader,
+                                    filepath,
+                                    rendered,
+                                    image_width,
+                                    image_height,
+                                    renderer_is_graphics_mode(renderer),
+                                    target_width,
+                                    target_height);
             }
 
             renderer_destroy(renderer);

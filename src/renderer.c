@@ -589,3 +589,19 @@ void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint
         *height = renderer->config.max_height;
     }
 }
+
+gboolean renderer_is_graphics_mode(const ImageRenderer *renderer) {
+    if (!renderer) {
+        return FALSE;
+    }
+    if (renderer->config.force_text) {
+        return FALSE;
+    }
+    if (!renderer->canvas_config) {
+        return renderer->config.force_kitty ||
+               renderer->config.force_iterm2 ||
+               renderer->config.force_sixel;
+    }
+
+    return chafa_canvas_config_get_pixel_mode(renderer->canvas_config) != CHAFA_PIXEL_MODE_SYMBOLS;
+}
