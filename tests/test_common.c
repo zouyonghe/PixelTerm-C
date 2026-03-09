@@ -12,7 +12,30 @@ void register_text_utils_tests(void);
 void register_app_mode_tests(void);
 void register_input_dispatch_pending_clicks_tests(void);
 void register_input_dispatch_delete_tests(void);
+void register_input_dispatch_core_tests(void);
 void register_preview_shared_tests(void);
+void register_video_player_tests(void);
+gboolean video_player_debug_should_log_for_test(const gchar *event);
+
+static void test_video_player_debug_filter_covers_logged_events(void) {
+    g_assert_true(video_player_debug_should_log_for_test("play-start"));
+    g_assert_true(video_player_debug_should_log_for_test("tick-stop"));
+    g_assert_true(video_player_debug_should_log_for_test("tick-reschedule"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-eof-rewind"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-frame-ready"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-decode-time"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-render-time"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-push"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-skip-full"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-drop-late"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-render-null"));
+    g_assert_true(video_player_debug_should_log_for_test("render-first"));
+    g_assert_true(video_player_debug_should_log_for_test("render-time"));
+    g_assert_true(video_player_debug_should_log_for_test("render-frame"));
+    g_assert_true(video_player_debug_should_log_for_test("render-draw-time"));
+    g_assert_true(video_player_debug_should_log_for_test("render-wait"));
+    g_assert_false(video_player_debug_should_log_for_test("unknown-event"));
+}
 
 static void remove_path(gpointer data) {
     if (!data) {
@@ -263,6 +286,8 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
     g_test_add_func("/common/error_code_to_string", test_error_code_to_string);
+    g_test_add_func("/common/video_player_debug_filter_covers_logged_events",
+                    test_video_player_debug_filter_covers_logged_events);
     register_browser_tests();
     register_gif_player_tests();
     register_renderer_tests();
@@ -271,7 +296,9 @@ int main(int argc, char **argv) {
     register_app_mode_tests();
     register_input_dispatch_pending_clicks_tests();
     register_input_dispatch_delete_tests();
+    register_input_dispatch_core_tests();
     register_preview_shared_tests();
+    register_video_player_tests();
 
     return g_test_run();
 }

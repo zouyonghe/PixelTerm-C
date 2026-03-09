@@ -10,6 +10,24 @@ struct AVFrame;
 struct AVPacket;
 struct SwsContext;
 
+typedef struct {
+    guint8 *pixels;
+    gint width;
+    gint height;
+    gint rowstride;
+    gint64 pts_ms;
+    guint generation;
+} DecodedFrame;
+
+typedef struct {
+    GString *rendered;
+    gint rendered_width;
+    gint rendered_height;
+    gint64 pts_ms;
+    ChafaPixelMode pixel_mode;
+    guint generation;
+} RenderedFrame;
+
 // Video playback structure
 typedef struct {
     gboolean is_playing;
@@ -22,12 +40,15 @@ typedef struct {
     gint64 clock_start_pts_ms;
     gint64 fallback_pts_ms;
     gboolean clock_started;
+    gboolean rewind_needs_resync;
     gint64 smooth_last_pts_ms;
     gint64 smooth_pts_ms;
     gboolean smooth_valid;
     guint timer_id;
     gchar *filepath;
     gint max_queue_size;
+    gint playback_generation;
+    guint render_layout_generation;
 
     // Renderer reference
     ImageRenderer *renderer;
@@ -51,6 +72,7 @@ typedef struct {
     gdouble io_avg_ms;
     gboolean io_avg_valid;
     gint64 last_present_us;
+    gint64 last_presented_pts_ms;
     gdouble present_fps;
     gboolean present_fps_valid;
     gboolean show_stats;
@@ -70,10 +92,16 @@ typedef struct {
 
     // Pre-rendered frame queue (worker thread)
     GThread *worker_thread;
+    GThread *render_workers[2];
     GMutex queue_mutex;
+    GCond frame_queue_has_space;
+    GCond decode_queue_has_space;
+    GCond decode_queue_has_items;
     GQueue *frame_queue;
+    GQueue *decode_queue;
     gboolean worker_stop;
-} VideoPlayer;
+    gboolean render_workers_started;
+ } VideoPlayer;
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
                               gboolean force_iterm2, gdouble gamma);

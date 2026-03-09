@@ -122,12 +122,27 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             continue;
         }
         
+        gboolean handled_input = FALSE;
+
         input_dispatch_process_pending(app);
+
+        if (input_has_pending_input(input_handler)) {
+            error = input_get_event(input_handler, &event);
+            if (error != ERROR_NONE) {
+                break;
+            }
+
+            input_dispatch_handle_event(app, input_handler, &event);
+            handled_input = TRUE;
+        }
+
         input_dispatch_process_animations(app);
         app_process_async_render(app);
 
-        
-        // Check if we have pending input with timeout to allow signal checking
+        if (handled_input) {
+            continue;
+        }
+
         if (!input_has_pending_input(input_handler)) {
             usleep(k_input_poll_sleep_us);
             continue;
