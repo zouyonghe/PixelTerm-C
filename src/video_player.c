@@ -27,6 +27,8 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 d);
 static gint video_player_live_instances = 0;
 
+typedef void (*VideoPlayerQueueWaitHook)(void *user_data);
+
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
     VIDEO_PLAYER_MAX_SILENCE_US = 1000000,
@@ -39,6 +41,29 @@ enum {
 
 gboolean video_player_debug_has_current_stream_for_test(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
+void video_player_set_queue_wait_hook_for_test(VideoPlayerQueueWaitHook hook, void *user_data);
+
+static GMutex video_player_queue_wait_hook_mutex;
+static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
+static void *video_player_queue_wait_hook_data = NULL;
+
+static void video_player_notify_queue_wait_hook(void) {
+    g_mutex_lock(&video_player_queue_wait_hook_mutex);
+    VideoPlayerQueueWaitHook hook = video_player_queue_wait_hook;
+    void *hook_data = video_player_queue_wait_hook_data;
+    g_mutex_unlock(&video_player_queue_wait_hook_mutex);
+
+    if (hook) {
+        hook(hook_data);
+    }
+}
+
+void video_player_set_queue_wait_hook_for_test(VideoPlayerQueueWaitHook hook, void *user_data) {
+    g_mutex_lock(&video_player_queue_wait_hook_mutex);
+    video_player_queue_wait_hook = hook;
+    video_player_queue_wait_hook_data = user_data;
+    g_mutex_unlock(&video_player_queue_wait_hook_mutex);
+}
 
 void video_player_reset_timing_state(VideoPlayer *player) {
     if (!player) {
@@ -220,6 +245,7 @@ void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
             logged_full = TRUE;
             continue;
         }
+        video_player_notify_queue_wait_hook();
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {
@@ -266,6 +292,7 @@ void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *frame) {
             logged_full = TRUE;
             continue;
         }
+        video_player_notify_queue_wait_hook();
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {
@@ -376,6 +403,7 @@ void video_player_decode_queue_push(VideoPlayer *player, DecodedFrame *frame) {
 
     g_mutex_lock(&player->queue_mutex);
     while (!player->worker_stop && g_queue_get_length(player->decode_queue) >= 4) {
+        video_player_notify_queue_wait_hook();
         g_cond_wait(&player->decode_queue_has_space, &player->queue_mutex);
     }
     if (player->worker_stop) {

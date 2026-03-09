@@ -8,11 +8,17 @@ static gsize test_video_player_sync_once = 0;
 
 static GMutex decode_queue_push_mutex;
 static GCond decode_queue_push_cond;
-static gboolean decode_queue_push_started = FALSE;
+static gboolean decode_queue_push_blocking = FALSE;
 
 static GMutex queue_push_mutex;
 static GCond queue_push_cond;
-static gboolean queue_push_started = FALSE;
+static gboolean queue_push_blocking = FALSE;
+
+typedef struct {
+    GMutex *mutex;
+    GCond *cond;
+    gboolean *flag;
+} QueueWaitSignal;
 
 static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gboolean *flag, const gchar *message) {
     gint64 deadline = g_get_monotonic_time() + G_TIME_SPAN_MILLISECOND * 500;
@@ -35,6 +41,18 @@ static void init_test_sync_primitives(void) {
         g_cond_init(&queue_push_cond);
         g_once_init_leave(&test_video_player_sync_once, 1);
     }
+}
+
+static void queue_wait_hook_signal(void *user_data) {
+    QueueWaitSignal *signal = (QueueWaitSignal *)user_data;
+    if (!signal) {
+        return;
+    }
+
+    g_mutex_lock(signal->mutex);
+    *(signal->flag) = TRUE;
+    g_cond_broadcast(signal->cond);
+    g_mutex_unlock(signal->mutex);
 }
 
 static VideoFrame *make_test_frame_with_generation(gint64 pts_ms, guint generation) {
@@ -138,11 +156,6 @@ static gpointer decode_queue_push_thread_main(gpointer user_data) {
     DecodedFrame *frame = g_new0(DecodedFrame, 1);
     decoded_frame_fill(frame, 233, 1);
 
-    g_mutex_lock(&decode_queue_push_mutex);
-    decode_queue_push_started = TRUE;
-    g_cond_broadcast(&decode_queue_push_cond);
-    g_mutex_unlock(&decode_queue_push_mutex);
-
     video_player_decode_queue_push(player, frame);
     return NULL;
 }
@@ -174,15 +187,21 @@ static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void)
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
 
+    QueueWaitSignal signal = {
+        .mutex = &decode_queue_push_mutex,
+        .cond = &decode_queue_push_cond,
+        .flag = &decode_queue_push_blocking,
+    };
     g_mutex_lock(&decode_queue_push_mutex);
-    decode_queue_push_started = FALSE;
+    decode_queue_push_blocking = FALSE;
     g_mutex_unlock(&decode_queue_push_mutex);
+    video_player_set_queue_wait_hook_for_test(queue_wait_hook_signal, &signal);
 
     GThread *thread = g_thread_new("decode-queue-push-test", decode_queue_push_thread_main, player);
     wait_for_flag_or_fail(&decode_queue_push_mutex,
                           &decode_queue_push_cond,
-                          &decode_queue_push_started,
-                          "Timed out waiting for decode queue push thread to start");
+                          &decode_queue_push_blocking,
+                          "Timed out waiting for decode queue push thread to block on full decode queue");
 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
@@ -193,6 +212,7 @@ static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void)
     decoded_frame_destroy(oldest);
 
     g_thread_join(thread);
+    video_player_set_queue_wait_hook_for_test(NULL, NULL);
 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 133);
@@ -223,15 +243,21 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
 
+    QueueWaitSignal signal = {
+        .mutex = &decode_queue_push_mutex,
+        .cond = &decode_queue_push_cond,
+        .flag = &decode_queue_push_blocking,
+    };
     g_mutex_lock(&decode_queue_push_mutex);
-    decode_queue_push_started = FALSE;
+    decode_queue_push_blocking = FALSE;
     g_mutex_unlock(&decode_queue_push_mutex);
+    video_player_set_queue_wait_hook_for_test(queue_wait_hook_signal, &signal);
 
     GThread *thread = g_thread_new("decode-queue-push-test", decode_queue_push_thread_main, player);
     wait_for_flag_or_fail(&decode_queue_push_mutex,
                           &decode_queue_push_cond,
-                          &decode_queue_push_started,
-                          "Timed out waiting for decode queue push thread to start");
+                          &decode_queue_push_blocking,
+                          "Timed out waiting for decode queue push thread to block on full decode queue");
 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 100);
@@ -242,6 +268,7 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
     decoded_frame_destroy(oldest);
 
     g_thread_join(thread);
+    video_player_set_queue_wait_hook_for_test(NULL, NULL);
 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 133);
@@ -572,11 +599,6 @@ static void test_should_not_drop_late_frame_when_backlog_is_deep_and_silence_exc
 static gpointer queue_push_thread_main(gpointer user_data) {
     VideoPlayer *player = (VideoPlayer *)user_data;
 
-    g_mutex_lock(&queue_push_mutex);
-    queue_push_started = TRUE;
-    g_cond_broadcast(&queue_push_cond);
-    g_mutex_unlock(&queue_push_mutex);
-
     video_player_queue_push(player, make_test_frame(167));
     return NULL;
 }
@@ -652,15 +674,21 @@ static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(voi
     video_player_queue_push(player, make_test_frame(133));
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 2);
 
+    QueueWaitSignal signal = {
+        .mutex = &queue_push_mutex,
+        .cond = &queue_push_cond,
+        .flag = &queue_push_blocking,
+    };
     g_mutex_lock(&queue_push_mutex);
-    queue_push_started = FALSE;
+    queue_push_blocking = FALSE;
     g_mutex_unlock(&queue_push_mutex);
+    video_player_set_queue_wait_hook_for_test(queue_wait_hook_signal, &signal);
 
     GThread *thread = g_thread_new("queue-push-test", queue_push_thread_main, player);
     wait_for_flag_or_fail(&queue_push_mutex,
                           &queue_push_cond,
-                          &queue_push_started,
-                          "Timed out waiting for render queue push thread to start");
+                          &queue_push_blocking,
+                          "Timed out waiting for render queue push thread to block on full render queue");
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 2);
     g_assert_cmpint(video_player_queue_head_pts_for_test(player), ==, 100);
 
@@ -670,6 +698,7 @@ static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(voi
     video_frame_destroy(taken);
 
     g_thread_join(thread);
+    video_player_set_queue_wait_hook_for_test(NULL, NULL);
 
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 2);
     g_assert_cmpint(video_player_queue_head_pts_for_test(player), ==, 133);
