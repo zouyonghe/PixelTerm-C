@@ -286,6 +286,7 @@ void app_draw_rendered_graphics(gint content_x,
     if (rendered->len > 0) {
         fwrite(rendered->str, 1, rendered->len, stdout);
     }
+    printf("\033[0m");
 }
 
 void app_draw_preview_content(gint content_x,

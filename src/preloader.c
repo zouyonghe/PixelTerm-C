@@ -482,6 +482,8 @@ gboolean preloader_get_cached_render_info(ImagePreloader *preloader,
     if (!preloader || !filepath || !width || !height) {
         return FALSE;
     }
+    *width = 0;
+    *height = 0;
     if (graphics_mode) {
         *graphics_mode = FALSE;
     }

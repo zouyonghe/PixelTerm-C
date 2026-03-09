@@ -173,6 +173,20 @@ static void test_draw_rendered_graphics_centers_payload_as_single_block(void) {
     g_free(output);
 }
 
+static void test_draw_rendered_graphics_resets_terminal_attributes(void) {
+    gchar *output = capture_graphics_output(3,
+                                            2,
+                                            12,
+                                            6,
+                                            4,
+                                            2,
+                                            "\033[31mGRAPHIC");
+
+    g_assert_true(g_str_has_suffix(output, "\033[0m"));
+
+    g_free(output);
+}
+
 static void test_draw_preview_content_uses_text_path_for_symbol_mode(void) {
     gchar *output = capture_preview_content_output(11, 5, 6, 6, 2, 2, FALSE, "AA\nBB");
 
@@ -203,6 +217,8 @@ void register_preview_shared_tests(void) {
                     test_draw_rendered_lines_trailing_newline_does_not_shift_center);
     g_test_add_func("/preview_shared/draw_rendered_graphics/centers_payload_as_single_block",
                     test_draw_rendered_graphics_centers_payload_as_single_block);
+    g_test_add_func("/preview_shared/draw_rendered_graphics/resets_terminal_attributes",
+                    test_draw_rendered_graphics_resets_terminal_attributes);
     g_test_add_func("/preview_shared/draw_preview_content/uses_text_path_for_symbol_mode",
                     test_draw_preview_content_uses_text_path_for_symbol_mode);
     g_test_add_func("/preview_shared/draw_preview_content/uses_graphics_path_for_graphics_mode",

@@ -157,6 +157,27 @@ static void test_preloader_get_cached_render_info_miss_resets_graphics_mode(void
     preloader_destroy(preloader);
 }
 
+static void test_preloader_get_cached_render_info_miss_resets_dimensions(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+
+    gint width = 123;
+    gint height = 456;
+    gboolean graphics_mode = TRUE;
+    g_assert_false(preloader_get_cached_render_info(preloader,
+                                                    "missing-dimensions.bin",
+                                                    10,
+                                                    5,
+                                                    &width,
+                                                    &height,
+                                                    &graphics_mode));
+    g_assert_cmpint(width, ==, 0);
+    g_assert_cmpint(height, ==, 0);
+    g_assert_false(graphics_mode);
+
+    preloader_destroy(preloader);
+}
+
 void register_preloader_tests(void) {
     g_test_add_func("/preloader/get_cached_image/caller_owned_copy",
                     test_preloader_get_cached_image_returns_caller_owned_copy);
@@ -172,4 +193,6 @@ void register_preloader_tests(void) {
                     test_preloader_get_cached_render_info_empty_text_has_zero_height);
     g_test_add_func("/preloader/get_cached_render_info/miss_resets_graphics_mode",
                     test_preloader_get_cached_render_info_miss_resets_graphics_mode);
+    g_test_add_func("/preloader/get_cached_render_info/miss_resets_dimensions",
+                    test_preloader_get_cached_render_info_miss_resets_dimensions);
 }
