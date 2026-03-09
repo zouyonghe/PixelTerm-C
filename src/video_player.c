@@ -1,7 +1,6 @@
 #define _GNU_SOURCE
 
 #include "video_player.h"
-#include "video_player_internal.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -27,6 +26,9 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 c,
                                    gint64 d);
 static gint video_player_live_instances = 0;
+
+gboolean video_player_debug_has_current_stream_for_test(void);
+gboolean video_player_debug_should_log_for_test(const gchar *event);
 
 void video_player_reset_timing_state(VideoPlayer *player) {
     if (!player) {
@@ -985,8 +987,11 @@ FILE *video_player_debug_get_stream(void) {
     return stream;
 }
 
-FILE *video_player_debug_current_stream_for_test(void) {
-    return video_player_debug_stream;
+gboolean video_player_debug_has_current_stream_for_test(void) {
+    g_mutex_lock(&video_player_debug_mutex);
+    gboolean has_stream = (video_player_debug_stream != NULL);
+    g_mutex_unlock(&video_player_debug_mutex);
+    return has_stream;
 }
 
 void video_player_debug_reset_for_test(void) {
@@ -1004,6 +1009,7 @@ static gboolean video_player_debug_should_log(const gchar *event) {
     }
     return g_strcmp0(event, "play-start") == 0 ||
            g_strcmp0(event, "tick-stop") == 0 ||
+           g_strcmp0(event, "tick-reschedule") == 0 ||
            g_strcmp0(event, "worker-eof-rewind") == 0 ||
            g_strcmp0(event, "worker-frame-ready") == 0 ||
            g_strcmp0(event, "worker-decode-time") == 0 ||
@@ -1012,8 +1018,15 @@ static gboolean video_player_debug_should_log(const gchar *event) {
            g_strcmp0(event, "worker-skip-full") == 0 ||
            g_strcmp0(event, "worker-drop-late") == 0 ||
            g_strcmp0(event, "worker-render-null") == 0 ||
+           g_strcmp0(event, "render-first") == 0 ||
+           g_strcmp0(event, "render-time") == 0 ||
+           g_strcmp0(event, "render-frame") == 0 ||
            g_strcmp0(event, "render-draw-time") == 0 ||
            g_strcmp0(event, "render-wait") == 0;
+}
+
+gboolean video_player_debug_should_log_for_test(const gchar *event) {
+    return video_player_debug_should_log(event);
 }
 
 static void video_player_debug_log(VideoPlayer *player,
