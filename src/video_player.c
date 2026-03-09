@@ -27,6 +27,16 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 d);
 static gint video_player_live_instances = 0;
 
+enum {
+    VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
+    VIDEO_PLAYER_MAX_SILENCE_US = 1000000,
+    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
+    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
+    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE = 4,
+    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE = 6,
+    VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
+};
+
 gboolean video_player_debug_has_current_stream_for_test(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
 
@@ -122,12 +132,12 @@ void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint 
 
     gint area = rendered_w * rendered_h;
     g_mutex_lock(&player->queue_mutex);
-    if (area >= 3000) {
-        player->max_queue_size = 4;
-    } else if (area >= 1500) {
-        player->max_queue_size = 6;
+    if (area >= VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA) {
+        player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE;
+    } else if (area >= VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA) {
+        player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE;
     } else {
-        player->max_queue_size = 8;
+        player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE;
     }
     g_cond_broadcast(&player->frame_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
@@ -525,7 +535,7 @@ gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms)
     }
 
     guint backlog = video_player_queue_length(player);
-    if (backlog < 5) {
+    if (backlog < VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD) {
         return FALSE;
     }
 
@@ -543,7 +553,7 @@ gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms)
     last_present_us = player->last_present_us;
     g_mutex_unlock(&player->state_mutex);
 
-    gint64 max_silence_us = 1000000;
+    gint64 max_silence_us = VIDEO_PLAYER_MAX_SILENCE_US;
     return last_present_us > 0 && (now_us - last_present_us) < max_silence_us;
 }
 
@@ -728,7 +738,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->smooth_valid = FALSE;
     player->timer_id = 0;
     player->filepath = NULL;
-    player->max_queue_size = 8;
+    player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE;
     player->playback_generation = 1;
     player->render_layout_generation = 1;
     player->renderer = renderer_create();

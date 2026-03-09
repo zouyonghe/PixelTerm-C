@@ -34,6 +34,7 @@ static void test_video_player_debug_filter_covers_logged_events(void) {
     g_assert_true(video_player_debug_should_log_for_test("render-frame"));
     g_assert_true(video_player_debug_should_log_for_test("render-draw-time"));
     g_assert_true(video_player_debug_should_log_for_test("render-wait"));
+    g_assert_false(video_player_debug_should_log_for_test("unknown-event"));
 }
 
 static void remove_path(gpointer data) {
