@@ -52,6 +52,48 @@ static void preloader_normalize_dims(ImagePreloader *preloader, gint *width, gin
     if (*height < 1) *height = 1;
 }
 
+static gint cached_render_width(const ImagePreloader *preloader,
+                                gint rendered_width,
+                                gboolean graphics_mode,
+                                gint fallback_width) {
+    if (rendered_width > 0) {
+        return rendered_width;
+    }
+    if (graphics_mode && fallback_width > 0) {
+        return fallback_width;
+    }
+    if (preloader && preloader->term_width > 0) {
+        return preloader->term_width;
+    }
+    return 1;
+}
+
+static gint cached_text_render_height(const GString *rendered) {
+    gint height = 1;
+    if (!rendered) {
+        return height;
+    }
+    for (gsize i = 0; i < rendered->len; i++) {
+        if (rendered->str[i] == '\n') {
+            height++;
+        }
+    }
+    return height;
+}
+
+static gint cached_render_height(gint rendered_height,
+                                 gboolean graphics_mode,
+                                 gint fallback_height,
+                                 const GString *rendered) {
+    if (rendered_height > 0) {
+        return rendered_height;
+    }
+    if (graphics_mode) {
+        return fallback_height > 0 ? fallback_height : 1;
+    }
+    return cached_text_render_height(rendered);
+}
+
 static void cached_image_data_set(CachedImageData *data,
                                   ImagePreloader *preloader,
                                   const GString *rendered,
@@ -69,26 +111,21 @@ static void cached_image_data_set(CachedImageData *data,
     }
     data->rendered = g_string_new_len(rendered->str, rendered->len);
 
-    if (rendered_width > 0) {
-        data->width = rendered_width;
-    } else if (graphics_mode) {
-        data->width = fallback_width > 0 ? fallback_width : MAX(1, preloader->term_width);
-    } else {
-        data->width = MAX(1, preloader->term_width);
-    }
-
-    if (rendered_height > 0) {
-        data->height = rendered_height;
-    } else if (graphics_mode) {
-        data->height = fallback_height > 0 ? fallback_height : 1;
-    } else {
-        data->height = 1;
-        for (gsize i = 0; i < rendered->len; i++) {
-            if (rendered->str[i] == '\n') {
-                data->height++;
-            }
-        }
-    }
+    /*
+     * Cached render metadata prefers renderer-reported size first.
+     * If graphics output does not report a size, keep using the preview cell size
+     * that the payload was rendered for so block protocols stay centered correctly.
+     * Text output falls back to terminal width plus newline-counted height because
+     * it is replayed line-by-line rather than as a single graphics block.
+     */
+    data->width = cached_render_width(preloader,
+                                      rendered_width,
+                                      graphics_mode,
+                                      fallback_width);
+    data->height = cached_render_height(rendered_height,
+                                        graphics_mode,
+                                        fallback_height,
+                                        rendered);
 
     data->graphics_mode = graphics_mode;
 }

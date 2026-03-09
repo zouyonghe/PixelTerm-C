@@ -6,12 +6,20 @@
 
 #include "app_preview_shared_internal.h"
 
-static gchar *capture_draw_output(gint content_x,
-                                  gint content_y,
-                                  gint content_width,
-                                  gint content_height,
-                                  const gchar *text) {
-    GString *rendered = g_string_new(text ? text : "");
+typedef void (*PreviewDrawFunc)(gpointer user_data);
+
+typedef struct {
+    gint content_x;
+    gint content_y;
+    gint content_width;
+    gint content_height;
+    gint rendered_width;
+    gint rendered_height;
+    gboolean graphics_mode;
+    GString *rendered;
+} PreviewCaptureArgs;
+
+static gchar *capture_output(PreviewDrawFunc draw_func, gpointer user_data) {
     gchar *template = g_strdup_printf("%s/pixelterm-preview-shared-XXXXXX", g_get_tmp_dir());
     int fd = g_mkstemp(template);
     g_assert_cmpint(fd, >=, 0);
@@ -23,17 +31,11 @@ static gchar *capture_draw_output(gint content_x,
     g_assert_cmpint(dup2(fd, STDOUT_FILENO), >=, 0);
     close(fd);
 
-    app_draw_rendered_lines(content_x,
-                            content_y,
-                            content_width,
-                            content_height,
-                            rendered);
+    draw_func(user_data);
 
     fflush(stdout);
     g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
     close(saved_stdout);
-
-    g_string_free(rendered, TRUE);
 
     gchar *output = NULL;
     GError *error = NULL;
@@ -44,6 +46,55 @@ static gchar *capture_draw_output(gint content_x,
     return output;
 }
 
+static void draw_lines_capture(gpointer user_data) {
+    PreviewCaptureArgs *args = (PreviewCaptureArgs *)user_data;
+    app_draw_rendered_lines(args->content_x,
+                            args->content_y,
+                            args->content_width,
+                            args->content_height,
+                            args->rendered);
+}
+
+static void draw_graphics_capture(gpointer user_data) {
+    PreviewCaptureArgs *args = (PreviewCaptureArgs *)user_data;
+    app_draw_rendered_graphics(args->content_x,
+                               args->content_y,
+                               args->content_width,
+                               args->content_height,
+                               args->rendered_width,
+                               args->rendered_height,
+                               args->rendered);
+}
+
+static void draw_preview_content_capture(gpointer user_data) {
+    PreviewCaptureArgs *args = (PreviewCaptureArgs *)user_data;
+    app_draw_preview_content(args->content_x,
+                             args->content_y,
+                             args->content_width,
+                             args->content_height,
+                             args->rendered_width,
+                             args->rendered_height,
+                             args->graphics_mode,
+                             args->rendered);
+}
+
+static gchar *capture_draw_output(gint content_x,
+                                  gint content_y,
+                                  gint content_width,
+                                  gint content_height,
+                                  const gchar *text) {
+    PreviewCaptureArgs args = {
+        .content_x = content_x,
+        .content_y = content_y,
+        .content_width = content_width,
+        .content_height = content_height,
+        .rendered = g_string_new(text ? text : "")
+    };
+    gchar *output = capture_output(draw_lines_capture, &args);
+    g_string_free(args.rendered, TRUE);
+    return output;
+}
+
 static gchar *capture_graphics_output(gint content_x,
                                       gint content_y,
                                       gint content_width,
@@ -51,38 +102,40 @@ static gchar *capture_graphics_output(gint content_x,
                                       gint rendered_width,
                                       gint rendered_height,
                                       const gchar *payload) {
-    GString *rendered = g_string_new(payload ? payload : "");
-    gchar *template = g_strdup_printf("%s/pixelterm-preview-shared-XXXXXX", g_get_tmp_dir());
-    int fd = g_mkstemp(template);
-    g_assert_cmpint(fd, >=, 0);
+    PreviewCaptureArgs args = {
+        .content_x = content_x,
+        .content_y = content_y,
+        .content_width = content_width,
+        .content_height = content_height,
+        .rendered_width = rendered_width,
+        .rendered_height = rendered_height,
+        .rendered = g_string_new(payload ? payload : "")
+    };
+    gchar *output = capture_output(draw_graphics_capture, &args);
+    g_string_free(args.rendered, TRUE);
+    return output;
+}
 
-    int saved_stdout = dup(STDOUT_FILENO);
-    g_assert_cmpint(saved_stdout, >=, 0);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(fd, STDOUT_FILENO), >=, 0);
-    close(fd);
-
-    app_draw_rendered_graphics(content_x,
-                               content_y,
-                               content_width,
-                               content_height,
-                               rendered_width,
-                               rendered_height,
-                               rendered);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
-    close(saved_stdout);
-
-    g_string_free(rendered, TRUE);
-
-    gchar *output = NULL;
-    GError *error = NULL;
-    g_assert_true(g_file_get_contents(template, &output, NULL, &error));
-    g_assert_no_error(error);
-    g_remove(template);
-    g_free(template);
+static gchar *capture_preview_content_output(gint content_x,
+                                             gint content_y,
+                                             gint content_width,
+                                             gint content_height,
+                                             gint rendered_width,
+                                             gint rendered_height,
+                                             gboolean graphics_mode,
+                                             const gchar *payload) {
+    PreviewCaptureArgs args = {
+        .content_x = content_x,
+        .content_y = content_y,
+        .content_width = content_width,
+        .content_height = content_height,
+        .rendered_width = rendered_width,
+        .rendered_height = rendered_height,
+        .graphics_mode = graphics_mode,
+        .rendered = g_string_new(payload ? payload : "")
+    };
+    gchar *output = capture_output(draw_preview_content_capture, &args);
+    g_string_free(args.rendered, TRUE);
     return output;
 }
 
@@ -121,32 +174,7 @@ static void test_draw_rendered_graphics_centers_payload_as_single_block(void) {
 }
 
 static void test_draw_preview_content_uses_text_path_for_symbol_mode(void) {
-    GString *rendered = g_string_new("AA\nBB");
-    gchar *template = g_strdup_printf("%s/pixelterm-preview-shared-XXXXXX", g_get_tmp_dir());
-    int fd = g_mkstemp(template);
-    g_assert_cmpint(fd, >=, 0);
-
-    int saved_stdout = dup(STDOUT_FILENO);
-    g_assert_cmpint(saved_stdout, >=, 0);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(fd, STDOUT_FILENO), >=, 0);
-    close(fd);
-
-    app_draw_preview_content(11, 5, 6, 6, 2, 2, FALSE, rendered);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
-    close(saved_stdout);
-
-    g_string_free(rendered, TRUE);
-
-    gchar *output = NULL;
-    GError *error = NULL;
-    g_assert_true(g_file_get_contents(template, &output, NULL, &error));
-    g_assert_no_error(error);
-    g_remove(template);
-    g_free(template);
+    gchar *output = capture_preview_content_output(11, 5, 6, 6, 2, 2, FALSE, "AA\nBB");
 
     g_assert_nonnull(g_strstr_len(output, -1, "\033[7;13HAA"));
     g_assert_nonnull(g_strstr_len(output, -1, "\033[8;13HBB"));
@@ -154,32 +182,14 @@ static void test_draw_preview_content_uses_text_path_for_symbol_mode(void) {
 }
 
 static void test_draw_preview_content_uses_graphics_path_for_graphics_mode(void) {
-    GString *rendered = g_string_new("\033_Gf=100;payload\033\\");
-    gchar *template = g_strdup_printf("%s/pixelterm-preview-shared-XXXXXX", g_get_tmp_dir());
-    int fd = g_mkstemp(template);
-    g_assert_cmpint(fd, >=, 0);
-
-    int saved_stdout = dup(STDOUT_FILENO);
-    g_assert_cmpint(saved_stdout, >=, 0);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(fd, STDOUT_FILENO), >=, 0);
-    close(fd);
-
-    app_draw_preview_content(10, 4, 20, 10, 8, 3, TRUE, rendered);
-
-    fflush(stdout);
-    g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
-    close(saved_stdout);
-
-    g_string_free(rendered, TRUE);
-
-    gchar *output = NULL;
-    GError *error = NULL;
-    g_assert_true(g_file_get_contents(template, &output, NULL, &error));
-    g_assert_no_error(error);
-    g_remove(template);
-    g_free(template);
+    gchar *output = capture_preview_content_output(10,
+                                                   4,
+                                                   20,
+                                                   10,
+                                                   8,
+                                                   3,
+                                                   TRUE,
+                                                   "\033_Gf=100;payload\033\\");
 
     g_assert_true(g_str_has_prefix(output, "\033[7;16H\033_Gf=100;payload\033\\"));
     g_assert_null(g_strstr_len(output, -1, "\033[8;"));
