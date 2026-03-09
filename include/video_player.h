@@ -96,6 +96,7 @@ typedef struct {
     GMutex queue_mutex;
     GCond frame_queue_has_space;
     GCond decode_queue_has_space;
+    GCond decode_queue_has_items;
     GQueue *frame_queue;
     GQueue *decode_queue;
     gboolean worker_stop;

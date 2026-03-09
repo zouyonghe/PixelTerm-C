@@ -13,6 +13,9 @@ static gboolean decode_queue_push_blocking = FALSE;
 static GMutex queue_push_mutex;
 static GCond queue_push_cond;
 static gboolean queue_push_blocking = FALSE;
+static GMutex decode_queue_item_mutex;
+static GCond decode_queue_item_cond;
+static gboolean decode_queue_item_received = FALSE;
 
 typedef struct {
     GMutex *mutex;
@@ -39,6 +42,8 @@ static void init_test_sync_primitives(void) {
         g_cond_init(&decode_queue_push_cond);
         g_mutex_init(&queue_push_mutex);
         g_cond_init(&queue_push_cond);
+        g_mutex_init(&decode_queue_item_mutex);
+        g_cond_init(&decode_queue_item_cond);
         g_once_init_leave(&test_video_player_sync_once, 1);
     }
 }
@@ -160,6 +165,20 @@ static gpointer decode_queue_push_thread_main(gpointer user_data) {
     return NULL;
 }
 
+static gpointer decode_queue_wait_thread_main(gpointer user_data) {
+    VideoPlayer *player = (VideoPlayer *)user_data;
+    DecodedFrame *frame = video_player_decode_queue_wait_and_take(player);
+    if (frame) {
+        decoded_frame_destroy(frame);
+    }
+
+    g_mutex_lock(&decode_queue_item_mutex);
+    decode_queue_item_received = TRUE;
+    g_cond_broadcast(&decode_queue_item_cond);
+    g_mutex_unlock(&decode_queue_item_mutex);
+    return NULL;
+}
+
 static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -273,6 +292,38 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
     g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 4);
     g_assert_cmpint(decode_queue_head_pts_for_test(player), ==, 133);
 
+    video_player_destroy(player);
+}
+
+static void test_decode_queue_wait_and_take_blocks_until_item_arrives(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    init_test_sync_primitives();
+    g_mutex_lock(&decode_queue_item_mutex);
+    decode_queue_item_received = FALSE;
+    g_mutex_unlock(&decode_queue_item_mutex);
+
+    GThread *thread = g_thread_new("decode-queue-wait-test", decode_queue_wait_thread_main, player);
+    g_usleep(10 * 1000);
+
+    g_mutex_lock(&decode_queue_item_mutex);
+    g_assert_false(decode_queue_item_received);
+    g_mutex_unlock(&decode_queue_item_mutex);
+
+    DecodedFrame *frame = g_new0(DecodedFrame, 1);
+    decoded_frame_fill(frame, 233, 1);
+    video_player_decode_queue_push(player, frame);
+
+    wait_for_flag_or_fail(&decode_queue_item_mutex,
+                          &decode_queue_item_cond,
+                          &decode_queue_item_received,
+                          "Timed out waiting for blocking decode take to receive an item");
+
+    g_thread_join(thread);
     video_player_destroy(player);
 }
 
@@ -842,6 +893,8 @@ void register_video_player_tests(void) {
                     test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest);
     g_test_add_func("/video_player/decode_queue/text_mode_waits_instead_of_replacing_oldest",
                     test_decode_queue_text_mode_waits_instead_of_replacing_oldest);
+    g_test_add_func("/video_player/decode_queue/wait_and_take_blocks_until_item_arrives",
+                    test_decode_queue_wait_and_take_blocks_until_item_arrives);
     g_test_add_func("/video_player/generation_counter/starts_initialized",
                     test_generation_counter_starts_initialized);
     g_test_add_func("/video_player/render_layout_generation/starts_initialized",

@@ -25,6 +25,7 @@ RenderedFrame *video_player_queue_take_for_playback(VideoPlayer *player,
 void video_player_decode_queue_clear(VideoPlayer *player);
 void video_player_decode_queue_push(VideoPlayer *player, DecodedFrame *frame);
 DecodedFrame *video_player_decode_queue_take(VideoPlayer *player);
+DecodedFrame *video_player_decode_queue_wait_and_take(VideoPlayer *player);
 
 gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms);
 gint video_player_calc_delay_ms(VideoPlayer *player);
