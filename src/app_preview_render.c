@@ -46,6 +46,9 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
     gboolean rendered_from_preload = FALSE;
     gboolean rendered_owned = FALSE;
     GString *rendered = NULL;
+    gint rendered_w = 0;
+    gint rendered_h = 0;
+    gboolean graphics_mode = FALSE;
 
     if (app->preloader && app->preload_enabled) {
         rendered = preloader_get_cached_image(app->preloader,
@@ -54,6 +57,15 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                                               context->content_height);
         rendered_from_preload = (rendered != NULL);
         rendered_owned = rendered_from_preload;
+        if (rendered_from_preload) {
+            (void)preloader_get_cached_render_info(app->preloader,
+                                                   filepath,
+                                                   context->content_width,
+                                                   context->content_height,
+                                                   &rendered_w,
+                                                   &rendered_h,
+                                                   &graphics_mode);
+        }
     }
 
     if (!rendered) {
@@ -95,24 +107,30 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
         return GRID_RENDER_CONTINUE;
     }
 
-    if (!rendered_from_preload && app->preloader && app->preload_enabled) {
-        gint rendered_w = 0;
-        gint rendered_h = 0;
+    if (!rendered_from_preload) {
         renderer_get_rendered_dimensions(render_ctx->renderer, &rendered_w, &rendered_h);
+        graphics_mode = renderer_is_graphics_mode(render_ctx->renderer);
+    }
+
+    if (!rendered_from_preload && app->preloader && app->preload_enabled) {
         preloader_cache_add(app->preloader,
                             filepath,
                             rendered,
                             rendered_w,
                             rendered_h,
+                            graphics_mode,
                             context->content_width,
                             context->content_height);
     }
 
-    app_draw_rendered_lines(cell->content_x,
-                            cell->content_y,
-                            context->content_width,
-                            context->content_height,
-                            rendered);
+    app_draw_preview_content(cell->content_x,
+                             cell->content_y,
+                             context->content_width,
+                             context->content_height,
+                             rendered_w,
+                             rendered_h,
+                             graphics_mode,
+                             rendered);
     if (rendered_owned) {
         g_string_free(rendered, TRUE);
     }

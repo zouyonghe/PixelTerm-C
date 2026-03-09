@@ -191,6 +191,7 @@ ErrorCode renderer_get_media_dimensions(const char *filepath, gint *width, gint 
  * @param height A pointer to an integer where the rendered height (in characters) will be stored.
  */
 void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height);
+gboolean renderer_is_graphics_mode(const ImageRenderer *renderer);
 
 
 

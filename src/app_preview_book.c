@@ -66,11 +66,17 @@ static GridRenderResult app_book_preview_render_cell(const GridRenderContext *co
         return GRID_RENDER_CONTINUE;
     }
 
-    app_draw_rendered_lines(cell->content_x,
-                            cell->content_y,
-                            context->content_width,
-                            context->content_height,
-                            rendered);
+    gint rendered_w = 0;
+    gint rendered_h = 0;
+    renderer_get_rendered_dimensions(render_ctx->renderer, &rendered_w, &rendered_h);
+    app_draw_preview_content(cell->content_x,
+                             cell->content_y,
+                             context->content_width,
+                             context->content_height,
+                             rendered_w,
+                             rendered_h,
+                             renderer_is_graphics_mode(render_ctx->renderer),
+                             rendered);
     g_string_free(rendered, TRUE);
 
     return GRID_RENDER_CONTINUE;

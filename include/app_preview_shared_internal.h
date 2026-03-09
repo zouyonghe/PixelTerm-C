@@ -37,5 +37,20 @@ void app_draw_rendered_lines(gint content_x,
                              gint content_width,
                              gint content_height,
                              const GString *rendered);
+void app_draw_rendered_graphics(gint content_x,
+                                gint content_y,
+                                gint content_width,
+                                gint content_height,
+                                gint rendered_width,
+                                gint rendered_height,
+                                const GString *rendered);
+void app_draw_preview_content(gint content_x,
+                              gint content_y,
+                              gint content_width,
+                              gint content_height,
+                              gint rendered_width,
+                              gint rendered_height,
+                              gboolean graphics_mode,
+                              const GString *rendered);
 
 #endif
