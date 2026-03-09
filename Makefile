@@ -106,7 +106,8 @@ TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o \
 		$(OBJDIR)/gif_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o \
 		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/preloader.o $(OBJDIR)/app_mode.o $(OBJDIR)/input_dispatch_pending_clicks.o \
-		$(OBJDIR)/input_dispatch_delete.o $(OBJDIR)/app_preview_shared.o
+		$(OBJDIR)/input_dispatch_delete.o $(OBJDIR)/input_dispatch_core.o $(OBJDIR)/app_preview_shared.o \
+		$(OBJDIR)/video_player.o
 
 # Default target
 all: $(TARGET)

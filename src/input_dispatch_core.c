@@ -181,23 +181,20 @@ static void handle_mouse_scroll(PixelTermApp *app, const InputEvent *event) {
     }
 }
 
-static void drain_main_context_if_playing(gboolean is_playing) {
-    if (!is_playing) {
-        return;
-    }
-
-    while (g_main_context_pending(NULL)) {
-        g_main_context_iteration(NULL, FALSE);
-    }
-}
-
 static void process_animation_events(PixelTermApp *app) {
     if (!app) {
         return;
     }
 
-    drain_main_context_if_playing(app->gif_player && gif_player_is_playing(app->gif_player));
-    drain_main_context_if_playing(app->video_player && video_player_is_playing(app->video_player));
+    gboolean animation_playing = (app->gif_player && gif_player_is_playing(app->gif_player)) ||
+                                 (app->video_player && video_player_is_playing(app->video_player));
+    if (!animation_playing) {
+        return;
+    }
+
+    if (g_main_context_pending(NULL)) {
+        g_main_context_iteration(NULL, FALSE);
+    }
 }
 
 static gboolean handle_key_press_common(PixelTermApp *app,

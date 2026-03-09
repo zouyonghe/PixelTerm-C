@@ -1,6 +1,6 @@
 #include <glib.h>
 
-#include "../src/video_player.c"
+#include "video_player_internal.h"
 
 static VideoFrame *make_test_frame_with_generation(gint64 pts_ms, guint generation) {
     VideoFrame *frame = g_new0(VideoFrame, 1);
@@ -697,12 +697,16 @@ static void test_debug_logging_honors_environment_toggle(void) {
         return;
     }
 
+    video_player_debug_reset_for_test();
     g_unsetenv("PIXELTERM_DEBUG_VIDEO");
     g_assert_false(video_player_debug_enabled());
+
+    video_player_debug_reset_for_test();
     g_setenv("PIXELTERM_DEBUG_VIDEO", "1", TRUE);
     g_assert_true(video_player_debug_enabled());
     g_assert_nonnull(video_player_debug_get_stream());
     g_unsetenv("PIXELTERM_DEBUG_VIDEO");
+    video_player_debug_reset_for_test();
 
     video_player_destroy(player);
 }
@@ -714,14 +718,16 @@ static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void)
         return;
     }
 
+    video_player_debug_reset_for_test();
     g_setenv("PIXELTERM_DEBUG_VIDEO", "1", TRUE);
     g_assert_nonnull(video_player_debug_get_stream());
-    g_assert_nonnull(video_player_debug_stream);
+    g_assert_nonnull(video_player_debug_current_stream_for_test());
 
     video_player_destroy(player);
 
-    g_assert_null(video_player_debug_stream);
+    g_assert_null(video_player_debug_current_stream_for_test());
     g_unsetenv("PIXELTERM_DEBUG_VIDEO");
+    video_player_debug_reset_for_test();
 }
 
 void register_video_player_tests(void) {
