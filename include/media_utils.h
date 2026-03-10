@@ -13,7 +13,8 @@ typedef enum {
     MEDIA_KIND_UNKNOWN = 0,        /**< Unknown or unsupported media type */
     MEDIA_KIND_IMAGE,              /**< Static image (JPG, PNG, BMP, etc.) */
     MEDIA_KIND_ANIMATED_IMAGE,     /**< Animated image (GIF, animated WebP) */
-    MEDIA_KIND_VIDEO               /**< Video file (MP4, MKV, AVI, etc.) */
+    MEDIA_KIND_VIDEO,              /**< Video file (MP4, MKV, AVI, etc.) */
+    MEDIA_KIND_COUNT               /**< Sentinel for MediaKind range validation */
 } MediaKind;
 
 /**
