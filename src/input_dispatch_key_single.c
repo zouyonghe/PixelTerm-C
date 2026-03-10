@@ -44,6 +44,25 @@ static void skip_queued_navigation(InputHandler *input_handler,
     }
 }
 
+static void handle_single_media_navigation(PixelTermApp *app,
+                                           InputHandler *input_handler,
+                                           ErrorCode (*navigate)(PixelTermApp *app),
+                                           const KeyCode *keys,
+                                           size_t key_count) {
+    if (!app || !navigate) {
+        return;
+    }
+
+    gint old_index = app_get_current_index(app);
+    navigate(app);
+    if (old_index != app_get_current_index(app)) {
+        app->suppress_full_clear = TRUE;
+        app->async.render_request = TRUE;
+        app_refresh_display(app);
+    }
+    skip_queued_navigation(input_handler, keys, key_count);
+}
+
 void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func) {
     g_video_seek_func = func ? func : video_player_seek_relative_ms;
 }
@@ -229,74 +248,56 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             if (handle_video_seek(app, -k_video_seek_step_ms)) {
                 break;
             }
-            gint old_index = app_get_current_index(app);
-            app_previous_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_previous_image,
+                                           g_nav_keys_lr,
+                                           G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
         case (KeyCode)'h': {
-            gint old_index = app_get_current_index(app);
-            app_previous_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_previous_image,
+                                           g_nav_keys_lr,
+                                           G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
         case KEY_RIGHT: {
             if (handle_video_seek(app, k_video_seek_step_ms)) {
                 break;
             }
-            gint old_index = app_get_current_index(app);
-            app_next_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_next_image,
+                                           g_nav_keys_lr,
+                                           G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
         case (KeyCode)'l': {
-            gint old_index = app_get_current_index(app);
-            app_next_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_next_image,
+                                           g_nav_keys_lr,
+                                           G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
         case (KeyCode)'k':
         case KEY_UP: {
-            gint old_index = app_get_current_index(app);
-            app_previous_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_previous_image,
+                                           g_nav_keys_ud,
+                                           G_N_ELEMENTS(g_nav_keys_ud));
             break;
         }
         case (KeyCode)'j':
         case KEY_DOWN: {
-            gint old_index = app_get_current_index(app);
-            app_next_image(app);
-            if (old_index != app_get_current_index(app)) {
-                app->suppress_full_clear = TRUE;
-                app->async.render_request = TRUE;
-                app_refresh_display(app);
-            }
-            skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
+            handle_single_media_navigation(app,
+                                           input_handler,
+                                           app_next_image,
+                                           g_nav_keys_ud,
+                                           G_N_ELEMENTS(g_nav_keys_ud));
             break;
         }
         case KEY_TAB:

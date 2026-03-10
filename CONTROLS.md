@@ -36,7 +36,7 @@ This is the default mode when viewing a single image.
 | Key | Function |
 |-----|----------|
 | ←/→ | Previous/next image; in Video View seek backward/forward 5s |
-| ↑/↓ | Previous/next image; in Video View switch previous/next media |
+| ↑/↓ | Previous/next image; in Video View switch to previous/next media |
 | h/k | Vim-style navigation (previous image) |
 | l/j | Vim-style navigation (next image) |
 | Space | Play/Pause video (Video View only) |

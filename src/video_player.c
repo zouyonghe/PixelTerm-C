@@ -25,11 +25,17 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 b,
                                    gint64 c,
                                    gint64 d);
+gint video_player_calc_delay_ms(VideoPlayer *player);
+static gboolean video_player_tick(gpointer user_data);
 static gint64 video_player_current_position_ms(VideoPlayer *player);
 static gint64 video_player_seek_target_ms(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms);
 static gint video_player_live_instances = 0;
 
 typedef void (*VideoPlayerQueueWaitHook)(void *user_data);
+typedef int (*VideoPlayerSeekHook)(AVFormatContext *format_context,
+                                   int stream_index,
+                                   int64_t timestamp,
+                                   int flags);
 typedef enum {
     VIDEO_PLAYER_TEST_QUEUE_RENDER,
     VIDEO_PLAYER_TEST_QUEUE_DECODE,
@@ -57,6 +63,7 @@ static VideoPlayer *video_player_queue_wait_hook_player = NULL;
 static VideoPlayerTestQueueKind video_player_queue_wait_hook_kind = VIDEO_PLAYER_TEST_QUEUE_RENDER;
 static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
 static void *video_player_queue_wait_hook_data = NULL;
+static VideoPlayerSeekHook video_player_seek_hook = NULL;
 
 static void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQueueKind queue_kind) {
     g_mutex_lock(&video_player_queue_wait_hook_mutex);
@@ -81,6 +88,10 @@ void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
     video_player_queue_wait_hook = hook;
     video_player_queue_wait_hook_data = user_data;
     g_mutex_unlock(&video_player_queue_wait_hook_mutex);
+}
+
+void video_player_set_seek_hook_for_test(VideoPlayerSeekHook hook) {
+    video_player_seek_hook = hook;
 }
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -266,6 +277,23 @@ static guint video_player_generation_bump(VideoPlayer *player) {
         return 0;
     }
     return (guint)(g_atomic_int_add(&player->playback_generation, 1) + 1);
+}
+
+static void video_player_schedule_tick(VideoPlayer *player) {
+    if (!player || !player->is_playing) {
+        return;
+    }
+
+    int delay = video_player_calc_delay_ms(player);
+    video_player_debug_log(player, "tick-reschedule", delay, 0, 0, 0);
+    if (delay < 1) {
+        delay = 1;
+    }
+
+    if (player->timer_id != 0) {
+        g_source_remove(player->timer_id);
+    }
+    player->timer_id = g_timeout_add(delay, video_player_tick, player);
 }
 
 void decoded_frame_destroy(DecodedFrame *frame) {
@@ -1304,7 +1332,7 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
     *layout_generation_inout = current_generation;
 }
 
-static void video_player_stop_worker(VideoPlayer *player) {
+static void video_player_stop_worker_internal(VideoPlayer *player, gboolean clear_queues) {
     if (!player) {
         return;
     }
@@ -1332,8 +1360,33 @@ static void video_player_stop_worker(VideoPlayer *player) {
     g_mutex_lock(&player->queue_mutex);
     player->worker_stop = FALSE;
     g_mutex_unlock(&player->queue_mutex);
-    video_player_queue_clear(player);
-    video_player_decode_queue_clear(player);
+    if (clear_queues) {
+        video_player_queue_clear(player);
+        video_player_decode_queue_clear(player);
+    }
+}
+
+static void video_player_stop_worker(VideoPlayer *player) {
+    video_player_stop_worker_internal(player, TRUE);
+}
+
+static void video_player_resume_playback_loop(VideoPlayer *player) {
+    if (!player || !player->is_playing) {
+        return;
+    }
+
+    video_player_start_worker(player);
+    video_player_schedule_tick(player);
+}
+
+static int video_player_seek_frame(VideoPlayer *player, int64_t target_ts, int flags) {
+    if (!player || !player->format_context) {
+        return AVERROR(EINVAL);
+    }
+    if (video_player_seek_hook) {
+        return video_player_seek_hook(player->format_context, player->video_stream_index, target_ts, flags);
+    }
+    return av_seek_frame(player->format_context, player->video_stream_index, target_ts, flags);
 }
 
 static gboolean video_player_tick(gpointer user_data) {
@@ -1984,14 +2037,7 @@ ErrorCode video_player_play(VideoPlayer *player) {
 
     int delay = video_player_calc_delay_ms(player);
     video_player_debug_log(player, "play-start", delay, player->video_width, player->video_height, player->frame_delay_ms);
-    if (delay < 1) {
-        delay = 1;
-    }
-
-    if (player->timer_id != 0) {
-        g_source_remove(player->timer_id);
-    }
-    player->timer_id = g_timeout_add(delay, video_player_tick, player);
+    video_player_schedule_tick(player);
 
     return ERROR_NONE;
 }
@@ -2035,6 +2081,10 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         return ERROR_INVALID_ARGS;
     }
 
+    if (delta_ms == 0) {
+        return ERROR_NONE;
+    }
+
     gint64 duration_ms = 0;
     if (player->format_context->duration != AV_NOPTS_VALUE && player->format_context->duration > 0) {
         duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
@@ -2042,23 +2092,35 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
 
     gint64 current_ms = video_player_current_position_ms(player);
     gint64 target_ms = video_player_seek_target_ms(player, delta_ms, duration_ms);
+    if (target_ms == current_ms) {
+        return ERROR_NONE;
+    }
     gboolean was_playing = video_player_is_playing(player);
 
-    video_player_pause(player);
+    if (was_playing) {
+        if (player->timer_id != 0) {
+            g_source_remove(player->timer_id);
+            player->timer_id = 0;
+        }
+        video_player_stop_worker_internal(player, FALSE);
+    }
+
+    AVStream *stream = player->format_context->streams[player->video_stream_index];
+    int flags = target_ms <= current_ms ? AVSEEK_FLAG_BACKWARD : 0;
+    int64_t target_ts = av_rescale_q(target_ms, (AVRational){1, 1000}, stream->time_base);
+    if (video_player_seek_frame(player, target_ts, flags) < 0) {
+        if (was_playing) {
+            video_player_resume_playback_loop(player);
+        }
+        return ERROR_INVALID_IMAGE;
+    }
+
     video_player_queue_clear(player);
     video_player_decode_queue_clear(player);
     if (player->packet) {
         av_packet_unref(player->packet);
     }
     avcodec_flush_buffers(player->codec_context);
-
-    AVStream *stream = player->format_context->streams[player->video_stream_index];
-    int flags = target_ms <= current_ms ? AVSEEK_FLAG_BACKWARD : 0;
-    int64_t target_ts = av_rescale_q(target_ms, (AVRational){1, 1000}, stream->time_base);
-    if (av_seek_frame(player->format_context, player->video_stream_index, target_ts, flags) < 0) {
-        return ERROR_INVALID_IMAGE;
-    }
-
     video_player_reset_timing_state(player);
     player->fallback_pts_ms = target_ms;
     g_mutex_lock(&player->state_mutex);
@@ -2070,7 +2132,9 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     video_player_clear_line_cache(player);
 
     if (was_playing) {
-        return video_player_play(player);
+        video_player_start_worker(player);
+        video_player_render_frame(player);
+        video_player_schedule_tick(player);
     }
 
     return ERROR_NONE;

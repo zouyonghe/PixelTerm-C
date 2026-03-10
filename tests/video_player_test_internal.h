@@ -49,5 +49,10 @@ void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
                                                VideoPlayerTestQueueKind queue_kind,
                                                VideoPlayerQueueWaitHook hook,
                                                void *user_data);
+typedef int (*VideoPlayerSeekHook)(struct AVFormatContext *format_context,
+                                   int stream_index,
+                                   int64_t timestamp,
+                                   int flags);
+void video_player_set_seek_hook_for_test(VideoPlayerSeekHook hook);
 
 #endif
