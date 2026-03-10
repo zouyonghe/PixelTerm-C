@@ -1,4 +1,5 @@
 #include "app.h"
+#include "app_media_session.h"
 #include "renderer.h"
 #include "preloader.h"
 #include "media_utils.h"
@@ -141,6 +142,14 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (is_animated_image && app->gif_player && !is_video) {
         gif_is_animated = gif_player_is_animated(app->gif_player);
     }
+
+    MediaKind active_kind = MEDIA_KIND_IMAGE;
+    if (is_video) {
+        active_kind = MEDIA_KIND_VIDEO;
+    } else if (is_animated_image) {
+        active_kind = MEDIA_KIND_ANIMATED_IMAGE;
+    }
+    app_media_stop_inactive_players(app, active_kind);
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
@@ -328,9 +337,6 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
         }
 
-        if (app->gif_player) {
-            gif_player_stop(app->gif_player);
-        }
         if (app->video_player) {
             video_player_play(app->video_player);
             app->needs_redraw = FALSE;
@@ -670,14 +676,6 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         gif_player_play(app->gif_player);
         // Indicate that we are currently displaying an animated GIF
         app->needs_redraw = FALSE; // Don't immediately redraw since animation will handle updates
-    } else {
-        // For non-animated images, stop any existing animation
-        if (app->gif_player) {
-            gif_player_stop(app->gif_player);
-        }
-        if (app->video_player) {
-            video_player_stop(app->video_player);
-        }
     }
 
     ui_end_sync_update();

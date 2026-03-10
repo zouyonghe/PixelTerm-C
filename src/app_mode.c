@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "app_media_session.h"
+
 #define APP_MODE_COUNT (APP_MODE_BOOK_PREVIEW + 1)
 #define APP_MODE_ALL_MASK ((1u << APP_MODE_COUNT) - 1u)
 
@@ -57,12 +59,7 @@ static void app_mode_on_enter_non_single(PixelTermApp *app) {
     if (!app) {
         return;
     }
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
+    app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
 }
 
 typedef struct {
