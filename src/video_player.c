@@ -36,6 +36,7 @@ typedef int (*VideoPlayerSeekHook)(AVFormatContext *format_context,
                                    int stream_index,
                                    int64_t timestamp,
                                    int flags);
+typedef gboolean (*VideoPlayerSeekPreviewHook)(VideoPlayer *player, gint64 target_ms);
 typedef enum {
     VIDEO_PLAYER_TEST_QUEUE_RENDER,
     VIDEO_PLAYER_TEST_QUEUE_DECODE,
@@ -64,6 +65,7 @@ static VideoPlayerTestQueueKind video_player_queue_wait_hook_kind = VIDEO_PLAYER
 static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
 static void *video_player_queue_wait_hook_data = NULL;
 static VideoPlayerSeekHook video_player_seek_hook = NULL;
+static VideoPlayerSeekPreviewHook video_player_seek_preview_hook = NULL;
 
 static void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQueueKind queue_kind) {
     g_mutex_lock(&video_player_queue_wait_hook_mutex);
@@ -92,6 +94,10 @@ void video_player_set_queue_wait_hook_for_test(VideoPlayer *player,
 
 void video_player_set_seek_hook_for_test(VideoPlayerSeekHook hook) {
     video_player_seek_hook = hook;
+}
+
+void video_player_set_seek_preview_hook_for_test(VideoPlayerSeekPreviewHook hook) {
+    video_player_seek_preview_hook = hook;
 }
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -1389,6 +1395,131 @@ static int video_player_seek_frame(VideoPlayer *player, int64_t target_ts, int f
     return av_seek_frame(player->format_context, player->video_stream_index, target_ts, flags);
 }
 
+static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 target_ms) {
+    if (!player) {
+        return FALSE;
+    }
+    if (video_player_seek_preview_hook) {
+        return video_player_seek_preview_hook(player, target_ms);
+    }
+    if (!player->renderer || !player->format_context || !player->codec_context || !player->packet ||
+        !player->decode_frame || !player->rgba_frame || !player->sws_context) {
+        return FALSE;
+    }
+
+    gboolean frame_ready = FALSE;
+    gint64 preview_pts_ms = target_ms;
+    while (!frame_ready) {
+        if (!player->draining) {
+            int read_result = av_read_frame(player->format_context, player->packet);
+            if (read_result < 0) {
+                player->draining = TRUE;
+                if (avcodec_send_packet(player->codec_context, NULL) < 0) {
+                    break;
+                }
+            } else if (player->packet->stream_index == player->video_stream_index) {
+                int send_result = avcodec_send_packet(player->codec_context, player->packet);
+                av_packet_unref(player->packet);
+                if (send_result < 0) {
+                    continue;
+                }
+            } else {
+                av_packet_unref(player->packet);
+                continue;
+            }
+        }
+
+        for (;;) {
+            int receive_result = avcodec_receive_frame(player->codec_context, player->decode_frame);
+            if (receive_result == 0) {
+                int64_t best_pts = player->decode_frame->best_effort_timestamp;
+                gint64 decoded_pts_ms = video_player_rescale_pts_ms(player, best_pts);
+                if (decoded_pts_ms != G_MININT64) {
+                    preview_pts_ms = decoded_pts_ms;
+                }
+                sws_scale(player->sws_context,
+                          (const uint8_t * const *)player->decode_frame->data,
+                          player->decode_frame->linesize,
+                          0,
+                          player->codec_context->height,
+                          player->rgba_frame->data,
+                          player->rgba_frame->linesize);
+                frame_ready = TRUE;
+                break;
+            }
+            if (receive_result == AVERROR(EAGAIN)) {
+                break;
+            }
+            if (receive_result == AVERROR_EOF) {
+                break;
+            }
+            if (receive_result == AVERROR_INVALIDDATA && !player->draining) {
+                continue;
+            }
+            break;
+        }
+
+        if (player->draining) {
+            break;
+        }
+    }
+
+    if (!frame_ready) {
+        return FALSE;
+    }
+
+    GString *rendered = NULL;
+    gint rendered_w = 0;
+    gint rendered_h = 0;
+    ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    g_mutex_lock(&player->render_mutex);
+    if (renderer_update_terminal_size(player->renderer) == ERROR_NONE) {
+        gboolean layout_valid = FALSE;
+        gint max_width = 0;
+        gint max_height = 0;
+        g_mutex_lock(&player->state_mutex);
+        layout_valid = player->render_layout_valid;
+        max_width = player->render_max_width;
+        max_height = player->render_max_height;
+        g_mutex_unlock(&player->state_mutex);
+        if (layout_valid) {
+            player->renderer->config.max_width = max_width;
+            player->renderer->config.max_height = max_height;
+        }
+        rendered = renderer_render_image_data(player->renderer,
+                                              player->rgba_frame->data[0],
+                                              player->video_width,
+                                              player->video_height,
+                                              player->rgba_frame->linesize[0],
+                                              4);
+        if (rendered) {
+            renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
+            if (player->renderer->canvas_config) {
+                pixel_mode = chafa_canvas_config_get_pixel_mode(player->renderer->canvas_config);
+            }
+        }
+    }
+    g_mutex_unlock(&player->render_mutex);
+
+    if (!rendered) {
+        return FALSE;
+    }
+
+    VideoFrame *frame = g_new0(VideoFrame, 1);
+    if (!frame) {
+        g_string_free(rendered, TRUE);
+        return FALSE;
+    }
+    frame->rendered = rendered;
+    frame->rendered_width = rendered_w;
+    frame->rendered_height = rendered_h;
+    frame->pts_ms = preview_pts_ms;
+    frame->pixel_mode = pixel_mode;
+    frame->generation = video_player_generation_get(player);
+    video_player_queue_push(player, frame);
+    return video_player_render_frame(player);
+}
+
 static gboolean video_player_tick(gpointer user_data) {
     VideoPlayer *player = (VideoPlayer *)user_data;
     if (!player) {
@@ -2120,7 +2251,9 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     if (player->packet) {
         av_packet_unref(player->packet);
     }
-    avcodec_flush_buffers(player->codec_context);
+    if (avcodec_is_open(player->codec_context)) {
+        avcodec_flush_buffers(player->codec_context);
+    }
     video_player_reset_timing_state(player);
     player->fallback_pts_ms = target_ms;
     g_mutex_lock(&player->state_mutex);
@@ -2135,6 +2268,8 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         video_player_start_worker(player);
         video_player_render_frame(player);
         video_player_schedule_tick(player);
+    } else {
+        (void)video_player_render_seek_preview(player, target_ms);
     }
 
     return ERROR_NONE;
