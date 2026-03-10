@@ -16,6 +16,7 @@ void register_input_dispatch_core_tests(void);
 void register_preview_shared_tests(void);
 void register_video_player_tests(void);
 void register_app_media_session_tests(void);
+void register_app_single_render_integration_tests(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
 
 static void test_video_player_debug_filter_covers_logged_events(void) {
@@ -301,6 +302,7 @@ int main(int argc, char **argv) {
     register_preview_shared_tests();
     register_video_player_tests();
     register_app_media_session_tests();
+    register_app_single_render_integration_tests();
 
     return g_test_run();
 }
