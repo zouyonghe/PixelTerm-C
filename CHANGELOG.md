@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.6: Media switching stability and single-view cleanup.
+    - **Media Playback**: Stop inactive GIF and video players when switching between videos, animated images, and static images so single-view playback no longer flickers between media types.
+    - **Single Image View**: Clamp missing file-size metadata in the info panel so unreadable files show `0.0 MB` instead of `-0.0 MB`.
+    - **Code Health**: Centralize shared single-view async-render helpers and add a smaller render test seam so runtime and regression code stay aligned.
+    - **Testing**: Expand media-session and single-view render coverage for null-player cases, invalid media kinds, cross-media switches, and file-size display edge cases.
+
 - v1.7.5: Video playback pipeline and interaction responsiveness.
     - **Video Playback**: Split video playback into a decode stage plus parallel render workers so high-resolution sixel output keeps moving under load.
     - **Responsiveness**: Prioritize pending input before redraw work and limit animation event draining to one main-context iteration at a time so keyboard and mouse actions stay responsive.
