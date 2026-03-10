@@ -7,6 +7,7 @@
 #include "preload_control.h"
 #include "grid_render.h"
 #include "pixbuf_utils.h"
+#include "app_single_render_internal.h"
 #include "app_single_render_test_internal.h"
 #include "ui_render_utils.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -24,15 +25,6 @@ void app_single_render_set_test_hooks(const AppSingleRenderTestHooks *hooks) {
 
 void app_single_render_reset_test_hooks(void) {
     app_single_render_test_hooks = NULL;
-}
-
-static void app_clear_async_render_state(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-    app->async.image_pending = FALSE;
-    app->async.image_index = -1;
-    g_clear_pointer(&app->async.image_path, g_free);
 }
 
 static void app_queue_async_render(PixelTermApp *app, const gchar *filepath,

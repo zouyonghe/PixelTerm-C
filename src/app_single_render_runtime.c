@@ -3,15 +3,7 @@
 #include "preloader.h"
 #include "text_utils.h"
 #include "preload_control.h"
-
-static void app_clear_async_render_state(PixelTermApp *app) {
-    if (!app) {
-        return;
-    }
-    app->async.image_pending = FALSE;
-    app->async.image_index = -1;
-    g_clear_pointer(&app->async.image_path, g_free);
-}
+#include "app_single_render_internal.h"
 
 ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
@@ -43,7 +35,7 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     gint64 file_size = get_file_size(filepath);
     const char *ext = get_file_extension(filepath);
 
-    gdouble file_size_mb = file_size / (1024.0 * 1024.0);
+    gdouble file_size_mb = app_single_render_file_size_mb_for_display(file_size);
     gdouble aspect_ratio = (height > 0) ? (gdouble)width / height : 1.0;
     gint index = app_get_current_index(app) + 1;
     gint total = app_get_total_images(app);

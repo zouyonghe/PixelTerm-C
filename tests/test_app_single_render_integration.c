@@ -4,6 +4,7 @@
 #include "app.h"
 #include "app_single_render_test_internal.h"
 #include "ui_render_utils.h"
+#include "../src/app_single_render_internal.h"
 
 typedef struct {
     gint gif_load_calls;
@@ -109,6 +110,12 @@ static gboolean init_render_test_app(PixelTermApp *app) {
     return TRUE;
 }
 
+static void test_file_size_display_clamps_missing_values(void) {
+    g_assert_cmpfloat(app_single_render_file_size_mb_for_display(-1), ==, 0.0);
+    g_assert_cmpfloat(app_single_render_file_size_mb_for_display(0), ==, 0.0);
+    g_assert_cmpfloat(app_single_render_file_size_mb_for_display(1024 * 1024), ==, 1.0);
+}
+
 static void test_single_view_render_switches_media_players(void) {
     PixelTermApp app = {0};
     if (!init_render_test_app(&app)) {
@@ -147,6 +154,8 @@ static void test_single_view_render_switches_media_players(void) {
 }
 
 void register_app_single_render_integration_tests(void) {
+    g_test_add_func("/app_single_render/file_size_display/clamps_missing_values",
+                    test_file_size_display_clamps_missing_values);
     g_test_add_func("/app_single_render/single_view/switches_media_players",
                     test_single_view_render_switches_media_players);
 }
