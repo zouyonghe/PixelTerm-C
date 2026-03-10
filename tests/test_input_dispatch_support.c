@@ -10,6 +10,8 @@ void input_dispatch_test_reset_stubs(void) {
     g_input_dispatch_stub_state.enter_file_manager_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_preview_result = ERROR_NONE;
     g_input_dispatch_stub_state.video_seek_result = ERROR_NONE;
+    g_input_dispatch_stub_state.next_image_result = ERROR_NONE;
+    g_input_dispatch_stub_state.previous_image_result = ERROR_NONE;
 }
 
 gboolean input_dispatch_current_is_video(const PixelTermApp *app) {
@@ -41,25 +43,27 @@ void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
 }
 
 ErrorCode app_next_image(PixelTermApp *app) {
+    ErrorCode result = g_input_dispatch_stub_state.next_image_result;
     if (app) {
         app->needs_redraw = FALSE;
-        if (app->current_index + 1 < app->total_images) {
+        if (result == ERROR_NONE && app->current_index + 1 < app->total_images) {
             app->current_index++;
         }
     }
     g_input_dispatch_stub_state.next_image_calls++;
-    return ERROR_NONE;
+    return result;
 }
 
 ErrorCode app_previous_image(PixelTermApp *app) {
+    ErrorCode result = g_input_dispatch_stub_state.previous_image_result;
     if (app) {
         app->needs_redraw = FALSE;
-        if (app->current_index > 0) {
+        if (result == ERROR_NONE && app->current_index > 0) {
             app->current_index--;
         }
     }
     g_input_dispatch_stub_state.previous_image_calls++;
-    return ERROR_NONE;
+    return result;
 }
 
 ErrorCode app_refresh_display(PixelTermApp *app) {

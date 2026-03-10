@@ -1382,6 +1382,7 @@ static void video_player_resume_playback_loop(VideoPlayer *player) {
     }
 
     video_player_start_worker(player);
+    video_player_render_frame(player);
     video_player_schedule_tick(player);
 }
 
@@ -1393,6 +1394,44 @@ static int video_player_seek_frame(VideoPlayer *player, int64_t target_ts, int f
         return video_player_seek_hook(player->format_context, player->video_stream_index, target_ts, flags);
     }
     return av_seek_frame(player->format_context, player->video_stream_index, target_ts, flags);
+}
+
+static VideoFrame *video_player_build_rendered_frame(ImageRenderer *renderer,
+                                                     const guint8 *pixels,
+                                                     gint width,
+                                                     gint height,
+                                                     gint rowstride,
+                                                     gint64 pts_ms,
+                                                     guint generation) {
+    if (!renderer || !pixels || width <= 0 || height <= 0 || rowstride <= 0) {
+        return NULL;
+    }
+
+    GString *rendered = renderer_render_image_data(renderer, pixels, width, height, rowstride, 4);
+    if (!rendered) {
+        return NULL;
+    }
+
+    gint rendered_w = 0;
+    gint rendered_h = 0;
+    renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
+    ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    if (renderer->canvas_config) {
+        pixel_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
+    }
+
+    VideoFrame *frame = g_new0(VideoFrame, 1);
+    if (!frame) {
+        g_string_free(rendered, TRUE);
+        return NULL;
+    }
+    frame->rendered = rendered;
+    frame->rendered_width = rendered_w;
+    frame->rendered_height = rendered_h;
+    frame->pts_ms = pts_ms;
+    frame->pixel_mode = pixel_mode;
+    frame->generation = generation;
+    return frame;
 }
 
 static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 target_ms) {
@@ -1468,10 +1507,7 @@ static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 tar
         return FALSE;
     }
 
-    GString *rendered = NULL;
-    gint rendered_w = 0;
-    gint rendered_h = 0;
-    ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    VideoFrame *frame = NULL;
     g_mutex_lock(&player->render_mutex);
     if (renderer_update_terminal_size(player->renderer) == ERROR_NONE) {
         gboolean layout_valid = FALSE;
@@ -1486,36 +1522,19 @@ static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 tar
             player->renderer->config.max_width = max_width;
             player->renderer->config.max_height = max_height;
         }
-        rendered = renderer_render_image_data(player->renderer,
-                                              player->rgba_frame->data[0],
-                                              player->video_width,
-                                              player->video_height,
-                                              player->rgba_frame->linesize[0],
-                                              4);
-        if (rendered) {
-            renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
-            if (player->renderer->canvas_config) {
-                pixel_mode = chafa_canvas_config_get_pixel_mode(player->renderer->canvas_config);
-            }
-        }
+        frame = video_player_build_rendered_frame(player->renderer,
+                                                  player->rgba_frame->data[0],
+                                                  player->video_width,
+                                                  player->video_height,
+                                                  player->rgba_frame->linesize[0],
+                                                  preview_pts_ms,
+                                                  video_player_generation_get(player));
     }
     g_mutex_unlock(&player->render_mutex);
 
-    if (!rendered) {
-        return FALSE;
-    }
-
-    VideoFrame *frame = g_new0(VideoFrame, 1);
     if (!frame) {
-        g_string_free(rendered, TRUE);
         return FALSE;
     }
-    frame->rendered = rendered;
-    frame->rendered_width = rendered_w;
-    frame->rendered_height = rendered_h;
-    frame->pts_ms = preview_pts_ms;
-    frame->pixel_mode = pixel_mode;
-    frame->generation = video_player_generation_get(player);
     video_player_queue_push(player, frame);
     return video_player_render_frame(player);
 }
@@ -2265,9 +2284,7 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     video_player_clear_line_cache(player);
 
     if (was_playing) {
-        video_player_start_worker(player);
-        video_player_render_frame(player);
-        video_player_schedule_tick(player);
+        video_player_resume_playback_loop(player);
     } else {
         (void)video_player_render_seek_preview(player, target_ms);
     }

@@ -27,6 +27,8 @@ typedef struct {
     ErrorCode enter_file_manager_result;
     ErrorCode enter_preview_result;
     ErrorCode video_seek_result;
+    ErrorCode next_image_result;
+    ErrorCode previous_image_result;
 } InputDispatchTestStubState;
 
 extern InputDispatchTestStubState g_input_dispatch_stub_state;

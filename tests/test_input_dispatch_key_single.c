@@ -132,6 +132,31 @@ static void test_video_up_and_down_keep_media_switching(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_navigation_failure_does_not_refresh_or_advance_queue(void) {
+    PixelTermApp app = make_single_app(NULL);
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputEvent queued = make_key_event(KEY_RIGHT);
+    InputHandler input_handler = {0};
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = FALSE;
+    g_input_dispatch_stub_state.next_image_result = ERROR_INVALID_IMAGE;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    input_unget_event(&input_handler, &queued);
+
+    input_dispatch_handle_key_press_single(&app, &input_handler, &event);
+
+    g_assert_cmpint(app.current_index, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_false(app.async.render_request);
+    InputEvent preserved = {0};
+    g_assert_cmpint(input_get_event(&input_handler, &preserved), ==, ERROR_NONE);
+    g_assert_cmpint(preserved.key_code, ==, KEY_RIGHT);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
 void register_input_dispatch_key_single_tests(void) {
     g_test_add_func("/input_dispatch_key_single/navigation/left_matches_h",
                     test_left_matches_h_navigation);
@@ -143,4 +168,6 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_right_does_not_switch_media);
     g_test_add_func("/input_dispatch_key_single/video/up_and_down_keep_media_switching",
                     test_video_up_and_down_keep_media_switching);
+    g_test_add_func("/input_dispatch_key_single/navigation/failure_does_not_refresh_or_advance_queue",
+                    test_navigation_failure_does_not_refresh_or_advance_queue);
 }

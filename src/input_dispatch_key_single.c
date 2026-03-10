@@ -54,7 +54,10 @@ static void handle_single_media_navigation(PixelTermApp *app,
     }
 
     gint old_index = app_get_current_index(app);
-    navigate(app);
+    ErrorCode result = navigate(app);
+    if (result != ERROR_NONE) {
+        return;
+    }
     if (old_index != app_get_current_index(app)) {
         app->suppress_full_clear = TRUE;
         app->async.render_request = TRUE;
