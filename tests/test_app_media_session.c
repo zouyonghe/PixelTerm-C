@@ -110,12 +110,30 @@ static void test_stop_inactive_players_rejects_invalid_media_kind(void) {
     app.gif_player->is_playing = TRUE;
     app.video_player->is_playing = TRUE;
 
-    g_test_expect_message(NULL, G_LOG_LEVEL_CRITICAL, "*active_kind*");
+    g_test_expect_message(NULL, G_LOG_LEVEL_WARNING, "*active_kind*");
     app_media_stop_inactive_players(&app, (MediaKind)99);
     g_test_assert_expected_messages();
 
     g_assert_true(app.gif_player->is_playing);
     g_assert_true(app.video_player->is_playing);
+
+    destroy_test_players(&app);
+}
+
+static void test_unknown_stops_all_players(void) {
+    PixelTermApp app = {0};
+    if (!init_test_players(&app)) {
+        g_test_skip("media players unavailable");
+        return;
+    }
+
+    app.gif_player->is_playing = TRUE;
+    app.video_player->is_playing = TRUE;
+
+    app_media_stop_inactive_players(&app, MEDIA_KIND_UNKNOWN);
+
+    g_assert_false(app.gif_player->is_playing);
+    g_assert_false(app.video_player->is_playing);
 
     destroy_test_players(&app);
 }
@@ -183,6 +201,8 @@ void register_app_media_session_tests(void) {
                     test_stop_inactive_players_null_video_only_gif_initialized);
     g_test_add_func("/app_media_session/rejects_invalid_media_kind",
                     test_stop_inactive_players_rejects_invalid_media_kind);
+    g_test_add_func("/app_media_session/unknown/stops_all_players",
+                    test_unknown_stops_all_players);
     g_test_add_func("/app_media_session/animated_image/keeps_gif_and_stops_video",
                     test_animated_image_keeps_gif_and_stops_video);
     g_test_add_func("/app_media_session/video/keeps_video_and_stops_gif",

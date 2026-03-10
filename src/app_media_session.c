@@ -1,7 +1,15 @@
 #include "app_media_session.h"
 
 static gboolean app_media_kind_is_valid(MediaKind active_kind) {
-    return active_kind >= MEDIA_KIND_UNKNOWN && active_kind <= MEDIA_KIND_VIDEO;
+    switch (active_kind) {
+        case MEDIA_KIND_UNKNOWN:
+        case MEDIA_KIND_IMAGE:
+        case MEDIA_KIND_ANIMATED_IMAGE:
+        case MEDIA_KIND_VIDEO:
+            return TRUE;
+        default:
+            return FALSE;
+    }
 }
 
 void app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_kind) {
@@ -9,7 +17,7 @@ void app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_kind) {
         return;
     }
     if (!app_media_kind_is_valid(active_kind)) {
-        g_critical("%s: active_kind=%d is invalid", G_STRFUNC, (gint)active_kind);
+        g_warning("%s: active_kind=%d is invalid", G_STRFUNC, (gint)active_kind);
         return;
     }
 
