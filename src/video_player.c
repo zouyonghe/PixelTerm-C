@@ -1439,6 +1439,68 @@ static VideoFrame *video_player_build_rendered_frame(ImageRenderer *renderer,
     return frame;
 }
 
+static gboolean video_player_seek_preview_read_and_send_packet(VideoPlayer *player) {
+    if (!player) {
+        return FALSE;
+    }
+    if (player->draining) {
+        return TRUE;
+    }
+
+    int read_result = av_read_frame(player->format_context, player->packet);
+    if (read_result < 0) {
+        player->draining = TRUE;
+        return avcodec_send_packet(player->codec_context, NULL) >= 0;
+    }
+
+    if (player->packet->stream_index != player->video_stream_index) {
+        av_packet_unref(player->packet);
+        return FALSE;
+    }
+
+    int send_result = avcodec_send_packet(player->codec_context, player->packet);
+    av_packet_unref(player->packet);
+    return send_result >= 0;
+}
+
+static gboolean video_player_seek_preview_receive_and_convert_frame(VideoPlayer *player,
+                                                                   gint64 *preview_pts_ms,
+                                                                   gboolean *frame_ready) {
+    if (!player || !preview_pts_ms || !frame_ready) {
+        return FALSE;
+    }
+
+    for (;;) {
+        int receive_result = avcodec_receive_frame(player->codec_context, player->decode_frame);
+        if (receive_result == 0) {
+            int64_t best_pts = player->decode_frame->best_effort_timestamp;
+            gint64 decoded_pts_ms = video_player_rescale_pts_ms(player, best_pts);
+            if (decoded_pts_ms != G_MININT64) {
+                *preview_pts_ms = decoded_pts_ms;
+            }
+            sws_scale(player->sws_context,
+                      (const uint8_t * const *)player->decode_frame->data,
+                      player->decode_frame->linesize,
+                      0,
+                      player->codec_context->height,
+                      player->rgba_frame->data,
+                      player->rgba_frame->linesize);
+            *frame_ready = TRUE;
+            return TRUE;
+        }
+        if (receive_result == AVERROR(EAGAIN)) {
+            return FALSE;
+        }
+        if (receive_result == AVERROR_EOF) {
+            return FALSE;
+        }
+        if (receive_result == AVERROR_INVALIDDATA && !player->draining) {
+            continue;
+        }
+        return FALSE;
+    }
+}
+
 static gboolean video_player_decode_seek_preview_frame(VideoPlayer *player, gint64 target_ms, gint64 *preview_pts_ms) {
     if (!player || !preview_pts_ms || !player->format_context || !player->codec_context || !player->packet ||
         !player->decode_frame || !player->rgba_frame || !player->sws_context) {
@@ -1454,54 +1516,14 @@ static gboolean video_player_decode_seek_preview_frame(VideoPlayer *player, gint
         }
         attempts++;
 
-        if (!player->draining) {
-            int read_result = av_read_frame(player->format_context, player->packet);
-            if (read_result < 0) {
-                player->draining = TRUE;
-                if (avcodec_send_packet(player->codec_context, NULL) < 0) {
-                    break;
-                }
-            } else if (player->packet->stream_index == player->video_stream_index) {
-                int send_result = avcodec_send_packet(player->codec_context, player->packet);
-                av_packet_unref(player->packet);
-                if (send_result < 0) {
-                    continue;
-                }
-            } else {
-                av_packet_unref(player->packet);
-                continue;
-            }
-        }
-
-        for (;;) {
-            int receive_result = avcodec_receive_frame(player->codec_context, player->decode_frame);
-            if (receive_result == 0) {
-                int64_t best_pts = player->decode_frame->best_effort_timestamp;
-                gint64 decoded_pts_ms = video_player_rescale_pts_ms(player, best_pts);
-                if (decoded_pts_ms != G_MININT64) {
-                    *preview_pts_ms = decoded_pts_ms;
-                }
-                sws_scale(player->sws_context,
-                          (const uint8_t * const *)player->decode_frame->data,
-                          player->decode_frame->linesize,
-                          0,
-                          player->codec_context->height,
-                          player->rgba_frame->data,
-                          player->rgba_frame->linesize);
-                frame_ready = TRUE;
-                break;
-            }
-            if (receive_result == AVERROR(EAGAIN)) {
-                break;
-            }
-            if (receive_result == AVERROR_EOF) {
-                break;
-            }
-            if (receive_result == AVERROR_INVALIDDATA && !player->draining) {
+        if (!video_player_seek_preview_read_and_send_packet(player)) {
+            if (!player->draining) {
                 continue;
             }
             break;
         }
+
+        (void)video_player_seek_preview_receive_and_convert_frame(player, preview_pts_ms, &frame_ready);
 
         if (player->draining) {
             break;
