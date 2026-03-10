@@ -1439,21 +1439,15 @@ static VideoFrame *video_player_build_rendered_frame(ImageRenderer *renderer,
     return frame;
 }
 
-static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 target_ms) {
-    if (!player) {
-        return FALSE;
-    }
-    if (video_player_seek_preview_hook) {
-        return video_player_seek_preview_hook(player, target_ms);
-    }
-    if (!player->renderer || !player->format_context || !player->codec_context || !player->packet ||
+static gboolean video_player_decode_seek_preview_frame(VideoPlayer *player, gint64 target_ms, gint64 *preview_pts_ms) {
+    if (!player || !preview_pts_ms || !player->format_context || !player->codec_context || !player->packet ||
         !player->decode_frame || !player->rgba_frame || !player->sws_context) {
         return FALSE;
     }
 
     gboolean frame_ready = FALSE;
     gint attempts = 0;
-    gint64 preview_pts_ms = target_ms;
+    *preview_pts_ms = target_ms;
     while (!frame_ready) {
         if (video_player_max_preview_decode_attempts >= 0 && attempts >= video_player_max_preview_decode_attempts) {
             break;
@@ -1485,7 +1479,7 @@ static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 tar
                 int64_t best_pts = player->decode_frame->best_effort_timestamp;
                 gint64 decoded_pts_ms = video_player_rescale_pts_ms(player, best_pts);
                 if (decoded_pts_ms != G_MININT64) {
-                    preview_pts_ms = decoded_pts_ms;
+                    *preview_pts_ms = decoded_pts_ms;
                 }
                 sws_scale(player->sws_context,
                           (const uint8_t * const *)player->decode_frame->data,
@@ -1514,7 +1508,23 @@ static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 tar
         }
     }
 
-    if (!frame_ready) {
+    return frame_ready;
+}
+
+static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 target_ms) {
+    if (!player) {
+        return FALSE;
+    }
+    if (video_player_seek_preview_hook) {
+        return video_player_seek_preview_hook(player, target_ms);
+    }
+    if (!player->renderer || !player->format_context || !player->codec_context || !player->packet ||
+        !player->decode_frame || !player->rgba_frame || !player->sws_context) {
+        return FALSE;
+    }
+
+    gint64 preview_pts_ms = target_ms;
+    if (!video_player_decode_seek_preview_frame(player, target_ms, &preview_pts_ms)) {
         return FALSE;
     }
 

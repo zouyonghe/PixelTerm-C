@@ -13,6 +13,7 @@ typedef ErrorCode (*InputDispatchVideoSeekFunc)(VideoPlayer *player, gint64 delt
 void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app);
 void input_dispatch_key_modes_toggle_video_fps(PixelTermApp *app);
 void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func);
+gint64 input_dispatch_key_single_get_video_seek_step_ms_for_test(void);
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,
                                             InputHandler *input_handler,

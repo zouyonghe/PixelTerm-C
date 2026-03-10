@@ -76,6 +76,7 @@ static void test_video_left_does_not_switch_media(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
     InputEvent event = make_key_event(KEY_LEFT);
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
 
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.current_is_video = TRUE;
@@ -88,7 +89,7 @@ static void test_video_left_does_not_switch_media(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
-    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, -5000);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, -seek_step_ms);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
@@ -96,6 +97,7 @@ static void test_video_right_does_not_switch_media(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
     InputEvent event = make_key_event(KEY_RIGHT);
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
 
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.current_is_video = TRUE;
@@ -108,7 +110,7 @@ static void test_video_right_does_not_switch_media(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
-    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, 5000);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
