@@ -66,6 +66,7 @@ static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
 static void *video_player_queue_wait_hook_data = NULL;
 static VideoPlayerSeekHook video_player_seek_hook = NULL;
 static VideoPlayerSeekPreviewHook video_player_seek_preview_hook = NULL;
+static gint video_player_max_preview_decode_attempts = -1;
 
 static void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQueueKind queue_kind) {
     g_mutex_lock(&video_player_queue_wait_hook_mutex);
@@ -98,6 +99,10 @@ void video_player_set_seek_hook_for_test(VideoPlayerSeekHook hook) {
 
 void video_player_set_seek_preview_hook_for_test(VideoPlayerSeekPreviewHook hook) {
     video_player_seek_preview_hook = hook;
+}
+
+void video_player_set_max_preview_decode_attempts_for_test(gint max_attempts) {
+    video_player_max_preview_decode_attempts = max_attempts;
 }
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -1447,8 +1452,14 @@ static gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 tar
     }
 
     gboolean frame_ready = FALSE;
+    gint attempts = 0;
     gint64 preview_pts_ms = target_ms;
     while (!frame_ready) {
+        if (video_player_max_preview_decode_attempts >= 0 && attempts >= video_player_max_preview_decode_attempts) {
+            break;
+        }
+        attempts++;
+
         if (!player->draining) {
             int read_result = av_read_frame(player->format_context, player->packet);
             if (read_result < 0) {
@@ -2274,13 +2285,13 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         avcodec_flush_buffers(player->codec_context);
     }
     video_player_reset_timing_state(player);
-    player->fallback_pts_ms = target_ms;
     g_mutex_lock(&player->state_mutex);
+    player->fallback_pts_ms = target_ms;
     player->rewind_needs_resync = TRUE;
-    g_mutex_unlock(&player->state_mutex);
     player->fixed_frame_valid = FALSE;
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
+    g_mutex_unlock(&player->state_mutex);
     video_player_clear_line_cache(player);
 
     if (was_playing) {
