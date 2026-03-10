@@ -59,5 +59,6 @@ typedef gboolean (*VideoPlayerSeekPreviewHook)(VideoPlayer *player, gint64 targe
 void video_player_set_seek_preview_hook_for_test(VideoPlayerSeekPreviewHook hook);
 
 void video_player_set_max_preview_decode_attempts_for_test(gint max_attempts);
+gint video_player_get_max_preview_decode_attempts_for_test(void);
 
 #endif

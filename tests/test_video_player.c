@@ -178,6 +178,20 @@ static gboolean init_minimal_seek_context(VideoPlayer *player) {
     return TRUE;
 }
 
+static void teardown_minimal_seek_context(VideoPlayer *player) {
+    if (!player) {
+        return;
+    }
+    if (player->codec_context) {
+        avcodec_free_context(&player->codec_context);
+    }
+    if (player->format_context) {
+        avformat_close_input(&player->format_context);
+    }
+    player->video_stream_index = -1;
+    player->has_video = FALSE;
+}
+
 static void test_decode_queue_clear_removes_all_decoded_frames(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -571,6 +585,7 @@ static void test_seek_relative_zero_delta_is_noop(void) {
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
 
     video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
     video_player_destroy(player);
 }
 
@@ -613,6 +628,7 @@ static void test_seek_relative_failed_seek_preserves_state(void) {
     g_assert_cmpint(player->clock_start_pts_ms, ==, 2222);
 
     video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
     video_player_destroy(player);
 }
 
@@ -655,6 +671,7 @@ static void test_seek_relative_paused_seek_refreshes_preview(void) {
 
     video_player_set_seek_preview_hook_for_test(NULL);
     video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
     video_player_destroy(player);
 }
 
@@ -689,7 +706,17 @@ static void test_seek_relative_preview_bails_after_decode_attempt_limit(void) {
 
     video_player_set_max_preview_decode_attempts_for_test(-1);
     video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
     video_player_destroy(player);
+}
+
+static void test_seek_preview_default_attempt_limit_is_bounded(void) {
+    gint original = video_player_get_max_preview_decode_attempts_for_test();
+    video_player_set_max_preview_decode_attempts_for_test(-1);
+
+    g_assert_cmpint(video_player_get_max_preview_decode_attempts_for_test(), >, 0);
+
+    video_player_set_max_preview_decode_attempts_for_test(original);
 }
 
 static void test_seek_relative_resets_visual_state_under_state_mutex(void) {
@@ -734,6 +761,7 @@ static void test_seek_relative_resets_visual_state_under_state_mutex(void) {
 
     video_player_set_seek_preview_hook_for_test(NULL);
     video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
     video_player_destroy(player);
 }
 
@@ -1239,6 +1267,8 @@ void register_video_player_tests(void) {
                     test_seek_relative_paused_seek_refreshes_preview);
     g_test_add_func("/video_player/seek_relative/preview_bails_after_decode_attempt_limit",
                     test_seek_relative_preview_bails_after_decode_attempt_limit);
+    g_test_add_func("/video_player/seek_relative/default_attempt_limit_is_bounded",
+                    test_seek_preview_default_attempt_limit_is_bounded);
     g_test_add_func("/video_player/seek_relative/resets_visual_state_under_state_mutex",
                     test_seek_relative_resets_visual_state_under_state_mutex);
     g_test_add_func("/video_player/render_queue/insert_sorted_orders_by_pts",

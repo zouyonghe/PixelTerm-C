@@ -66,6 +66,8 @@ static VideoPlayerQueueWaitHook video_player_queue_wait_hook = NULL;
 static void *video_player_queue_wait_hook_data = NULL;
 static VideoPlayerSeekHook video_player_seek_hook = NULL;
 static VideoPlayerSeekPreviewHook video_player_seek_preview_hook = NULL;
+static const gint k_video_player_default_preview_decode_attempts = 64;
+static const gint k_video_player_max_preview_receive_invaliddata_attempts = 8;
 static gint video_player_max_preview_decode_attempts = -1;
 
 static void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQueueKind queue_kind) {
@@ -103,6 +105,13 @@ void video_player_set_seek_preview_hook_for_test(VideoPlayerSeekPreviewHook hook
 
 void video_player_set_max_preview_decode_attempts_for_test(gint max_attempts) {
     video_player_max_preview_decode_attempts = max_attempts;
+}
+
+gint video_player_get_max_preview_decode_attempts_for_test(void) {
+    if (video_player_max_preview_decode_attempts >= 0) {
+        return video_player_max_preview_decode_attempts;
+    }
+    return k_video_player_default_preview_decode_attempts;
 }
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -1470,6 +1479,7 @@ static gboolean video_player_seek_preview_receive_and_convert_frame(VideoPlayer 
         return FALSE;
     }
 
+    gint invaliddata_attempts = 0;
     for (;;) {
         int receive_result = avcodec_receive_frame(player->codec_context, player->decode_frame);
         if (receive_result == 0) {
@@ -1495,6 +1505,10 @@ static gboolean video_player_seek_preview_receive_and_convert_frame(VideoPlayer 
             return FALSE;
         }
         if (receive_result == AVERROR_INVALIDDATA && !player->draining) {
+            invaliddata_attempts++;
+            if (invaliddata_attempts >= k_video_player_max_preview_receive_invaliddata_attempts) {
+                return FALSE;
+            }
             continue;
         }
         return FALSE;
@@ -1509,9 +1523,10 @@ static gboolean video_player_decode_seek_preview_frame(VideoPlayer *player, gint
 
     gboolean frame_ready = FALSE;
     gint attempts = 0;
+    gint max_attempts = video_player_get_max_preview_decode_attempts_for_test();
     *preview_pts_ms = target_ms;
     while (!frame_ready) {
-        if (video_player_max_preview_decode_attempts >= 0 && attempts >= video_player_max_preview_decode_attempts) {
+        if (attempts >= max_attempts) {
             break;
         }
         attempts++;
