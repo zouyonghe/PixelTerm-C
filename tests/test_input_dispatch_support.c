@@ -43,6 +43,9 @@ void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
 ErrorCode app_next_image(PixelTermApp *app) {
     if (app) {
         app->needs_redraw = FALSE;
+        if (app->current_index + 1 < app->total_images) {
+            app->current_index++;
+        }
     }
     g_input_dispatch_stub_state.next_image_calls++;
     return ERROR_NONE;
@@ -51,6 +54,9 @@ ErrorCode app_next_image(PixelTermApp *app) {
 ErrorCode app_previous_image(PixelTermApp *app) {
     if (app) {
         app->needs_redraw = FALSE;
+        if (app->current_index > 0) {
+            app->current_index--;
+        }
     }
     g_input_dispatch_stub_state.previous_image_calls++;
     return ERROR_NONE;

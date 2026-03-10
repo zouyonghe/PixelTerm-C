@@ -66,7 +66,6 @@ static void handle_single_media_navigation(PixelTermApp *app,
 void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func) {
     g_video_seek_func = func ? func : video_player_seek_relative_ms;
 }
-
 void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app) {
     if (!app || !app->video_player) {
         return;
