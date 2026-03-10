@@ -7,9 +7,24 @@
 #include "preload_control.h"
 #include "grid_render.h"
 #include "pixbuf_utils.h"
+#include "app_single_render_test_internal.h"
 #include "ui_render_utils.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <math.h>
+
+static const AppSingleRenderTestHooks *app_single_render_test_hooks = NULL;
+
+#define APP_SINGLE_RENDER_CALL(field, fallback, ...) \
+    ((app_single_render_test_hooks && app_single_render_test_hooks->field) ? \
+        app_single_render_test_hooks->field(__VA_ARGS__) : fallback(__VA_ARGS__))
+
+void app_single_render_set_test_hooks(const AppSingleRenderTestHooks *hooks) {
+    app_single_render_test_hooks = hooks;
+}
+
+void app_single_render_reset_test_hooks(void) {
+    app_single_render_test_hooks = NULL;
+}
 
 static void app_clear_async_render_state(PixelTermApp *app) {
     if (!app) {
@@ -115,14 +130,17 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // Check if it's an animated image/video file and handle animation
-    MediaKind media_kind = media_classify(filepath);
+    MediaKind media_kind = APP_SINGLE_RENDER_CALL(media_classify, media_classify, filepath);
     gboolean is_animated_image = media_is_animated_image(media_kind);
     gboolean is_video = media_is_video(media_kind);
     gboolean gif_is_animated = FALSE;
 
     if (is_video && app->video_player) {
         if (!app->video_player->filepath || g_strcmp0(app->video_player->filepath, filepath) != 0) {
-            ErrorCode load_result = video_player_load(app->video_player, filepath);
+            ErrorCode load_result = APP_SINGLE_RENDER_CALL(video_player_load,
+                                                           video_player_load,
+                                                           app->video_player,
+                                                           filepath);
             if (load_result != ERROR_NONE) {
                 is_video = FALSE;
             }
@@ -132,7 +150,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (is_animated_image && app->gif_player && !is_video) {
         // First, check if we need to load the animated image
         if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
-            ErrorCode load_result = gif_player_load(app->gif_player, filepath);
+            ErrorCode load_result = APP_SINGLE_RENDER_CALL(gif_player_load,
+                                                           gif_player_load,
+                                                           app->gif_player,
+                                                           filepath);
             if (load_result != ERROR_NONE) {
                 // If animation loading fails, just treat it as a regular image
                 is_animated_image = FALSE;
@@ -140,7 +161,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
     if (is_animated_image && app->gif_player && !is_video) {
-        gif_is_animated = gif_player_is_animated(app->gif_player);
+        gif_is_animated = APP_SINGLE_RENDER_CALL(gif_player_is_animated,
+                                                 gif_player_is_animated,
+                                                 app->gif_player);
     }
 
     MediaKind active_kind = MEDIA_KIND_IMAGE;
@@ -172,7 +195,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     gint cell_w = 0, cell_h = 0;
-    get_terminal_cell_geometry(&cell_w, &cell_h);
+    APP_SINGLE_RENDER_CALL(get_terminal_cell_geometry,
+                           get_terminal_cell_geometry,
+                           &cell_w,
+                           &cell_h);
     if (cell_w <= 0) cell_w = 10;
     if (cell_h <= 0) cell_h = 20;
     app->image_viewport_px_w = MAX(1, target_width * cell_w);
@@ -225,18 +251,18 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
-    ui_begin_sync_update();
-    ui_clear_kitty_images(app);
+    APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update);
+    APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app);
     // Clear screen and reset terminal state
     if (app && app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
         printf("\033[H\033[0m");
         if (app->ui_text_hidden) {
-            ui_clear_single_view_lines(app);
+            APP_SINGLE_RENDER_CALL(ui_clear_single_view_lines, ui_clear_single_view_lines, app);
         }
-        ui_clear_area(app, image_area_top_row, image_area_height);
+        APP_SINGLE_RENDER_CALL(ui_clear_area, ui_clear_area, app, image_area_top_row, image_area_height);
     } else {
-        ui_clear_screen_for_refresh(app);
+        APP_SINGLE_RENDER_CALL(ui_clear_screen_for_refresh, ui_clear_screen_for_refresh, app);
     }
     if (app->gif_player) {
         gif_player_set_render_area(app->gif_player,
@@ -338,14 +364,14 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
 
         if (app->video_player) {
-            video_player_play(app->video_player);
+            APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
             app->needs_redraw = FALSE;
         } else {
-            ui_end_sync_update();
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return ERROR_INVALID_IMAGE;
         }
 
-        ui_end_sync_update();
+        APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
         fflush(stdout);
         return ERROR_NONE;
     }
@@ -439,11 +465,11 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             g_object_ref(render_pixbuf);
         }
 
-        ImageRenderer *renderer = renderer_create();
+        ImageRenderer *renderer = APP_SINGLE_RENDER_CALL(renderer_create, renderer_create);
         if (!renderer) {
             g_object_unref(render_pixbuf);
             g_object_unref(scaled);
-            ui_end_sync_update();
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return ERROR_MEMORY_ALLOC;
         }
 
@@ -464,12 +490,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
         };
 
-        ErrorCode error = renderer_initialize(renderer, &config);
+        ErrorCode error = APP_SINGLE_RENDER_CALL(renderer_initialize,
+                                                 renderer_initialize,
+                                                 renderer,
+                                                 &config);
         if (error != ERROR_NONE) {
-            renderer_destroy(renderer);
+            APP_SINGLE_RENDER_CALL(renderer_destroy, renderer_destroy, renderer);
             g_object_unref(render_pixbuf);
             g_object_unref(scaled);
-            ui_end_sync_update();
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return error;
         }
 
@@ -479,14 +508,18 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                               gdk_pixbuf_get_height(render_pixbuf),
                                               gdk_pixbuf_get_rowstride(render_pixbuf),
                                               gdk_pixbuf_get_n_channels(render_pixbuf));
-        renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+        APP_SINGLE_RENDER_CALL(renderer_get_rendered_dimensions,
+                               renderer_get_rendered_dimensions,
+                               renderer,
+                               &image_width,
+                               &image_height);
 
-        renderer_destroy(renderer);
+        APP_SINGLE_RENDER_CALL(renderer_destroy, renderer_destroy, renderer);
         g_object_unref(render_pixbuf);
         g_object_unref(scaled);
 
         if (!rendered) {
-            ui_end_sync_update();
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return ERROR_INVALID_IMAGE;
         }
     } else {
@@ -497,9 +530,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         // If not in cache, render it normally
         if (!rendered) {
             // Create renderer
-            ImageRenderer *renderer = renderer_create();
+            ImageRenderer *renderer = APP_SINGLE_RENDER_CALL(renderer_create, renderer_create);
             if (!renderer) {
-                ui_end_sync_update();
+                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
                 return ERROR_MEMORY_ALLOC;
             }
 
@@ -521,23 +554,33 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
             };
 
-            ErrorCode error = renderer_initialize(renderer, &config);
+            ErrorCode error = APP_SINGLE_RENDER_CALL(renderer_initialize,
+                                                     renderer_initialize,
+                                                     renderer,
+                                                     &config);
             if (error != ERROR_NONE) {
-                renderer_destroy(renderer);
-                ui_end_sync_update();
+                APP_SINGLE_RENDER_CALL(renderer_destroy, renderer_destroy, renderer);
+                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
                 return error;
             }
 
             // Render image
-            rendered = renderer_render_image_file(renderer, filepath);
+            rendered = APP_SINGLE_RENDER_CALL(renderer_render_image_file,
+                                              renderer_render_image_file,
+                                              renderer,
+                                              filepath);
             if (!rendered) {
-                renderer_destroy(renderer);
-                ui_end_sync_update();
+                APP_SINGLE_RENDER_CALL(renderer_destroy, renderer_destroy, renderer);
+                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
                 return ERROR_INVALID_IMAGE;
             }
 
             // Get rendered image dimensions
-            renderer_get_rendered_dimensions(renderer, &image_width, &image_height);
+            APP_SINGLE_RENDER_CALL(renderer_get_rendered_dimensions,
+                                   renderer_get_rendered_dimensions,
+                                   renderer,
+                                   &image_width,
+                                   &image_height);
 
             // Add to cache if preloader is available
             if (app->preloader && app->preload_enabled) {
@@ -551,7 +594,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                     target_height);
             }
 
-            renderer_destroy(renderer);
+            APP_SINGLE_RENDER_CALL(renderer_destroy, renderer_destroy, renderer);
         } else {
             // For cached images, get the actual dimensions from cache
             if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height, &image_width, &image_height)) {
@@ -673,164 +716,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     // If it's an animated image and player is available, start playing if animated
     if (gif_is_animated && app->gif_player) {
         // For first render, just show the first frame, then start animation
-        gif_player_play(app->gif_player);
+        APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
         // Indicate that we are currently displaying an animated GIF
         app->needs_redraw = FALSE; // Don't immediately redraw since animation will handle updates
     }
 
-    ui_end_sync_update();
+    APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
     fflush(stdout);
 
     g_string_free(rendered, TRUE);
 
     return ERROR_NONE;
-}
-
-// Display image information (toggle mode)
-ErrorCode app_display_image_info(PixelTermApp *app) {
-    if (!app || !app_has_images(app)) {
-        return ERROR_INVALID_IMAGE;
-    }
-
-    // If info is already visible, clear it by redrawing the image
-    if (app->info_visible) {
-        app->info_visible = FALSE;
-        return app_render_current_image(app);
-    }
-
-    app->info_visible = TRUE;
-
-    const gchar *filepath = app_get_current_filepath(app);
-    if (!filepath) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    // Get image dimensions
-    gint width, height;
-    ErrorCode error = renderer_get_media_dimensions(filepath, &width, &height);
-    if (error != ERROR_NONE) {
-        return error;
-    }
-
-    // Get file information
-    gchar *basename = g_path_get_basename(filepath);
-    gchar *dirname = g_path_get_dirname(filepath);
-    gchar *safe_basename = sanitize_for_terminal(basename);
-    gchar *safe_dirname = sanitize_for_terminal(dirname);
-    gint64 file_size = get_file_size(filepath);
-    const char *ext = get_file_extension(filepath);
-
-    // Calculate display values
-    gdouble file_size_mb = file_size / (1024.0 * 1024.0);
-    gdouble aspect_ratio = (height > 0) ? (gdouble)width / height : 1.0;
-    gint index = app_get_current_index(app) + 1; // Convert to 1-based
-    gint total = app_get_total_images(app);
-
-    // Move to next line and ensure cursor is at the beginning
-    printf("\n\033[G"); // New line and move cursor to column 1
-
-    // Display information with colored labels
-    for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n\033[G");
-    printf("\033[36m📸 Image Details\033[0m");
-    printf("\n\033[G");
-    for (gint i = 0; i < 60; i++) printf("=");
-    printf("\n\033[G");
-    printf("\033[36m📁 Filename:\033[0m %s\n\033[G", safe_basename);
-    printf("\033[36m📂 Path:\033[0m %s\n\033[G", safe_dirname);
-    printf("\033[36m📄 Index:\033[0m %d/%d\n\033[G", index, total);
-    printf("\033[36m💾 File size:\033[0m %.1f MB\n\033[G", file_size_mb);
-    printf("\033[36m📐 Dimensions:\033[0m %d x %d pixels\n\033[G", width, height);
-    printf("\033[36m🎨 Format:\033[0m %s\n\033[G", ext ? ext + 1 : "unknown"); // Skip the dot
-    printf("\033[36m🎭 Color mode:\033[0m RGB\n\033[G");
-    printf("\033[36m📏 Aspect ratio:\033[0m %.2f\n\033[G", aspect_ratio);
-    for (gint i = 0; i < 60; i++) printf("=");
-    // Keep cursor on the last line (do not append a newline)
-
-    // Reset terminal attributes to prevent interference with future rendering
-    printf("\033[0m");  // Reset all attributes
-
-    fflush(stdout);
-
-    g_free(safe_basename);
-    g_free(safe_dirname);
-    g_free(basename);
-    g_free(dirname);
-
-    return ERROR_NONE;
-}
-
-// Refresh the display
-ErrorCode app_refresh_display(PixelTermApp *app) {
-    if (!app) {
-        return ERROR_MEMORY_ALLOC;
-    }
-
-    // Update terminal size
-    get_terminal_size(&app->term_width, &app->term_height);
-
-    if (app_is_book_preview_mode(app)) {
-        return app_render_book_preview(app);
-    }
-    if (app_is_book_mode(app)) {
-        return app_render_book_page(app);
-    }
-    if (app_is_preview_mode(app)) {
-        return app_render_preview_grid(app);
-    }
-    if (app_is_file_manager_mode(app)) {
-        return app_render_file_manager(app);
-    }
-
-    // Update preloader with new terminal dimensions
-    app_preloader_update_terminal(app);
-
-    // Update GIF player terminal size if active
-    if (app->gif_player) {
-        gif_player_update_terminal_size(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_update_terminal_size(app->video_player);
-    }
-
-    return app_render_current_image(app);
-}
-
-void app_process_async_render(PixelTermApp *app) {
-    if (!app || !app->async.image_pending) {
-        return;
-    }
-    if (!app_is_single_mode(app)) {
-        app_clear_async_render_state(app);
-        return;
-    }
-    if (!app->preloader || !app->preload_enabled) {
-        app_clear_async_render_state(app);
-        return;
-    }
-
-    const gchar *filepath = app_get_current_filepath(app);
-    if (!filepath) {
-        app_clear_async_render_state(app);
-        return;
-    }
-    if (app->current_index != app->async.image_index ||
-        g_strcmp0(filepath, app->async.image_path) != 0) {
-        return;
-    }
-
-    gint target_width = 0, target_height = 0;
-    app_get_image_target_dimensions(app, &target_width, &target_height);
-    gint cached_width = 0, cached_height = 0;
-    if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
-                                               &cached_width, &cached_height)) {
-        return;
-    }
-    (void)cached_width;
-    (void)cached_height;
-
-    app->async.render_force_sync = TRUE;
-    app->suppress_full_clear = TRUE;
-    app_clear_async_render_state(app);
-    app_render_current_image(app);
 }

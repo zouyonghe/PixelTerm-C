@@ -1,15 +1,7 @@
 #include "app_media_session.h"
 
 static gboolean app_media_kind_is_valid(MediaKind active_kind) {
-    switch (active_kind) {
-        case MEDIA_KIND_UNKNOWN:
-        case MEDIA_KIND_IMAGE:
-        case MEDIA_KIND_ANIMATED_IMAGE:
-        case MEDIA_KIND_VIDEO:
-            return TRUE;
-        default:
-            return FALSE;
-    }
+    return active_kind >= MEDIA_KIND_UNKNOWN && active_kind < MEDIA_KIND_COUNT;
 }
 
 void app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_kind) {
