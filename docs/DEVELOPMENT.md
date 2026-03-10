@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.7.6 with image/video/book browsing, stable single-view media switching, a multi-stage video playback pipeline, and expanded media/render regression coverage.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.7 with image/video/book browsing, arrow-key video seeking, paused-frame seek previews, and expanded media/render regression coverage.
 
 ## Technical Architecture
 

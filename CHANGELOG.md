@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.7: Video arrow-key seeking and seek-preview stability.
+    - **Video Playback**: Add left/right arrow-key seeking in single-video view so you can jump backward or forward without leaving playback.
+    - **Seek Preview**: Refresh the paused frame immediately after a seek and bound preview decoding retries so scrubbing feedback stays visible without runaway work.
+    - **Stability**: Tighten seek resume, navigation, and state-sync handling to avoid inconsistent playback state after repeated seek actions.
+    - **Testing**: Add focused regression coverage for key dispatch, seek target clamping, paused-preview rendering, retry limits, and error paths in the video seek pipeline.
+
 - v1.7.6: Media switching stability and single-view cleanup.
     - **Media Playback**: Stop inactive GIF and video players when switching between videos, animated images, and static images so single-view playback no longer flickers between media types.
     - **Single Image View**: Clamp missing file-size metadata in the info panel so unreadable files show `0.0 MB` instead of `-0.0 MB`.
