@@ -25,6 +25,8 @@ static void video_player_debug_log(VideoPlayer *player,
                                    gint64 b,
                                    gint64 c,
                                    gint64 d);
+static gint64 video_player_current_position_ms(VideoPlayer *player);
+static gint64 video_player_seek_target_ms(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms);
 static gint video_player_live_instances = 0;
 
 typedef void (*VideoPlayerQueueWaitHook)(void *user_data);
@@ -90,6 +92,63 @@ static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
     gint frame_delay = player->frame_delay_ms;
     g_mutex_unlock(&player->state_mutex);
     return frame_delay;
+}
+
+static gint64 video_player_current_position_ms(VideoPlayer *player) {
+    if (!player) {
+        return 0;
+    }
+
+    gint64 last_presented_pts_ms = G_MININT64;
+    gboolean clock_started = FALSE;
+    gint64 clock_start_us = 0;
+    gint64 clock_start_pts_ms = 0;
+    gboolean is_playing = FALSE;
+
+    g_mutex_lock(&player->state_mutex);
+    last_presented_pts_ms = player->last_presented_pts_ms;
+    clock_started = player->clock_started;
+    clock_start_us = player->clock_start_us;
+    clock_start_pts_ms = player->clock_start_pts_ms;
+    is_playing = player->is_playing;
+    g_mutex_unlock(&player->state_mutex);
+
+    if (last_presented_pts_ms != G_MININT64) {
+        return last_presented_pts_ms < 0 ? 0 : last_presented_pts_ms;
+    }
+
+    if (!clock_started) {
+        return 0;
+    }
+
+    gint64 position_ms = clock_start_pts_ms;
+    if (is_playing && clock_start_us > 0) {
+        gint64 elapsed_us = g_get_monotonic_time() - clock_start_us;
+        if (elapsed_us > 0) {
+            position_ms += elapsed_us / 1000;
+        }
+    }
+
+    return position_ms < 0 ? 0 : position_ms;
+}
+
+static gint64 video_player_seek_target_ms(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms) {
+    gint64 target_ms = video_player_current_position_ms(player) + delta_ms;
+    if (target_ms < 0) {
+        target_ms = 0;
+    }
+    if (duration_ms > 0 && target_ms > duration_ms) {
+        target_ms = duration_ms;
+    }
+    return target_ms;
+}
+
+gint64 video_player_current_position_ms_for_test(VideoPlayer *player) {
+    return video_player_current_position_ms(player);
+}
+
+gint64 video_player_seek_target_ms_for_test(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms) {
+    return video_player_seek_target_ms(player, delta_ms, duration_ms);
 }
 
 void video_player_reset_timing_state(VideoPlayer *player) {
@@ -1965,6 +2024,54 @@ ErrorCode video_player_stop(VideoPlayer *player) {
         player->timer_id = 0;
     }
     video_player_stop_worker(player);
+
+    return ERROR_NONE;
+}
+
+ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
+    if (!player || !player->has_video || !player->format_context || !player->codec_context ||
+        player->video_stream_index < 0 || !player->format_context->streams ||
+        !player->format_context->streams[player->video_stream_index]) {
+        return ERROR_INVALID_ARGS;
+    }
+
+    gint64 duration_ms = 0;
+    if (player->format_context->duration != AV_NOPTS_VALUE && player->format_context->duration > 0) {
+        duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
+    }
+
+    gint64 current_ms = video_player_current_position_ms(player);
+    gint64 target_ms = video_player_seek_target_ms(player, delta_ms, duration_ms);
+    gboolean was_playing = video_player_is_playing(player);
+
+    video_player_pause(player);
+    video_player_queue_clear(player);
+    video_player_decode_queue_clear(player);
+    if (player->packet) {
+        av_packet_unref(player->packet);
+    }
+    avcodec_flush_buffers(player->codec_context);
+
+    AVStream *stream = player->format_context->streams[player->video_stream_index];
+    int flags = target_ms <= current_ms ? AVSEEK_FLAG_BACKWARD : 0;
+    int64_t target_ts = av_rescale_q(target_ms, (AVRational){1, 1000}, stream->time_base);
+    if (av_seek_frame(player->format_context, player->video_stream_index, target_ts, flags) < 0) {
+        return ERROR_INVALID_IMAGE;
+    }
+
+    video_player_reset_timing_state(player);
+    player->fallback_pts_ms = target_ms;
+    g_mutex_lock(&player->state_mutex);
+    player->rewind_needs_resync = TRUE;
+    g_mutex_unlock(&player->state_mutex);
+    player->fixed_frame_valid = FALSE;
+    player->last_frame_top_row = 0;
+    player->last_frame_height = 0;
+    video_player_clear_line_cache(player);
+
+    if (was_playing) {
+        return video_player_play(player);
+    }
 
     return ERROR_NONE;
 }

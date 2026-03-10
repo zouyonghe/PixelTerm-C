@@ -424,6 +424,65 @@ static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
     video_player_destroy(player);
 }
 
+static void test_current_position_prefers_last_presented_pts(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    player->clock_started = TRUE;
+    player->clock_start_us = g_get_monotonic_time() - 3000 * 1000;
+    player->clock_start_pts_ms = 1000;
+    player->last_presented_pts_ms = 4200;
+    g_mutex_unlock(&player->state_mutex);
+
+    g_assert_cmpint(video_player_current_position_ms_for_test(player), ==, 4200);
+
+    video_player_destroy(player);
+}
+
+static void test_current_position_uses_clock_when_no_presented_pts(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    gint64 now_us = g_get_monotonic_time();
+    g_mutex_lock(&player->state_mutex);
+    player->clock_started = TRUE;
+    player->clock_start_us = now_us - 2500 * 1000;
+    player->clock_start_pts_ms = 1000;
+    player->last_presented_pts_ms = G_MININT64;
+    player->is_playing = TRUE;
+    g_mutex_unlock(&player->state_mutex);
+
+    gint64 position_ms = video_player_current_position_ms_for_test(player);
+    g_assert_cmpint(position_ms, >=, 3500);
+    g_assert_cmpint(position_ms, <=, 3600);
+
+    video_player_destroy(player);
+}
+
+static void test_seek_target_clamps_to_zero_and_duration(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    player->last_presented_pts_ms = 3000;
+    g_mutex_unlock(&player->state_mutex);
+
+    g_assert_cmpint(video_player_seek_target_ms_for_test(player, -5000, 12000), ==, 0);
+    g_assert_cmpint(video_player_seek_target_ms_for_test(player, 5000, 6000), ==, 6000);
+
+    video_player_destroy(player);
+}
+
 static void test_render_queue_insert_sorted_orders_by_pts(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -912,6 +971,12 @@ static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void)
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
+    g_test_add_func("/video_player/current_position/prefers_last_presented_pts",
+                    test_current_position_prefers_last_presented_pts);
+    g_test_add_func("/video_player/current_position/uses_clock_when_no_presented_pts",
+                    test_current_position_uses_clock_when_no_presented_pts);
+    g_test_add_func("/video_player/seek_target/clamps_to_zero_and_duration",
+                    test_seek_target_clamps_to_zero_and_duration);
     g_test_add_func("/video_player/render_queue/insert_sorted_orders_by_pts",
                     test_render_queue_insert_sorted_orders_by_pts);
     g_test_add_func("/video_player/render_queue/clear_removes_all_rendered_frames",

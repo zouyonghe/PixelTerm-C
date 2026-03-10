@@ -8,8 +8,11 @@
 
 gboolean input_dispatch_key_modes_handle_book_jump_input(PixelTermApp *app, const InputEvent *event);
 
+typedef ErrorCode (*InputDispatchVideoSeekFunc)(VideoPlayer *player, gint64 delta_ms);
+
 void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app);
 void input_dispatch_key_modes_toggle_video_fps(PixelTermApp *app);
+void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func);
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,
                                             InputHandler *input_handler,

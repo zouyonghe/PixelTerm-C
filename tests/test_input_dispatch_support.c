@@ -8,6 +8,8 @@ void input_dispatch_test_reset_stubs(void) {
     memset(&g_input_dispatch_stub_state, 0, sizeof(g_input_dispatch_stub_state));
     g_input_dispatch_stub_state.delete_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_file_manager_result = ERROR_NONE;
+    g_input_dispatch_stub_state.enter_preview_result = ERROR_NONE;
+    g_input_dispatch_stub_state.video_seek_result = ERROR_NONE;
 }
 
 gboolean input_dispatch_current_is_video(const PixelTermApp *app) {
@@ -18,6 +20,13 @@ gboolean input_dispatch_current_is_video(const PixelTermApp *app) {
 gboolean input_dispatch_current_is_animated_image(const PixelTermApp *app) {
     (void)app;
     return FALSE;
+}
+
+ErrorCode input_dispatch_test_video_seek(VideoPlayer *player, gint64 delta_ms) {
+    (void)player;
+    g_input_dispatch_stub_state.video_seek_calls++;
+    g_input_dispatch_stub_state.last_video_seek_delta_ms = delta_ms;
+    return g_input_dispatch_stub_state.video_seek_result;
 }
 
 gboolean app_book_use_double_page(const PixelTermApp *app) {
@@ -36,6 +45,14 @@ ErrorCode app_next_image(PixelTermApp *app) {
         app->needs_redraw = FALSE;
     }
     g_input_dispatch_stub_state.next_image_calls++;
+    return ERROR_NONE;
+}
+
+ErrorCode app_previous_image(PixelTermApp *app) {
+    if (app) {
+        app->needs_redraw = FALSE;
+    }
+    g_input_dispatch_stub_state.previous_image_calls++;
     return ERROR_NONE;
 }
 
@@ -150,4 +167,10 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.enter_file_manager_calls++;
     return g_input_dispatch_stub_state.enter_file_manager_result;
+}
+
+ErrorCode app_enter_preview(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.enter_preview_calls++;
+    return g_input_dispatch_stub_state.enter_preview_result;
 }
