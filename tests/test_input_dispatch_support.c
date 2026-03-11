@@ -6,6 +6,7 @@ InputDispatchTestStubState g_input_dispatch_stub_state;
 
 void input_dispatch_test_reset_stubs(void) {
     memset(&g_input_dispatch_stub_state, 0, sizeof(g_input_dispatch_stub_state));
+    g_input_dispatch_stub_state.video_seek_total_delta_ms = 0;
     g_input_dispatch_stub_state.delete_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_file_manager_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_preview_result = ERROR_NONE;

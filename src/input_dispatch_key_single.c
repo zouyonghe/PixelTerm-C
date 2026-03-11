@@ -283,11 +283,9 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             }
             break;
         case KEY_LEFT: {
-            if (can_handle_video_seek(app)) {
-                if (handle_video_seek(app, -k_video_seek_step_ms)) {
-                    drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
-                    break;
-                }
+            if (handle_video_seek(app, -k_video_seek_step_ms)) {
+                drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
+                break;
             }
             handle_single_media_navigation(app,
                                            input_handler,
@@ -305,11 +303,9 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         }
         case KEY_RIGHT: {
-            if (can_handle_video_seek(app)) {
-                if (handle_video_seek(app, k_video_seek_step_ms)) {
-                    drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
-                    break;
-                }
+            if (handle_video_seek(app, k_video_seek_step_ms)) {
+                drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
+                break;
             }
             handle_single_media_navigation(app,
                                            input_handler,

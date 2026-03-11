@@ -151,6 +151,8 @@ static gint64 video_player_current_position_ms(VideoPlayer *player) {
     }
 
     if (!clock_started) {
+        /* fallback_pts_ms is only assigned from known seek/decoded frame positions,
+         * and sentinel states are represented by G_MININT64 in the PTS fields above. */
         return fallback_pts_ms < 0 ? 0 : fallback_pts_ms;
     }
 
