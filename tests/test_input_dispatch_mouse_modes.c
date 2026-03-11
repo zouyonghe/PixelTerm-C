@@ -22,6 +22,7 @@ static void test_video_scroll_up_seeks_forward(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
     InputEvent event = make_scroll_event(MOUSE_SCROLL_UP);
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
 
     input_dispatch_test_reset_stubs();
     player.has_video = TRUE;
@@ -31,7 +32,7 @@ static void test_video_scroll_up_seeks_forward(void) {
     input_dispatch_handle_mouse_scroll_single(&app, &event);
 
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
-    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, 5 * 1000);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
@@ -39,6 +40,7 @@ static void test_video_scroll_down_seeks_backward(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
     InputEvent event = make_scroll_event(MOUSE_SCROLL_DOWN);
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
 
     input_dispatch_test_reset_stubs();
     player.has_video = TRUE;
@@ -48,7 +50,7 @@ static void test_video_scroll_down_seeks_backward(void) {
     input_dispatch_handle_mouse_scroll_single(&app, &event);
 
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
-    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, -(5 * 1000));
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, -seek_step_ms);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 

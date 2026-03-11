@@ -198,11 +198,6 @@ void app_preloader_update_terminal(PixelTermApp *app) {
     (void)app;
 }
 
-ErrorCode app_render_book_page(PixelTermApp *app) {
-    (void)app;
-    return ERROR_NONE;
-}
-
 static MediaKind test_media_classify(const char *path) {
     if (g_strcmp0(path, "clip.mp4") == 0) {
         return MEDIA_KIND_VIDEO;
