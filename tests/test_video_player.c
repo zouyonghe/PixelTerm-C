@@ -538,6 +538,27 @@ static void test_current_position_uses_clock_when_no_presented_pts(void) {
     video_player_destroy(player);
 }
 
+static void test_current_position_uses_fallback_pts_when_clock_not_started(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    player->fallback_pts_ms = 6500;
+    g_mutex_lock(&player->state_mutex);
+    player->clock_started = FALSE;
+    player->clock_start_us = 0;
+    player->clock_start_pts_ms = 0;
+    player->last_presented_pts_ms = G_MININT64;
+    player->is_playing = TRUE;
+    g_mutex_unlock(&player->state_mutex);
+
+    g_assert_cmpint(video_player_current_position_ms_for_test(player), ==, 6500);
+
+    video_player_destroy(player);
+}
+
 static void test_seek_target_clamps_to_zero_and_duration(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -1257,6 +1278,8 @@ void register_video_player_tests(void) {
                     test_current_position_prefers_last_presented_pts);
     g_test_add_func("/video_player/current_position/uses_clock_when_no_presented_pts",
                     test_current_position_uses_clock_when_no_presented_pts);
+    g_test_add_func("/video_player/current_position/uses_fallback_pts_when_clock_not_started",
+                    test_current_position_uses_fallback_pts_when_clock_not_started);
     g_test_add_func("/video_player/seek_target/clamps_to_zero_and_duration",
                     test_seek_target_clamps_to_zero_and_duration);
     g_test_add_func("/video_player/seek_relative/zero_delta_is_noop",

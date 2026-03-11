@@ -1,5 +1,7 @@
 #include <glib.h>
 
+#include <unistd.h>
+
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_test_support.h"
 
@@ -20,6 +22,40 @@ static InputEvent make_key_event(KeyCode key_code) {
     event.type = INPUT_KEY_PRESS;
     event.key_code = key_code;
     return event;
+}
+
+typedef struct {
+    gint saved_stdin_fd;
+} StdinRedirect;
+
+static void restore_stdin(gpointer data) {
+    StdinRedirect *redirect = (StdinRedirect *)data;
+    if (!redirect) {
+        return;
+    }
+
+    if (redirect->saved_stdin_fd >= 0) {
+        (void)dup2(redirect->saved_stdin_fd, STDIN_FILENO);
+        close(redirect->saved_stdin_fd);
+    }
+
+    g_free(redirect);
+}
+
+static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
+    gint pipe_fds[2] = {-1, -1};
+    g_assert_cmpint(pipe(pipe_fds), ==, 0);
+
+    StdinRedirect *redirect = g_new0(StdinRedirect, 1);
+    redirect->saved_stdin_fd = dup(STDIN_FILENO);
+    g_assert_cmpint(redirect->saved_stdin_fd, >=, 0);
+    g_test_queue_destroy(restore_stdin, redirect);
+
+    g_assert_cmpint(dup2(pipe_fds[0], STDIN_FILENO), >=, 0);
+    close(pipe_fds[0]);
+
+    g_assert_cmpint(write(pipe_fds[1], bytes, len), ==, (gssize)len);
+    close(pipe_fds[1]);
 }
 
 static void assert_previous_navigation(KeyCode key_code) {
@@ -114,6 +150,69 @@ static void test_video_right_does_not_switch_media(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(void) {
+    static const gchar queued_input[] = "\033[C\033[C\033[A";
+
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputHandler input_handler = {0};
+    InputEvent next_event = {0};
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    redirect_stdin_bytes(queued_input, sizeof(queued_input) - 1);
+
+    input_dispatch_handle_key_press_single(&app, &input_handler, &event);
+
+    g_assert_cmpint(app.current_index, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.previous_image_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_total_delta_ms, ==, seek_step_ms * 3);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
+    g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(next_event.key_code, ==, KEY_UP);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
+static void test_video_seek_failure_preserves_queued_repeats_for_retry(void) {
+    static const gchar queued_input[] = "\033[C\033[C\033[A";
+
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputHandler input_handler = {0};
+    InputEvent next_event = {0};
+    gint64 seek_step_ms = input_dispatch_key_single_get_video_seek_step_ms_for_test();
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    g_input_dispatch_stub_state.video_seek_result = ERROR_INVALID_IMAGE;
+    g_input_dispatch_stub_state.next_image_result = ERROR_INVALID_IMAGE;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    redirect_stdin_bytes(queued_input, sizeof(queued_input) - 1);
+
+    input_dispatch_handle_key_press_single(&app, &input_handler, &event);
+
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
+    g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 1);
+    g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(next_event.key_code, ==, KEY_RIGHT);
+    g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(next_event.key_code, ==, KEY_RIGHT);
+    g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(next_event.key_code, ==, KEY_UP);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
 static void test_video_up_and_down_keep_media_switching(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
@@ -168,6 +267,10 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_left_does_not_switch_media);
     g_test_add_func("/input_dispatch_key_single/video/right_does_not_switch_media",
                     test_video_right_does_not_switch_media);
+    g_test_add_func("/input_dispatch_key_single/video/right_coalesces_queued_repeats_and_preserves_next_event",
+                    test_video_right_coalesces_queued_repeats_and_preserves_next_event);
+    g_test_add_func("/input_dispatch_key_single/video/seek_failure_preserves_queued_repeats_for_retry",
+                    test_video_seek_failure_preserves_queued_repeats_for_retry);
     g_test_add_func("/input_dispatch_key_single/video/up_and_down_keep_media_switching",
                     test_video_up_and_down_keep_media_switching);
     g_test_add_func("/input_dispatch_key_single/navigation/failure_does_not_refresh_or_advance_queue",

@@ -131,6 +131,7 @@ static gint64 video_player_current_position_ms(VideoPlayer *player) {
     }
 
     gint64 last_presented_pts_ms = G_MININT64;
+    gint64 fallback_pts_ms = 0;
     gboolean clock_started = FALSE;
     gint64 clock_start_us = 0;
     gint64 clock_start_pts_ms = 0;
@@ -138,6 +139,7 @@ static gint64 video_player_current_position_ms(VideoPlayer *player) {
 
     g_mutex_lock(&player->state_mutex);
     last_presented_pts_ms = player->last_presented_pts_ms;
+    fallback_pts_ms = player->fallback_pts_ms;
     clock_started = player->clock_started;
     clock_start_us = player->clock_start_us;
     clock_start_pts_ms = player->clock_start_pts_ms;
@@ -149,7 +151,9 @@ static gint64 video_player_current_position_ms(VideoPlayer *player) {
     }
 
     if (!clock_started) {
-        return 0;
+        /* fallback_pts_ms is only assigned from known seek/decoded frame positions,
+         * and sentinel states are represented by G_MININT64 in the PTS fields above. */
+        return fallback_pts_ms < 0 ? 0 : fallback_pts_ms;
     }
 
     gint64 position_ms = clock_start_pts_ms;
