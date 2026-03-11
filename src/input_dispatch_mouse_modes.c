@@ -9,7 +9,7 @@
 static const gdouble k_image_zoom_step = 0.2;
 
 static void handle_single_video_scroll(PixelTermApp *app, const InputEvent *event) {
-    if (!app || !event) {
+    if (!app || !event || event->type != INPUT_MOUSE_SCROLL) {
         return;
     }
 

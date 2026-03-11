@@ -187,40 +187,47 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
 ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
     (void)app;
-    (void)page_index;
+    g_input_dispatch_stub_state.enter_book_page_calls++;
+    g_input_dispatch_stub_state.last_book_page_index = page_index;
     return ERROR_NONE;
 }
 
 ErrorCode app_render_book_page(PixelTermApp *app) {
     (void)app;
+    g_input_dispatch_stub_state.render_book_page_calls++;
     return ERROR_NONE;
 }
 
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     (void)app;
-    (void)direction;
+    g_input_dispatch_stub_state.preview_page_move_calls++;
+    g_input_dispatch_stub_state.last_preview_page_move_direction = direction;
     return ERROR_NONE;
 }
 
 ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
     (void)app;
-    (void)direction;
+    g_input_dispatch_stub_state.book_preview_scroll_page_calls++;
+    g_input_dispatch_stub_state.last_book_preview_scroll_direction = direction;
     return ERROR_NONE;
 }
 
 ErrorCode app_file_manager_up(PixelTermApp *app) {
     (void)app;
+    g_input_dispatch_stub_state.file_manager_up_calls++;
     return ERROR_NONE;
 }
 
 ErrorCode app_file_manager_down(PixelTermApp *app) {
     (void)app;
+    g_input_dispatch_stub_state.file_manager_down_calls++;
     return ERROR_NONE;
 }
 
 ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y) {
     (void)app;
-    (void)mouse_x;
-    (void)mouse_y;
+    g_input_dispatch_stub_state.file_manager_enter_at_position_calls++;
+    g_input_dispatch_stub_state.last_file_manager_enter_x = mouse_x;
+    g_input_dispatch_stub_state.last_file_manager_enter_y = mouse_y;
     return ERROR_NONE;
 }

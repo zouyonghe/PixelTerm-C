@@ -54,9 +54,30 @@ static void test_video_scroll_down_seeks_backward(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_video_scroll_ignores_non_scroll_event_type(void) {
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputEvent event = {0};
+
+    event.type = INPUT_MOUSE_PRESS;
+    event.mouse_button = MOUSE_SCROLL_UP;
+
+    input_dispatch_test_reset_stubs();
+    player.has_video = TRUE;
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+
+    input_dispatch_handle_mouse_scroll_single(&app, &event);
+
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 0);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
 void register_input_dispatch_mouse_modes_tests(void) {
     g_test_add_func("/input_dispatch_mouse_modes/video/scroll_up_seeks_forward",
                     test_video_scroll_up_seeks_forward);
     g_test_add_func("/input_dispatch_mouse_modes/video/scroll_down_seeks_backward",
                     test_video_scroll_down_seeks_backward);
+    g_test_add_func("/input_dispatch_mouse_modes/video/ignores_non_scroll_event_type",
+                    test_video_scroll_ignores_non_scroll_event_type);
 }
