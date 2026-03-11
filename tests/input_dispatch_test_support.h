@@ -23,6 +23,7 @@ typedef struct {
     gint enter_preview_calls;
     gboolean current_is_video;
     gint64 last_video_seek_delta_ms;
+    gint64 video_seek_total_delta_ms;
     ErrorCode delete_result;
     ErrorCode enter_file_manager_result;
     ErrorCode enter_preview_result;

@@ -66,6 +66,32 @@ static void handle_single_media_navigation(PixelTermApp *app,
     skip_queued_navigation(input_handler, keys, key_count);
 }
 
+static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms);
+
+static void drain_queued_video_seek_repeats(PixelTermApp *app,
+                                            InputHandler *input_handler,
+                                            KeyCode seek_key,
+                                            gint64 delta_ms) {
+    if (!app || !input_handler || delta_ms == 0) {
+        return;
+    }
+
+    InputEvent queued_event = {0};
+    while (input_has_pending_input(input_handler)) {
+        if (input_get_event(input_handler, &queued_event) != ERROR_NONE) {
+            break;
+        }
+        if (queued_event.type != INPUT_KEY_PRESS || queued_event.key_code != seek_key) {
+            input_unget_event(input_handler, &queued_event);
+            break;
+        }
+        if (!handle_video_seek(app, delta_ms)) {
+            input_unget_event(input_handler, &queued_event);
+            break;
+        }
+    }
+}
+
 void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func) {
     g_video_seek_func = func ? func : video_player_seek_relative_ms;
 }
@@ -213,8 +239,13 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     }
 }
 
+static gboolean can_handle_video_seek(const PixelTermApp *app) {
+    return app && input_dispatch_current_is_video(app) && app->video_player &&
+           video_player_has_video(app->video_player);
+}
+
 static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
-    if (!app || !input_dispatch_current_is_video(app) || !app->video_player || !video_player_has_video(app->video_player)) {
+    if (!can_handle_video_seek(app)) {
         return FALSE;
     }
 
@@ -252,8 +283,11 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             }
             break;
         case KEY_LEFT: {
-            if (handle_video_seek(app, -k_video_seek_step_ms)) {
-                break;
+            if (can_handle_video_seek(app)) {
+                if (handle_video_seek(app, -k_video_seek_step_ms)) {
+                    drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
+                    break;
+                }
             }
             handle_single_media_navigation(app,
                                            input_handler,
@@ -271,8 +305,11 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         }
         case KEY_RIGHT: {
-            if (handle_video_seek(app, k_video_seek_step_ms)) {
-                break;
+            if (can_handle_video_seek(app)) {
+                if (handle_video_seek(app, k_video_seek_step_ms)) {
+                    drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
+                    break;
+                }
             }
             handle_single_media_navigation(app,
                                            input_handler,

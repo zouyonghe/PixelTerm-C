@@ -28,6 +28,7 @@ ErrorCode input_dispatch_test_video_seek(VideoPlayer *player, gint64 delta_ms) {
     (void)player;
     g_input_dispatch_stub_state.video_seek_calls++;
     g_input_dispatch_stub_state.last_video_seek_delta_ms = delta_ms;
+    g_input_dispatch_stub_state.video_seek_total_delta_ms += delta_ms;
     return g_input_dispatch_stub_state.video_seek_result;
 }
 
