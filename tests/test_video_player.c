@@ -31,6 +31,25 @@ typedef struct {
     gboolean *flag;
 } QueueWaitSignal;
 
+typedef struct {
+    VideoPlayer *player;
+    gint64 pts_ms;
+    GMutex mutex;
+    GCond cond;
+    gboolean started;
+} FallbackSetCall;
+
+typedef struct {
+    VideoPlayer *player;
+    gint64 raw_pts_ms;
+    gint frame_delay;
+    gint64 resolved_raw_pts_ms;
+    gint64 next_fallback_pts_ms;
+    GMutex mutex;
+    GCond cond;
+    gboolean started;
+} FallbackAdvanceCall;
+
 static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gboolean *flag, const gchar *message) {
     gint64 deadline = g_get_monotonic_time() + G_TIME_SPAN_MILLISECOND * 500;
 
@@ -83,6 +102,39 @@ static void queue_wait_hook_signal(void *user_data) {
     *(signal->flag) = TRUE;
     g_cond_broadcast(signal->cond);
     g_mutex_unlock(signal->mutex);
+}
+
+static gpointer fallback_set_thread_main(gpointer user_data) {
+    FallbackSetCall *call = (FallbackSetCall *)user_data;
+    if (!call) {
+        return NULL;
+    }
+
+    g_mutex_lock(&call->mutex);
+    call->started = TRUE;
+    g_cond_broadcast(&call->cond);
+    g_mutex_unlock(&call->mutex);
+
+    video_player_set_fallback_pts_ms(call->player, call->pts_ms);
+    return NULL;
+}
+
+static gpointer fallback_advance_thread_main(gpointer user_data) {
+    FallbackAdvanceCall *call = (FallbackAdvanceCall *)user_data;
+    if (!call) {
+        return NULL;
+    }
+
+    g_mutex_lock(&call->mutex);
+    call->started = TRUE;
+    g_cond_broadcast(&call->cond);
+    g_mutex_unlock(&call->mutex);
+
+    call->resolved_raw_pts_ms = video_player_resolve_and_advance_fallback_pts_ms(call->player,
+                                                                                  call->raw_pts_ms,
+                                                                                  call->frame_delay,
+                                                                                  &call->next_fallback_pts_ms);
+    return NULL;
 }
 
 static VideoFrame *make_test_frame_with_generation(gint64 pts_ms, guint generation) {
@@ -490,6 +542,81 @@ static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
     g_assert_cmpfloat(player->present_fps, ==, 0.0);
     g_assert_false(player->present_fps_valid);
 
+    video_player_destroy(player);
+}
+
+static void test_set_fallback_pts_waits_on_state_mutex(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    player->fallback_pts_ms = 1111;
+
+    FallbackSetCall call = {
+        .player = player,
+        .pts_ms = 2222,
+    };
+    g_mutex_init(&call.mutex);
+    g_cond_init(&call.cond);
+
+    g_mutex_lock(&player->state_mutex);
+    GThread *thread = g_thread_new("fallback-set-test", fallback_set_thread_main, &call);
+    wait_for_flag_or_fail(&call.mutex,
+                          &call.cond,
+                          &call.started,
+                          "Timed out waiting for fallback setter thread to start");
+    g_usleep(10 * 1000);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 1111);
+    g_mutex_unlock(&player->state_mutex);
+
+    g_thread_join(thread);
+
+    g_assert_cmpint(player->fallback_pts_ms, ==, 2222);
+
+    g_cond_clear(&call.cond);
+    g_mutex_clear(&call.mutex);
+    video_player_destroy(player);
+}
+
+static void test_resolve_and_advance_fallback_pts_waits_on_state_mutex(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    player->fallback_pts_ms = 7000;
+
+    FallbackAdvanceCall call = {
+        .player = player,
+        .raw_pts_ms = G_MININT64,
+        .frame_delay = 33,
+        .resolved_raw_pts_ms = G_MININT64,
+        .next_fallback_pts_ms = G_MININT64,
+    };
+    g_mutex_init(&call.mutex);
+    g_cond_init(&call.cond);
+
+    g_mutex_lock(&player->state_mutex);
+    GThread *thread = g_thread_new("fallback-advance-test", fallback_advance_thread_main, &call);
+    wait_for_flag_or_fail(&call.mutex,
+                          &call.cond,
+                          &call.started,
+                          "Timed out waiting for fallback advance thread to start");
+    g_usleep(10 * 1000);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 7000);
+    g_mutex_unlock(&player->state_mutex);
+
+    g_thread_join(thread);
+
+    g_assert_cmpint(call.resolved_raw_pts_ms, ==, 7000);
+    g_assert_cmpint(call.next_fallback_pts_ms, ==, 7033);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 7033);
+
+    g_cond_clear(&call.cond);
+    g_mutex_clear(&call.mutex);
     video_player_destroy(player);
 }
 
@@ -1274,6 +1401,10 @@ static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void)
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
+    g_test_add_func("/video_player/fallback_pts/set_waits_on_state_mutex",
+                    test_set_fallback_pts_waits_on_state_mutex);
+    g_test_add_func("/video_player/fallback_pts/resolve_and_advance_waits_on_state_mutex",
+                    test_resolve_and_advance_fallback_pts_waits_on_state_mutex);
     g_test_add_func("/video_player/current_position/prefers_last_presented_pts",
                     test_current_position_prefers_last_presented_pts);
     g_test_add_func("/video_player/current_position/uses_clock_when_no_presented_pts",

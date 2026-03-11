@@ -125,6 +125,44 @@ static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
     return frame_delay;
 }
 
+void video_player_set_fallback_pts_ms(VideoPlayer *player, gint64 pts_ms) {
+    if (!player) {
+        return;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    player->fallback_pts_ms = pts_ms;
+    g_mutex_unlock(&player->state_mutex);
+}
+
+gint64 video_player_resolve_and_advance_fallback_pts_ms(VideoPlayer *player,
+                                                        gint64 raw_pts_ms,
+                                                        gint frame_delay,
+                                                        gint64 *next_fallback_pts_ms) {
+    gint64 resolved_pts_ms = raw_pts_ms;
+    gint64 updated_fallback_pts_ms = 0;
+
+    if (!player) {
+        if (next_fallback_pts_ms) {
+            *next_fallback_pts_ms = 0;
+        }
+        return resolved_pts_ms;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    if (resolved_pts_ms == G_MININT64) {
+        resolved_pts_ms = player->fallback_pts_ms;
+    }
+    updated_fallback_pts_ms = resolved_pts_ms + frame_delay;
+    player->fallback_pts_ms = updated_fallback_pts_ms;
+    g_mutex_unlock(&player->state_mutex);
+
+    if (next_fallback_pts_ms) {
+        *next_fallback_pts_ms = updated_fallback_pts_ms;
+    }
+    return resolved_pts_ms;
+}
+
 static gint64 video_player_current_position_ms(VideoPlayer *player) {
     if (!player) {
         return 0;
@@ -205,9 +243,9 @@ void video_player_reset_timing_state(VideoPlayer *player) {
     player->last_presented_pts_ms = G_MININT64;
     player->present_fps = 0.0;
     player->present_fps_valid = FALSE;
+    player->fallback_pts_ms = 0;
     g_mutex_unlock(&player->state_mutex);
 
-    player->fallback_pts_ms = 0;
     player->draining = FALSE;
 }
 
@@ -1709,10 +1747,11 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         }
         int64_t best_pts = player->decode_frame->best_effort_timestamp;
         gint64 raw_pts_ms = video_player_rescale_pts_ms(player, best_pts);
-        if (raw_pts_ms == G_MININT64) {
-            raw_pts_ms = player->fallback_pts_ms;
-        }
-        player->fallback_pts_ms = raw_pts_ms + frame_delay;
+        gint64 next_fallback_pts_ms = 0;
+        raw_pts_ms = video_player_resolve_and_advance_fallback_pts_ms(player,
+                                                                      raw_pts_ms,
+                                                                      frame_delay,
+                                                                      &next_fallback_pts_ms);
 
         gint64 pts_ms = raw_pts_ms;
         gint64 min_step = frame_delay / 2;
@@ -1737,7 +1776,7 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         }
         player->smooth_last_pts_ms = raw_pts_ms;
         player->smooth_pts_ms = pts_ms;
-        video_player_debug_log(player, "worker-frame-ready", raw_pts_ms, pts_ms, player->fallback_pts_ms, 0);
+        video_player_debug_log(player, "worker-frame-ready", raw_pts_ms, pts_ms, next_fallback_pts_ms, 0);
         video_player_debug_log(player, "worker-decode-time", pts_ms, decode_elapsed_us, 0, 0);
         if (video_player_should_drop_late_frame(player, pts_ms)) {
             gint64 target_pts_ms = 0;
@@ -2217,7 +2256,7 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
         player->time_base_num = 1;
         player->time_base_den = 1000;
     }
-    player->fallback_pts_ms = 0;
+    video_player_set_fallback_pts_ms(player, 0);
     player->filepath = g_strdup(filepath);
     player->has_video = TRUE;
     player->draining = FALSE;
