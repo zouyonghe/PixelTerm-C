@@ -71,7 +71,7 @@ void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFun
 }
 
 gint64 input_dispatch_key_single_get_video_seek_step_ms_for_test(void) {
-    return k_video_seek_step_ms;
+    return input_dispatch_key_modes_get_video_seek_step_ms();
 }
 
 void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app) {
@@ -213,12 +213,16 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     }
 }
 
-static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
+gboolean input_dispatch_key_modes_handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
     if (!app || !input_dispatch_current_is_video(app) || !app->video_player || !video_player_has_video(app->video_player)) {
         return FALSE;
     }
 
     return g_video_seek_func && g_video_seek_func(app->video_player, delta_ms) == ERROR_NONE;
+}
+
+gint64 input_dispatch_key_modes_get_video_seek_step_ms(void) {
+    return k_video_seek_step_ms;
 }
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,
@@ -252,7 +256,7 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             }
             break;
         case KEY_LEFT: {
-            if (handle_video_seek(app, -k_video_seek_step_ms)) {
+            if (input_dispatch_key_modes_handle_video_seek(app, -input_dispatch_key_modes_get_video_seek_step_ms())) {
                 break;
             }
             handle_single_media_navigation(app,
@@ -271,7 +275,7 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         }
         case KEY_RIGHT: {
-            if (handle_video_seek(app, k_video_seek_step_ms)) {
+            if (input_dispatch_key_modes_handle_video_seek(app, input_dispatch_key_modes_get_video_seek_step_ms())) {
                 break;
             }
             handle_single_media_navigation(app,

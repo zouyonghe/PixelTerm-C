@@ -8,6 +8,19 @@
 
 static const gdouble k_image_zoom_step = 0.2;
 
+static void handle_single_video_scroll(PixelTermApp *app, const InputEvent *event) {
+    if (!app || !event) {
+        return;
+    }
+
+    gint64 seek_step_ms = input_dispatch_key_modes_get_video_seek_step_ms();
+    if (event->mouse_button == MOUSE_SCROLL_UP) {
+        (void)input_dispatch_key_modes_handle_video_seek(app, seek_step_ms);
+    } else if (event->mouse_button == MOUSE_SCROLL_DOWN) {
+        (void)input_dispatch_key_modes_handle_video_seek(app, -seek_step_ms);
+    }
+}
+
 static gboolean image_get_mouse_anchor(PixelTermApp *app, gdouble *rel_px_x, gdouble *rel_px_y) {
     if (!app || !rel_px_x || !rel_px_y) {
         return FALSE;
@@ -177,6 +190,7 @@ void input_dispatch_handle_mouse_double_click_book(PixelTermApp *app, const Inpu
 
 void input_dispatch_handle_mouse_scroll_single(PixelTermApp *app, const InputEvent *event) {
     if (input_dispatch_current_is_video(app)) {
+        handle_single_video_scroll(app, event);
         return;
     }
     if (input_dispatch_current_is_animated_image(app)) {

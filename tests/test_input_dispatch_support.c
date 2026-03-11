@@ -184,3 +184,43 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     g_input_dispatch_stub_state.enter_preview_calls++;
     return g_input_dispatch_stub_state.enter_preview_result;
 }
+
+ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
+    (void)app;
+    (void)page_index;
+    return ERROR_NONE;
+}
+
+ErrorCode app_render_book_page(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
+    (void)app;
+    (void)direction;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
+    (void)app;
+    (void)direction;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_up(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_down(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+    (void)app;
+    (void)mouse_x;
+    (void)mouse_y;
+    return ERROR_NONE;
+}
