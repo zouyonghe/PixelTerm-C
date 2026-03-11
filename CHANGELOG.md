@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.8: Repeated video seek stability and input-queue recovery.
+    - **Video Playback**: Keep repeated left/right seek actions moving from the latest seek target during playback so long key holds no longer jump back to an earlier position.
+    - **Input Handling**: Drain queued repeated seek keys one step at a time and preserve unconsumed input when a later seek fails, so follow-up keyboard and mouse actions stay responsive.
+    - **Code Health**: Simplify single-view video seek dispatch by relying on the shared seek guard path and clarify the fallback position assumptions used while playback timing is rebuilding.
+    - **Testing**: Add regression coverage for fallback playback position recovery, repeated seek accumulation, seek-failure queue preservation, and related input-dispatch test state resets.
+
 - v1.7.7: Video arrow-key seeking and seek-preview stability.
     - **Video Playback**: Add left/right arrow-key seeking in single-video view so you can jump backward or forward without leaving playback.
     - **Seek Preview**: Refresh the paused frame immediately after a seek and bound preview decoding retries so scrubbing feedback stays visible without runaway work.

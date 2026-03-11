@@ -26,7 +26,7 @@
 - Preview info/status rendering, filename redraw, border draw/clear, and shared grid cell rendering callback.
 
 ### 4. Documentation Sync
-- Keep `README.md`, `docs/PROJECT_STATUS.md`, and `docs/DEVELOPMENT.md` aligned with release `v1.7.7`, `bin/pixelterm`, and the landed repository layout.
+- Keep `README.md`, `docs/PROJECT_STATUS.md`, and `docs/DEVELOPMENT.md` aligned with release `v1.7.8`, `bin/pixelterm`, and the landed repository layout.
 
 ## Suggested State Decomposition
 State grouping is partially complete today:
@@ -76,10 +76,10 @@ Each step should compile and keep tests passing.
 - Keep build/install text aligned with `Makefile` (`bin/pixelterm`, `make install` -> `$(PREFIX)/bin/pixelterm`).
 - After each extraction, update `docs/ARCHITECTURE.md` and the companion refactor notes with the landed module boundaries.
 
-## Progress Snapshot (2026-03-08)
+## Progress Snapshot (2026-03-11)
 - Completed:
   - Current pass targets the remaining large helper files: `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
-  - Synced README/project/development/architecture docs to shipped release `v1.7.7`, current repository layout, and `bin/pixelterm` build output.
+  - Synced README/project/development/architecture docs to shipped release `v1.7.8`, current repository layout, and `bin/pixelterm` build output.
   - Extracted delete prompt/delete confirmation helpers from `src/input_dispatch_core.c` into:
     - `src/input_dispatch_delete.c`
     - `include/input_dispatch_delete_internal.h`
