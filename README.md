@@ -74,7 +74,7 @@ pixelterm /path/to/directory
 pixelterm --help
 ```
 
-For more usage examples and options, see [docs/guides/USAGE.md](docs/guides/USAGE.md).
+For more usage examples and options, see [USAGE.md](docs/guides/USAGE.md).
 
 ## Formats and Compatibility
 
@@ -82,7 +82,7 @@ For more usage examples and options, see [docs/guides/USAGE.md](docs/guides/USAG
 - Video: MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V (video only; no audio).
 - Books: PDF, EPUB, and CBZ when built with MuPDF support.
 - PixelTerm-C can auto-detect an output protocol, and you can override it with `--protocol` when needed.
-- Terminal and protocol notes: [docs/guides/TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md).
+- Terminal and protocol notes: [TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md).
 
 ## Configuration
 
@@ -97,12 +97,12 @@ cp config.example.ini ~/.config/pixelterm/config.ini
 
 ## Documentation
 
-- Documentation index: [docs/README.md](docs/README.md)
-- Usage and CLI options: [docs/guides/USAGE.md](docs/guides/USAGE.md)
-- Keyboard and mouse controls: [docs/guides/CONTROLS.md](docs/guides/CONTROLS.md)
-- Troubleshooting: [docs/guides/TROUBLESHOOTING.md](docs/guides/TROUBLESHOOTING.md)
+- Documentation index: [README.md](docs/README.md)
+- Usage and CLI options: [USAGE.md](docs/guides/USAGE.md)
+- Keyboard and mouse controls: [CONTROLS.md](docs/guides/CONTROLS.md)
+- Troubleshooting: [TROUBLESHOOTING.md](docs/guides/TROUBLESHOOTING.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
-- Terminal and protocol notes: [docs/guides/TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md)
+- Terminal and protocol notes: [TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md)
 
 ## Build from Source
 

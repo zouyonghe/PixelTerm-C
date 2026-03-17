@@ -72,7 +72,7 @@ pixelterm /path/to/directory
 pixelterm --help
 ```
 
-更多命令示例和参数说明见 [../guides/USAGE_zh.md](../guides/USAGE_zh.md)。
+更多命令示例和参数说明见 [USAGE_zh.md](../guides/USAGE_zh.md)。
 
 ## 格式与兼容性
 
@@ -80,7 +80,7 @@ pixelterm --help
 - 视频：MP4、MKV、AVI、MOV、WebM、MPEG/MPG、M4V（仅视频，无音频）。
 - 电子书：PDF、EPUB、CBZ；需在构建时启用 MuPDF 支持。
 - 程序会自动选择合适的输出方式，必要时也可以用 `--protocol` 手动指定。
-- 终端与协议说明见 [../guides/TERMINAL_PROTOCOL_SUPPORT.md](../guides/TERMINAL_PROTOCOL_SUPPORT.md)。
+- 终端与协议说明见 [TERMINAL_PROTOCOL_SUPPORT.md](../guides/TERMINAL_PROTOCOL_SUPPORT.md)。
 
 ## 配置
 
@@ -95,11 +95,11 @@ cp config.example.ini ~/.config/pixelterm/config.ini
 
 ## 文档
 
-- 使用方法与命令行选项：[../guides/USAGE_zh.md](../guides/USAGE_zh.md)
-- 键盘和鼠标操作：[../guides/CONTROLS_zh.md](../guides/CONTROLS_zh.md)
-- 常见问题与排障：[../guides/TROUBLESHOOTING_zh.md](../guides/TROUBLESHOOTING_zh.md)
-- 更新记录：[../../CHANGELOG.md](../../CHANGELOG.md)
-- 终端与协议说明：[../guides/TERMINAL_PROTOCOL_SUPPORT.md](../guides/TERMINAL_PROTOCOL_SUPPORT.md)
+- 使用方法与命令行选项：[USAGE_zh.md](../guides/USAGE_zh.md)
+- 键盘和鼠标操作：[CONTROLS_zh.md](../guides/CONTROLS_zh.md)
+- 常见问题与排障：[TROUBLESHOOTING_zh.md](../guides/TROUBLESHOOTING_zh.md)
+- 更新记录：[CHANGELOG.md](../../CHANGELOG.md)
+- 终端与协议说明：[TERMINAL_PROTOCOL_SUPPORT.md](../guides/TERMINAL_PROTOCOL_SUPPORT.md)
 
 ## 源码构建
 
