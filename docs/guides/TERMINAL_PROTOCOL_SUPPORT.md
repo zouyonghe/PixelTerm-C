@@ -1,6 +1,6 @@
 # Terminal Protocol Support
 
-See also: [English README](../README.md) | [中文 README](../README_zh.md) | [日本語 README](../README_ja.md)
+See also: [English README](../../README.md) | [中文 README](../i18n/README_zh.md) | [日本語 README](../i18n/README_ja.md)
 
 This page summarizes the terminal and graphics-protocol support notes currently documented for PixelTerm-C. It is intended as a practical user reference for `auto` detection and manual overrides, not a ranking of terminal quality.
 
@@ -51,7 +51,7 @@ pixelterm --protocol kitty /path/to/image.jpg
 pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
 ```
 
-You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../config.example.ini) and [USAGE.md](../USAGE.md) for the current CLI and config syntax.
+You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../../config.example.ini) and [USAGE.md](USAGE.md) for the current CLI and config syntax.
 
 ## Scope notes
 

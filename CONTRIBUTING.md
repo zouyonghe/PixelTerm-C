@@ -69,7 +69,7 @@ sudo pacman -S mupdf
    make test
    ```
 
-For more detailed development information, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+For more detailed development information, see [docs/development/DEVELOPMENT.md](docs/development/DEVELOPMENT.md).
 
 ## Development Workflow
 
@@ -477,10 +477,10 @@ Fixes #123
 
 ## Additional Resources
 
-- [Development Guide](docs/DEVELOPMENT.md) - Detailed development information
-- [Architecture Documentation](docs/ARCHITECTURE.md) - System architecture
-- [Project Roadmap](docs/ROADMAP.md) - Future plans
-- [Code Quality Analysis](docs/CODE_QUALITY_ANALYSIS.md) - Quality metrics
+- [Documentation Index](docs/README.md) - Documentation overview
+- [Development Guide](docs/development/DEVELOPMENT.md) - Detailed development information
+- [Architecture Documentation](docs/development/ARCHITECTURE.md) - System architecture
+- [Project Roadmap](docs/project/ROADMAP.md) - Future plans
 
 ## Getting Help
 

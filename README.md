@@ -3,7 +3,7 @@
 ![Version](https://img.shields.io/badge/Version-v1.7.8-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
-*English | [中文](README_zh.md) | [日本語](README_ja.md)*
+*English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
 
 PixelTerm-C is a terminal-native browser for images, video, and books. It helps you open local media, move through folders, and stay in a keyboard-and-mouse workflow without leaving the terminal.
 
@@ -74,7 +74,7 @@ pixelterm /path/to/directory
 pixelterm --help
 ```
 
-For more usage examples and options, see [USAGE.md](USAGE.md).
+For more usage examples and options, see [docs/guides/USAGE.md](docs/guides/USAGE.md).
 
 ## Formats and Compatibility
 
@@ -82,11 +82,11 @@ For more usage examples and options, see [USAGE.md](USAGE.md).
 - Video: MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V (video only; no audio).
 - Books: PDF, EPUB, and CBZ when built with MuPDF support.
 - PixelTerm-C can auto-detect an output protocol, and you can override it with `--protocol` when needed.
-- Terminal and protocol notes: [docs/TERMINAL_PROTOCOL_SUPPORT.md](docs/TERMINAL_PROTOCOL_SUPPORT.md).
+- Terminal and protocol notes: [docs/guides/TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md).
 
 ## Configuration
 
-PixelTerm-C reads `$XDG_CONFIG_HOME/pixelterm/config.ini` when it is present, and you can pass a custom file with `--config`. Start from [`config.example.ini`](config.example.ini), use `[default]` for shared settings, then add terminal-specific sections that match `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
+PixelTerm-C reads `$XDG_CONFIG_HOME/pixelterm/config.ini` when it is present, and you can pass a custom file with `--config`. Start from [`config.example.ini`](config.example.ini), use `[default]` for shared settings, then add terminal-specific sections that match `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. CLI flags are parsed after config loading, so explicit command-line options override config values.
 
 Quick setup:
 
@@ -97,10 +97,12 @@ cp config.example.ini ~/.config/pixelterm/config.ini
 
 ## Documentation
 
-- Usage and CLI options: [USAGE.md](USAGE.md)
-- Keyboard and mouse controls: [CONTROLS.md](CONTROLS.md)
+- Documentation index: [docs/README.md](docs/README.md)
+- Usage and CLI options: [docs/guides/USAGE.md](docs/guides/USAGE.md)
+- Keyboard and mouse controls: [docs/guides/CONTROLS.md](docs/guides/CONTROLS.md)
+- Troubleshooting: [docs/guides/TROUBLESHOOTING.md](docs/guides/TROUBLESHOOTING.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
-- Terminal and protocol notes: [docs/TERMINAL_PROTOCOL_SUPPORT.md](docs/TERMINAL_PROTOCOL_SUPPORT.md)
+- Terminal and protocol notes: [docs/guides/TERMINAL_PROTOCOL_SUPPORT.md](docs/guides/TERMINAL_PROTOCOL_SUPPORT.md)
 
 ## Build from Source
 

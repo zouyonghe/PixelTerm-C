@@ -9,13 +9,18 @@
 ```
 PixelTerm-C/
 ├── README.md
-├── README_zh.md
 ├── CHANGELOG.md
+├── CONTRIBUTING.md
 ├── Makefile
 ├── config.example.ini
 ├── src/
 ├── include/
 ├── docs/
+│   ├── README.md
+│   ├── development/
+│   ├── guides/
+│   ├── i18n/
+│   └── project/
 ├── tests/
 ├── screenshots/
 └── .github/

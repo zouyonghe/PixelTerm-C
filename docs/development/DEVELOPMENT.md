@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
+PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
 **Current Status**: ✅ **PRODUCTION READY** - v1.7.8 with repeated video seek stability, input-queue recovery, and expanded seek-failure regression coverage.
 
@@ -141,7 +141,7 @@ Public API declarations are now split by module:
 
 ### Phase 3: Advanced Features ✅ COMPLETED
 - [x] Performance optimization
-- [x] Cross-platform compatibility
+- [x] Linux/macOS compatibility work
 - [x] Advanced configuration options
 - [x] Comprehensive testing
 
@@ -150,8 +150,8 @@ Public API declarations are now split by module:
 The codebase is now split into mode-focused modules and routed input handlers, while keeping `app_*` APIs stable.
 For a structured refactor plan with safe, incremental steps, see:
 
-- `docs/REFACTORING_PLAN.md`
-- `docs/refactor-plan.md` (execution-focused companion plan)
+- `docs/project/REFACTORING_PLAN.md`
+- `docs/project/archive/refactor-plan.md` (archived execution-focused companion plan)
 
 Performance changes should follow the workflow notes in this section and keep benchmarks consistent across runs.
 
@@ -283,14 +283,14 @@ make ARCH=aarch64
 ## Future Enhancements
 
 ### Short Term (Next 6 months)
-- GUI configuration interface
-- Plugin system for custom renderers
-- Advanced image processing filters
+- Expand regression coverage around video seek/protocol switching and preview/book flows
+- Improve terminal capability detection and remote-session fallbacks
+- Keep troubleshooting and compatibility documentation aligned with actual behavior
 
 ### Long Term (Next year)
-- Network image browsing
-- Cloud storage integration
-- Mobile terminal support
+- Add safer terminal-specific presets and default overrides
+- Improve performance diagnostics and render-path profiling
+- Continue packaging and distribution polish for supported platforms
 
 ## Contributing Guidelines
 
@@ -320,6 +320,6 @@ make ARCH=aarch64
 
 ## Notes for Future Developers
 
-This project is designed to be maintainable and extensible. The modular architecture allows for easy addition of new features and optimization opportunities. The performance gains over the Python version are significant, but we should continue to optimize and improve the user experience.
+This project is designed to be maintainable and extensible. The modular architecture allows for incremental feature work, compatibility fixes, and profiling without returning to large monolithic source files.
 
 Remember: Performance is not just about speed, but also about responsiveness, resource usage, and user experience. Keep these principles in mind when making architectural decisions.

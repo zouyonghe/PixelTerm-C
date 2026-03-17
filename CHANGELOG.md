@@ -32,7 +32,7 @@
 
 - v1.7.3: Documentation redesign, protocol notes, and refactor hardening.
     - **Docs**: Redesign the English and Chinese README files for end users, add a Japanese README, and move terminal-specific guidance into a dedicated protocol support reference.
-    - **Compatibility**: Add `docs/TERMINAL_PROTOCOL_SUPPORT.md` to document current terminal/protocol notes and manual override guidance without maintaining a ranked terminal list.
+    - **Compatibility**: Add `docs/guides/TERMINAL_PROTOCOL_SUPPORT.md` to document current terminal/protocol notes and manual override guidance without maintaining a ranked terminal list.
     - **Testing**: Add focused regression coverage for pending preview clicks, delete dispatch flows, last-image transitions back to file manager, and preloader cached-image ownership.
     - **Refactor Hardening**: Follow up on the input/preview refactor with safer cached-render ownership handling and stale pending-click cleanup across mode changes.
     - **Repo Hygiene**: Ignore local `.worktrees/` directories to keep isolated workspaces out of repository status.
@@ -313,7 +313,7 @@
 
 - v1.1.5: Fix 0KB image file handling by implementing proper validation using magic numbers instead of strict image loading, add white background red text display for selected invalid files, show centered "（No items）" message in empty directories, skip invalid files in preview grid, and implement intelligent mode switching when opening invalid files directly.
 
-- v1.1.4: Refactored code and documentation for improved performance and consistency. Restored ImageRenderer's internal caching due to its crucial role in performance, especially when preloading is disabled or during frequent dimension changes. Re-confirmed and removed various unused code including unnecessary <pthread.h> include, browser file filtering/sorting functions, input_is_key_pressed function, and unused mouse event fields. Synchronized docs/ARCHITECTURE.md and include/common.h with current codebase by removing outdated references.
+- v1.1.4: Refactored code and documentation for improved performance and consistency. Restored ImageRenderer's internal caching due to its crucial role in performance, especially when preloading is disabled or during frequent dimension changes. Re-confirmed and removed various unused code including unnecessary <pthread.h> include, browser file filtering/sorting functions, input_is_key_pressed function, and unused mouse event fields. Synchronized docs/development/ARCHITECTURE.md and include/common.h with current codebase by removing outdated references.
 
 - v1.1.1: Improve file manager scrolling/rendering so the highlighted row stays centered even when the directory has fewer rows than the viewport or when wrapping back to the top.
 

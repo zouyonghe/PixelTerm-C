@@ -55,3 +55,12 @@ pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 # sections matching TERM_PROGRAM/LC_TERMINAL/TERMINAL_NAME/TERM for overrides.
 # See config.example.ini
 ```
+
+## Notes
+
+- `pixelterm` with no `PATH` starts in file manager mode for the current directory.
+- CLI flags override config file values because config loading happens before argument parsing.
+- `--preload` and `--alt-screen` accept `true/false`, `yes/no`, `on/off`, and `1/0`.
+- A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
+- Config groups are applied in this order: `[default]`, then the first matching terminal-specific group from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
+- If rendering looks wrong, try an explicit `--protocol` value or see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

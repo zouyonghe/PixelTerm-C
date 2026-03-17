@@ -1,6 +1,6 @@
 # PixelTerm-C Technical Architecture
 
-## Performance Analysis
+## Historical Motivation
 
 ### Why C Implementation?
 
@@ -11,13 +11,12 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
 3. **Memory Copying**: Multiple data transfers between processes
 4. **GIL Limitations**: Global Interpreter Lock limits true parallelism
 
-### Expected Performance Gains
+### Expected Benefits
 
-| Operation | Python (ms) | C (ms) | Improvement |
-|-----------|-------------|---------|-------------|
-| Startup | 1000-2000 | 200 | 5-10x |
-| Image Switch | 200-500 | 50-100 | 3-5x |
-| Memory Usage | 50-100MB | 20-30MB | 2-3x |
+- Lower startup and redraw overhead by avoiding subprocess-based rendering.
+- Tighter control over allocations, cache lifetime, and terminal I/O.
+- Better use of background preloading without Python interpreter overhead.
+- More predictable low-level integration with terminal capability probing.
 
 ## Core Data Structures
 
@@ -139,9 +138,8 @@ typedef struct {
 ## File System Integration
 
 ### Supported Formats
-- **Static**: PNG, JPEG, GIF, WebP, TIFF, BMP
-- **Optional**: SVG (via librsvg), AVIF (via libavif)
-- **Animated**: GIF, WebP animation
+- **Images**: JPG/JPEG, PNG/APNG, GIF, WebP, BMP, TIFF/TIF
+- **Animated images**: GIF, APNG, animated WebP, and multi-page TIFF candidates
 - **Video**: MP4, MKV, AVI, MOV, WebM, MPEG/MPG, and M4V via FFmpeg-backed decoding
 - **Books**: PDF, EPUB, and CBZ when MuPDF support is enabled at build time
 
@@ -171,46 +169,42 @@ typedef struct {
 - **Cache**: Hit rates, eviction statistics
 - **I/O**: File access times, throughput
 
-### Optimization Targets
-- **Startup Time**: < 500ms for typical directories
-- **Image Switch**: < 100ms for cached images
-- **Memory Usage**: < 50MB for normal usage
-- **CPU Usage**: < 50% on modern hardware
+### Areas to Watch
+- Startup latency for common directory sizes
+- Image and video navigation latency after cache warmup
+- Memory footprint during preloading and playback
+- CPU usage during redraw-heavy and video-heavy workloads
 
-## Security Considerations
+## Defensive Behaviors
 
-### Input Validation
-- **Path Traversal**: Prevent directory escape attacks
-- **File Size**: Limit maximum file size
-- **Format Validation**: Check file headers
+### Input and Output Handling
+- **Path validation**: Startup validates whether paths exist and are accessible before entering the main loop.
+- **Format validation**: Media detection combines extension checks with magic-number validation for supported image formats.
+- **Terminal-safe text**: Filenames and titles are sanitized before rendering into terminal UI regions.
+- **Config/CLI validation**: Protocol names, booleans, gamma, and work-factor values are range-checked before use.
 
 ### Resource Limits
-- **Memory**: Prevent excessive allocation
-- **File Handles**: Limit concurrent open files
-- **Threads**: Cap background processing
+- **Memory**: The renderer/preloader path uses bounded caches and explicit cleanup points.
+- **Work queue**: Preloading uses a fixed-size queue and explicit pause/clear/reset flow.
+- **Threads**: Background work is limited to the preloader and media worker paths already present in the codebase.
 
 ## Cross-Platform Compatibility
 
 ### Platform Support
-- **Linux**: Primary target, full feature support
-- **macOS**: Secondary target, limited terminal support
-- **Windows**: Experimental, requires WSL or similar
+- **Linux**: Primary target for source builds and release binaries.
+- **macOS**: Supported source-build and release-binary target, with behavior still dependent on terminal protocol support.
+- **Other environments**: The codebase recognizes additional terminal families in protocol hints, but the repository does not currently document or test them as first-class build targets.
 
 ### Build System
 - **Makefile**: Uses pkg-config for Chafa/GLib/GDK-Pixbuf/GIO/FFmpeg, enables MuPDF support when available, builds `bin/pixelterm`, and installs `$(PREFIX)/bin/pixelterm` via `make install`.
 - **Cross-Compile**: `ARCH=aarch64` switches pkg-config paths for ARM64 builds.
 
-## Future Optimization Opportunities
+## Current Engineering Themes
 
-### Advanced Rendering
-- **GPU Acceleration**: OpenCL/CUDA for image processing
-- **Neural Upscaling**: AI-based image enhancement
-- **Custom Symbol Sets**: Optimized character mappings
-
-### Advanced Features
-- **Network Support**: Remote image browsing
-- **Cloud Integration**: Direct cloud storage access
-- **Plugin System**: Extensible architecture
+- Terminal-specific presets and safer default overrides.
+- Better profiling around video, protocol switching, and redraw-heavy flows.
+- Packaging and distribution polish for the supported release targets.
+- Incremental compatibility improvements for remote sessions and edge-case terminals.
 
 ## Implementation Notes
 
@@ -220,11 +214,11 @@ typedef struct {
 3. **Input Handling**: Low-latency keyboard processing
 4. **Cache Management**: Intelligent preloading strategy
 
-### Performance Targets
-- **Startup**: < 200ms cold start
-- **Navigation**: < 50ms image switch
-- **Memory**: < 30MB steady state
-- **CPU**: < 30% average usage
+### Performance Focus
+- Keep startup responsive on typical local media directories.
+- Keep cached navigation and mode switching visibly smooth.
+- Avoid unnecessary terminal clears and duplicate render work.
+- Bound memory growth during preloading, preview grids, and video playback.
 
 ### Testing Strategy
 - **Unit Tests**: Component isolation

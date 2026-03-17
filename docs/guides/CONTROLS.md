@@ -42,6 +42,7 @@ This is the default mode when viewing a single image.
 | Space | Play/Pause video (Video View only) |
 | F | Toggle FPS overlay (Video View only) |
 | + / - | Adjust video scale (Video View only) |
+| p / P | Cycle video protocol: text -> sixel -> iterm2 -> kitty -> text (Video View only) |
 | Enter | Toggle into Grid Preview mode |
 | TAB | Cycle between Image View / Grid Preview / File Manager |
 | i | Toggle image information display |

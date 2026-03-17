@@ -55,8 +55,8 @@ WARN_NO_PARAMDOC       = YES
 INPUT                  = include/ \
                          src/ \
                          README.md \
-                         docs/ARCHITECTURE.md \
-                         docs/DEVELOPMENT.md
+                         docs/development/ARCHITECTURE.md \
+                         docs/development/DEVELOPMENT.md
 FILE_PATTERNS          = *.c \
                          *.h \
                          *.md
