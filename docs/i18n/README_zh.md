@@ -5,23 +5,23 @@
 
 *[English](../../README.md) | 中文 | [日本語](README_ja.md)*
 
-PixelTerm-C 是一个在终端里浏览图片、视频和电子书的本地工具。你可以直接打开单个文件，也可以在目录里快速切换和预览媒体内容，不用离开终端。
+PixelTerm-C 是一个在终端里浏览图片、视频和电子书的本地媒体工具。你既可以直接打开单个文件，也可以在目录里快速切换和预览内容，全程不用离开终端。
 
 ## 为什么使用 PixelTerm-C
 
-- 一套工作流里同时处理图片、动图、视频和电子书。
-- 支持单图查看、网格预览、电子书阅读和文件管理等模式。
-- 键盘和鼠标都能用，适合在终端里连续浏览和切换内容。
-- 可按需要调整预加载、抖动、伽马和终端相关配置。
-- 提供 Linux 和 macOS 的发布二进制，也可以自己从源码构建。
+- 同一套流程里就能看图片、动图、视频和电子书。
+- 支持单图查看、网格预览、电子书阅读和文件管理。
+- 键盘和鼠标都能用，适合在终端里连续浏览、切换内容。
+- 预加载、抖动、伽马校正和终端相关配置都可以按需调整。
+- 提供 Linux 和 macOS 的预编译二进制，也可以自己从源码构建。
 
 ## 截图
 
-下面这张图展示的是 PixelTerm-C 的实际界面：
+下面是 PixelTerm-C 的实际界面：
 
 <img src="../../screenshots/2.png" alt="PixelTerm-C 截图">
 
-截图来自一次真实的 PixelTerm-C 运行会话。
+截图截自真实运行会话。
 
 ## 安装
 
@@ -84,7 +84,7 @@ pixelterm --help
 
 ## 配置
 
-如果存在 `$XDG_CONFIG_HOME/pixelterm/config.ini`，PixelTerm-C 会自动读取；也可以通过 `--config` 指定其他配置文件。建议先从 [`config.example.ini`](../../config.example.ini) 开始，用 `[default]` 保存通用设置，再按终端环境添加覆盖分组，匹配 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME` 或 `TERM`。命令行参数会在配置文件之后解析，因此显式传入的 CLI 参数会覆盖配置值。
+如果存在 `$XDG_CONFIG_HOME/pixelterm/config.ini`，PixelTerm-C 会自动读取；也可以通过 `--config` 指定其他配置文件。建议先从 [`config.example.ini`](../../config.example.ini) 开始：把通用设置放在 `[default]`，再按终端环境添加覆盖分组，匹配 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME` 或 `TERM`。命令行参数会在读取配置文件之后解析，因此显式传入的 CLI 参数会覆盖配置值。
 
 快速初始化：
 
@@ -139,7 +139,7 @@ sudo make install
 make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ```
 
-如果系统中有 MuPDF，构建时会自动启用电子书支持。交叉编译仍属于实验性流程，需要宿主机具备对应架构的依赖库。
+如果系统里装了 MuPDF，构建时会自动启用电子书支持。交叉编译仍属于实验性流程，需要宿主机提供对应架构的依赖库。
 
 ## 许可证
 
