@@ -4,18 +4,33 @@ The repository root keeps only the core project documents. Everything else is gr
 
 ## User Guides
 
-- [Usage](guides/USAGE.md)
-- [使用说明](guides/USAGE_zh.md)
-- [Controls](guides/CONTROLS.md)
-- [操作说明](guides/CONTROLS_zh.md)
-- [Troubleshooting](guides/TROUBLESHOOTING.md)
-- [常见问题与排障](guides/TROUBLESHOOTING_zh.md)
-- [Terminal Protocol Support](guides/TERMINAL_PROTOCOL_SUPPORT.md)
+### English
 
-## Localized Overviews
+- [README.md](../README.md)
+- [USAGE.md](guides/USAGE.md)
+- [CONTROLS.md](guides/CONTROLS.md)
+- [TROUBLESHOOTING.md](guides/TROUBLESHOOTING.md)
+- [TERMINAL_PROTOCOL_SUPPORT.md](guides/TERMINAL_PROTOCOL_SUPPORT.md)
 
-- [中文 README](i18n/README_zh.md)
-- [日本語 README](i18n/README_ja.md)
+### 中文
+
+- [README_zh.md](i18n/README_zh.md)
+- [USAGE_zh.md](guides/USAGE_zh.md)
+- [CONTROLS_zh.md](guides/CONTROLS_zh.md)
+- [TROUBLESHOOTING_zh.md](guides/TROUBLESHOOTING_zh.md)
+- [TERMINAL_PROTOCOL_SUPPORT_zh.md](guides/TERMINAL_PROTOCOL_SUPPORT_zh.md)
+
+### 日本語
+
+- [README_ja.md](i18n/README_ja.md)
+- [USAGE_ja.md](guides/USAGE_ja.md)
+- [CONTROLS_ja.md](guides/CONTROLS_ja.md)
+- [TROUBLESHOOTING_ja.md](guides/TROUBLESHOOTING_ja.md)
+- [TERMINAL_PROTOCOL_SUPPORT_ja.md](guides/TERMINAL_PROTOCOL_SUPPORT_ja.md)
+
+### Shared
+
+- [CHANGELOG.md](../CHANGELOG.md)
 
 ## Development
 

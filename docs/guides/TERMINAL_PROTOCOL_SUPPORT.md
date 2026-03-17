@@ -1,6 +1,6 @@
 # Terminal Protocol Support
 
-See also: [English README](../../README.md) | [中文 README](../i18n/README_zh.md) | [日本語 README](../i18n/README_ja.md)
+*English | [中文](TERMINAL_PROTOCOL_SUPPORT_zh.md) | [日本語](TERMINAL_PROTOCOL_SUPPORT_ja.md)*
 
 This page summarizes the terminal and graphics-protocol support notes currently documented for PixelTerm-C. It is intended as a practical user reference for `auto` detection and manual overrides, not a ranking of terminal quality.
 

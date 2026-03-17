@@ -1,5 +1,7 @@
 # 常见问题与排障
 
+*[English](TROUBLESHOOTING.md) | 中文 | [日本語](TROUBLESHOOTING_ja.md)*
+
 ## 看不到图片或视频输出
 
 - 先尝试显式指定协议：
@@ -12,9 +14,9 @@ pixelterm --protocol text /path/to/media
 ```
 
 - 当前 `auto` 模式的探测顺序是：`sixel` -> `iterm2` -> `kitty`。
-- 如果视频已经打开，可以按 `p` 或 `P` 在这些视频输出模式之间循环切换：`text -> sixel -> iterm2 -> kitty -> text`。
+- 如果视频已经打开，可以按 `p` 或 `P` 切换视频输出模式，顺序如下：`text -> sixel -> iterm2 -> kitty -> text`。
 - 远程 shell 或 SSH 会话下，协议探测结果可能和本地终端不同。
-- 终端相关说明见 [TERMINAL_PROTOCOL_SUPPORT.md](TERMINAL_PROTOCOL_SUPPORT.md)。
+- 终端相关说明见 [TERMINAL_PROTOCOL_SUPPORT_zh.md](TERMINAL_PROTOCOL_SUPPORT_zh.md)。
 
 ## Warp 或其他终端里显示异常
 

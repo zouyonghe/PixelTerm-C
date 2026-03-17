@@ -1,4 +1,6 @@
-## 🎮 Controls
+# 🎮 Controls
+
+*English | [中文](CONTROLS_zh.md) | [日本語](CONTROLS_ja.md)*
 
 ### Global Controls
 
@@ -35,20 +37,30 @@ This is the default mode when viewing a single image.
 
 | Key | Function |
 |-----|----------|
-| ←/→ | Previous/next image; in Video View seek backward/forward 5s |
-| ↑/↓ | Previous/next image; in Video View switch to previous/next media |
+| ←/→ | Previous/next image |
+| ↑/↓ | Previous/next image |
 | h/k | Vim-style navigation (previous image) |
 | l/j | Vim-style navigation (next image) |
-| Space | Play/Pause video (Video View only) |
-| F | Toggle FPS overlay (Video View only) |
-| + / - | Adjust video scale (Video View only) |
-| p / P | Cycle video protocol: text -> sixel -> iterm2 -> kitty -> text (Video View only) |
 | Enter | Toggle into Grid Preview mode |
 | TAB | Cycle between Image View / Grid Preview / File Manager |
 | i | Toggle image information display |
 | `~` / `` ` `` | Toggle Zen mode (hide/show all UI text) |
 | r | Delete current image |
 | d/D | Toggle dithering on/off |
+
+### Video Playback
+
+These shortcuts apply when the current item in Image View is a video.
+
+| Key | Function |
+|-----|----------|
+| Left Click | Toggle play/pause |
+| Space | Toggle play/pause |
+| ←/→ | Seek backward/forward 5 seconds |
+| ↑/↓ | Switch to previous/next media item |
+| F | Toggle FPS overlay |
+| + / - | Adjust video scale (`+` to increase, `-` to decrease) |
+| p / P | Switch video protocol: `text -> sixel -> iterm2 -> kitty -> text` |
 
 ### Grid Preview (Thumbnail Mode)
 

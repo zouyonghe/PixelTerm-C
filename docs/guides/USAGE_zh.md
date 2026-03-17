@@ -1,5 +1,7 @@
 # 使用
 
+*[English](USAGE.md) | 中文 | [日本語](USAGE_ja.md)*
+
 ```bash
 # 查看单个图像（直接进入图像查看器）
 pixelterm /path/to/image.jpg

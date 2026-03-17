@@ -1,5 +1,7 @@
 # Troubleshooting
 
+*English | [中文](TROUBLESHOOTING_zh.md) | [日本語](TROUBLESHOOTING_ja.md)*
+
 ## No image or video appears
 
 - Try an explicit protocol override:
@@ -12,7 +14,7 @@ pixelterm --protocol text /path/to/media
 ```
 
 - `auto` mode currently probes in this order: `sixel`, `iterm2`, then `kitty`.
-- If a video is already open, press `p` or `P` to cycle video output modes in this order: `text -> sixel -> iterm2 -> kitty -> text`.
+- If a video is already open, press `p` or `P` to switch video output modes in this order: `text -> sixel -> iterm2 -> kitty -> text`.
 - If you are in a remote shell or SSH session, protocol probing may behave differently from a local terminal.
 - See [TERMINAL_PROTOCOL_SUPPORT.md](TERMINAL_PROTOCOL_SUPPORT.md) for terminal-specific notes.
 
