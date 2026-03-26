@@ -53,6 +53,9 @@ pixelterm --gamma 0.8 /path/to/image.jpg
 # Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini)
 pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 
+# Treat a config-like filename, or any path starting with '-', as a path
+pixelterm -- --config=gallery.txt
+
 # Config file format: [default] for baseline settings, optional terminal-named
 # sections matching TERM_PROGRAM/LC_TERMINAL/TERMINAL_NAME/TERM for overrides.
 # See config.example.ini
@@ -61,8 +64,11 @@ pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 ## Notes
 
 - `pixelterm` with no `PATH` starts in file manager mode for the current directory.
+- `--` stops option parsing, so anything after it is treated as `PATH`.
 - CLI flags override config file values because config loading happens before argument parsing.
 - `--preload` and `--alt-screen` accept `true/false`, `yes/no`, `on/off`, and `1/0`.
 - A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
 - Config groups are applied in this order: `[default]`, then the first matching terminal-specific group from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
+- If `PATH` is an unsupported regular file, PixelTerm-C falls back to that file's canonical parent directory and opens file manager mode there.
+- A directory path is never treated as a valid book file; directories open in file manager mode instead.
 - If rendering looks wrong, try an explicit `--protocol` value or see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

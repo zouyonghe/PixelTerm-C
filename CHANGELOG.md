@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.10: Path handling polish and video-player maintainability splits.
+    - **CLI and Startup**: Treat paths after `--` as positional input, canonicalize unsupported-file fallback directories, and reject directory paths when opening books.
+    - **Navigation Stability**: Tighten file-manager hidden-file toggling and preview-grid zoom refresh so stale selection or scroll state is normalized instead of drifting to the wrong item.
+    - **Code Health**: Split video-player clock, seek-preview, and debug/test helpers into focused internal modules and centralize `AppConfig` runtime application instead of copying fields inline in `main`.
+    - **Docs**: Refresh usage, troubleshooting, architecture, and refactor notes to match the repaired behavior and new module boundaries.
+
 - v1.7.9: Verification baseline expansion and CI hardening.
     - **Testing**: Add direct automated coverage for terminal protocol helpers, CLI/startup behavior, and book core paths so more shipped flows are exercised without manual setup.
     - **Navigation**: Add isolated file-manager and preview-grid state suites, and fix refresh, selection, scroll, and normalization edge cases those regressions exposed.

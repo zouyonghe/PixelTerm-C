@@ -12,6 +12,7 @@
 #include "app.h"
 #include "app_startup.h"
 #include "app_cli.h"
+#include "app_config_runtime.h"
 #include "input.h"
 #include "input_dispatch.h"
 #include "common.h"
@@ -185,24 +186,15 @@ int main(int argc, char *argv[]) {
         g_free(path);
         return 1;
     }
-    g_app->force_sixel = config.force_sixel;
-    g_app->force_kitty = config.force_kitty;
-    g_app->force_iterm2 = config.force_iterm2;
-    g_app->force_text = config.force_text;
-    g_app->gamma = config.gamma;
 
-    g_app->render_work_factor = config.work_factor;
-    error = app_initialize(g_app, config.dither_enabled);
+    app_config_apply_runtime(g_app, &config);
+    error = app_initialize(g_app, g_app->dither_enabled);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Failed to initialize application: %d\n", error);
         app_destroy(g_app);
         g_free(path);
         return 1;
     }
-
-    // Configure application settings
-    g_app->preload_enabled = config.preload_enabled;
-    g_app->clear_workaround_enabled = config.clear_workaround_enabled;
 
     // Validate and classify startup path
     error = app_startup_classify_path(path, &startup);

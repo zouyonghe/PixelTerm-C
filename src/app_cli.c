@@ -12,7 +12,7 @@
 static void print_usage(const char *program_name) {
     printf("PixelTerm-C: A high-performance terminal image/video/book browser written in C.\n");
     printf("\n");
-    printf("Usage: %s [OPTIONS] [PATH]\n", program_name);
+    printf("Usage: %s [OPTIONS] [--] [PATH]\n", program_name);
     printf("\n");
     printf("Arguments:\n");
     printf("  PATH    Path to an image/video/book file or a directory to browse\n");
@@ -30,6 +30,9 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--config PATH", "Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini)");
     printf("  %-29s %s\n", "--gamma G",
            "Gamma correction for image rendering (default: 1.0)");
+    printf("\n");
+    printf("Notes:\n");
+    printf("  Use -- before PATH when the path starts with '-' (example: pixelterm -- --config=gallery.txt)\n");
     printf("\n");
 }
 
@@ -303,6 +306,9 @@ static ErrorCode app_config_preload_from_args(int argc, char *argv[], AppConfig 
     gchar *config_path = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
+        if (strcmp(arg, "--") == 0) {
+            break;
+        }
         if (g_str_has_prefix(arg, "--config=")) {
             const char *value = arg + strlen("--config=");
             if (!value || value[0] == '\0') {

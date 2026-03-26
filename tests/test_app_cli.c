@@ -2,6 +2,7 @@
 #include <glib/gstdio.h>
 
 #include "app_cli.h"
+#include "app_config_runtime.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -364,6 +365,43 @@ static void test_cli_protocol_argument_parses_supported_modes(AppCliFixture *fix
     }
 }
 
+static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture *fixture,
+                                                                  gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    PixelTermApp app = {0};
+
+    app_config_init(&config);
+    config.preload_enabled = FALSE;
+    config.dither_enabled = TRUE;
+    config.clear_workaround_enabled = TRUE;
+    config.work_factor = 4;
+    config.gamma = 1.75;
+    config.force_text = TRUE;
+    config.force_sixel = FALSE;
+    config.force_kitty = TRUE;
+    config.force_iterm2 = FALSE;
+
+    app.running = TRUE;
+    app.video_scale = 2.0;
+
+    app_config_apply_runtime(&app, &config);
+
+    g_assert_false(app.preload_enabled);
+    g_assert_true(app.dither_enabled);
+    g_assert_true(app.clear_workaround_enabled);
+    g_assert_cmpint(app.render_work_factor, ==, 4);
+    g_assert_cmpfloat_with_epsilon(app.gamma, 1.75, 0.0001);
+    g_assert_true(app.force_text);
+    g_assert_false(app.force_sixel);
+    g_assert_true(app.force_kitty);
+    g_assert_false(app.force_iterm2);
+    g_assert_true(app.running);
+    g_assert_cmpfloat_with_epsilon(app.video_scale, 2.0, 0.0001);
+}
+
 static void test_cli_default_config_applies_terminal_specific_precedence(AppCliFixture *fixture,
                                                                          gconstpointer user_data) {
     (void)fixture;
@@ -501,12 +539,40 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
     g_free(path);
 }
 
+static void test_cli_double_dash_preserves_positional_config_like_path(AppCliFixture *fixture,
+                                                                       gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    app_config_init(&config);
+
+    char *argv[] = {
+        "pixelterm",
+        "--",
+        "--config=gallery.txt",
+        NULL,
+    };
+
+    g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_NONE);
+    g_assert_cmpstr(path, ==, "--config=gallery.txt");
+    g_assert_true(config.preload_enabled);
+    g_assert_true(config.alt_screen_enabled);
+    g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_AUTO);
+    g_free(path);
+}
+
 void register_app_cli_tests(void) {
     g_test_add_func("/app_cli/config/runtime_xdg_after_glib_cache_prime",
                     test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime);
     add_app_cli_test("/app_cli/parse/boolean_aliases", test_cli_boolean_aliases_parse_for_preload_and_alt_screen);
     add_app_cli_test("/app_cli/parse/invalid_boolean_values", test_cli_invalid_boolean_values_return_error);
+    add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
+                     test_cli_double_dash_preserves_positional_config_like_path);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/config/apply_runtime_copies_app_fields",
+                     test_cli_apply_runtime_copies_app_owned_config_fields);
     add_app_cli_test("/app_cli/config/default_file_terminal_precedence", test_cli_default_config_applies_terminal_specific_precedence);
     add_app_cli_test("/app_cli/config/cli_overrides_loaded_values", test_cli_flags_override_loaded_config_values);
 }

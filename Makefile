@@ -113,8 +113,8 @@ TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o 
 		$(OBJDIR)/gif_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o \
 		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/preloader.o $(OBJDIR)/app_mode.o $(OBJDIR)/input_dispatch_pending_clicks.o \
 		$(OBJDIR)/input_dispatch_delete.o $(OBJDIR)/input_dispatch_core.o $(OBJDIR)/input_dispatch_key_single.o $(OBJDIR)/app_preview_shared.o \
-		$(OBJDIR)/app_media_session.o $(OBJDIR)/app_single_render.o $(OBJDIR)/media_utils.o \
-		$(OBJDIR)/video_player.o $(OBJDIR)/terminal_protocols.o $(OBJDIR)/app_cli.o $(OBJDIR)/book.o \
+		$(OBJDIR)/app_media_session.o $(OBJDIR)/app_single_render.o $(OBJDIR)/app_config_runtime.o $(OBJDIR)/media_utils.o \
+		$(OBJDIR)/video_player_clock.o $(OBJDIR)/video_player_debug.o $(OBJDIR)/video_player_seek.o $(OBJDIR)/video_player.o $(OBJDIR)/terminal_protocols.o $(OBJDIR)/app_cli.o $(OBJDIR)/book.o \
 		$(OBJDIR)/app_startup.o
 FILE_MANAGER_TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/app_core.o $(OBJDIR)/app_mode.o \
 		$(OBJDIR)/app_file_manager.o

@@ -338,6 +338,42 @@ static void test_toggle_hidden_preserves_visible_selection(void) {
     g_free(dir);
 }
 
+static void test_toggle_hidden_clamps_selection_when_hidden_entry_disappears_after_preview_return(void) {
+    gchar *dir = create_temp_dir();
+    gchar *a_png = write_file_in_dir(dir, "a.png", k_png_data, sizeof(k_png_data));
+    gchar *b_png = write_file_in_dir(dir, "b.png", k_png_data, sizeof(k_png_data));
+    gchar *hidden_png = write_file_in_dir(dir, ".hidden.png", k_png_data, sizeof(k_png_data));
+    PixelTermApp app = {0};
+
+    init_file_manager_app(&app, dir, 24);
+    app.show_hidden_files = TRUE;
+    app.return_to_mode = RETURN_MODE_PREVIEW;
+    app.current_directory = g_strdup(dir);
+    app.image_files = g_list_append(app.image_files, g_strdup(a_png));
+    app.image_files = g_list_append(app.image_files, g_strdup(b_png));
+    app.total_images = 2;
+    app.current_index = 0;
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    g_assert_cmpstr(selected_path(&app), ==, a_png);
+    g_assert_cmpint(app_file_manager_select_path(&app, hidden_png), ==, ERROR_NONE);
+    g_assert_cmpstr(selected_path(&app), ==, hidden_png);
+
+    g_assert_cmpint(app_file_manager_toggle_hidden(&app), ==, ERROR_NONE);
+    g_assert_false(app.show_hidden_files);
+    g_assert_cmpint(app.file_manager.entries_count, ==, 3);
+    g_assert_cmpstr(selected_path(&app), ==, b_png);
+    g_assert_cmpint(app.file_manager.selected_entry, ==, 2);
+
+    cleanup_file_manager_app(&app);
+    g_list_free_full(app.image_files, g_free);
+    g_free(app.current_directory);
+    g_free(a_png);
+    g_free(b_png);
+    g_free(hidden_png);
+    g_free(dir);
+}
+
 static void test_navigation_wraps_and_clamps_scroll_at_paging_boundaries(void) {
     gchar *dir = create_temp_dir();
     PixelTermApp app = {0};
@@ -411,6 +447,8 @@ int main(int argc, char **argv) {
                     test_refresh_preserves_explicit_parent_selection);
     g_test_add_func("/app_file_manager/toggle_hidden/preserves_visible_selection",
                     test_toggle_hidden_preserves_visible_selection);
+    g_test_add_func("/app_file_manager/toggle_hidden/clamps_selection_when_hidden_entry_disappears_after_preview_return",
+                    test_toggle_hidden_clamps_selection_when_hidden_entry_disappears_after_preview_return);
     g_test_add_func("/app_file_manager/navigation/wraps_and_clamps_scroll_at_paging_boundaries",
                     test_navigation_wraps_and_clamps_scroll_at_paging_boundaries);
     g_test_add_func("/app_file_manager/enter/child_directory_defaults_to_first_real_entry",

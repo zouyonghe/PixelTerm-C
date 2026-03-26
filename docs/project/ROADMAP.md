@@ -1,7 +1,7 @@
 # PixelTerm-C Roadmap
 
 ## Current Status
-PixelTerm-C is production-ready as of v1.7.9. Current work is focused on
+PixelTerm-C is production-ready as of v1.7.10. Current work is focused on
 compatibility hardening, keeping the validated regression baseline documented,
 release polish, and clearer user-facing documentation for terminal-specific
 behavior without reopening protocol-detection redesign during this phase.

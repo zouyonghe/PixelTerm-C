@@ -605,7 +605,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
 
     PreviewLayout layout = app_preview_calculate_layout(app);
-    app_preview_adjust_scroll(app, &layout);
+    app_preview_normalize_state(app, &layout);
     app_preview_queue_preloads(app, &layout);
 
     if (app->needs_screen_clear) {

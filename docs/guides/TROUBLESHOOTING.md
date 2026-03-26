@@ -38,6 +38,7 @@ xattr -dr com.apple.quarantine /usr/local/bin/pixelterm
 - PDF, EPUB, and CBZ support only work in builds that include MuPDF support.
 - When building from source, install MuPDF before running `make`.
 - If book support is missing in your current build, images and videos can still work normally.
+- A directory path is not a valid book file. Directories open in file manager mode, and attempts to open a directory as a book are rejected like a missing or invalid book path.
 
 ## A config file seems to be ignored
 
@@ -57,6 +58,12 @@ Video playback is video-only. Audio output is not part of the current feature se
 ## The path behavior is not what I expected
 
 - If the path does not exist or is inaccessible, PixelTerm-C exits with an error.
+- If the path itself starts with `-`, use `--` to stop option parsing first, for example: `pixelterm -- --config=gallery.txt`
 - If you pass a directory, PixelTerm-C loads that directory and starts in file manager mode.
-- If you pass a regular file that is not a supported media file, PixelTerm-C falls back to the file's parent directory and opens file manager mode there.
+- If you pass a regular file that is not a supported media file, PixelTerm-C falls back to the file's canonical parent directory and opens file manager mode there.
 - If you run `pixelterm` with no path, it starts in file manager mode for the current directory.
+
+## File manager or preview grid selection seems off
+
+- Recent builds are more defensive when hidden-file toggles or preview-grid zoom/navigation start from a stale selection or scroll position.
+- Those flows now normalize invalid state before continuing, but broader UI and protocol redesign work is still later roadmap work.

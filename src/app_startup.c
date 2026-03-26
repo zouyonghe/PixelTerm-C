@@ -55,7 +55,8 @@ ErrorCode app_startup_classify_path(const char *requested_path,
         return ERROR_NONE;
     }
 
+    g_autofree gchar *parent_dir = g_path_get_dirname(path);
     decision->kind = APP_STARTUP_PATH_PARENT_DIRECTORY;
-    decision->path = g_path_get_dirname(path);
+    decision->path = g_canonicalize_filename(parent_dir, NULL);
     return ERROR_NONE;
 }

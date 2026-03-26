@@ -89,7 +89,7 @@ BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
         book_set_error(out_error, ERROR_FILE_NOT_FOUND);
         return NULL;
     }
-    if (!file_exists(filepath)) {
+    if (!g_file_test(filepath, G_FILE_TEST_IS_REGULAR)) {
         book_set_error(out_error, ERROR_FILE_NOT_FOUND);
         return NULL;
     }
@@ -454,7 +454,7 @@ static void book_reset_image(BookPageImage *image) {
 }
 
 BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
-    if (!filepath || filepath[0] == '\0' || !file_exists(filepath)) {
+    if (!filepath || filepath[0] == '\0' || !g_file_test(filepath, G_FILE_TEST_IS_REGULAR)) {
         book_set_error(out_error, ERROR_FILE_NOT_FOUND);
         return NULL;
     }

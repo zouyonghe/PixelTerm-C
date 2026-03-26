@@ -36,6 +36,7 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
 - Book TOC interaction/render logic has been split into `src/app_book_toc.c`.
 - Book page render logic has been split into `src/app_book_page_render.c`.
 - Shared terminal UI helper logic has been centralized in `src/ui_render_utils.c` (sync-update wrappers, centered help rendering, clear-area helpers, and kitty image cleanup), reducing duplicated rendering glue across modes.
+- Runtime config application now uses `include/app_config_runtime.h` / `src/app_config_runtime.c`, so `src/main.c` no longer hand-copies `AppConfig` fields into `PixelTermApp` before startup.
 - Input dispatch now uses split helpers:
   - `src/input_dispatch_delete.c` for delete prompt layout, prompt rendering, and delete confirmation/delete-refresh flow,
   - `src/input_dispatch_media.c` for media checks (single-mode video/animated detection),
@@ -54,6 +55,10 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
   - `PreviewState.selected_link` / `selected_link_index`
   - `FileBrowser.current_index`
   This reduces repeated linear random-access calls in high-frequency render/input paths.
+- Video playback internals now use focused internal seams:
+  - `include/video_player_clock_internal.h` / `src/video_player_clock.c` for fallback PTS tracking and current-position clock helpers.
+  - `include/video_player_seek_internal.h` / `src/video_player_seek.c` for seek-target calculation, seek-preview decode/render flow, and preview-related test hooks.
+  - `include/video_player_debug_internal.h` / `src/video_player_debug.c` for debug-log filtering/output, stream lifecycle, queue-wait test hooks, and seek test hooks.
 
 ### Main Application Structure
 
@@ -85,6 +90,8 @@ typedef struct {
 ```
 
 `InputState` uses three `ClickTracker` instances (`single_click`, `preview_click`, `file_manager_click`) to keep click timeout handling consistent across modes.
+
+These seams are intentionally incremental: broader `PixelTermApp` state-structure redesign and terminal protocol/probe redesign remain later work after the current maintainability boundaries settle.
 
 ### Memory Management Strategy
 

@@ -108,6 +108,30 @@ static void remove_path(gpointer data) {
     g_free(data);
 }
 
+static void remove_dir(gpointer data) {
+    if (!data) {
+        return;
+    }
+
+    g_rmdir((const gchar *)data);
+    g_free(data);
+}
+
+static gchar *make_temp_dir(void) {
+    GError *error = NULL;
+    gchar *path = g_dir_make_tmp("pixelterm-book-dir-XXXXXX", &error);
+    if (!path) {
+        g_error("Failed to create temp directory: %s",
+                error ? error->message : "unknown error");
+    }
+    if (error) {
+        g_error_free(error);
+    }
+
+    g_test_queue_destroy(remove_dir, g_strdup(path));
+    return path;
+}
+
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
     gchar *template = g_strdup_printf("%s/pixelterm-book-test-XXXXXX", g_get_tmp_dir());
     int fd = g_mkstemp(template);
@@ -180,6 +204,15 @@ static void test_book_open_reports_missing_path(void) {
     g_assert_cmpint(error, ==, ERROR_FILE_NOT_FOUND);
 
     g_free(missing_path);
+}
+
+static void test_book_open_rejects_directory_path(void) {
+    ErrorCode error = ERROR_NONE;
+    gchar *dir_path = make_temp_dir();
+    BookDocument *doc = book_open(dir_path, &error);
+
+    g_assert_null(doc);
+    g_assert_cmpint(error, ==, ERROR_FILE_NOT_FOUND);
 }
 
 static void test_book_open_rejects_invalid_book_bytes(void) {
@@ -268,6 +301,7 @@ static void test_book_fallback_page_image_free_frees_pixels(void) {
 void register_book_tests(void) {
     g_test_add_func("/book/open/null_path", test_book_open_rejects_null_path);
     g_test_add_func("/book/open/missing_path", test_book_open_reports_missing_path);
+    g_test_add_func("/book/open/directory_path", test_book_open_rejects_directory_path);
     g_test_add_func("/book/open/invalid_book_bytes", test_book_open_rejects_invalid_book_bytes);
     g_test_add_func("/book/null_helpers_are_safe", test_book_null_helpers_are_safe);
     g_test_add_func("/book/fallback/page_image_free/frees_pixels",

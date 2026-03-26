@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.9-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.10-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
@@ -73,6 +73,11 @@ pixelterm /path/to/directory
 # Show CLI help
 pixelterm --help
 ```
+
+Notes:
+
+- If the path you want to open starts with `-`, use `--` first so PixelTerm-C treats it as a path: `pixelterm -- --config=gallery.txt`
+- If you point PixelTerm-C at an unsupported regular file, it falls back to that file's canonical parent directory in file manager mode.
 
 For more usage examples and options, see [USAGE.md](docs/guides/USAGE.md).
 

@@ -4,15 +4,16 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.7.9 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, and isolated file-manager/preview-grid suites.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.10 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid suites, and the newer video-player/app-config maintainability seams.
 
 ## Technical Architecture
 
 ### Core Components
 
-#### 1. Main Application (src/main.c)
+#### 1. Main Application (src/main.c, include/app_config_runtime.h, src/app_config_runtime.c)
 - Application entry point
-- Command line argument parsing
+- Command line argument parsing and startup path classification
+- Runtime config application via `app_config_apply_runtime()`
 - Main event loop
 
 #### 2. Core Application (include/app.h, include/app_state.h, src/app.c, src/app_core.c)
@@ -90,6 +91,20 @@ Public API declarations are now split by module:
 - Animated GIF decoding and playback
 - Frame timing and render window management
 
+#### 8.5 Video Player Core (include/video_player.h, src/video_player.c)
+- FFmpeg-backed playback coordination, decode/render queues, and render scheduling
+- Delegates clock, seek-preview, and debug/test helpers to focused internal modules
+
+#### 8.6 Video Player Clock Helpers (include/video_player_clock_internal.h, src/video_player_clock.c)
+- Fallback PTS tracking and current-position clock helpers shared by playback and seek flows
+
+#### 8.7 Video Player Seek Helpers (include/video_player_seek_internal.h, src/video_player_seek.c)
+- Seek target clamping plus seek-preview decode/render helpers
+- Preview-test hooks and decode-attempt controls used by the video test suite
+
+#### 8.8 Video Player Debug/Test Helpers (include/video_player_debug_internal.h, src/video_player_debug.c)
+- Debug log gating/output, stream lifecycle, queue-wait hooks, and seek test hooks
+
 #### 9. Input Handler (include/input.h, src/input.c)
 - Keyboard input processing
 - Terminal mode management
@@ -152,6 +167,8 @@ For a structured refactor plan with safe, incremental steps, see:
 
 - `docs/project/REFACTORING_PLAN.md`
 - `docs/project/archive/refactor-plan.md` (archived execution-focused companion plan)
+
+The current pass intentionally limits itself to maintainability seams around existing behavior; broader `PixelTermApp` state-bucket redesign and terminal protocol/probe redesign remain later work.
 
 Performance changes should follow the workflow notes in this section and keep benchmarks consistent across runs.
 
@@ -297,6 +314,7 @@ make ARCH=aarch64
 - Keep troubleshooting and compatibility documentation aligned with actual behavior
 
 ### Long Term (Next year)
+- Revisit broader `PixelTermApp` state-bucket redesign only after the current helper seams and regression coverage are stable
 - Redesign terminal capability/protocol detection and remote-session fallbacks after the current baseline is stable
 - Add safer terminal-specific presets and default overrides
 - Improve performance diagnostics and render-path profiling

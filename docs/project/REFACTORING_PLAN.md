@@ -1,32 +1,37 @@
 # PixelTerm-C Refactoring Plan
 
 ## Goals
-- Reduce file size and responsibility overload in `src/input_dispatch_core.c` and `src/app_preview_grid.c`.
-- Keep behavior identical while isolating the remaining internal helpers.
-- Make performance work easier by separating routing/prompt logic from render-only code.
+- Reduce file size and responsibility overload in the remaining coordinator-heavy files without changing behavior.
+- Keep new maintainability seams around video playback internals and startup/runtime config application explicit and documented.
+- Keep broader `PixelTermApp` state-structure redesign and terminal protocol redesign out of this pass and defer them until the current seams settle.
 
 ## Current Hotspots
 - `src/input_dispatch_core.c` (~408 LOC) is now a narrower router, but it still coordinates mode dispatch and shared event flow.
 - `src/app_preview_grid.c` (~716 LOC) now focuses on preview interaction/state, but it remains one of the larger mode-specific files.
-- `src/app.c` and `src/main.c` are now thin coordination layers compared with the earlier monoliths.
+- `src/video_player.c` remains the main playback coordinator even after the clock, seek-preview, and debug/test helper splits.
+- `src/app.c` and `src/main.c` are now thin coordination layers compared with the earlier monoliths; `src/main.c` now delegates runtime config application to `src/app_config_runtime.c` instead of copying fields inline.
 - Shared click tracking already lives in `InputState`, so the next steps are selective follow-up cleanup and regression coverage rather than another large state redesign.
 
-## Proposed Module Split (Low-Risk)
+## Landed Maintainability Seams
 
-### 1. Input Dispatch Delete Flow
-- `src/input_dispatch_delete.c` + `include/input_dispatch_delete_internal.h`
-- Delete prompt layout/clear helpers and delete confirmation flow.
+### 1. Runtime Config Application
+- `src/app_config_runtime.c` + `include/app_config_runtime.h`
+- Centralizes `AppConfig` -> `PixelTermApp` runtime field application before `app_initialize()`.
 
-### 2. Pending Click Processing
-- `src/input_dispatch_pending_clicks.c` + `include/input_dispatch_pending_clicks_internal.h`
-- Click timeout checks and mode-specific single-click dispatch.
+### 2. Video Player Clock Helpers
+- `src/video_player_clock.c` + `include/video_player_clock_internal.h`
+- Fallback PTS tracking and current-position clock helpers used by playback/seek flows.
 
-### 3. Preview Render Helpers
-- `src/app_preview_render.c` + `include/app_preview_render_internal.h`
-- Preview info/status rendering, filename redraw, border draw/clear, and shared grid cell rendering callback.
+### 3. Video Player Seek Helpers
+- `src/video_player_seek.c` + `include/video_player_seek_internal.h`
+- Seek target clamping plus seek-preview decode/render helpers and preview-test controls.
 
-### 4. Documentation Sync
-- Keep `README.md`, `docs/project/PROJECT_STATUS.md`, and `docs/development/DEVELOPMENT.md` aligned with release `v1.7.8`, `bin/pixelterm`, and the landed repository layout.
+### 4. Video Player Debug/Test Helpers
+- `src/video_player_debug.c` + `include/video_player_debug_internal.h`
+- Debug logging lifecycle/filtering plus queue-wait and seek test hooks.
+
+### 5. Documentation Sync
+- Keep `docs/development/ARCHITECTURE.md`, `docs/development/DEVELOPMENT.md`, and this plan aligned with the landed seams.
 
 ## Suggested State Decomposition
 State grouping is partially complete today:
@@ -36,7 +41,7 @@ State grouping is partially complete today:
 - `InputState`: mouse and click tracking (see below).
 - `AsyncState`: deferred render/image request state.
 
-Render/media/UI flags still live directly on `PixelTermApp`, so this pass focuses on helper extraction rather than another state-layout change.
+Render/media/UI flags still live directly on `PixelTermApp`, and the broader state-layout redesign is intentionally deferred. This pass focuses on helper extraction rather than another state-layout change.
 
 ## Click Handling Refactor
 Shared click tracking is already in place:
@@ -62,19 +67,23 @@ This keeps timeouts consistent across modes. With the pending-click extraction n
 1. **Extract delete flow**: move delete prompt/delete confirmation helpers out of `src/input_dispatch_core.c`.
 2. **Extract pending clicks**: move pending-click processing out of `src/input_dispatch_core.c`.
 3. **Extract preview render helpers**: move render-only preview helpers out of `src/app_preview_grid.c`.
-4. **Refresh architecture docs**: update module-boundary docs after the code moves land.
+4. **Extract runtime config application**: move the `AppConfig` -> `PixelTermApp` field copy out of `src/main.c` into `src/app_config_runtime.c`.
+5. **Extract video player helper seams**: move clock, seek-preview, and debug/test helpers out of `src/video_player.c` into focused internal modules.
+6. **Later work**: revisit broader `PixelTermApp` state decomposition and terminal protocol redesign only after the current seams and coverage baseline are stable.
 
 Each step should compile and keep tests passing.
 
 ## Risk and Guardrails
 - Avoid renaming public `app_*` APIs until all call sites are migrated.
 - Keep `PixelTermApp` layout stable until all modules compile.
+- Do not fold larger state-bucket or protocol redesign work into these helper extractions.
 - Use `make test` and manual smoke tests after each extraction.
 - Preserve behavior in book mode and file manager, which are sensitive to layout calculations.
 
 ## Documentation Updates
 - Keep build/install text aligned with `Makefile` (`bin/pixelterm`, `make install` -> `$(PREFIX)/bin/pixelterm`).
 - After each extraction, update `docs/development/ARCHITECTURE.md` and the companion refactor notes with the landed module boundaries.
+- Keep doc language explicit that the current pass is about helper seams, not a full state-layout or protocol redesign.
 
 ## Progress Snapshot (2026-03-11)
 - Completed:
@@ -113,6 +122,13 @@ Each step should compile and keep tests passing.
     - `src/app_book_page_render.c` for single/double-page book rendering flow.
   - Reduced duplication by moving kitty image cleanup helper into `src/ui_render_utils.c`.
   - Reduced preview/book-preview duplication by unifying shared cell-origin and border draw/clear helpers in `src/app_preview_book.c`.
+  - Extracted runtime config application from `src/main.c` into:
+    - `src/app_config_runtime.c`
+    - `include/app_config_runtime.h`
+  - Split video playback internals by responsibility into:
+    - `src/video_player_clock.c` + `include/video_player_clock_internal.h`
+    - `src/video_player_seek.c` + `include/video_player_seek_internal.h`
+    - `src/video_player_debug.c` + `include/video_player_debug_internal.h`
   - Replaced repeated pending-click fields with a shared `ClickTracker` model in `InputState`:
     - `single_click`
     - `preview_click`
@@ -131,6 +147,7 @@ Each step should compile and keep tests passing.
   - Removed remaining `g_list_nth*` / `g_list_length()` hotspots from `src/app.c`, `src/app_preview_book.c`, `src/app_file_manager.c`, `src/preloader.c`, `src/browser.c`, and `src/input_dispatch_key_file_manager.c`.
   - Normalized mode guard error semantics: mode mismatch now returns `ERROR_INVALID_ARGS` in mode-scoped file-manager/preview/book-preview handlers.
   - Hardened CI/build gates (`cppcheck` non-optional, `-Werror` + tests).
+  - Explicitly deferred broader `PixelTermApp` state-structure redesign and terminal capability/protocol redesign to later follow-up work.
 - Verification baseline:
   - `make`
   - `make test`

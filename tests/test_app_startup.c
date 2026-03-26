@@ -175,6 +175,40 @@ static void test_classify_path_non_media_file_falls_back_to_parent_directory(voi
     g_free(decision.path);
 }
 
+static void test_classify_relative_non_media_file_returns_canonical_parent_directory(void) {
+    static const guint8 k_text[] = {'n', 'o', 't', 'e'};
+    AppStartupPathDecision decision = {0};
+    gchar *original_dir = g_get_current_dir();
+    gchar *temp_dir = make_temp_dir();
+    gchar *nested_dir = g_build_filename(temp_dir, "nested", NULL);
+    gchar *expected_dir = NULL;
+    gchar *current_dir = NULL;
+    gchar *text_path = NULL;
+
+    if (g_mkdir(nested_dir, 0700) != 0) {
+        g_error("Failed to create nested directory: %s", nested_dir);
+    }
+
+    g_assert_cmpint(g_chdir(temp_dir), ==, 0);
+    current_dir = g_get_current_dir();
+    expected_dir = g_build_filename(current_dir, "nested", NULL);
+    text_path = write_temp_file(nested_dir, "note.txt", k_text, sizeof(k_text));
+    (void)text_path;
+
+    ErrorCode error = app_startup_classify_path("nested/note.txt", &decision);
+
+    g_assert_cmpint(error, ==, ERROR_NONE);
+    g_assert_cmpint(decision.kind, ==, APP_STARTUP_PATH_PARENT_DIRECTORY);
+    g_assert_cmpstr(decision.path, ==, expected_dir);
+
+    g_assert_cmpint(g_chdir(original_dir), ==, 0);
+    g_free(current_dir);
+    g_free(expected_dir);
+    g_free(nested_dir);
+    g_free(original_dir);
+    g_free(decision.path);
+}
+
 void register_app_startup_tests(void) {
     g_test_add_func("/app_startup/classify/no_path",
                     test_classify_path_without_argument_uses_current_directory);
@@ -188,4 +222,6 @@ void register_app_startup_tests(void) {
                     test_classify_path_media_returns_media_target);
     g_test_add_func("/app_startup/classify/non_media_parent_directory",
                     test_classify_path_non_media_file_falls_back_to_parent_directory);
+    g_test_add_func("/app_startup/classify/relative_non_media_parent_directory",
+                    test_classify_relative_non_media_file_returns_canonical_parent_directory);
 }

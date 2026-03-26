@@ -964,6 +964,7 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
 
     // Remember current selection path
     gchar *prev_selected = NULL;
+    gint prev_selected_entry = app->file_manager.selected_entry;
     if (app->file_manager.selected_entry >= 0 && app->file_manager.entries) {
         GList *node = app_file_manager_get_selected_node(app);
         gchar *path = node ? (gchar*)node->data : NULL;
@@ -980,6 +981,7 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
     }
 
     // Restore selection to the same path if still visible
+    gboolean restored = FALSE;
     if (prev_selected) {
         gint idx = 0;
         for (GList *cur = app->file_manager.entries; cur; cur = cur->next, idx++) {
@@ -988,10 +990,24 @@ ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
                 app->file_manager.selected_entry = idx;
                 app->file_manager.selected_link = cur;
                 app->file_manager.selected_link_index = idx;
+                restored = TRUE;
                 break;
             }
         }
         g_free(prev_selected);
+    }
+
+    if (!restored && app->file_manager.entries_count > 0) {
+        gint target_index = CLAMP(prev_selected_entry, 0, app->file_manager.entries_count - 1);
+        GList *target_node = app_file_manager_find_link_with_hint(app,
+                                                                  target_index,
+                                                                  app->file_manager.selected_link,
+                                                                  app->file_manager.selected_link_index);
+        if (target_node) {
+            app->file_manager.selected_entry = target_index;
+            app->file_manager.selected_link = target_node;
+            app->file_manager.selected_link_index = target_index;
+        }
     }
 
     // Ensure scroll offset keeps selection visible
