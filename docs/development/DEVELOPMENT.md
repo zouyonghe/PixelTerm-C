@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.7.8 with repeated video seek stability, input-queue recovery, and expanded seek-failure regression coverage.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.9 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, and isolated file-manager/preview-grid suites.
 
 ## Technical Architecture
 
@@ -224,11 +224,17 @@ make ARCH=aarch64
 ## Testing Strategy
 
 ### Unit Tests
-- `make test` covers common utilities plus browser, renderer, GIF player, and app-mode transitions
-- Targeted automated coverage should be added when refactors touch routing, rendering, or state helpers
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`
+- `bin/pixelterm-tests` directly covers common utilities plus browser, renderer, GIF player, terminal protocol helpers, CLI/startup paths, app-mode transitions, and book core helpers
+- `bin/pixelterm-file-manager-tests` and `bin/pixelterm-preview-grid-tests` keep those mode-specific suites isolated from the main test linker graph
+- Targeted automated coverage should still be added when refactors touch routing, rendering, or state helpers outside the current baseline
 
 ### Integration Tests
-- Manual end-to-end testing in supported terminals
+- Manual end-to-end testing in supported terminals is still required for real protocol/render behavior
+
+### CI Baseline
+- Linux CI installs MuPDF, validates `pkg-config --modversion mupdf` and `pkg-config --libs mupdf`, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make debug`
+- Pull request macOS CI runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make debug`
 
 ### Performance Tests
 - Startup time measurement
@@ -236,9 +242,12 @@ make ARCH=aarch64
 - Memory usage profiling
 
 ### Verification Baseline
-- `make`
-- `make test`
-- `make EXTRA_CFLAGS=-Werror test`
+- Run these as fresh builds when switching flag sets; the current Makefile reuses existing objects unless you clean first.
+- `make clean && make`
+- `make clean && make test`
+- `make clean && make EXTRA_CFLAGS=-Werror`
+- `make clean && make EXTRA_CFLAGS=-Werror test`
+- `make debug` (`debug` already starts from `clean`)
 
 ## Code Style Guidelines
 
@@ -283,11 +292,12 @@ make ARCH=aarch64
 ## Future Enhancements
 
 ### Short Term (Next 6 months)
-- Expand regression coverage around video seek/protocol switching and preview/book flows
-- Improve terminal capability detection and remote-session fallbacks
+- Expand regression coverage around video seek and remaining preview/book flows
+- Keep protocol behavior documentation and troubleshooting aligned with the current detection and override paths
 - Keep troubleshooting and compatibility documentation aligned with actual behavior
 
 ### Long Term (Next year)
+- Redesign terminal capability/protocol detection and remote-session fallbacks after the current baseline is stable
 - Add safer terminal-specific presets and default overrides
 - Improve performance diagnostics and render-path profiling
 - Continue packaging and distribution polish for supported platforms

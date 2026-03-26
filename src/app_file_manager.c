@@ -653,6 +653,27 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
         return ERROR_INVALID_ARGS;
     }
 
+    gboolean had_entries = app->file_manager.entries != NULL;
+    gchar *previous_directory = NULL;
+    if (had_entries && app->file_manager.entries && app->file_manager.entries->data) {
+        gchar *entry_dir = g_path_get_dirname((const gchar *)app->file_manager.entries->data);
+        previous_directory = g_canonicalize_filename(entry_dir, NULL);
+        g_free(entry_dir);
+    } else if (app->file_manager.directory) {
+        previous_directory = g_canonicalize_filename(app->file_manager.directory, NULL);
+    }
+    gchar *previous_selection = NULL;
+    gint previous_selected_entry = app->file_manager.selected_entry;
+    if (app->return_to_mode == RETURN_MODE_NONE &&
+        app->file_manager.entries &&
+        app->file_manager.selected_entry >= 0) {
+        GList *selected_node = app_file_manager_get_selected_node(app);
+        gchar *selected_path = selected_node ? (gchar*)selected_node->data : NULL;
+        if (selected_path) {
+            previous_selection = g_strdup(selected_path);
+        }
+    }
+
     // Clear existing entries
     if (app->file_manager.entries) {
         g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
@@ -674,8 +695,17 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     gchar *current_dir = g_canonicalize_filename(base_dir_dup, NULL);
     g_free(base_dir_dup);
     if (!current_dir) {
+        g_free(previous_directory);
+        g_free(previous_selection);
         return ERROR_FILE_NOT_FOUND;
     }
+
+    gboolean same_directory = previous_directory &&
+                              g_strcmp0(previous_directory, current_dir) == 0;
+    gboolean preserve_selection = same_directory &&
+                                  app->return_to_mode == RETURN_MODE_NONE &&
+                                  had_entries;
+    g_free(previous_directory);
 
     // Persist canonical directory for consistent rendering/navigation
     g_free(app->file_manager.directory);
@@ -684,6 +714,7 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     // Open directory
     GDir *dir = g_dir_open(current_dir, 0, NULL);
     if (!dir) {
+        g_free(previous_selection);
         return ERROR_FILE_NOT_FOUND;
     }
 
@@ -759,8 +790,40 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     app->file_manager.scroll_offset = 0;
     app_file_manager_select_current_image(app);
 
+    if (preserve_selection && app->file_manager.entries) {
+        gboolean restored = FALSE;
+        if (previous_selection) {
+            gint idx = 0;
+            for (GList *cur = app->file_manager.entries; cur; cur = cur->next, idx++) {
+                gchar *path = (gchar*)cur->data;
+                if (g_strcmp0(path, previous_selection) == 0) {
+                    app->file_manager.selected_entry = idx;
+                    app->file_manager.selected_link = cur;
+                    app->file_manager.selected_link_index = idx;
+                    restored = TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (!restored) {
+            gint target_index = CLAMP(previous_selected_entry, 0, app->file_manager.entries_count - 1);
+            GList *target_node = app_file_manager_find_link_with_hint(app,
+                                                                      target_index,
+                                                                      app->file_manager.selected_link,
+                                                                      app->file_manager.selected_link_index);
+            if (target_node) {
+                app->file_manager.selected_entry = target_index;
+                app->file_manager.selected_link = target_node;
+                app->file_manager.selected_link_index = target_index;
+            }
+        }
+    }
+
+    g_free(previous_selection);
+
     // Default: avoid selecting ".." when entering a directory; pick the first real entry.
-    if (app->file_manager.entries && app->file_manager.selected_entry == 0) {
+    if (!preserve_selection && app->file_manager.entries && app->file_manager.selected_entry == 0) {
         const gchar *first = (const gchar*)app->file_manager.entries->data;
         if (first && app->file_manager.entries->next) {
             gchar *base = g_path_get_basename(first);
@@ -772,6 +835,15 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
                 app->file_manager.selected_link_index = app->file_manager.selected_link ? 1 : -1;
             }
         }
+    }
+
+    if (preserve_selection && app->file_manager.entries) {
+        gint col_width = 0;
+        gint cols = 0;
+        gint visible_rows = 0;
+        gint total_rows = 0;
+        app_file_manager_layout(app, -1, &col_width, &cols, &visible_rows, &total_rows);
+        app_file_manager_adjust_scroll(app, -1, cols, visible_rows);
     }
 
     return ERROR_NONE;

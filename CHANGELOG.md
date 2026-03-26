@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.9: Verification baseline expansion and CI hardening.
+    - **Testing**: Add direct automated coverage for terminal protocol helpers, CLI/startup behavior, and book core paths so more shipped flows are exercised without manual setup.
+    - **Navigation**: Add isolated file-manager and preview-grid state suites, and fix refresh, selection, scroll, and normalization edge cases those regressions exposed.
+    - **Stability**: Extract startup path classification into a testable helper, tighten book/file-manager behavior around missing or invalid inputs, and reduce noisy invalid-book error output during verification.
+    - **CI**: Validate MuPDF-backed warning-clean builds plus debug AddressSanitizer builds on Linux, and add pull-request macOS build/test/debug coverage.
+
 - v1.7.8: Repeated video seek stability and input-queue recovery.
     - **Video Playback**: Keep repeated left/right seek actions moving from the latest seek target during playback so long key holds no longer jump back to an earlier position.
     - **Input Handling**: Drain queued repeated seek keys one step at a time and preserve unconsumed input when a later seek fails, so follow-up keyboard and mouse actions stay responsive.

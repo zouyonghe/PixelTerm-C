@@ -25,6 +25,11 @@ static void book_mupdf_warn(void *user, const char *message) {
     (void)message;
 }
 
+static void book_mupdf_error(void *user, const char *message) {
+    (void)user;
+    (void)message;
+}
+
 static gboolean book_should_suppress_warnings(const char *filepath) {
     const char *ext = get_file_extension(filepath);
     return ext && g_ascii_strcasecmp(ext, ".epub") == 0;
@@ -80,7 +85,11 @@ static void book_set_error(ErrorCode *out_error, ErrorCode value) {
 
 BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
     book_set_error(out_error, ERROR_NONE);
-    if (!filepath) {
+    if (!filepath || filepath[0] == '\0') {
+        book_set_error(out_error, ERROR_FILE_NOT_FOUND);
+        return NULL;
+    }
+    if (!file_exists(filepath)) {
         book_set_error(out_error, ERROR_FILE_NOT_FOUND);
         return NULL;
     }
@@ -90,6 +99,7 @@ BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
         book_set_error(out_error, ERROR_MEMORY_ALLOC);
         return NULL;
     }
+    fz_set_error_callback(ctx, book_mupdf_error, NULL);
     fz_set_warning_callback(ctx, book_mupdf_warn, NULL);
 
     fz_document *doc = NULL;
@@ -444,8 +454,12 @@ static void book_reset_image(BookPageImage *image) {
 }
 
 BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
+    if (!filepath || filepath[0] == '\0' || !file_exists(filepath)) {
+        book_set_error(out_error, ERROR_FILE_NOT_FOUND);
+        return NULL;
+    }
+
     book_set_error(out_error, ERROR_INVALID_IMAGE);
-    (void)filepath;
     return NULL;
 }
 
@@ -479,6 +493,12 @@ ErrorCode book_render_page(BookDocument *doc,
 }
 
 void book_page_image_free(BookPageImage *image) {
+    if (!image) {
+        return;
+    }
+    if (image->pixels) {
+        g_free(image->pixels);
+    }
     book_reset_image(image);
 }
 

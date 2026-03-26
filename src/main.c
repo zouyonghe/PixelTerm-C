@@ -10,6 +10,7 @@
 #include <glib.h>
 
 #include "app.h"
+#include "app_startup.h"
 #include "app_cli.h"
 #include "input.h"
 #include "input_dispatch.h"
@@ -29,21 +30,6 @@ static void signal_handler(int sig) {
     g_terminate_requested = 1;
     g_last_signal = sig;
 }
-// Validate path and determine if it's a file or directory
-static ErrorCode validate_path(const char *path, gboolean *is_directory) {
-    if (!path) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    *is_directory = S_ISDIR(st.st_mode);
-    return ERROR_NONE;
-}
-
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
@@ -179,6 +165,7 @@ int main(int argc, char *argv[]) {
     // Parse command line arguments
     char *path = NULL;
     AppConfig config;
+    AppStartupPathDecision startup = {0};
     app_config_init(&config);
     
     ErrorCode error = app_parse_arguments(argc, argv, &path, &config);
@@ -190,11 +177,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // If no path provided, use current directory
-    if (!path) {
-        path = g_get_current_dir();
-    }
-
     app_config_resolve_protocol(&config);
 
     // Create and initialize application
@@ -222,9 +204,8 @@ int main(int argc, char *argv[]) {
     g_app->preload_enabled = config.preload_enabled;
     g_app->clear_workaround_enabled = config.clear_workaround_enabled;
 
-    // Validate and load path
-    gboolean is_directory;
-    error = validate_path(path, &is_directory);
+    // Validate and classify startup path
+    error = app_startup_classify_path(path, &startup);
     if (error != ERROR_NONE) {
         fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", path);
         app_destroy(g_app);
@@ -232,27 +213,23 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (is_directory) {
+    g_free(path);
+    path = startup.path;
+
+    gboolean is_directory = startup.kind == APP_STARTUP_PATH_DIRECTORY;
+
+    if (startup.kind == APP_STARTUP_PATH_DIRECTORY ||
+        startup.kind == APP_STARTUP_PATH_PARENT_DIRECTORY) {
         error = app_load_directory(g_app, path);
         if (error == ERROR_NONE) {
             // Always start in file manager for directories
             error = app_enter_file_manager(g_app);
         }
     } else {
-        if (is_valid_book_file(path)) {
+        if (startup.kind == APP_STARTUP_PATH_BOOK) {
             error = app_open_book(g_app, path);
             if (error == ERROR_NONE) {
                 error = app_enter_book_page(g_app, 0);
-            }
-        } else if (!is_valid_media_file(path)) {
-            // If the file is not valid, load the directory and enter file manager
-            gchar *directory = g_path_get_dirname(path);
-            error = app_load_directory(g_app, directory);
-            g_free(directory);
-
-            if (error == ERROR_NONE) {
-                // Always start in file manager
-                error = app_enter_file_manager(g_app);
             }
         } else {
             // Load the single valid file as normal

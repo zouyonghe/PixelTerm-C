@@ -49,7 +49,13 @@ jobs:
             libavformat-dev \
             libavcodec-dev \
             libswscale-dev \
-            libavutil-dev
+            libavutil-dev \
+            libmupdf-dev
+
+      - name: Validate MuPDF pkg-config metadata
+        run: |
+          pkg-config --modversion mupdf
+          pkg-config --libs mupdf
 
       - name: Build with warnings as errors
         run: |
@@ -58,3 +64,31 @@ jobs:
       - name: Run tests
         run: |
           make EXTRA_CFLAGS=-Werror test
+
+      - name: Validate debug AddressSanitizer build
+        run: |
+          make debug
+
+  build-and-test-macos:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew install pkg-config glib gdk-pixbuf chafa ffmpeg mupdf
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Build with warnings as errors
+        run: |
+          make EXTRA_CFLAGS=-Werror
+
+      - name: Run tests
+        run: |
+          make EXTRA_CFLAGS=-Werror test
+
+      - name: Validate debug AddressSanitizer build
+        run: |
+          make debug

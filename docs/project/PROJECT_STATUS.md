@@ -1,7 +1,7 @@
 # PixelTerm-C Project Status
 
 ## Overview
-- **Current Version**: v1.7.8
+- **Current Version**: v1.7.9
 - **Status**: Production ready
 - **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf-2.0, gio-2.0, FFmpeg libs, pthread; MuPDF optional for book support
 
@@ -37,10 +37,17 @@ PixelTerm-C/
 - Dithering toggle and work-factor quality control
 
 ## Testing
-- `make test` automated coverage for core app, browser, renderer, GIF, and text utilities
-- Manual verification on supported terminals
-- Debug build targets for sanitizer-assisted runs
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`
+- `bin/pixelterm-tests` directly covers browser, renderer, GIF/text/common utilities, terminal protocol helpers, CLI/startup behavior, and book core helpers
+- Dedicated file-manager and preview-grid binaries keep those mode-specific suites isolated instead of overloading the main test binary
+- Manual verification is still required for terminal-specific rendering and protocol behavior
+- Debug build targets remain part of the verification baseline
+
+## CI Baseline
+- Linux CI installs MuPDF, validates its `pkg-config` metadata, runs warning-clean build/test checks, and exercises `make debug`
+- Pull request macOS CI runs the warning-clean build/test path and `make debug`
 
 ## Notes
 - Default source build output is `bin/pixelterm`.
 - `make install` installs `/usr/local/bin/pixelterm` by default (override with `PREFIX`/`DESTDIR`).
+- Current automated protocol coverage validates existing helper/startup behavior; broader protocol-detection redesign remains later work.

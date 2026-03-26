@@ -153,6 +153,27 @@ static void app_preview_set_selected_index(PixelTermApp *app, gint index) {
     app->preview.selected_link_index = index;
 }
 
+static void app_preview_normalize_state(PixelTermApp *app, const PreviewLayout *layout) {
+    if (!app || !layout || app->total_images <= 0) {
+        return;
+    }
+
+    gint normalized_index = app->preview.selected;
+    if (normalized_index < 0) {
+        normalized_index = 0;
+    }
+    if (normalized_index >= app->total_images) {
+        normalized_index = app->total_images - 1;
+    }
+
+    if (normalized_index != app->preview.selected ||
+        app->preview.selected_link_index != normalized_index) {
+        app_preview_set_selected_index(app, normalized_index);
+    }
+
+    app_preview_adjust_scroll(app, layout);
+}
+
 // Queue preload tasks for currently visible (and adjacent) preview cells
 static void app_preview_queue_preloads(PixelTermApp *app, const PreviewLayout *layout) {
     if (!app || !layout || !app->preloader || !app->preload_enabled) {
@@ -226,6 +247,7 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     }
 
     PreviewLayout layout = app_preview_calculate_layout(app);
+    app_preview_normalize_state(app, &layout);
     gint cols = layout.cols;
     gint rows = layout.rows;
     gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
@@ -300,6 +322,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     }
 
     PreviewLayout layout = app_preview_calculate_layout(app);
+    app_preview_normalize_state(app, &layout);
     gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
     gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
     if (total_pages <= 1) {

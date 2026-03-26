@@ -37,6 +37,17 @@ static void print_version(void) {
     printf("%s\n", APP_VERSION);
 }
 
+static void app_cli_reset_getopt_state(void) {
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    optreset = 1;
+    optind = 1;
+#else
+    optind = 0;
+#endif
+    optarg = NULL;
+    optopt = 0;
+}
+
 static gboolean parse_protocol_mode(const char *value, AppProtocolMode *out_mode) {
     if (!value || !out_mode) {
         return FALSE;
@@ -65,9 +76,12 @@ static gboolean parse_protocol_mode(const char *value, AppProtocolMode *out_mode
 }
 
 static gchar *app_default_config_path(void) {
-    const gchar *config_dir = g_get_user_config_dir();
+    const gchar *config_dir = g_getenv("XDG_CONFIG_HOME");
     if (!config_dir || config_dir[0] == '\0') {
-        config_dir = g_get_home_dir();
+        config_dir = g_getenv("HOME");
+        if (!config_dir || config_dir[0] == '\0') {
+            config_dir = g_get_home_dir();
+        }
         if (!config_dir || config_dir[0] == '\0') {
             return NULL;
         }
@@ -437,6 +451,8 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
         {"config", required_argument, 0, 1007},
         {0, 0, 0, 0}
     };
+
+    app_cli_reset_getopt_state();
 
     // Disable getopt error messages
     opterr = 0;

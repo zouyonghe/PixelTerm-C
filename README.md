@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.8-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.9-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
@@ -143,6 +143,15 @@ make CC=aarch64-linux-gnu-gcc ARCH=aarch64
 ```
 
 If MuPDF is available, book support is built in automatically. Cross-compilation is experimental and depends on matching target libraries on the host system.
+
+## Verification Baseline
+
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`.
+- The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal protocol helpers, CLI/startup behavior, and book core helpers.
+- File-manager and preview-grid flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
+- Linux CI validates MuPDF `pkg-config` metadata, runs warning-clean build/test checks, and exercises the debug build path.
+- Pull request macOS CI runs the warning-clean build/test path plus the debug build.
+- Existing protocol auto-detection remains the supported baseline today; broader protocol-detection redesign work stays on the roadmap.
 
 ## License
 
