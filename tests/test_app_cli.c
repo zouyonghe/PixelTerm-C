@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <unistd.h>
 
 static const gchar * const k_app_cli_env_keys[] = {
     "TERM_PROGRAM",
@@ -34,6 +35,13 @@ typedef struct {
     const gchar *value;
     AppProtocolMode expected_mode;
 } ProtocolCase;
+
+typedef struct {
+    char **argv;
+    gchar **path_out;
+    AppConfig *config;
+    ErrorCode error;
+} AppCliParseInvocation;
 
 typedef struct {
     const gchar *option;
@@ -329,6 +337,63 @@ static ErrorCode parse_cli_args(char *argv[], gchar **path_out, AppConfig *confi
     return app_parse_arguments(argc, argv, path_out, config);
 }
 
+static void invoke_parse_cli_args(gpointer data) {
+    AppCliParseInvocation *invocation = data;
+
+    invocation->error = parse_cli_args(invocation->argv,
+                                       invocation->path_out,
+                                       invocation->config);
+}
+
+static gchar *capture_stderr(void (*func)(gpointer), gpointer data) {
+    GError *error = NULL;
+    gchar *capture_path = NULL;
+    gint capture_fd = g_file_open_tmp("pixelterm-app-cli-stderr-XXXXXX", &capture_path, &error);
+    if (capture_fd < 0) {
+        g_error("Failed to create stderr capture file: %s",
+                error ? error->message : "unknown error");
+    }
+    if (error) {
+        g_error_free(error);
+        error = NULL;
+    }
+
+    fflush(stderr);
+    gint saved_fd = dup(STDERR_FILENO);
+    if (saved_fd < 0) {
+        close(capture_fd);
+        g_error("Failed to duplicate stderr");
+    }
+    if (dup2(capture_fd, STDERR_FILENO) < 0) {
+        close(saved_fd);
+        close(capture_fd);
+        g_error("Failed to redirect stderr");
+    }
+    close(capture_fd);
+
+    func(data);
+
+    fflush(stderr);
+    if (dup2(saved_fd, STDERR_FILENO) < 0) {
+        close(saved_fd);
+        g_error("Failed to restore stderr");
+    }
+    close(saved_fd);
+
+    gchar *captured = NULL;
+    if (!g_file_get_contents(capture_path, &captured, NULL, &error)) {
+        g_error("Failed to read stderr capture: %s",
+                error ? error->message : "unknown error");
+    }
+    if (error) {
+        g_error_free(error);
+    }
+
+    g_remove(capture_path);
+    g_free(capture_path);
+    return captured;
+}
+
 static gchar *write_temp_config_file(const gchar *contents) {
     GError *error = NULL;
     gchar *path = NULL;
@@ -457,6 +522,7 @@ static void test_cli_invalid_boolean_values_return_error(AppCliFixture *fixture,
     for (gsize i = 0; i < G_N_ELEMENTS(cases); i++) {
         AppConfig config;
         gchar *path = NULL;
+        AppCliParseInvocation invocation = {0};
         app_config_init(&config);
 
         char *argv[] = {
@@ -466,8 +532,25 @@ static void test_cli_invalid_boolean_values_return_error(AppCliFixture *fixture,
             NULL,
         };
 
-        g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_INVALID_ARGS);
+        invocation.argv = argv;
+        invocation.path_out = &path;
+        invocation.config = &config;
+
+        gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+        g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
         g_assert_null(path);
+        g_assert_nonnull(stderr_output);
+        if (strcmp(cases[i].option, "--preload") == 0) {
+            g_assert_cmpstr(stderr_output,
+                            ==,
+                            "Invalid --preload value: maybe (expected true/false)\n");
+        } else {
+            g_assert_cmpstr(stderr_output,
+                            ==,
+                            "Invalid --alt-screen value: 2 (expected true/false)\n");
+        }
+        g_free(stderr_output);
         g_free(path);
     }
 }
