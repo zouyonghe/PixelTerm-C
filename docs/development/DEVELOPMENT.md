@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.7.10 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid suites, and the newer video-player/app-config maintainability seams.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.11 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid suites, the newer video-player/app-config maintainability seams, and the layered auto-protocol resolver path.
 
 ## Technical Architecture
 
@@ -315,10 +315,10 @@ make ARCH=aarch64
 
 ### Long Term (Next year)
 - Revisit broader `PixelTermApp` state-bucket redesign only after the current helper seams and regression coverage are stable
-- Redesign terminal capability/protocol detection and remote-session fallbacks after the current baseline is stable
 - Add safer terminal-specific presets and default overrides
 - Improve performance diagnostics and render-path profiling
 - Continue packaging and distribution polish for supported platforms
+- Revisit tmux/screen passthrough and broader remote-session heuristics after the new direct-SSH policy settles
 
 ## Contributing Guidelines
 

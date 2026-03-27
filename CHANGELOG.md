@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.11: Safer auto protocol detection and SSH fallback behavior.
+    - **Protocol Detection**: Route `auto` protocol choice through a dedicated resolver instead of relying on a hardcoded probe chain.
+    - **Terminal Probing**: Demote environment matches to weak hints, add a bounded probe transport, and avoid raw-mode screen-state transitions during startup probing.
+    - **Remote Sessions**: Make direct SSH sessions conservative by default: without an affirmative hinted signal, `auto` now falls back to text with the structured reason `ssh-no-affirmative-signal`.
+    - **Docs**: Update terminal protocol support and troubleshooting guides to explain the new detection flow, SSH behavior, and manual override expectations.
+
 - v1.7.10: Path handling polish and video-player maintainability splits.
     - **CLI and Startup**: Treat paths after `--` as positional input, canonicalize unsupported-file fallback directories, and reject directory paths when opening books.
     - **Navigation Stability**: Tighten file-manager hidden-file toggling and preview-grid zoom refresh so stale selection or scroll state is normalized instead of drifting to the wrong item.
