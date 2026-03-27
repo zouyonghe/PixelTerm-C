@@ -101,6 +101,8 @@ typedef struct {
     gboolean apc_saw_esc;
 } InputHandler;
 
+typedef void (*InputRawModeObserverForTest)(InputHandler *handler, gpointer user_data);
+
 // Input handler lifecycle
 /**
  * @brief Creates a new `InputHandler` instance.
@@ -157,6 +159,11 @@ ErrorCode input_enable_raw_mode(InputHandler *handler);
  *         terminal settings cannot be restored.
  */
 ErrorCode input_disable_raw_mode(InputHandler *handler);
+void input_set_enable_raw_mode_observer_for_test(InputRawModeObserverForTest observer,
+                                                 gpointer user_data);
+void input_set_disable_raw_mode_observer_for_test(InputRawModeObserverForTest observer,
+                                                  gpointer user_data);
+void input_reset_raw_mode_observers_for_test(void);
 /**
  * @brief Enables mouse event reporting in the terminal.
  * 

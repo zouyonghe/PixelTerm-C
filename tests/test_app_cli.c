@@ -3,15 +3,23 @@
 
 #include "app_cli.h"
 #include "app_config_runtime.h"
+#include "input.h"
+#include "terminal_probe.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 
 static const gchar * const k_app_cli_env_keys[] = {
     "TERM_PROGRAM",
     "LC_TERMINAL",
     "TERMINAL_NAME",
     "TERM",
+    "SSH_CONNECTION",
+    "SSH_CLIENT",
+    "SSH_TTY",
+    "TMUX",
+    "STY",
     "XDG_CONFIG_HOME",
     NULL,
 };
@@ -38,7 +46,19 @@ typedef struct {
     gchar *value;
 } EnvVarRestore;
 
+typedef struct {
+    const gchar *response;
+    gsize response_length;
+    gsize response_offset;
+    gint64 now_us;
+    GString *writes;
+    gint enable_raw_mode_calls;
+    gint disable_raw_mode_calls;
+} AppCliProbeFixture;
+
 static gchar *g_app_cli_shared_config_root = NULL;
+
+static void queue_env_restore(const gchar *name);
 
 static void remove_path(gpointer data) {
     if (!data) {
@@ -112,6 +132,125 @@ static void restore_env_var(gpointer data) {
     g_free(saved->name);
     g_free(saved->value);
     g_free(saved);
+}
+
+static gboolean app_cli_probe_fixture_stdin_is_tty(gpointer user_data) {
+    (void)user_data;
+    return TRUE;
+}
+
+static gboolean app_cli_probe_fixture_stdout_is_tty(gpointer user_data) {
+    (void)user_data;
+    return TRUE;
+}
+
+static int app_cli_probe_fixture_tcgetattr(struct termios *termios_state, gpointer user_data) {
+    (void)user_data;
+
+    memset(termios_state, 0, sizeof(*termios_state));
+    termios_state->c_lflag = ICANON | ECHO | IEXTEN;
+    termios_state->c_iflag = BRKINT | ICRNL | INPCK | ISTRIP | IXON;
+    termios_state->c_cc[VMIN] = 1;
+    termios_state->c_cc[VTIME] = 0;
+    return 0;
+}
+
+static int app_cli_probe_fixture_tcsetattr(gint optional_actions,
+                                           const struct termios *termios_state,
+                                           gpointer user_data) {
+    (void)optional_actions;
+    (void)termios_state;
+    (void)user_data;
+    return 0;
+}
+
+static int app_cli_probe_fixture_tcflush(gint queue_selector, gpointer user_data) {
+    (void)queue_selector;
+    (void)user_data;
+    return 0;
+}
+
+static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer user_data) {
+    AppCliProbeFixture *fixture = user_data;
+
+    g_assert_nonnull(buf);
+    g_string_append_len(fixture->writes, buf, len);
+    return (ssize_t)len;
+}
+
+static gint app_cli_probe_fixture_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
+    AppCliProbeFixture *fixture = user_data;
+
+    if (!fixture->response || fixture->response_offset >= fixture->response_length) {
+        fixture->now_us += (gint64)timeout_ms * 1000;
+        return 0;
+    }
+
+    fixture->now_us += 1000;
+    return (guchar)fixture->response[fixture->response_offset++];
+}
+
+static gint64 app_cli_probe_fixture_monotonic_time_us(gpointer user_data) {
+    AppCliProbeFixture *fixture = user_data;
+    return fixture->now_us;
+}
+
+static void reset_app_cli_probe_hooks(gpointer user_data) {
+    (void)user_data;
+    terminal_probe_reset_transport_hooks_for_test();
+    input_reset_raw_mode_observers_for_test();
+}
+
+static void queue_terminal_protocol_env_restore_and_clear(void) {
+    static const gchar * const keys[] = {
+        "TERM",
+        "TERM_PROGRAM",
+        "SSH_CONNECTION",
+        "SSH_CLIENT",
+        "SSH_TTY",
+        "TMUX",
+        "STY",
+        "WEZTERM_EXECUTABLE",
+        "WEZTERM_EXECUTABLE_DIR",
+        "WEZTERM_PANE",
+        "WEZTERM_UNIX_SOCKET",
+        "KITTY_WINDOW_ID",
+        "KITTY_PID",
+        "KITTY_INSTALLATION_DIR",
+        "ITERM_SESSION_ID",
+        "LC_TERMINAL",
+        "GHOSTTY_RESOURCES_DIR",
+        "GHOSTTY_BIN_DIR",
+        "TERMINAL_NAME",
+        "EAT_SHELL_INTEGRATION_DIR",
+        "MLTERM",
+        "KONSOLE_VERSION",
+        "CTX_BACKEND",
+        "VTE_VERSION",
+        "ComSpec",
+        "COMSPEC",
+        "XTERM_VERSION",
+        NULL,
+    };
+
+    for (gsize i = 0; keys[i] != NULL; i++) {
+        queue_env_restore(keys[i]);
+        g_unsetenv(keys[i]);
+    }
+
+    g_assert_true(g_setenv("TERM", "pixelterm-test-unknown", TRUE));
+}
+
+static void app_cli_probe_fixture_enable_raw_mode(InputHandler *handler, gpointer user_data) {
+    (void)handler;
+    AppCliProbeFixture *fixture = user_data;
+    fixture->enable_raw_mode_calls++;
+}
+
+static void app_cli_probe_fixture_disable_raw_mode(InputHandler *handler, gpointer user_data) {
+    (void)handler;
+    AppCliProbeFixture *fixture = user_data;
+    fixture->disable_raw_mode_calls++;
 }
 
 static void queue_env_restore(const gchar *name) {
@@ -563,6 +702,238 @@ static void test_cli_double_dash_preserves_positional_config_like_path(AppCliFix
     g_free(path);
 }
 
+static void test_cli_protocol_resolution_auto_probe_avoids_raw_mode_transitions(AppCliFixture *fixture,
+                                                                                 gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .response = k_sixel_response,
+        .response_length = sizeof(k_sixel_response) - 1,
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_true(config.force_sixel);
+    g_assert_false(config.force_iterm2);
+    g_assert_false(config.force_kitty);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[c");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
+static void test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const gchar k_kitty_response[] = "kitty";
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .response = k_kitty_response,
+        .response_length = sizeof(k_kitty_response) - 1,
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_false(config.force_text);
+    g_assert_false(config.force_sixel);
+    g_assert_true(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
+static void test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_sixel_first_order(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .response = k_sixel_response,
+        .response_length = sizeof(k_sixel_response) - 1,
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+    g_assert_true(g_setenv("TERM_PROGRAM", "WezTerm", TRUE));
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_false(config.force_text);
+    g_assert_true(config.force_sixel);
+    g_assert_false(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[c");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
+static void test_cli_protocol_resolution_auto_uses_text_when_probe_is_inconclusive(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_true(config.force_text);
+    g_assert_false(config.force_sixel);
+    g_assert_false(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
+static void test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_signal(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .response = k_sixel_response,
+        .response_length = sizeof(k_sixel_response) - 1,
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+    g_assert_true(g_setenv("SSH_CONNECTION", "client 22 server 22", TRUE));
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_true(config.force_text);
+    g_assert_false(config.force_sixel);
+    g_assert_false(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
 void register_app_cli_tests(void) {
     g_test_add_func("/app_cli/config/runtime_xdg_after_glib_cache_prime",
                     test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime);
@@ -571,6 +942,16 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
                      test_cli_double_dash_preserves_positional_config_like_path);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_affirmative_signal_before_generic_probe_order",
+                     test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_multi_protocol_hint_keeps_local_sixel_first_order",
+                     test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_sixel_first_order);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_probe_avoids_raw_mode_transitions",
+                     test_cli_protocol_resolution_auto_probe_avoids_raw_mode_transitions);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_direct_ssh_requires_affirmative_signal",
+                     test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_signal);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_uses_text_when_probe_is_inconclusive",
+                     test_cli_protocol_resolution_auto_uses_text_when_probe_is_inconclusive);
     add_app_cli_test("/app_cli/config/apply_runtime_copies_app_fields",
                      test_cli_apply_runtime_copies_app_owned_config_fields);
     add_app_cli_test("/app_cli/config/default_file_terminal_precedence", test_cli_default_config_applies_terminal_specific_precedence);

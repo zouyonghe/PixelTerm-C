@@ -14,7 +14,9 @@ typedef struct {
 } TerminalProtocolHint;
 
 const TerminalProtocolHint* terminal_protocol_hints_get(gsize *count);
+const TerminalProtocolHint* terminal_protocol_env_weak_candidate(void);
 const TerminalProtocolHint* terminal_protocol_env_match(void);
+gboolean terminal_session_is_direct_ssh(void);
 gboolean terminal_env_supports_kitty(void);
 gboolean terminal_env_supports_iterm2(void);
 gboolean terminal_env_supports_sixel(void);

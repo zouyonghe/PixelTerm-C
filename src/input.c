@@ -1,4 +1,5 @@
 #include "input.h"
+#include "terminal_probe.h"
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -9,15 +10,28 @@
 
 static gboolean input_discard_kitty_apc(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
+static InputRawModeObserverForTest g_input_enable_raw_mode_observer_for_test = NULL;
+static InputRawModeObserverForTest g_input_disable_raw_mode_observer_for_test = NULL;
+static gpointer g_input_enable_raw_mode_observer_user_data = NULL;
+static gpointer g_input_disable_raw_mode_observer_user_data = NULL;
 
-static void input_write_query(const char *buf, size_t len) {
-    if (!buf || len == 0) {
-        return;
-    }
-    ssize_t ret = write(STDOUT_FILENO, buf, len);
-    if (ret < 0) {
-        return;
-    }
+void input_set_enable_raw_mode_observer_for_test(InputRawModeObserverForTest observer,
+                                                 gpointer user_data) {
+    g_input_enable_raw_mode_observer_for_test = observer;
+    g_input_enable_raw_mode_observer_user_data = observer ? user_data : NULL;
+}
+
+void input_set_disable_raw_mode_observer_for_test(InputRawModeObserverForTest observer,
+                                                  gpointer user_data) {
+    g_input_disable_raw_mode_observer_for_test = observer;
+    g_input_disable_raw_mode_observer_user_data = observer ? user_data : NULL;
+}
+
+void input_reset_raw_mode_observers_for_test(void) {
+    g_input_enable_raw_mode_observer_for_test = NULL;
+    g_input_disable_raw_mode_observer_for_test = NULL;
+    g_input_enable_raw_mode_observer_user_data = NULL;
+    g_input_disable_raw_mode_observer_user_data = NULL;
 }
 
 static gint64 input_now_us(void) {
@@ -83,6 +97,11 @@ ErrorCode input_handler_initialize(InputHandler *handler) {
 
 // Enable raw terminal mode
 ErrorCode input_enable_raw_mode(InputHandler *handler) {
+    if (g_input_enable_raw_mode_observer_for_test) {
+        g_input_enable_raw_mode_observer_for_test(handler,
+                                                  g_input_enable_raw_mode_observer_user_data);
+    }
+
     if (!handler || handler->raw_mode_enabled) {
         return ERROR_NONE;
     }
@@ -131,6 +150,11 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
 
 // Disable raw terminal mode
 ErrorCode input_disable_raw_mode(InputHandler *handler) {
+    if (g_input_disable_raw_mode_observer_for_test) {
+        g_input_disable_raw_mode_observer_for_test(handler,
+                                                   g_input_disable_raw_mode_observer_user_data);
+    }
+
     if (!handler || !handler->raw_mode_enabled) {
         return ERROR_NONE;
     }
@@ -633,37 +657,34 @@ static gboolean input_response_has_iterm2(const char *buffer) {
     return strstr(buffer, "iTerm2") != NULL;
 }
 
-gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
+static gboolean input_probe_collect_response(InputHandler *handler,
+                                             const char *query,
+                                             gint timeout_ms,
+                                             gchar terminator,
+                                             char *buffer,
+                                             gsize buffer_size) {
     if (!handler || timeout_ms <= 0) {
         return FALSE;
     }
 
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        return FALSE;
-    }
+    gssize length = terminal_probe_query_response(query,
+                                                  timeout_ms,
+                                                  TERMINAL_PROBE_POLL_TIMEOUT_MS,
+                                                  terminator,
+                                                  buffer,
+                                                  buffer_size);
+    return length > 0;
+}
 
-    input_flush_buffer(handler);
-
-    const char query[] = "\033[c";
-    input_write_query(query, sizeof(query) - 1);
-
-    gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
+gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
     char buffer[128];
-    gint length = 0;
 
-    while (g_get_monotonic_time() < deadline && length < (gint)(sizeof(buffer) - 1)) {
-        gint ch = input_read_char_with_timeout(handler, 20);
-        if (ch == 0) {
-            continue;
-        }
-        buffer[length++] = (char)ch;
-        if (ch == 'c') {
-            break;
-        }
-    }
-
-    buffer[length] = '\0';
-    if (length == 0) {
+    if (!input_probe_collect_response(handler,
+                                      "\033[c",
+                                      timeout_ms,
+                                      'c',
+                                      buffer,
+                                      sizeof(buffer))) {
         return FALSE;
     }
 
@@ -671,33 +692,14 @@ gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms) {
 }
 
 gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
-    if (!handler || timeout_ms <= 0) {
-        return FALSE;
-    }
-
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        return FALSE;
-    }
-
-    input_flush_buffer(handler);
-
-    const char query[] = "\033[>q\033[5n";
-    input_write_query(query, sizeof(query) - 1);
-
-    gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
     char buffer[256];
-    gint length = 0;
 
-    while (g_get_monotonic_time() < deadline && length < (gint)(sizeof(buffer) - 1)) {
-        gint ch = input_read_char_with_timeout(handler, 20);
-        if (ch == 0) {
-            continue;
-        }
-        buffer[length++] = (char)ch;
-    }
-
-    buffer[length] = '\0';
-    if (length == 0) {
+    if (!input_probe_collect_response(handler,
+                                      "\033[>q\033[5n",
+                                      timeout_ms,
+                                      '\0',
+                                      buffer,
+                                      sizeof(buffer))) {
         return FALSE;
     }
 
@@ -705,33 +707,14 @@ gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
 }
 
 gboolean input_probe_iterm2_support(InputHandler *handler, gint timeout_ms) {
-    if (!handler || timeout_ms <= 0) {
-        return FALSE;
-    }
-
-    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
-        return FALSE;
-    }
-
-    input_flush_buffer(handler);
-
-    const char query[] = "\033[>q\033[5n";
-    input_write_query(query, sizeof(query) - 1);
-
-    gint64 deadline = g_get_monotonic_time() + (gint64)timeout_ms * 1000;
     char buffer[256];
-    gint length = 0;
 
-    while (g_get_monotonic_time() < deadline && length < (gint)(sizeof(buffer) - 1)) {
-        gint ch = input_read_char_with_timeout(handler, 20);
-        if (ch == 0) {
-            continue;
-        }
-        buffer[length++] = (char)ch;
-    }
-
-    buffer[length] = '\0';
-    if (length == 0) {
+    if (!input_probe_collect_response(handler,
+                                      "\033[>q\033[5n",
+                                      timeout_ms,
+                                      '\0',
+                                      buffer,
+                                      sizeof(buffer))) {
         return FALSE;
     }
 

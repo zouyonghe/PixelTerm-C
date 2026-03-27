@@ -13,9 +13,11 @@ pixelterm --protocol sixel /path/to/media
 pixelterm --protocol text /path/to/media
 ```
 
-- `auto` mode currently probes in this order: `sixel`, `iterm2`, then `kitty`.
+- `auto` mode on a local terminal probes in this order: `sixel`, `iterm2`, then `kitty`.
 - If a video is already open, press `p` or `P` to switch video output modes in this order: `text -> sixel -> iterm2 -> kitty -> text`.
-- If you are in a remote shell or SSH session, protocol probing may behave differently from a local terminal.
+- In a direct SSH session, `auto` now stays conservative: without an affirmative signal for the hinted terminal family it falls back to text with reason `ssh-no-affirmative-signal`.
+- If you trust your remote setup, use `--protocol kitty`, `--protocol iterm2`, `--protocol sixel`, or a terminal-specific `config.ini` override.
+- tmux/screen passthrough is not auto-detected by this rule yet.
 - See [TERMINAL_PROTOCOL_SUPPORT.md](TERMINAL_PROTOCOL_SUPPORT.md) for terminal-specific notes.
 
 ## Output looks wrong in Warp or another terminal

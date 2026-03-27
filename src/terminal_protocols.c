@@ -281,7 +281,7 @@ static gboolean terminal_env_matches_hint(const TerminalProtocolHint *hint) {
     return FALSE;
 }
 
-const TerminalProtocolHint* terminal_protocol_env_match(void) {
+static const TerminalProtocolHint* terminal_protocol_find_matching_hint(void) {
     gsize count = 0;
     const TerminalProtocolHint *hints = terminal_protocol_hints_get(&count);
     for (gsize i = 0; i < count; i++) {
@@ -290,6 +290,34 @@ const TerminalProtocolHint* terminal_protocol_env_match(void) {
         }
     }
     return NULL;
+}
+
+const TerminalProtocolHint* terminal_protocol_env_weak_candidate(void) {
+    return terminal_protocol_find_matching_hint();
+}
+
+const TerminalProtocolHint* terminal_protocol_env_match(void) {
+    return terminal_protocol_env_weak_candidate();
+}
+
+static gboolean terminal_env_var_present(const char *name) {
+    const char *value = getenv(name);
+    return value && value[0] != '\0';
+}
+
+gboolean terminal_session_is_direct_ssh(void) {
+    gboolean has_ssh = terminal_env_var_present("SSH_CONNECTION") ||
+                       terminal_env_var_present("SSH_CLIENT") ||
+                       terminal_env_var_present("SSH_TTY");
+    if (!has_ssh) {
+        return FALSE;
+    }
+
+    if (terminal_env_var_present("TMUX") || terminal_env_var_present("STY")) {
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 gboolean terminal_env_supports_kitty(void) {

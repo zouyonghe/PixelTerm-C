@@ -9,7 +9,9 @@ This page summarizes the terminal and graphics-protocol support notes currently 
 - `Documented` means the repository includes direct support notes or examples intended to guide users.
 - `Partially documented` means PixelTerm-C has protocol hints or terminal-specific notes, but behavior may still depend on your local setup.
 - `Recognized` means the terminal family is known to the project, but this page does not document a stronger protocol guarantee.
-- In `auto` mode, PixelTerm-C probes protocols in this order: Sixel, iTerm2, then kitty. If that does not match your setup, use `--protocol` or a terminal-specific `config.ini` override.
+- In `auto` mode on a local terminal, PixelTerm-C probes protocols in this order: Sixel, iTerm2, then kitty.
+- In a direct SSH session, `auto` is conservative: PixelTerm-C only trusts an affirmative signal for the hinted terminal family. Without that signal it falls back to text with the structured reason string `ssh-no-affirmative-signal`.
+- If `auto` does not match your setup, use `--protocol` or a terminal-specific `config.ini` override.
 
 ## Terminals with protocol notes
 
@@ -57,4 +59,5 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. Term
 
 - This page reflects the support notes currently documented by the project; it is not a complete certification matrix.
 - Rendering behavior can still vary by terminal version, local settings, remote session setup, and whether protocol probing succeeds at runtime.
+- Direct SSH fallback currently stays conservative on purpose. tmux/screen passthrough remains manual-override territory rather than part of `auto` detection.
 - If your terminal works better with an explicit protocol than with `auto`, prefer a local config override and note the result when updating docs.

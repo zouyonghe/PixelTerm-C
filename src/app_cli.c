@@ -2,6 +2,7 @@
 
 #include "app_cli.h"
 #include "input.h"
+#include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
 
 #include <getopt.h>
@@ -345,9 +346,6 @@ static ErrorCode app_config_preload_from_args(int argc, char *argv[], AppConfig 
 }
 
 static gboolean probe_sixel_support(void) {
-    if (terminal_env_supports_sixel()) {
-        return TRUE;
-    }
     InputHandler *probe = input_handler_create();
     if (!probe) {
         return FALSE;
@@ -358,23 +356,13 @@ static gboolean probe_sixel_support(void) {
         return FALSE;
     }
 
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
     gboolean sixel_supported = input_probe_sixel_support(probe, 120);
-    input_disable_raw_mode(probe);
     input_handler_destroy(probe);
 
     return sixel_supported;
 }
 
 static gboolean probe_kitty_support(void) {
-    if (terminal_env_supports_kitty()) {
-        return TRUE;
-    }
-
     InputHandler *probe = input_handler_create();
     if (!probe) {
         return FALSE;
@@ -385,23 +373,13 @@ static gboolean probe_kitty_support(void) {
         return FALSE;
     }
 
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
     gboolean kitty_supported = input_probe_kitty_support(probe, 120);
-    input_disable_raw_mode(probe);
     input_handler_destroy(probe);
 
     return kitty_supported;
 }
 
 static gboolean probe_iterm2_support(void) {
-    if (terminal_env_supports_iterm2()) {
-        return TRUE;
-    }
-
     InputHandler *probe = input_handler_create();
     if (!probe) {
         return FALSE;
@@ -412,16 +390,162 @@ static gboolean probe_iterm2_support(void) {
         return FALSE;
     }
 
-    if (input_enable_raw_mode(probe) != ERROR_NONE) {
-        input_handler_destroy(probe);
-        return FALSE;
-    }
-
     gboolean iterm2_supported = input_probe_iterm2_support(probe, 120);
-    input_disable_raw_mode(probe);
     input_handler_destroy(probe);
 
     return iterm2_supported;
+}
+
+static gboolean terminal_hint_supports_protocol(const TerminalProtocolHint *hint,
+                                                TerminalResolvedProtocol protocol) {
+    if (!hint) {
+        return FALSE;
+    }
+
+    switch (protocol) {
+        case TERMINAL_RESOLVED_PROTOCOL_SIXEL:
+            return hint->supports_sixel;
+        case TERMINAL_RESOLVED_PROTOCOL_KITTY:
+            return hint->supports_kitty;
+        case TERMINAL_RESOLVED_PROTOCOL_ITERM2:
+            return hint->supports_iterm2;
+        case TERMINAL_RESOLVED_PROTOCOL_TEXT:
+        default:
+            return FALSE;
+    }
+}
+
+static gboolean terminal_hint_primary_protocol(const TerminalProtocolHint *hint,
+                                               TerminalResolvedProtocol *out_protocol) {
+    static const TerminalResolvedProtocol k_hint_priority[] = {
+        TERMINAL_RESOLVED_PROTOCOL_SIXEL,
+        TERMINAL_RESOLVED_PROTOCOL_ITERM2,
+        TERMINAL_RESOLVED_PROTOCOL_KITTY,
+    };
+
+    if (!hint || !out_protocol) {
+        return FALSE;
+    }
+
+    for (gsize i = 0; i < G_N_ELEMENTS(k_hint_priority); i++) {
+        if (terminal_hint_supports_protocol(hint, k_hint_priority[i])) {
+            *out_protocol = k_hint_priority[i];
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static gboolean probe_protocol_support(TerminalResolvedProtocol protocol) {
+    switch (protocol) {
+        case TERMINAL_RESOLVED_PROTOCOL_SIXEL:
+            return probe_sixel_support();
+        case TERMINAL_RESOLVED_PROTOCOL_KITTY:
+            return probe_kitty_support();
+        case TERMINAL_RESOLVED_PROTOCOL_ITERM2:
+            return probe_iterm2_support();
+        case TERMINAL_RESOLVED_PROTOCOL_TEXT:
+        default:
+            return FALSE;
+    }
+}
+
+static void collect_auto_protocol_inputs(TerminalProtocolResolverInput *input) {
+    static const TerminalResolvedProtocol k_signal_priority[] = {
+        TERMINAL_RESOLVED_PROTOCOL_SIXEL,
+        TERMINAL_RESOLVED_PROTOCOL_ITERM2,
+        TERMINAL_RESOLVED_PROTOCOL_KITTY,
+    };
+    static const TerminalResolvedProtocol k_probe_priority[] = {
+        TERMINAL_RESOLVED_PROTOCOL_SIXEL,
+        TERMINAL_RESOLVED_PROTOCOL_ITERM2,
+        TERMINAL_RESOLVED_PROTOCOL_KITTY,
+    };
+    gboolean tried_protocols[TERMINAL_RESOLVED_PROTOCOL_ITERM2 + 1] = {FALSE};
+    const TerminalProtocolHint *hint = NULL;
+    gboolean direct_ssh = FALSE;
+
+    if (!input) {
+        return;
+    }
+
+    direct_ssh = terminal_session_is_direct_ssh();
+    hint = terminal_protocol_env_weak_candidate();
+    if (terminal_hint_primary_protocol(hint, &input->weak_hint_protocol)) {
+        input->has_weak_hint = TRUE;
+    }
+
+    if (hint) {
+        for (gsize i = 0; i < G_N_ELEMENTS(k_signal_priority); i++) {
+            TerminalResolvedProtocol protocol = k_signal_priority[i];
+            if (!terminal_hint_supports_protocol(hint, protocol)) {
+                continue;
+            }
+
+            tried_protocols[protocol] = TRUE;
+            if (probe_protocol_support(protocol)) {
+                input->has_signal = TRUE;
+                input->signal_protocol = protocol;
+                return;
+            }
+        }
+    }
+
+    if (direct_ssh) {
+        return;
+    }
+
+    for (gsize i = 0; i < G_N_ELEMENTS(k_probe_priority); i++) {
+        TerminalResolvedProtocol protocol = k_probe_priority[i];
+        if (tried_protocols[protocol]) {
+            continue;
+        }
+
+        tried_protocols[protocol] = TRUE;
+        if (probe_protocol_support(protocol)) {
+            input->has_probe = TRUE;
+            input->probe_protocol = protocol;
+            return;
+        }
+    }
+}
+
+static gboolean app_protocol_mode_override(AppProtocolMode mode,
+                                           TerminalResolvedProtocol *out_protocol) {
+    if (!out_protocol) {
+        return FALSE;
+    }
+
+    switch (mode) {
+        case APP_PROTOCOL_TEXT:
+            *out_protocol = TERMINAL_RESOLVED_PROTOCOL_TEXT;
+            return TRUE;
+        case APP_PROTOCOL_SIXEL:
+            *out_protocol = TERMINAL_RESOLVED_PROTOCOL_SIXEL;
+            return TRUE;
+        case APP_PROTOCOL_KITTY:
+            *out_protocol = TERMINAL_RESOLVED_PROTOCOL_KITTY;
+            return TRUE;
+        case APP_PROTOCOL_ITERM2:
+            *out_protocol = TERMINAL_RESOLVED_PROTOCOL_ITERM2;
+            return TRUE;
+        case APP_PROTOCOL_AUTO:
+        default:
+            return FALSE;
+    }
+}
+
+static void app_config_apply_protocol_decision(AppConfig *config,
+                                               TerminalResolvedProtocol protocol) {
+    if (!config) {
+        return;
+    }
+
+    config->force_text = protocol == TERMINAL_RESOLVED_PROTOCOL_TEXT;
+    config->force_sixel = protocol == TERMINAL_RESOLVED_PROTOCOL_SIXEL;
+    config->force_kitty = protocol == TERMINAL_RESOLVED_PROTOCOL_KITTY;
+    config->force_iterm2 = protocol == TERMINAL_RESOLVED_PROTOCOL_ITERM2;
 }
 
 void app_config_init(AppConfig *config) {
@@ -584,50 +708,19 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
 }
 
 void app_config_resolve_protocol(AppConfig *config) {
+    TerminalProtocolResolverInput input = {0};
+    TerminalResolvedProtocol override_protocol = TERMINAL_RESOLVED_PROTOCOL_TEXT;
+
     if (!config) {
         return;
     }
 
-    config->force_text = FALSE;
-    config->force_sixel = FALSE;
-    config->force_kitty = FALSE;
-    config->force_iterm2 = FALSE;
-
-    switch (config->protocol_mode) {
-        case APP_PROTOCOL_TEXT:
-            config->force_text = TRUE;
-            break;
-        case APP_PROTOCOL_SIXEL:
-            config->force_sixel = TRUE;
-            break;
-        case APP_PROTOCOL_KITTY:
-            config->force_kitty = TRUE;
-            break;
-        case APP_PROTOCOL_ITERM2:
-            config->force_iterm2 = TRUE;
-            break;
-        case APP_PROTOCOL_AUTO:
-        default:
-            break;
+    if (app_protocol_mode_override(config->protocol_mode, &override_protocol)) {
+        input.has_override = TRUE;
+        input.override_protocol = override_protocol;
+    } else {
+        collect_auto_protocol_inputs(&input);
     }
 
-    if (!config->force_text && !config->force_kitty && !config->force_iterm2 && !config->force_sixel) {
-        config->force_sixel = probe_sixel_support();
-        if (config->force_sixel) {
-            config->force_iterm2 = FALSE;
-            config->force_kitty = FALSE;
-        } else {
-            config->force_iterm2 = probe_iterm2_support();
-            if (config->force_iterm2) {
-                config->force_kitty = FALSE;
-            } else {
-                config->force_kitty = probe_kitty_support();
-            }
-        }
-    }
-    if (config->force_text) {
-        config->force_kitty = FALSE;
-        config->force_iterm2 = FALSE;
-        config->force_sixel = FALSE;
-    }
+    app_config_apply_protocol_decision(config, terminal_protocol_resolve(&input).protocol);
 }
