@@ -93,6 +93,7 @@ endif
 SRCDIR = src
 OBJDIR = obj
 BINDIR = bin
+BUILD_FLAGS_FILE = $(OBJDIR)/.build-flags
 
 # Source files
 SOURCES = $(wildcard $(SRCDIR)/*.c)
@@ -134,30 +135,42 @@ $(OBJDIR):
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
+$(BUILD_FLAGS_FILE): FORCE | $(OBJDIR)
+	@{ \
+		printf '%s\n' \
+			'CC=$(CC)' \
+			'CFLAGS=$(CFLAGS)' \
+			'EXTRA_CFLAGS=$(EXTRA_CFLAGS)' \
+			'INCLUDES=$(INCLUDES)' \
+			'LDFLAGS=$(LDFLAGS)' \
+			'LIBS=$(LIBS)'; \
+	} > $@.tmp
+	@if [ ! -f $@ ] || ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm -f $@.tmp; fi
+
 # Build the main executable
-$(TARGET): $(OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(TARGET): $(OBJECTS) $(BUILD_FLAGS_FILE) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS)
 
 # Compile source files
-$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.c $(BUILD_FLAGS_FILE) | $(OBJDIR)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Compile test sources
-$(OBJDIR)/test_%.o: tests/test_%.c | $(OBJDIR)
+$(OBJDIR)/test_%.o: tests/test_%.c $(BUILD_FLAGS_FILE) | $(OBJDIR)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(DEPFLAGS) -c $< -o $@
 
 # Build test executable
-$(TEST_TARGET): $(TEST_OBJECTS) $(TEST_LINK_OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(TEST_TARGET): $(TEST_OBJECTS) $(TEST_LINK_OBJECTS) $(BUILD_FLAGS_FILE) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $(TEST_OBJECTS) $(TEST_LINK_OBJECTS) $(LIBS)
 
-$(FILE_MANAGER_TEST_TARGET): $(FILE_MANAGER_TEST_OBJECT) $(FILE_MANAGER_TEST_LINK_OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(FILE_MANAGER_TEST_TARGET): $(FILE_MANAGER_TEST_OBJECT) $(FILE_MANAGER_TEST_LINK_OBJECTS) $(BUILD_FLAGS_FILE) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $(FILE_MANAGER_TEST_OBJECT) $(FILE_MANAGER_TEST_LINK_OBJECTS) $(LIBS)
 
-$(PREVIEW_GRID_TEST_TARGET): $(PREVIEW_GRID_TEST_OBJECT) $(PREVIEW_GRID_TEST_LINK_OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(PREVIEW_GRID_TEST_TARGET): $(PREVIEW_GRID_TEST_OBJECT) $(PREVIEW_GRID_TEST_LINK_OBJECTS) $(BUILD_FLAGS_FILE) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $(PREVIEW_GRID_TEST_OBJECT) $(PREVIEW_GRID_TEST_LINK_OBJECTS) $(LIBS)
 
-$(BOOK_PREVIEW_TEST_TARGET): $(BOOK_PREVIEW_TEST_OBJECT) $(BOOK_PREVIEW_TEST_LINK_OBJECTS) | $(BINDIR)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(BOOK_PREVIEW_TEST_TARGET): $(BOOK_PREVIEW_TEST_OBJECT) $(BOOK_PREVIEW_TEST_LINK_OBJECTS) $(BUILD_FLAGS_FILE) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $(BOOK_PREVIEW_TEST_OBJECT) $(BOOK_PREVIEW_TEST_LINK_OBJECTS) $(LIBS)
 
 # Debug build
 debug: CFLAGS += $(DEBUG_CFLAGS)
@@ -217,7 +230,9 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
-.PHONY: all debug clean install test run check-deps help
+.PHONY: FORCE all debug clean install test run check-deps help
+
+FORCE:
 
 # Auto-generated dependencies
 -include $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d) $(FILE_MANAGER_TEST_OBJECT:.o=.d) $(PREVIEW_GRID_TEST_OBJECT:.o=.d) $(BOOK_PREVIEW_TEST_OBJECT:.o=.d)

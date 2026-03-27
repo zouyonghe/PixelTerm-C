@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.11-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.13-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](../../README.md) | 中文 | [日本語](README_ja.md)*
@@ -84,7 +84,7 @@ pixelterm --help
 
 ## 配置
 
-如果存在 `$XDG_CONFIG_HOME/pixelterm/config.ini`，PixelTerm-C 会自动读取；也可以通过 `--config` 指定其他配置文件。建议先从 [`config.example.ini`](../../config.example.ini) 开始：把通用设置放在 `[default]`，再按终端环境添加覆盖分组，匹配 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME` 或 `TERM`。命令行参数会在读取配置文件之后解析，因此显式传入的 CLI 参数会覆盖配置值。
+PixelTerm-C 会读取 `$XDG_CONFIG_HOME/pixelterm/config.ini`；如果 `XDG_CONFIG_HOME` 未设置或为空，则回退到 `$HOME/.config/pixelterm/config.ini`。也可以通过 `--config` 指定其他配置文件。建议先从 [`config.example.ini`](../../config.example.ini) 开始：把通用设置放在 `[default]`，再按终端环境添加覆盖分组，匹配 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME` 或 `TERM`。命令行参数会在读取配置文件之后解析，因此显式传入的 CLI 参数会覆盖配置值。
 
 快速初始化：
 

@@ -28,7 +28,8 @@ static void print_usage(const char *program_name) {
            "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
-    printf("  %-29s %s\n", "--config PATH", "Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini)");
+    printf("  %-29s %s\n", "--config PATH",
+           "Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini, fallback: $HOME/.config/pixelterm/config.ini)");
     printf("  %-29s %s\n", "--gamma G",
            "Gamma correction for image rendering (default: 1.0)");
     printf("\n");

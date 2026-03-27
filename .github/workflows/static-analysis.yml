@@ -67,7 +67,7 @@ jobs:
 
       - name: Validate debug AddressSanitizer build
         run: |
-          make debug
+          make EXTRA_CFLAGS=-Werror debug
 
   build-and-test-macos:
     if: github.event_name == 'pull_request'
@@ -91,4 +91,4 @@ jobs:
 
       - name: Validate debug AddressSanitizer build
         run: |
-          make debug
+          make EXTRA_CFLAGS=-Werror debug

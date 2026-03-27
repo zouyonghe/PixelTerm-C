@@ -1,7 +1,7 @@
 # PixelTerm-C Project Status
 
 ## Overview
-- **Current Version**: v1.7.11
+- **Current Version**: v1.7.13
 - **Status**: Production ready
 - **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf-2.0, gio-2.0, FFmpeg libs, pthread; MuPDF optional for book support
 
@@ -37,17 +37,19 @@ PixelTerm-C/
 - Dithering toggle and work-factor quality control
 
 ## Testing
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`
-- `bin/pixelterm-tests` directly covers browser, renderer, GIF/text/common utilities, terminal protocol helpers, CLI/startup behavior, and book core helpers
-- Dedicated file-manager and preview-grid binaries keep those mode-specific suites isolated instead of overloading the main test binary
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`
+- `bin/pixelterm-tests` covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and video playback/seek regressions, including the paused-seek target-restore path
+- `bin/pixelterm-file-manager-tests` isolates file-manager navigation and selection-state regressions
+- `bin/pixelterm-preview-grid-tests` isolates preview-grid zoom, pagination, and short-last-page selection normalization regressions
+- `bin/pixelterm-book-preview-tests` isolates book-preview pagination and page-move normalization regressions
 - Manual verification is still required for terminal-specific rendering and protocol behavior
 - Debug build targets remain part of the verification baseline
 
 ## CI Baseline
-- Linux CI installs MuPDF, validates its `pkg-config` metadata, runs warning-clean build/test checks, and exercises `make debug`
-- Pull request macOS CI runs the warning-clean build/test path and `make debug`
+- Linux CI validates MuPDF `pkg-config` metadata, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
+- Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path without the Linux-specific MuPDF metadata check
 
 ## Notes
 - Default source build output is `bin/pixelterm`.
 - `make install` installs `/usr/local/bin/pixelterm` by default (override with `PREFIX`/`DESTDIR`).
-- Automated coverage now includes the layered auto-protocol resolver, bounded probe transport, and direct-SSH conservative fallback behavior.
+- Shipped behavior and automated coverage now include the layered auto-protocol resolver, bounded probe transport, direct-SSH conservative fallback behavior, non-overlapping short-last-page preview/book pagination, and paused video seek target restoration after seek-preview redraw so repeated paused seeks stay anchored to the latest requested position.

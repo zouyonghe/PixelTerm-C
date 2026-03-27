@@ -394,6 +394,55 @@ static gchar *capture_stderr(void (*func)(gpointer), gpointer data) {
     return captured;
 }
 
+static gchar *capture_stdout(void (*func)(gpointer), gpointer data) {
+    GError *error = NULL;
+    gchar *capture_path = NULL;
+    gint capture_fd = g_file_open_tmp("pixelterm-app-cli-stdout-XXXXXX", &capture_path, &error);
+    if (capture_fd < 0) {
+        g_error("Failed to create stdout capture file: %s",
+                error ? error->message : "unknown error");
+    }
+    if (error) {
+        g_error_free(error);
+        error = NULL;
+    }
+
+    fflush(stdout);
+    gint saved_fd = dup(STDOUT_FILENO);
+    if (saved_fd < 0) {
+        close(capture_fd);
+        g_error("Failed to duplicate stdout");
+    }
+    if (dup2(capture_fd, STDOUT_FILENO) < 0) {
+        close(saved_fd);
+        close(capture_fd);
+        g_error("Failed to redirect stdout");
+    }
+    close(capture_fd);
+
+    func(data);
+
+    fflush(stdout);
+    if (dup2(saved_fd, STDOUT_FILENO) < 0) {
+        close(saved_fd);
+        g_error("Failed to restore stdout");
+    }
+    close(saved_fd);
+
+    gchar *captured = NULL;
+    if (!g_file_get_contents(capture_path, &captured, NULL, &error)) {
+        g_error("Failed to read stdout capture: %s",
+                error ? error->message : "unknown error");
+    }
+    if (error) {
+        g_error_free(error);
+    }
+
+    g_remove(capture_path);
+    g_free(capture_path);
+    return captured;
+}
+
 static gchar *write_temp_config_file(const gchar *contents) {
     GError *error = NULL;
     gchar *path = NULL;
@@ -585,6 +634,39 @@ static void test_cli_protocol_argument_parses_supported_modes(AppCliFixture *fix
         g_assert_cmpint(config.protocol_mode, ==, cases[i].expected_mode);
         g_free(path);
     }
+}
+
+static void test_cli_help_mentions_xdg_and_home_config_defaults(AppCliFixture *fixture,
+                                                                gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {
+        "pixelterm",
+        "--help",
+        NULL,
+    };
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stdout_output = capture_stdout(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_HELP_EXIT);
+    g_assert_null(path);
+    g_assert_nonnull(stdout_output);
+    g_assert_nonnull(g_strstr_len(stdout_output,
+                                  -1,
+                                  "$XDG_CONFIG_HOME/pixelterm/config.ini, fallback: $HOME/.config/pixelterm/config.ini"));
+
+    g_free(stdout_output);
+    g_free(path);
 }
 
 static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture *fixture,
@@ -1024,6 +1106,8 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/invalid_boolean_values", test_cli_invalid_boolean_values_return_error);
     add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
                      test_cli_double_dash_preserves_positional_config_like_path);
+    add_app_cli_test("/app_cli/parse/help_mentions_xdg_and_home_config_defaults",
+                     test_cli_help_mentions_xdg_and_home_config_defaults);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_affirmative_signal_before_generic_probe_order",
                      test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order);

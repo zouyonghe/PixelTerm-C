@@ -97,6 +97,27 @@ static gint app_preview_page_scroll_for_row(const PreviewLayout *layout, gint ro
     return scroll;
 }
 
+static gint app_preview_page_virtual_row_offset(const PreviewLayout *layout, gint scroll) {
+    if (!layout || layout->rows <= 0) {
+        return 0;
+    }
+
+    gint rows_per_page = app_preview_rows_per_page(layout);
+    gint last_page_scroll = app_preview_last_page_scroll(layout);
+    if (scroll != last_page_scroll) {
+        return 0;
+    }
+
+    gint rows_on_page = layout->rows - scroll;
+    if (rows_on_page < 0) {
+        rows_on_page = 0;
+    }
+    if (rows_on_page >= rows_per_page) {
+        return 0;
+    }
+    return rows_per_page - rows_on_page;
+}
+
 static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *layout) {
     if (!app || !layout) {
         return;
@@ -369,18 +390,23 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
 
     gint current_row = cols > 0 ? app->preview.selected / cols : 0;
     gint current_col = cols > 0 ? app->preview.selected % cols : 0;
-    gint relative_row = current_row - app->preview.scroll;
-    if (relative_row < 0) relative_row = 0;
-    if (relative_row >= rows_per_page) relative_row = rows_per_page - 1;
+    gint current_page_virtual_row_offset = app_preview_page_virtual_row_offset(&layout, app->preview.scroll);
+    // Keep the same row position across PgUp/PgDn. A short final page uses a
+    // virtual top-row offset so its real rows stay bottom-aligned within the page.
+    gint page_row_position = current_row - app->preview.scroll + current_page_virtual_row_offset;
+    if (page_row_position < 0) page_row_position = 0;
+    if (page_row_position >= rows_per_page) page_row_position = rows_per_page - 1;
 
     gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
     gint new_scroll = app->preview.scroll + delta_scroll;
     if (new_scroll < 0) new_scroll = 0;
     if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
 
-    gint new_row = new_scroll + relative_row;
-    if (new_row < 0) new_row = 0;
-    if (new_row >= rows) new_row = rows - 1;
+    gint new_page_virtual_row_offset = app_preview_page_virtual_row_offset(&layout, new_scroll);
+    gint new_row = new_scroll + page_row_position - new_page_virtual_row_offset;
+    gint new_page_last_row = MIN(rows - 1, new_scroll + rows_per_page - 1);
+    if (new_row < new_scroll) new_row = new_scroll;
+    if (new_row > new_page_last_row) new_row = new_page_last_row;
 
     if (current_col < 0) current_col = 0;
     if (current_col >= cols) current_col = cols - 1;

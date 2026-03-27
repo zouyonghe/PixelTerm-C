@@ -21,10 +21,14 @@ static GCond decode_queue_item_cond;
 static gboolean decode_queue_item_received = FALSE;
 static gint seek_hook_call_count = 0;
 static gint seek_hook_result = 0;
+static gint64 seek_hook_last_timestamp = G_MININT64;
+static gint seek_hook_last_flags = 0;
 static gint seek_preview_hook_call_count = 0;
 static gint64 seek_preview_hook_target_ms = -1;
 static gint seek_preview_hook_return_count = 0;
 static gboolean seek_preview_hook_return_value = TRUE;
+static gboolean seek_preview_hook_enqueue_frame = FALSE;
+static gint64 seek_preview_hook_frame_pts_offset_ms = 0;
 
 typedef struct {
     GMutex *mutex;
@@ -50,6 +54,8 @@ typedef struct {
     GCond cond;
     gboolean started;
 } FallbackAdvanceCall;
+
+static VideoFrame *make_test_frame(gint64 pts_ms);
 
 static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gboolean *flag, const gchar *message) {
     gint64 deadline = g_get_monotonic_time() + G_TIME_SPAN_MILLISECOND * 500;
@@ -79,17 +85,19 @@ static void init_test_sync_primitives(void) {
 static int test_seek_hook(AVFormatContext *format_context, int stream_index, int64_t timestamp, int flags) {
     (void)format_context;
     (void)stream_index;
-    (void)timestamp;
-    (void)flags;
     seek_hook_call_count++;
+    seek_hook_last_timestamp = timestamp;
+    seek_hook_last_flags = flags;
     return seek_hook_result;
 }
 
 static gboolean test_seek_preview_hook(VideoPlayer *player, gint64 target_ms) {
-    (void)player;
     seek_preview_hook_call_count++;
     seek_preview_hook_target_ms = target_ms;
     seek_preview_hook_return_count++;
+    if (player && seek_preview_hook_enqueue_frame) {
+        video_player_queue_push(player, make_test_frame(target_ms + seek_preview_hook_frame_pts_offset_ms));
+    }
     return seek_preview_hook_return_value;
 }
 
@@ -845,6 +853,57 @@ static void test_seek_relative_paused_seek_refreshes_preview(void) {
     video_player_destroy(player);
 }
 
+static void test_seek_relative_paused_repeated_seeks_preserve_latest_target(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+    if (!init_minimal_seek_context(player)) {
+        video_player_destroy(player);
+        g_test_skip("ffmpeg seek test context unavailable");
+        return;
+    }
+
+    player->fallback_pts_ms = 4000;
+    g_mutex_lock(&player->state_mutex);
+    player->clock_started = TRUE;
+    player->clock_start_pts_ms = 4000;
+    player->last_presented_pts_ms = 4000;
+    g_mutex_unlock(&player->state_mutex);
+
+    seek_hook_call_count = 0;
+    seek_hook_result = 0;
+    seek_hook_last_timestamp = G_MININT64;
+    seek_hook_last_flags = 0;
+    seek_preview_hook_call_count = 0;
+    seek_preview_hook_target_ms = -1;
+    seek_preview_hook_return_count = 0;
+    seek_preview_hook_return_value = TRUE;
+    seek_preview_hook_enqueue_frame = TRUE;
+    seek_preview_hook_frame_pts_offset_ms = -500;
+    video_player_set_seek_hook_for_test(test_seek_hook);
+    video_player_set_seek_preview_hook_for_test(test_seek_preview_hook);
+
+    g_assert_cmpint(video_player_seek_relative_ms(player, 1000), ==, ERROR_NONE);
+    g_assert_cmpint(seek_hook_call_count, ==, 1);
+    g_assert_cmpint(seek_hook_last_timestamp, ==, 5000);
+    g_assert_cmpint(seek_preview_hook_target_ms, ==, 5000);
+
+    g_assert_cmpint(video_player_seek_relative_ms(player, 1000), ==, ERROR_NONE);
+    g_assert_cmpint(seek_hook_call_count, ==, 2);
+    g_assert_cmpint(seek_hook_last_timestamp, ==, 6000);
+    g_assert_cmpint(seek_preview_hook_target_ms, ==, 6000);
+    g_assert_cmpint(seek_hook_last_flags, ==, 0);
+
+    seek_preview_hook_enqueue_frame = FALSE;
+    seek_preview_hook_frame_pts_offset_ms = 0;
+    video_player_set_seek_preview_hook_for_test(NULL);
+    video_player_set_seek_hook_for_test(NULL);
+    teardown_minimal_seek_context(player);
+    video_player_destroy(player);
+}
+
 static void test_seek_relative_preview_bails_after_decode_attempt_limit(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -1540,6 +1599,8 @@ void register_video_player_tests(void) {
                     test_seek_relative_failed_seek_preserves_state);
     g_test_add_func("/video_player/seek_relative/paused_seek_refreshes_preview",
                     test_seek_relative_paused_seek_refreshes_preview);
+    g_test_add_func("/video_player/seek_relative/paused_repeated_seeks_preserve_latest_target",
+                    test_seek_relative_paused_repeated_seeks_preserve_latest_target);
     g_test_add_func("/video_player/seek_relative/preview_bails_after_decode_attempt_limit",
                     test_seek_relative_preview_bails_after_decode_attempt_limit);
     g_test_add_func("/video_player/seek_relative/default_attempt_limit_is_bounded",

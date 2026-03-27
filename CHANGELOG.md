@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.13: Short-term quality alignment and stricter verification consistency.
+    - **Preview Navigation**: Preserve short last-page row and column position across preview-grid and book-preview page moves, including render-after-scroll and partial final-row cases.
+    - **Video Playback**: Restore the paused seek target after seek-preview redraw so repeated left/right seeks continue from the latest requested position instead of drifting back to the preview frame timestamp.
+    - **Verification**: Expand isolated regression coverage for preview/book navigation, paused seek behavior, and CLI config-help text, and make warning-clean debug validation match the stricter local baseline.
+    - **Docs**: Align protocol, troubleshooting, usage, roadmap, and versioned README guidance with the current resolver, config fallback, and four-binary `make test` baseline.
+
 - v1.7.12: Preview pagination consistency for images and books.
     - **Preview Grid**: Keep the last preview page aligned to page boundaries so short final pages no longer repeat items from the previous page.
     - **Book Preview**: Apply the same non-overlapping last-page behavior to book page thumbnails so paging, scroll-wheel navigation, and selection movement stay consistent with the image preview grid.

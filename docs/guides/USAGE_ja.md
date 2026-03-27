@@ -50,7 +50,7 @@ pixelterm --protocol kitty /path/to/image.jpg
 # 注: デフォルトは 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
 
-# 設定ファイルを読み込む（デフォルト: $XDG_CONFIG_HOME/pixelterm/config.ini）
+# 設定ファイルを読み込む（デフォルト: $XDG_CONFIG_HOME/pixelterm/config.ini。XDG_CONFIG_HOME が未設定または空なら $HOME/.config/pixelterm/config.ini にフォールバック）
 pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 
 # 設定ファイル形式: 共通設定は [default] に置き、TERM_PROGRAM /

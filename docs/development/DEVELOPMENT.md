@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.7.11 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid suites, the newer video-player/app-config maintainability seams, and the layered auto-protocol resolver path.
+**Current Status**: ✅ **PRODUCTION READY** - v1.7.13 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid/book-preview suites, the paused video-seek target-restore fix, the newer video-player/app-config maintainability seams, and the layered auto-protocol resolver path.
 
 ## Technical Architecture
 
@@ -241,17 +241,17 @@ make ARCH=aarch64
 ## Testing Strategy
 
 ### Unit Tests
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`
-- `bin/pixelterm-tests` directly covers common utilities plus browser, renderer, GIF player, terminal protocol helpers, CLI/startup paths, app-mode transitions, and book core helpers
-- `bin/pixelterm-file-manager-tests` and `bin/pixelterm-preview-grid-tests` keep those mode-specific suites isolated from the main test linker graph
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`
+- `bin/pixelterm-tests` directly covers common utilities plus browser, renderer, GIF player, terminal probe/protocol resolver helpers, CLI/startup paths, app-mode transitions, book core helpers, and the paused video-seek target-restore path
+- `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests` keep those mode-specific suites isolated from the main test linker graph
 - Targeted automated coverage should still be added when refactors touch routing, rendering, or state helpers outside the current baseline
 
 ### Integration Tests
 - Manual end-to-end testing in supported terminals is still required for real protocol/render behavior
 
 ### CI Baseline
-- Linux CI installs MuPDF, validates `pkg-config --modversion mupdf` and `pkg-config --libs mupdf`, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make debug`
-- Pull request macOS CI runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make debug`
+- Linux CI installs MuPDF, validates `pkg-config --modversion mupdf` and `pkg-config --libs mupdf`, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
+- Pull request macOS CI runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
 
 ### Performance Tests
 - Startup time measurement
@@ -259,12 +259,10 @@ make ARCH=aarch64
 - Memory usage profiling
 
 ### Verification Baseline
-- Run these as fresh builds when switching flag sets; the current Makefile reuses existing objects unless you clean first.
-- `make clean && make`
-- `make clean && make test`
-- `make clean && make EXTRA_CFLAGS=-Werror`
-- `make clean && make EXTRA_CFLAGS=-Werror test`
-- `make debug` (`debug` already starts from `clean`)
+- The current baseline can switch between warning-clean and debug builds without a manual `clean` step.
+- `make EXTRA_CFLAGS=-Werror`
+- `make EXTRA_CFLAGS=-Werror test`
+- `make EXTRA_CFLAGS=-Werror debug`
 
 ## Code Style Guidelines
 
@@ -309,9 +307,9 @@ make ARCH=aarch64
 ## Future Enhancements
 
 ### Short Term (Next 6 months)
-- Expand regression coverage around video seek and remaining preview/book flows
+- Keep Linux and pull request macOS CI aligned with `make EXTRA_CFLAGS=-Werror`, four-binary `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` validation
 - Keep protocol behavior documentation and troubleshooting aligned with the current detection and override paths
-- Keep troubleshooting and compatibility documentation aligned with actual behavior
+- Add safer terminal-specific presets and default overrides for terminals that still need manual configuration
 
 ### Long Term (Next year)
 - Revisit broader `PixelTermApp` state-bucket redesign only after the current helper seams and regression coverage are stable

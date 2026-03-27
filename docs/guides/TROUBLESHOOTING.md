@@ -13,11 +13,11 @@ pixelterm --protocol sixel /path/to/media
 pixelterm --protocol text /path/to/media
 ```
 
-- `auto` mode on a local terminal probes in this order: `sixel`, `iterm2`, then `kitty`.
+- `auto` first checks the matched terminal hint and only tries that hint's plausible protocols in `sixel -> iterm2 -> kitty` priority.
+- On a local session, if no hinted probe confirms a protocol, `auto` runs the same `sixel -> iterm2 -> kitty` order as a generic probe pass. If nothing confirms, it falls back to text.
+- In a direct SSH session (`SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY` set, without `TMUX` or `STY`), `auto` stays conservative: it skips the generic probe pass and falls back to text unless the hinted family returns an affirmative signal.
+- If you already know the correct protocol, or if a remote/passthrough setup keeps `auto` in text, use an explicit `--protocol` value or a terminal-specific `config.ini` override.
 - If a video is already open, press `p` or `P` to switch video output modes in this order: `text -> sixel -> iterm2 -> kitty -> text`.
-- In a direct SSH session, `auto` now stays conservative: without an affirmative signal for the hinted terminal family it falls back to text with reason `ssh-no-affirmative-signal`.
-- If you trust your remote setup, use `--protocol kitty`, `--protocol iterm2`, `--protocol sixel`, or a terminal-specific `config.ini` override.
-- tmux/screen passthrough is not auto-detected by this rule yet.
 - See [TERMINAL_PROTOCOL_SUPPORT.md](TERMINAL_PROTOCOL_SUPPORT.md) for terminal-specific notes.
 
 ## Output looks wrong in Warp or another terminal
@@ -44,7 +44,7 @@ xattr -dr com.apple.quarantine /usr/local/bin/pixelterm
 
 ## A config file seems to be ignored
 
-- Default config path: `$XDG_CONFIG_HOME/pixelterm/config.ini`
+- Default config path: `$XDG_CONFIG_HOME/pixelterm/config.ini`, or `$HOME/.config/pixelterm/config.ini` when `XDG_CONFIG_HOME` is unset or empty.
 - Custom config path: `pixelterm --config /path/to/config.ini ...`
 - A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
 - Config loading order is:
@@ -62,10 +62,10 @@ Video playback is video-only. Audio output is not part of the current feature se
 - If the path does not exist or is inaccessible, PixelTerm-C exits with an error.
 - If the path itself starts with `-`, use `--` to stop option parsing first, for example: `pixelterm -- --config=gallery.txt`
 - If you pass a directory, PixelTerm-C loads that directory and starts in file manager mode.
-- If you pass a regular file that is not a supported media file, PixelTerm-C falls back to the file's canonical parent directory and opens file manager mode there.
+- If the startup path is not a directory, not a valid book file, and not a valid media file, PixelTerm-C falls back to the file's canonical parent directory and opens file manager mode there.
 - If you run `pixelterm` with no path, it starts in file manager mode for the current directory.
 
 ## File manager or preview grid selection seems off
 
-- Recent builds are more defensive when hidden-file toggles or preview-grid zoom/navigation start from a stale selection or scroll position.
-- Those flows now normalize invalid state before continuing, but broader UI and protocol redesign work is still later roadmap work.
+- If the wrong item stays selected after toggling hidden files or changing preview-grid zoom, quit and reopen PixelTerm-C in the same directory to reset the view.
+- If it happens again after reopening, note the directory, whether hidden files were shown, and the last few keys you pressed before reporting it.

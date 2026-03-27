@@ -63,6 +63,22 @@ static void test_scroll_pages_keeps_last_page_non_overlapping(void) {
     cleanup_book_preview_app(&app);
 }
 
+static void test_scroll_pages_persists_destination_page_after_render(void) {
+    PixelTermApp app;
+
+    init_book_preview_app(&app, 10, 40, 80, 63);
+    app.book.preview_selected = 5;
+
+    g_assert_cmpint(app_book_preview_scroll_pages(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app_render_book_preview(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 9);
+    g_assert_cmpint(app.book.preview_scroll, ==, 3);
+    g_assert_cmpint(g_book_preview_stub_state.create_grid_renderer_calls, ==, 1);
+    g_assert_cmpint(g_book_preview_stub_state.grid_render_calls, ==, 1);
+
+    cleanup_book_preview_app(&app);
+}
+
 static void test_render_book_preview_normalizes_last_page_to_page_boundary(void) {
     PixelTermApp app;
 
@@ -73,6 +89,76 @@ static void test_render_book_preview_normalizes_last_page_to_page_boundary(void)
     g_assert_cmpint(app.book.preview_scroll, ==, 3);
     g_assert_cmpint(g_book_preview_stub_state.create_grid_renderer_calls, ==, 1);
     g_assert_cmpint(g_book_preview_stub_state.grid_render_calls, ==, 1);
+
+    cleanup_book_preview_app(&app);
+}
+
+static void test_page_move_round_trip_restores_selection_on_short_last_page(void) {
+    PixelTermApp app;
+
+    init_book_preview_app(&app, 10, 40, 80, 63);
+    app.book.preview_selected = 5;
+
+    g_assert_cmpint(app_book_preview_page_move(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 9);
+    g_assert_cmpint(app.book.preview_scroll, ==, 3);
+
+    g_assert_cmpint(app_book_preview_page_move(&app, -1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 5);
+    g_assert_cmpint(app.book.preview_scroll, ==, 0);
+
+    cleanup_book_preview_app(&app);
+}
+
+static void test_page_move_round_trip_restores_middle_row_on_short_last_page(void) {
+    PixelTermApp app;
+
+    init_book_preview_app(&app, 10, 40, 80, 63);
+    app.book.preview_selected = 3;
+
+    g_assert_cmpint(app_book_preview_page_move(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 7);
+    g_assert_cmpint(app.book.preview_scroll, ==, 3);
+
+    g_assert_cmpint(app_book_preview_page_move(&app, -1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 3);
+    g_assert_cmpint(app.book.preview_scroll, ==, 0);
+
+    cleanup_book_preview_app(&app);
+}
+
+static void test_page_move_clamps_top_slot_on_short_last_page_after_render(void) {
+    PixelTermApp app;
+
+    init_book_preview_app(&app, 10, 40, 80, 63);
+    app.book.preview_selected = 1;
+
+    g_assert_cmpint(app_book_preview_page_move(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 7);
+    g_assert_cmpint(app.book.preview_scroll, ==, 3);
+
+    g_assert_cmpint(app_render_book_preview(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 7);
+    g_assert_cmpint(app.book.preview_scroll, ==, 3);
+    g_assert_cmpint(g_book_preview_stub_state.create_grid_renderer_calls, ==, 1);
+    g_assert_cmpint(g_book_preview_stub_state.grid_render_calls, ==, 1);
+
+    cleanup_book_preview_app(&app);
+}
+
+static void test_page_move_round_trip_uses_clamped_column_on_partial_final_row(void) {
+    PixelTermApp app;
+
+    init_book_preview_app(&app, 15, 20, 80, 30);
+    app.book.preview_selected = 7;
+
+    g_assert_cmpint(app_book_preview_page_move(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 14);
+    g_assert_cmpint(app.book.preview_scroll, ==, 2);
+
+    g_assert_cmpint(app_book_preview_page_move(&app, -1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.preview_selected, ==, 6);
+    g_assert_cmpint(app.book.preview_scroll, ==, 0);
 
     cleanup_book_preview_app(&app);
 }
@@ -244,8 +330,18 @@ int main(int argc, char **argv) {
 
     g_test_add_func("/app_preview_book/scroll_pages/keeps_last_page_non_overlapping",
                     test_scroll_pages_keeps_last_page_non_overlapping);
+    g_test_add_func("/app_preview_book/scroll_pages/persists_destination_page_after_render",
+                    test_scroll_pages_persists_destination_page_after_render);
     g_test_add_func("/app_preview_book/render/normalizes_last_page_to_page_boundary",
                     test_render_book_preview_normalizes_last_page_to_page_boundary);
+    g_test_add_func("/app_preview_book/page_move/round_trip_restores_selection_on_short_last_page",
+                    test_page_move_round_trip_restores_selection_on_short_last_page);
+    g_test_add_func("/app_preview_book/page_move/round_trip_restores_middle_row_on_short_last_page",
+                    test_page_move_round_trip_restores_middle_row_on_short_last_page);
+    g_test_add_func("/app_preview_book/page_move/clamps_top_slot_on_short_last_page_after_render",
+                    test_page_move_clamps_top_slot_on_short_last_page_after_render);
+    g_test_add_func("/app_preview_book/page_move/round_trip_uses_clamped_column_on_partial_final_row",
+                    test_page_move_round_trip_uses_clamped_column_on_partial_final_row);
 
     return g_test_run();
 }

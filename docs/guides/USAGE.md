@@ -50,7 +50,7 @@ pixelterm --protocol kitty /path/to/image.jpg
 # Note: defaults to 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
 
-# Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini)
+# Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini; falls back to $HOME/.config/pixelterm/config.ini when XDG_CONFIG_HOME is unset or empty)
 pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 
 # Treat a config-like filename, or any path starting with '-', as a path

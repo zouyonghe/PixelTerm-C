@@ -1890,6 +1890,7 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     } else {
         if (video_player_render_seek_preview(player, target_ms)) {
             (void)video_player_render_frame(player);
+            video_player_restore_paused_seek_target(player, target_ms);
         }
     }
 

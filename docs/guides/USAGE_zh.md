@@ -50,7 +50,7 @@ pixelterm --protocol kitty /path/to/image.jpg
 # 说明：默认 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
 
-# 加载配置文件（默认：$XDG_CONFIG_HOME/pixelterm/config.ini）
+# 加载配置文件（默认：$XDG_CONFIG_HOME/pixelterm/config.ini；如果 XDG_CONFIG_HOME 未设置或为空，则回退到 $HOME/.config/pixelterm/config.ini）
 pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 
 # 配置文件格式：用 [default] 作为基础配置，按终端名新增分组

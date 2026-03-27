@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.11-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.13-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
@@ -91,7 +91,7 @@ For more usage examples and options, see [USAGE.md](docs/guides/USAGE.md).
 
 ## Configuration
 
-PixelTerm-C reads `$XDG_CONFIG_HOME/pixelterm/config.ini` when it is present, and you can pass a custom file with `--config`. Start from [`config.example.ini`](config.example.ini), use `[default]` for shared settings, then add terminal-specific sections that match `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. CLI flags are parsed after config loading, so explicit command-line options override config values.
+PixelTerm-C reads `$XDG_CONFIG_HOME/pixelterm/config.ini`, falling back to `$HOME/.config/pixelterm/config.ini` when `XDG_CONFIG_HOME` is unset or empty, and you can pass a custom file with `--config`. Start from [`config.example.ini`](config.example.ini), use `[default]` for shared settings, then add terminal-specific sections that match `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. CLI flags are parsed after config loading, so explicit command-line options override config values.
 
 Quick setup:
 
@@ -151,12 +151,12 @@ If MuPDF is available, book support is built in automatically. Cross-compilation
 
 ## Verification Baseline
 
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, and `bin/pixelterm-preview-grid-tests`.
-- The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal protocol helpers, CLI/startup behavior, and book core helpers.
-- File-manager and preview-grid flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
-- Linux CI validates MuPDF `pkg-config` metadata, runs warning-clean build/test checks, and exercises the debug build path.
-- Pull request macOS CI runs the warning-clean build/test path plus the debug build.
-- Existing protocol auto-detection remains the supported baseline today; broader protocol-detection redesign work stays on the roadmap.
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`.
+- The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and the paused video-seek target-restore path.
+- File-manager, preview-grid, and book-preview flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
+- Linux CI validates MuPDF `pkg-config` metadata, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`.
+- Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path.
+- The current shipped baseline includes the layered auto-protocol resolver, non-overlapping preview/book last-page paging, and paused video seek target restoration after seek-preview redraw; broader terminal presets and remote-session heuristics remain roadmap work.
 
 ## License
 
