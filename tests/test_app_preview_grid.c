@@ -115,7 +115,7 @@ static void test_change_zoom_normalizes_invalid_selection_and_scroll_before_refr
     g_assert_cmpint(app_preview_change_zoom(&app, 1), ==, ERROR_NONE);
     g_assert_cmpint(g_preview_grid_stub_state.create_grid_renderer_calls, ==, 1);
     g_assert_cmpint(app.preview.selected, ==, 6);
-    g_assert_cmpint(app.preview.scroll, ==, 1);
+    g_assert_cmpint(app.preview.scroll, ==, 2);
     g_assert_cmpint(app.preview.selected_link_index, ==, 6);
     g_assert_cmpstr(app_preview_get_selected_filepath(&app), ==, "img-6");
 
@@ -153,6 +153,36 @@ static void test_page_move_round_trip_restores_selection_cache_state(void) {
     g_assert_cmpstr(app_preview_get_selected_filepath(&app), ==, initial_path);
 
     g_free(initial_path);
+    cleanup_preview_app(&app);
+}
+
+static void test_move_selection_advances_to_non_overlapping_last_page(void) {
+    PixelTermApp app;
+
+    init_preview_app(&app, 10, 40, 80, 63);
+    app.preview.selected = 5;
+
+    g_assert_cmpint(app_preview_move_selection(&app, 1, 0), ==, ERROR_NONE);
+    g_assert_cmpint(app.preview.selected, ==, 7);
+    g_assert_cmpint(app.preview.scroll, ==, 3);
+    g_assert_cmpint(app.preview.selected_link_index, ==, 7);
+    g_assert_cmpstr(app_preview_get_selected_filepath(&app), ==, "img-7");
+
+    cleanup_preview_app(&app);
+}
+
+static void test_page_move_keeps_last_page_non_overlapping(void) {
+    PixelTermApp app;
+
+    init_preview_app(&app, 10, 40, 80, 63);
+    app.preview.selected = 5;
+
+    g_assert_cmpint(app_preview_page_move(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.preview.selected, ==, 9);
+    g_assert_cmpint(app.preview.scroll, ==, 3);
+    g_assert_cmpint(app.preview.selected_link_index, ==, 9);
+    g_assert_cmpstr(app_preview_get_selected_filepath(&app), ==, "img-9");
+
     cleanup_preview_app(&app);
 }
 
@@ -317,6 +347,10 @@ int main(int argc, char **argv) {
                     test_page_move_preserves_relative_row_and_column);
     g_test_add_func("/app_preview_grid/page_move/round_trip_restores_selection_cache_state",
                     test_page_move_round_trip_restores_selection_cache_state);
+    g_test_add_func("/app_preview_grid/move_selection/advances_to_non_overlapping_last_page",
+                    test_move_selection_advances_to_non_overlapping_last_page);
+    g_test_add_func("/app_preview_grid/page_move/keeps_last_page_non_overlapping",
+                    test_page_move_keeps_last_page_non_overlapping);
 
     return g_test_run();
 }

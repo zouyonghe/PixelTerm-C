@@ -103,12 +103,15 @@ TARGET = $(BINDIR)/pixelterm
 TEST_TARGET = $(BINDIR)/pixelterm-tests
 FILE_MANAGER_TEST_TARGET = $(BINDIR)/pixelterm-file-manager-tests
 PREVIEW_GRID_TEST_TARGET = $(BINDIR)/pixelterm-preview-grid-tests
-TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c, $(wildcard tests/test_*.c))
+BOOK_PREVIEW_TEST_TARGET = $(BINDIR)/pixelterm-book-preview-tests
+TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 FILE_MANAGER_TEST_SOURCE = tests/test_app_file_manager.c
 FILE_MANAGER_TEST_OBJECT = $(OBJDIR)/test_app_file_manager.o
 PREVIEW_GRID_TEST_SOURCE = tests/test_app_preview_grid.c
 PREVIEW_GRID_TEST_OBJECT = $(OBJDIR)/test_app_preview_grid.o
+BOOK_PREVIEW_TEST_SOURCE = tests/test_app_preview_book.c
+BOOK_PREVIEW_TEST_OBJECT = $(OBJDIR)/test_app_preview_book.o
 TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o \
 		$(OBJDIR)/gif_player.o $(OBJDIR)/input.o $(OBJDIR)/text_utils.o \
 		$(OBJDIR)/pixbuf_utils.o $(OBJDIR)/preloader.o $(OBJDIR)/app_mode.o $(OBJDIR)/input_dispatch_pending_clicks.o \
@@ -119,6 +122,7 @@ TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o 
 FILE_MANAGER_TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/app_core.o $(OBJDIR)/app_mode.o \
 		$(OBJDIR)/app_file_manager.o
 PREVIEW_GRID_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_grid.o
+BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o
 
 # Default target
 all: $(TARGET)
@@ -152,6 +156,9 @@ $(FILE_MANAGER_TEST_TARGET): $(FILE_MANAGER_TEST_OBJECT) $(FILE_MANAGER_TEST_LIN
 $(PREVIEW_GRID_TEST_TARGET): $(PREVIEW_GRID_TEST_OBJECT) $(PREVIEW_GRID_TEST_LINK_OBJECTS) | $(BINDIR)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
 
+$(BOOK_PREVIEW_TEST_TARGET): $(BOOK_PREVIEW_TEST_OBJECT) $(BOOK_PREVIEW_TEST_LINK_OBJECTS) | $(BINDIR)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^ $(LIBS)
+
 # Debug build
 debug: CFLAGS += $(DEBUG_CFLAGS)
 debug: clean all
@@ -166,11 +173,12 @@ install: $(TARGET)
 	$(INSTALL) -m 0755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/pixelterm"
 
 # Test
-test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET)
+test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(BOOK_PREVIEW_TEST_TARGET)
 	@echo "Running tests..."
 	@$(TEST_TARGET)
 	@$(FILE_MANAGER_TEST_TARGET)
 	@$(PREVIEW_GRID_TEST_TARGET)
+	@$(BOOK_PREVIEW_TEST_TARGET)
 
 # Run with sample image
 run: $(TARGET)
@@ -212,4 +220,4 @@ help:
 .PHONY: all debug clean install test run check-deps help
 
 # Auto-generated dependencies
--include $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d) $(FILE_MANAGER_TEST_OBJECT:.o=.d) $(PREVIEW_GRID_TEST_OBJECT:.o=.d)
+-include $(OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d) $(FILE_MANAGER_TEST_OBJECT:.o=.d) $(PREVIEW_GRID_TEST_OBJECT:.o=.d) $(BOOK_PREVIEW_TEST_OBJECT:.o=.d)

@@ -59,32 +59,63 @@ static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     return layout;
 }
 
+static gint app_preview_rows_per_page(const PreviewLayout *layout) {
+    if (!layout || layout->visible_rows < 1) {
+        return 1;
+    }
+    return layout->visible_rows;
+}
+
+static gint app_preview_last_page_scroll(const PreviewLayout *layout) {
+    if (!layout || layout->rows <= 0) {
+        return 0;
+    }
+
+    gint rows_per_page = app_preview_rows_per_page(layout);
+    return ((layout->rows - 1) / rows_per_page) * rows_per_page;
+}
+
+static gint app_preview_page_scroll_for_row(const PreviewLayout *layout, gint row) {
+    if (!layout || layout->rows <= 0) {
+        return 0;
+    }
+
+    gint clamped_row = row;
+    if (clamped_row < 0) {
+        clamped_row = 0;
+    }
+    if (clamped_row >= layout->rows) {
+        clamped_row = layout->rows - 1;
+    }
+
+    gint rows_per_page = app_preview_rows_per_page(layout);
+    gint scroll = (clamped_row / rows_per_page) * rows_per_page;
+    gint last_page_scroll = app_preview_last_page_scroll(layout);
+    if (scroll > last_page_scroll) {
+        scroll = last_page_scroll;
+    }
+    return scroll;
+}
+
 static void app_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *layout) {
     if (!app || !layout) {
         return;
     }
 
-    gint total_rows = layout->rows;
-    gint visible_rows = layout->visible_rows;
-    if (visible_rows < 1) visible_rows = 1;
-
-    // Clamp scroll to valid range
-    // Keep the viewport full whenever possible to avoid layout jumps near the end.
-    gint max_offset = MAX(0, total_rows - visible_rows);
-    if (app->preview.scroll > max_offset) {
-        app->preview.scroll = max_offset;
+    gint last_page_scroll = app_preview_last_page_scroll(layout);
+    if (app->preview.scroll > last_page_scroll) {
+        app->preview.scroll = last_page_scroll;
     }
     if (app->preview.scroll < 0) {
         app->preview.scroll = 0;
     }
 
-    // Ensure selection is visible
-    gint row = app->preview.selected / layout->cols;
-    if (row < app->preview.scroll) {
-        app->preview.scroll = row;
-    } else if (row >= app->preview.scroll + visible_rows) {
-        app->preview.scroll = row - visible_rows + 1;
+    if (layout->cols <= 0) {
+        return;
     }
+
+    gint row = app->preview.selected / layout->cols;
+    app->preview.scroll = app_preview_page_scroll_for_row(layout, row);
 }
 
 static GList* app_preview_find_link_with_hint(const PixelTermApp *app,
@@ -250,8 +281,8 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
     app_preview_normalize_state(app, &layout);
     gint cols = layout.cols;
     gint rows = layout.rows;
-    gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
-    gint max_scroll = MAX(0, rows - visible_rows);
+    gint rows_per_page = app_preview_rows_per_page(&layout);
+    gint last_page_scroll = app_preview_last_page_scroll(&layout);
 
     gint old_scroll = app->preview.scroll;
 
@@ -275,15 +306,15 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint delta_row, gint del
         app->preview.scroll = 0;
     } else if (delta_row < 0 && row < 0) {
         row = rows - 1;
-        app->preview.scroll = max_scroll;
+        app->preview.scroll = last_page_scroll;
     } else if (delta_row > 0 && row >= app->preview.scroll + layout.visible_rows) {
-        gint new_scroll = MIN(app->preview.scroll + layout.visible_rows, max_scroll);
+        gint new_scroll = MIN(app->preview.scroll + rows_per_page, last_page_scroll);
         app->preview.scroll = new_scroll;
         row = new_scroll; // first row of next page, keep column
     } else if (delta_row < 0 && row < app->preview.scroll) {
-        gint new_scroll = MAX(app->preview.scroll - layout.visible_rows, 0);
+        gint new_scroll = MAX(app->preview.scroll - rows_per_page, 0);
         app->preview.scroll = new_scroll;
-        row = MIN(new_scroll + layout.visible_rows - 1, rows - 1); // last row of prev page, keep column
+        row = MIN(new_scroll + rows_per_page - 1, rows - 1); // last row of prev page, keep column
     }
 
     if (row < 0) row = 0;
@@ -323,7 +354,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
 
     PreviewLayout layout = app_preview_calculate_layout(app);
     app_preview_normalize_state(app, &layout);
-    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+    gint rows_per_page = app_preview_rows_per_page(&layout);
     gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
     if (total_pages <= 1) {
         // Page scrolling is a no-op when everything fits on one page.
@@ -334,7 +365,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     gint old_scroll = app->preview.scroll;
     gint rows = layout.rows;
     gint cols = layout.cols;
-    gint max_scroll = MAX(0, rows - rows_per_page);
+    gint last_page_scroll = app_preview_last_page_scroll(&layout);
 
     gint current_row = cols > 0 ? app->preview.selected / cols : 0;
     gint current_col = cols > 0 ? app->preview.selected % cols : 0;
@@ -345,7 +376,7 @@ ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
     gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
     gint new_scroll = app->preview.scroll + delta_scroll;
     if (new_scroll < 0) new_scroll = 0;
-    if (new_scroll > max_scroll) new_scroll = max_scroll;
+    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
 
     gint new_row = new_scroll + relative_row;
     if (new_row < 0) new_row = 0;

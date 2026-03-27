@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.12: Preview pagination consistency for images and books.
+    - **Preview Grid**: Keep the last preview page aligned to page boundaries so short final pages no longer repeat items from the previous page.
+    - **Book Preview**: Apply the same non-overlapping last-page behavior to book page thumbnails so paging, scroll-wheel navigation, and selection movement stay consistent with the image preview grid.
+    - **Testing**: Add isolated regression coverage for image and book preview pagination, and include the new book-preview target in `make test`.
+
 - v1.7.11: Safer auto protocol detection and SSH fallback behavior.
     - **Protocol Detection**: Route `auto` protocol choice through a dedicated resolver instead of relying on a hardcoded probe chain.
     - **Terminal Probing**: Demote environment matches to weak hints, add a bounded probe transport, and avoid raw-mode screen-state transitions during startup probing.

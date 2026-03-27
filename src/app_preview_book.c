@@ -124,29 +124,63 @@ static PreviewLayout app_book_preview_calculate_layout(PixelTermApp *app) {
     return layout;
 }
 
+static gint app_book_preview_rows_per_page(const PreviewLayout *layout) {
+    if (!layout || layout->visible_rows < 1) {
+        return 1;
+    }
+    return layout->visible_rows;
+}
+
+static gint app_book_preview_last_page_scroll(const PreviewLayout *layout) {
+    if (!layout || layout->rows <= 0) {
+        return 0;
+    }
+
+    gint rows_per_page = app_book_preview_rows_per_page(layout);
+    return ((layout->rows - 1) / rows_per_page) * rows_per_page;
+}
+
+static gint app_book_preview_page_scroll_for_row(const PreviewLayout *layout, gint row) {
+    if (!layout || layout->rows <= 0) {
+        return 0;
+    }
+
+    gint clamped_row = row;
+    if (clamped_row < 0) {
+        clamped_row = 0;
+    }
+    if (clamped_row >= layout->rows) {
+        clamped_row = layout->rows - 1;
+    }
+
+    gint rows_per_page = app_book_preview_rows_per_page(layout);
+    gint scroll = (clamped_row / rows_per_page) * rows_per_page;
+    gint last_page_scroll = app_book_preview_last_page_scroll(layout);
+    if (scroll > last_page_scroll) {
+        scroll = last_page_scroll;
+    }
+    return scroll;
+}
+
 static void app_book_preview_adjust_scroll(PixelTermApp *app, const PreviewLayout *layout) {
     if (!app || !layout) {
         return;
     }
 
-    gint total_rows = layout->rows;
-    gint visible_rows = layout->visible_rows;
-    if (visible_rows < 1) visible_rows = 1;
-
-    gint max_offset = MAX(0, total_rows - 1);
-    if (app->book.preview_scroll > max_offset) {
-        app->book.preview_scroll = max_offset;
+    gint last_page_scroll = app_book_preview_last_page_scroll(layout);
+    if (app->book.preview_scroll > last_page_scroll) {
+        app->book.preview_scroll = last_page_scroll;
     }
     if (app->book.preview_scroll < 0) {
         app->book.preview_scroll = 0;
     }
 
-    gint row = app->book.preview_selected / layout->cols;
-    if (row < app->book.preview_scroll) {
-        app->book.preview_scroll = row;
-    } else if (row >= app->book.preview_scroll + visible_rows) {
-        app->book.preview_scroll = row - visible_rows + 1;
+    if (layout->cols <= 0) {
+        return;
     }
+
+    gint row = app->book.preview_selected / layout->cols;
+    app->book.preview_scroll = app_book_preview_page_scroll_for_row(layout, row);
 }
 
 static void app_book_preview_render_page_indicator(PixelTermApp *app) {
@@ -422,6 +456,8 @@ ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gin
     PreviewLayout layout = app_book_preview_calculate_layout(app);
     gint cols = layout.cols;
     gint rows = layout.rows;
+    gint rows_per_page = app_book_preview_rows_per_page(&layout);
+    gint last_page_scroll = app_book_preview_last_page_scroll(&layout);
     if (cols < 1) cols = 1;
     if (rows < 1) rows = 1;
 
@@ -443,26 +479,16 @@ ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gin
         row = 0;
         app->book.preview_scroll = 0;
     } else if (delta_row < 0 && row < 0) {
-        gint visible_rows = layout.visible_rows > 0 ? layout.visible_rows : 1;
-        gint last_page_scroll = 0;
-        if (rows > 0) {
-            last_page_scroll = ((rows - 1) / visible_rows) * visible_rows;
-            if (last_page_scroll < 0) {
-                last_page_scroll = 0;
-            } else if (last_page_scroll > rows - 1) {
-                last_page_scroll = rows - 1;
-            }
-        }
         row = rows - 1;
         app->book.preview_scroll = last_page_scroll;
     } else if (delta_row > 0 && row >= app->book.preview_scroll + layout.visible_rows) {
-        gint new_scroll = MIN(app->book.preview_scroll + layout.visible_rows, MAX(rows - 1, 0));
+        gint new_scroll = MIN(app->book.preview_scroll + rows_per_page, last_page_scroll);
         app->book.preview_scroll = new_scroll;
         row = new_scroll;
     } else if (delta_row < 0 && row < app->book.preview_scroll) {
-        gint new_scroll = MAX(app->book.preview_scroll - layout.visible_rows, 0);
+        gint new_scroll = MAX(app->book.preview_scroll - rows_per_page, 0);
         app->book.preview_scroll = new_scroll;
-        row = MIN(new_scroll + layout.visible_rows - 1, rows - 1);
+        row = MIN(new_scroll + rows_per_page - 1, rows - 1);
     }
 
     if (row < 0) row = 0;
@@ -499,7 +525,7 @@ ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
     }
 
     PreviewLayout layout = app_book_preview_calculate_layout(app);
-    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
+    gint rows_per_page = app_book_preview_rows_per_page(&layout);
     gint total_pages = (layout.rows + rows_per_page - 1) / rows_per_page;
     if (total_pages <= 1) {
         return ERROR_NONE;
@@ -508,6 +534,7 @@ ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
     if (cols < 1) cols = 1;
     gint rows = layout.rows;
     gint old_scroll = app->book.preview_scroll;
+    gint last_page_scroll = app_book_preview_last_page_scroll(&layout);
 
     gint current_row = cols > 0 ? app->book.preview_selected / cols : 0;
     gint current_col = cols > 0 ? app->book.preview_selected % cols : 0;
@@ -517,8 +544,6 @@ ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
 
     gint delta_scroll = direction >= 0 ? rows_per_page : -rows_per_page;
     gint new_scroll = app->book.preview_scroll + delta_scroll;
-    gint last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
-    if (last_page_scroll < 0) last_page_scroll = 0;
     if (new_scroll < 0) new_scroll = 0;
     if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
 
@@ -564,14 +589,10 @@ ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index) {
     PreviewLayout layout = app_book_preview_calculate_layout(app);
     gint cols = layout.cols > 0 ? layout.cols : 1;
     gint rows = layout.rows > 0 ? layout.rows : 1;
-    gint rows_per_page = layout.visible_rows > 0 ? layout.visible_rows : 1;
 
     gint row = page_index / cols;
-    gint new_scroll = (rows_per_page > 0) ? (row / rows_per_page) * rows_per_page : row;
-    gint last_page_scroll = 0;
-    if (rows > 0 && rows_per_page > 0) {
-        last_page_scroll = ((rows - 1) / rows_per_page) * rows_per_page;
-    }
+    gint new_scroll = app_book_preview_page_scroll_for_row(&layout, row);
+    gint last_page_scroll = app_book_preview_last_page_scroll(&layout);
     if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
     if (new_scroll < 0) new_scroll = 0;
 
@@ -596,18 +617,17 @@ ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
     }
 
     PreviewLayout layout = app_book_preview_calculate_layout(app);
-    gint visible_rows = layout.visible_rows;
-    if (visible_rows < 1) visible_rows = 1;
+    gint rows_per_page = app_book_preview_rows_per_page(&layout);
     gint total_rows = layout.rows;
-    if (total_rows <= visible_rows) {
+    if (total_rows <= rows_per_page) {
         return ERROR_NONE;
     }
 
-    gint delta = direction > 0 ? visible_rows : -visible_rows;
+    gint delta = direction > 0 ? rows_per_page : -rows_per_page;
     gint new_scroll = app->book.preview_scroll + delta;
     if (new_scroll < 0) new_scroll = 0;
-    gint max_scroll = MAX(0, total_rows - visible_rows);
-    if (new_scroll > max_scroll) new_scroll = max_scroll;
+    gint last_page_scroll = app_book_preview_last_page_scroll(&layout);
+    if (new_scroll > last_page_scroll) new_scroll = last_page_scroll;
 
     if (new_scroll == app->book.preview_scroll) {
         return ERROR_NONE;
