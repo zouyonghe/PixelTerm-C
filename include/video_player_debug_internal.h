@@ -41,5 +41,9 @@ void video_player_notify_queue_wait_hook(VideoPlayer *player, VideoPlayerTestQue
 
 void video_player_set_seek_hook_for_test(VideoPlayerSeekHook hook);
 int video_player_seek_frame_with_test_hook(VideoPlayer *player, int64_t target_ts, int flags);
+void video_player_handle_eof_for_test(VideoPlayer *player);
+void video_player_handle_terminal_eof_for_test(VideoPlayer *player);
+gboolean video_player_render_frame_for_test(VideoPlayer *player);
+void video_player_render_work_finished_for_test(VideoPlayer *player);
 
 #endif

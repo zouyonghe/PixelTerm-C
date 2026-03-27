@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.14: Stable video EOF playback and explicit replay behavior.
+    - **Video Playback**: Let queued tail frames drain to the true final frame before entering terminal EOF, so videos no longer pause, jump backward by a frame or two, and then rush back to the ending.
+    - **Replay and Seek**: Make replay from EOF explicit by rewinding only when playback is restarted, and tear down parked workers before post-EOF seek or paused preview rendering reuses FFmpeg state.
+    - **Stability**: Reject old-generation rendered frames and stale tail work after EOF invalidation so in-flight decode or render results cannot be reinserted after playback has ended.
+    - **Testing**: Add deterministic regressions for worker EOF drain, post-EOF replay, post-EOF seek preview, generation-based tail-frame rejection, and debug filter coverage for the shipped EOF debug events.
+
 - v1.7.13: Short-term quality alignment and stricter verification consistency.
     - **Preview Navigation**: Preserve short last-page row and column position across preview-grid and book-preview page moves, including render-after-scroll and partial final-row cases.
     - **Video Playback**: Restore the paused seek target after seek-preview redraw so repeated left/right seeks continue from the latest requested position instead of drifting back to the preview frame timestamp.

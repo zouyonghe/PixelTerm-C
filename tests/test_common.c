@@ -28,11 +28,12 @@ static void test_video_player_debug_filter_covers_logged_events(void) {
     g_assert_true(video_player_debug_should_log_for_test("play-start"));
     g_assert_true(video_player_debug_should_log_for_test("tick-stop"));
     g_assert_true(video_player_debug_should_log_for_test("tick-reschedule"));
-    g_assert_true(video_player_debug_should_log_for_test("worker-eof-rewind"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-eof-stop"));
     g_assert_true(video_player_debug_should_log_for_test("worker-frame-ready"));
     g_assert_true(video_player_debug_should_log_for_test("worker-decode-time"));
     g_assert_true(video_player_debug_should_log_for_test("worker-render-time"));
     g_assert_true(video_player_debug_should_log_for_test("worker-push"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-drop-stale"));
     g_assert_true(video_player_debug_should_log_for_test("worker-skip-full"));
     g_assert_true(video_player_debug_should_log_for_test("worker-drop-late"));
     g_assert_true(video_player_debug_should_log_for_test("worker-render-null"));

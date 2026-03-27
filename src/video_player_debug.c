@@ -118,11 +118,12 @@ static gboolean video_player_debug_should_log(const gchar *event) {
     return g_strcmp0(event, "play-start") == 0 ||
            g_strcmp0(event, "tick-stop") == 0 ||
            g_strcmp0(event, "tick-reschedule") == 0 ||
-           g_strcmp0(event, "worker-eof-rewind") == 0 ||
+           g_strcmp0(event, "worker-eof-stop") == 0 ||
            g_strcmp0(event, "worker-frame-ready") == 0 ||
            g_strcmp0(event, "worker-decode-time") == 0 ||
            g_strcmp0(event, "worker-render-time") == 0 ||
            g_strcmp0(event, "worker-push") == 0 ||
+           g_strcmp0(event, "worker-drop-stale") == 0 ||
            g_strcmp0(event, "worker-skip-full") == 0 ||
            g_strcmp0(event, "worker-drop-late") == 0 ||
            g_strcmp0(event, "worker-render-null") == 0 ||

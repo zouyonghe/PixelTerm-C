@@ -33,6 +33,8 @@ typedef struct {
     gboolean is_playing;
     gboolean has_video;
     gboolean draining;
+    gboolean eof_pending;
+    gboolean eof_ended;
     gint frame_delay_ms;
     gint time_base_num;
     gint time_base_den;
@@ -99,9 +101,10 @@ typedef struct {
     GCond decode_queue_has_items;
     GQueue *frame_queue;
     GQueue *decode_queue;
+    gint render_in_flight;
     gboolean worker_stop;
     gboolean render_workers_started;
- } VideoPlayer;
+  } VideoPlayer;
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
                               gboolean force_iterm2, gdouble gamma);
