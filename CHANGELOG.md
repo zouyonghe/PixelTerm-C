@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.16: Linux preview-buffer fix and release stability follow-up.
+    - **Video Stability**: Fix Linux heap corruption in post-EOF seek preview and video first-frame rendering by switching RGBA preview buffers to FFmpeg-managed aligned image allocations.
+    - **Preview Rendering**: Match preview-frame cleanup to the FFmpeg allocator so thumbnail and single-view first-frame extraction no longer risk allocator mismatches on Linux.
+    - **Testing**: Add a real seek-preview regression that exercises the post-EOF preview path in a subprocess, so the release pipeline catches this crash class before tagging.
+
 - v1.7.15: Static-analysis repair and automated release version sync.
     - **CI Stability**: Fix the seek-test cleanup path that used the wrong FFmpeg teardown API for a manually allocated format context, which caused the Linux `Static Analysis` test job to abort with `free(): invalid next size (fast)`.
     - **Release Automation**: Add a narrow `scripts/sync_version_refs.py` helper and release-workflow docs-sync job so formal `vX.Y.Z` tags can automatically sync tracked version references back to `main`.
