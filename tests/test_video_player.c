@@ -1291,7 +1291,18 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
     player->render_workers[1] = start_parked_worker_for_test("parked-render-b-seek-test", &render_b_call, player);
     player->render_workers_started = TRUE;
 
+    seek_preview_hook_call_count = 0;
+    seek_preview_hook_target_ms = -1;
+    seek_preview_hook_return_count = 0;
+    seek_preview_hook_return_value = TRUE;
+    seek_preview_hook_enqueue_frame = TRUE;
+    seek_preview_hook_frame_pts_offset_ms = 0;
+    video_player_set_seek_preview_hook_for_test(test_seek_preview_hook);
+
     g_assert_cmpint(video_player_seek_relative_ms(player, 1000), ==, ERROR_NONE);
+    g_assert_cmpint(seek_preview_hook_call_count, ==, 1);
+    g_assert_cmpint(seek_preview_hook_target_ms, ==, 5000);
+    g_assert_cmpint(seek_preview_hook_return_count, ==, 1);
     g_assert_null(player->worker_thread);
     g_assert_false(player->render_workers_started);
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
@@ -1304,6 +1315,10 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
     g_mutex_unlock(&player->state_mutex);
     g_assert_false(player->is_playing);
     g_assert_cmpuint(player->timer_id, ==, 0);
+
+    seek_preview_hook_enqueue_frame = FALSE;
+    seek_preview_hook_frame_pts_offset_ms = 0;
+    video_player_set_seek_preview_hook_for_test(NULL);
 
     clear_parked_worker_for_test(&render_b_call);
     clear_parked_worker_for_test(&render_a_call);
