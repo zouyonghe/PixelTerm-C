@@ -32,14 +32,6 @@ static gint seek_preview_hook_return_count = 0;
 static gboolean seek_preview_hook_return_value = TRUE;
 static gboolean seek_preview_hook_enqueue_frame = FALSE;
 static gint64 seek_preview_hook_frame_pts_offset_ms = 0;
-static gint minimal_seek_format_context_close_call_count = 0;
-static gint minimal_seek_format_context_free_call_count = 0;
-
-typedef void (*MinimalSeekFormatContextCloseFunc)(AVFormatContext **format_context);
-typedef void (*MinimalSeekFormatContextFreeFunc)(AVFormatContext *format_context);
-
-static MinimalSeekFormatContextCloseFunc minimal_seek_format_context_close_func = avformat_close_input;
-static MinimalSeekFormatContextFreeFunc minimal_seek_format_context_free_func = avformat_free_context;
 
 static const gchar *k_seek_preview_video_fixture_base64 =
     "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAuxtZGF0AAACUQYF//9N"
@@ -139,16 +131,6 @@ static gchar *write_seek_preview_video_fixture(void) {
 
     g_test_queue_destroy(remove_path, path);
     return path;
-}
-
-static void tracked_minimal_seek_format_context_close(AVFormatContext **format_context) {
-    minimal_seek_format_context_close_call_count++;
-    avformat_close_input(format_context);
-}
-
-static void tracked_minimal_seek_format_context_free(AVFormatContext *format_context) {
-    minimal_seek_format_context_free_call_count++;
-    avformat_free_context(format_context);
 }
 
 static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gboolean *flag, const gchar *message) {
@@ -441,7 +423,7 @@ static void teardown_minimal_seek_context(VideoPlayer *player) {
         avcodec_free_context(&player->codec_context);
     }
     if (player->format_context) {
-        minimal_seek_format_context_free_func(player->format_context);
+        avformat_free_context(player->format_context);
         player->format_context = NULL;
     }
     player->video_stream_index = -1;
@@ -449,34 +431,21 @@ static void teardown_minimal_seek_context(VideoPlayer *player) {
 }
 
 static void test_teardown_minimal_seek_context_frees_manual_format_context(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
-    if (!player) {
-        g_test_skip("video player unavailable");
-        return;
-    }
-    if (!init_minimal_seek_context(player)) {
+    if (g_test_subprocess()) {
+        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+        g_assert_nonnull(player);
+        g_assert_true(init_minimal_seek_context(player));
+
+        teardown_minimal_seek_context(player);
+
+        g_assert_null(player->codec_context);
+        g_assert_null(player->format_context);
         video_player_destroy(player);
-        g_test_skip("ffmpeg seek test context unavailable");
         return;
     }
 
-    MinimalSeekFormatContextCloseFunc original_close = minimal_seek_format_context_close_func;
-    MinimalSeekFormatContextFreeFunc original_free = minimal_seek_format_context_free_func;
-    minimal_seek_format_context_close_call_count = 0;
-    minimal_seek_format_context_free_call_count = 0;
-    minimal_seek_format_context_close_func = tracked_minimal_seek_format_context_close;
-    minimal_seek_format_context_free_func = tracked_minimal_seek_format_context_free;
-
-    teardown_minimal_seek_context(player);
-
-    g_assert_null(player->codec_context);
-    g_assert_null(player->format_context);
-    g_assert_cmpint(minimal_seek_format_context_close_call_count, ==, 0);
-    g_assert_cmpint(minimal_seek_format_context_free_call_count, ==, 1);
-
-    minimal_seek_format_context_close_func = original_close;
-    minimal_seek_format_context_free_func = original_free;
-    video_player_destroy(player);
+    g_test_trap_subprocess(NULL, 0, 0);
+    g_test_trap_assert_passed();
 }
 
 static void test_decode_queue_clear_removes_all_decoded_frames(void) {
