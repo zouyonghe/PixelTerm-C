@@ -1,7 +1,7 @@
 # PixelTerm-C Project Status
 
 ## Overview
-- **Current Version**: v1.7.15
+- **Current Version**: v1.7.16
 - **Status**: Production ready
 - **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf-2.0, gio-2.0, FFmpeg libs, pthread; MuPDF optional for book support
 
