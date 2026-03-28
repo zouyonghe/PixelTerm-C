@@ -7,6 +7,8 @@
 #include "ui_render_utils.h"
 #include "video_player.h"
 
+#include <libavutil/mem.h>
+
 typedef struct {
     PixelTermApp *app;
     ImageRenderer *renderer;
@@ -87,7 +89,7 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
                                                       4);
                 rendered_owned = (rendered != NULL);
             }
-            g_free(frame_pixels);
+            av_free(frame_pixels);
         } else {
             rendered = renderer_render_image_file(render_ctx->renderer, filepath);
             rendered_owned = (rendered != NULL);

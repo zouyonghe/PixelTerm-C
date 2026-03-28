@@ -1326,6 +1326,49 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
     video_player_destroy(player);
 }
 
+static void test_seek_relative_after_eof_real_preview_does_not_crash(void) {
+    if (g_test_subprocess()) {
+        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
+        if (!player) {
+            g_test_skip("video player unavailable");
+            return;
+        }
+
+        gchar *fixture_path = write_seek_preview_video_fixture();
+        g_assert_nonnull(fixture_path);
+        g_assert_cmpint(video_player_load(player, fixture_path), ==, ERROR_NONE);
+
+        ParkedWorkerCall decode_call = {0};
+        ParkedWorkerCall render_a_call = {0};
+        ParkedWorkerCall render_b_call = {0};
+
+        player->fallback_pts_ms = 4000;
+        g_mutex_lock(&player->state_mutex);
+        player->last_presented_pts_ms = 4000;
+        player->last_present_us = 0;
+        g_mutex_unlock(&player->state_mutex);
+        video_player_handle_eof_for_test(player);
+        g_assert_true(player->eof_ended);
+
+        player->worker_thread = start_parked_worker_for_test("parked-decode-real-preview-test", &decode_call, player);
+        player->render_workers[0] = start_parked_worker_for_test("parked-render-a-real-preview-test", &render_a_call, player);
+        player->render_workers[1] = start_parked_worker_for_test("parked-render-b-real-preview-test", &render_b_call, player);
+        player->render_workers_started = TRUE;
+
+        video_player_set_seek_preview_hook_for_test(NULL);
+        g_assert_cmpint(video_player_seek_relative_ms(player, 1000), ==, ERROR_NONE);
+
+        clear_parked_worker_for_test(&render_b_call);
+        clear_parked_worker_for_test(&render_a_call);
+        clear_parked_worker_for_test(&decode_call);
+        video_player_destroy(player);
+        return;
+    }
+
+    g_test_trap_subprocess(NULL, 0, 0);
+    g_test_trap_assert_passed();
+}
+
 static void test_render_queue_insert_sorted_orders_by_pts(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, 1.0);
     if (!player) {
@@ -2236,6 +2279,8 @@ void register_video_player_tests(void) {
                     test_play_after_eof_rewinds_explicitly_to_start);
     g_test_add_func("/video_player/seek_relative/after_eof_stops_parked_workers_before_preview",
                     test_seek_relative_after_eof_stops_parked_workers_before_preview);
+    g_test_add_func("/video_player/seek_relative/after_eof_real_preview_does_not_crash",
+                    test_seek_relative_after_eof_real_preview_does_not_crash);
     g_test_add_func("/video_player/render_queue/insert_sorted_orders_by_pts",
                     test_render_queue_insert_sorted_orders_by_pts);
     g_test_add_func("/video_player/render_queue/clear_removes_all_rendered_frames",

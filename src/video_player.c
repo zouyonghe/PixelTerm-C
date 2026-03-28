@@ -937,6 +937,31 @@ static struct SwsContext *video_player_create_sws_context(const AVCodecContext *
     return sws_context;
 }
 
+static gint video_player_alloc_rgba_buffer(AVFrame *rgba_frame,
+                                          gint width,
+                                          gint height,
+                                          guint8 **rgba_buffer_out) {
+    gint buffer_size = 0;
+
+    if (!rgba_frame || !rgba_buffer_out || width <= 0 || height <= 0) {
+        return -1;
+    }
+
+    *rgba_buffer_out = NULL;
+    buffer_size = av_image_alloc(rgba_frame->data,
+                                 rgba_frame->linesize,
+                                 width,
+                                 height,
+                                 AV_PIX_FMT_RGBA,
+                                 32);
+    if (buffer_size < 0) {
+        return -1;
+    }
+
+    *rgba_buffer_out = rgba_frame->data[0];
+    return buffer_size;
+}
+
 static void video_player_clear_decode(VideoPlayer *player) {
     if (!player) {
         return;
@@ -1942,6 +1967,7 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     AVFrame *decode_frame = av_frame_alloc();
     AVFrame *rgba_frame = av_frame_alloc();
     AVPacket *packet = av_packet_alloc();
+    uint8_t *rgba_buffer = NULL;
     if (!decode_frame || !rgba_frame || !packet) {
         if (decode_frame) av_frame_free(&decode_frame);
         if (rgba_frame) av_frame_free(&rgba_frame);
@@ -1953,7 +1979,7 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
 
     int width = codec_context->width;
     int height = codec_context->height;
-    int rgba_buffer_size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, width, height, 1);
+    int rgba_buffer_size = video_player_alloc_rgba_buffer(rgba_frame, width, height, &rgba_buffer);
     if (rgba_buffer_size <= 0) {
         av_frame_free(&decode_frame);
         av_frame_free(&rgba_frame);
@@ -1962,19 +1988,6 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
         avformat_close_input(&format_context);
         return ERROR_INVALID_IMAGE;
     }
-
-    uint8_t *rgba_buffer = av_malloc(rgba_buffer_size);
-    if (!rgba_buffer) {
-        av_frame_free(&decode_frame);
-        av_frame_free(&rgba_frame);
-        av_packet_free(&packet);
-        avcodec_free_context(&codec_context);
-        avformat_close_input(&format_context);
-        return ERROR_MEMORY_ALLOC;
-    }
-
-    av_image_fill_arrays(rgba_frame->data, rgba_frame->linesize, rgba_buffer,
-                         AV_PIX_FMT_RGBA, width, height, 1);
 
     struct SwsContext *sws_context = video_player_create_sws_context(codec_context, width, height);
     if (!sws_context) {
@@ -2297,19 +2310,10 @@ ErrorCode video_player_get_first_frame(const gchar *filepath,
         goto cleanup;
     }
 
-    int buffer_size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, video_w, video_h, 1);
+    int buffer_size = video_player_alloc_rgba_buffer(rgba_frame, video_w, video_h, &rgba_buffer);
     if (buffer_size <= 0) {
         goto cleanup;
     }
-
-    rgba_buffer = g_malloc(buffer_size);
-    if (!rgba_buffer) {
-        error = ERROR_MEMORY_ALLOC;
-        goto cleanup;
-    }
-
-    av_image_fill_arrays(rgba_frame->data, rgba_frame->linesize, rgba_buffer,
-                         AV_PIX_FMT_RGBA, video_w, video_h, 1);
 
     sws_context = video_player_create_sws_context(codec_context, video_w, video_h);
     if (!sws_context) {
@@ -2386,7 +2390,7 @@ cleanup:
         avformat_close_input(&format_context);
     }
     if (rgba_buffer) {
-        g_free(rgba_buffer);
+        av_freep(&rgba_buffer);
     }
 
     return error;
