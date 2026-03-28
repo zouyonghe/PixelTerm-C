@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.7.15: Static-analysis repair and automated release version sync.
+    - **CI Stability**: Fix the seek-test cleanup path that used the wrong FFmpeg teardown API for a manually allocated format context, which caused the Linux `Static Analysis` test job to abort with `free(): invalid next size (fast)`.
+    - **Release Automation**: Add a narrow `scripts/sync_version_refs.py` helper and release-workflow docs-sync job so formal `vX.Y.Z` tags can automatically sync tracked version references back to `main`.
+    - **Safety Guards**: Limit automated version sync to six approved docs, distinguish safe drift from hard helper failures, refuse non-mainline or older-tag rewrites, and retry safely on push races.
+    - **Testing**: Add regression coverage for the FFmpeg seek-context teardown path plus unit tests for version-sync matching, version comparison, and rollback prevention semantics.
+
 - v1.7.14: Stable video EOF playback and explicit replay behavior.
     - **Video Playback**: Let queued tail frames drain to the true final frame before entering terminal EOF, so videos no longer pause, jump backward by a frame or two, and then rush back to the ending.
     - **Replay and Seek**: Make replay from EOF explicit by rewinding only when playback is restarted, and tear down parked workers before post-EOF seek or paused preview rendering reuses FFmpeg state.

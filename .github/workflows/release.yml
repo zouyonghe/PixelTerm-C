@@ -205,3 +205,107 @@ jobs:
           pixelterm-amd64-macos
           pixelterm-arm64-macos.tar.gz
           pixelterm-arm64-macos
+
+  sync-doc-versions:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Refresh main and sync tracked docs
+      env:
+        release_version: ${{ github.ref_name }}
+        release_tag_sha: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+
+        tracked_files=(
+          README.md
+          docs/i18n/README_zh.md
+          docs/i18n/README_ja.md
+          docs/project/PROJECT_STATUS.md
+          docs/project/ROADMAP.md
+          docs/development/DEVELOPMENT.md
+        )
+
+        if ! [[ "${release_version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Skipping docs sync for non-formal release tag ${release_version}."
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        ensure_release_is_on_main() {
+          if ! git merge-base --is-ancestor "${release_tag_sha}" origin/main; then
+            echo "Tagged commit ${release_tag_sha} for ${release_version} is not contained in origin/main; refusing to update main docs." >&2
+            exit 1
+          fi
+        }
+
+        sync_main_docs() {
+          local sync_status=0
+
+          python3 scripts/sync_version_refs.py --check "${release_version}" || sync_status=$?
+
+          if [ "${sync_status}" -eq 0 ]; then
+            return 0
+          fi
+
+          if [ "${sync_status}" -ne 2 ]; then
+            return "${sync_status}"
+          fi
+
+          python3 scripts/sync_version_refs.py "${release_version}"
+
+          if git diff --quiet --exit-code -- "${tracked_files[@]}"; then
+            return 0
+          fi
+
+          return 10
+        }
+
+        for attempt in 1 2 3; do
+          git fetch origin main
+          ensure_release_is_on_main
+          git checkout -B main origin/main
+
+          current_main_version="$(python3 scripts/sync_version_refs.py --current-version)"
+          compare_result="$(python3 scripts/sync_version_refs.py "${release_version}" --compare-version "${current_main_version}")"
+
+          if [ "${compare_result}" -lt 0 ]; then
+            echo "Skipping docs sync for older release tag ${release_version}; origin/main already tracks ${current_main_version}."
+            exit 0
+          fi
+
+          sync_result=0
+          sync_main_docs || sync_result=$?
+
+          case "${sync_result}" in
+            0)
+              echo "Tracked doc versions already match ${release_version} on origin/main."
+              exit 0
+              ;;
+            10)
+              git add "${tracked_files[@]}"
+              git commit -m "docs: sync version references for ${release_version}"
+              if git push origin HEAD:main; then
+                echo "Pushed tracked doc version sync for ${release_version}."
+                exit 0
+              fi
+              echo "Push failed after refresh attempt ${attempt}; retrying against latest origin/main." >&2
+              ;;
+            *)
+              exit "${sync_result}"
+              ;;
+          esac
+        done
+
+        echo "Unable to push tracked doc version sync after refreshing origin/main." >&2
+        exit 1
