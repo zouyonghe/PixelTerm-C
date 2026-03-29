@@ -1,7 +1,7 @@
 # PixelTerm-C Roadmap
 
 ## Current Status
-PixelTerm-C is production-ready as of v1.7.16. The current short-term baseline
+PixelTerm-C is production-ready as of v1.7.17. The current short-term baseline
 now includes non-overlapping preview/book pagination behavior, paused video
 seek target restoration, stable EOF drain-to-stop playback without tail-frame
 replay, matching regression coverage, and refreshed resolver/override docs.

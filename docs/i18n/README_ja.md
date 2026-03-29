@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.16-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.17-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](../../README.md) | [中文](README_zh.md) | 日本語*
