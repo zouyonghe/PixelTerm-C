@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.17: Ghostty kitty auto-detection follow-up.
+    - **Protocol Detection**: Treat Ghostty and libghostty XTVERSION replies as affirmative kitty-compatible signals so `auto` mode selects kitty instead of falling back to text in Ghostty-based terminals such as cmux.
+    - **Terminal Compatibility**: Preserve the existing resolver order and conservative SSH behavior while broadening local kitty probe recognition for Ghostty-family replies.
+    - **Testing**: Add protocol-resolution regressions for Ghostty/libghostty probe replies and simplify the matcher/test helpers so future terminal token updates stay easier to maintain.
+
 - v1.7.16: Linux preview-buffer fix and release stability follow-up.
     - **Video Stability**: Fix Linux heap corruption in post-EOF seek preview and video first-frame rendering by switching RGBA preview buffers to FFmpeg-managed aligned image allocations.
     - **Preview Rendering**: Match preview-frame cleanup to the FFmpeg allocator so thumbnail and single-view first-frame extraction no longer risk allocator mismatches on Linux.
