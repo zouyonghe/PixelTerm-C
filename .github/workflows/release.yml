@@ -27,7 +27,7 @@ jobs:
             container: menci/archlinuxarm:base-devel
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Build on Linux (Arch)
       run: |
@@ -65,13 +65,13 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pixelterm-${{ matrix.arch }}-linux.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-linux.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pixelterm-${{ matrix.arch }}-linux
         path: release/pixelterm-${{ matrix.arch }}-linux
@@ -87,14 +87,21 @@ jobs:
             runs-on: macos-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Build on macOS
       run: |
         mkdir -p release-${{ matrix.arch }}
         
-        # Install dependencies using Homebrew (only install packages not pre-installed)
-        brew install pkg-config glib gdk-pixbuf chafa ffmpeg mupdf
+        # Install dependencies using Homebrew only when a formula is missing.
+        deps=(pkgconf glib gdk-pixbuf chafa ffmpeg mupdf)
+        for dep in "${deps[@]}"; do
+          if brew list --formula --versions "${dep}" >/dev/null 2>&1; then
+            echo "Using Homebrew ${dep}"
+          else
+            brew install "${dep}"
+          fi
+        done
         export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig"
         
         # Chafa is already installed by Homebrew, no need to build from source
@@ -114,13 +121,13 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pixelterm-${{ matrix.arch }}-macos.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-macos.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: pixelterm-${{ matrix.arch }}-macos
         path: release/pixelterm-${{ matrix.arch }}-macos
@@ -133,12 +140,12 @@ jobs:
       pull-requests: read
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
     - name: Download artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         pattern: pixelterm*
         merge-multiple: true
@@ -193,7 +200,7 @@ jobs:
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         body_path: ${{ steps.release_notes_inputs.outputs.output_file }}
         files: |
@@ -214,7 +221,7 @@ jobs:
       contents: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         fetch-depth: 0
 

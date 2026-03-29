@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install cppcheck
         run: |
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -74,11 +74,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
-          brew install pkg-config glib gdk-pixbuf chafa ffmpeg mupdf
+          deps=(pkgconf glib gdk-pixbuf chafa ffmpeg mupdf)
+          for dep in "${deps[@]}"; do
+            if brew list --formula --versions "${dep}" >/dev/null 2>&1; then
+              echo "Using Homebrew ${dep}"
+            else
+              brew install "${dep}"
+            fi
+          done
           echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix)/share/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Build with warnings as errors
