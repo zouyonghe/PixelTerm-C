@@ -646,7 +646,17 @@ static gboolean input_response_has_kitty(const char *buffer) {
         return FALSE;
     }
 
-    return strstr(buffer, "kitty") != NULL;
+    gchar *lower = g_ascii_strdown(buffer, -1);
+    if (!lower) {
+        return FALSE;
+    }
+
+    gboolean supported = strstr(lower, "kitty") != NULL ||
+                         strstr(lower, ">|ghostty") != NULL ||
+                         strstr(lower, ">|libghostty") != NULL;
+
+    g_free(lower);
+    return supported;
 }
 
 static gboolean input_response_has_iterm2(const char *buffer) {
