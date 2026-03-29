@@ -641,22 +641,36 @@ static gboolean input_response_has_sixel(const char *buffer) {
     return FALSE;
 }
 
+static gboolean input_response_contains_case_insensitive(const char *buffer, const char *token) {
+    if (!buffer || !token || token[0] == '\0') {
+        return FALSE;
+    }
+
+    gsize token_length = strlen(token);
+    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
+        gsize matched = 0;
+
+        while (matched < token_length && cursor[matched] != '\0' &&
+               g_ascii_tolower((guchar)cursor[matched]) == token[matched]) {
+            matched++;
+        }
+
+        if (matched == token_length) {
+            return TRUE;
+        }
+
+        if (cursor[matched] == '\0') {
+            break;
+        }
+    }
+
+    return FALSE;
+}
+
 static gboolean input_response_has_kitty(const char *buffer) {
-    if (!buffer) {
-        return FALSE;
-    }
-
-    gchar *lower = g_ascii_strdown(buffer, -1);
-    if (!lower) {
-        return FALSE;
-    }
-
-    gboolean supported = strstr(lower, "kitty") != NULL ||
-                         strstr(lower, ">|ghostty") != NULL ||
-                         strstr(lower, ">|libghostty") != NULL;
-
-    g_free(lower);
-    return supported;
+    return input_response_contains_case_insensitive(buffer, "kitty") ||
+           input_response_contains_case_insensitive(buffer, ">|ghostty") ||
+           input_response_contains_case_insensitive(buffer, ">|libghostty");
 }
 
 static gboolean input_response_has_iterm2(const char *buffer) {
