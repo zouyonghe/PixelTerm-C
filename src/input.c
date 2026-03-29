@@ -648,19 +648,23 @@ static gboolean input_response_contains_case_insensitive(const char *buffer, con
 
     gsize token_length = strlen(token);
     for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
-        gsize matched = 0;
-
-        while (matched < token_length && cursor[matched] != '\0' &&
-               g_ascii_tolower((guchar)cursor[matched]) == token[matched]) {
-            matched++;
-        }
-
-        if (matched == token_length) {
+        if (g_ascii_strncasecmp(cursor, token, token_length) == 0) {
             return TRUE;
         }
+    }
 
-        if (cursor[matched] == '\0') {
-            break;
+    return FALSE;
+}
+
+static gboolean input_response_matches_any_case_insensitive(const char *buffer,
+                                                            const char *const *tokens) {
+    if (!buffer || !tokens) {
+        return FALSE;
+    }
+
+    for (gsize i = 0; tokens[i] != NULL; i++) {
+        if (input_response_contains_case_insensitive(buffer, tokens[i])) {
+            return TRUE;
         }
     }
 
@@ -668,9 +672,14 @@ static gboolean input_response_contains_case_insensitive(const char *buffer, con
 }
 
 static gboolean input_response_has_kitty(const char *buffer) {
-    return input_response_contains_case_insensitive(buffer, "kitty") ||
-           input_response_contains_case_insensitive(buffer, ">|ghostty") ||
-           input_response_contains_case_insensitive(buffer, ">|libghostty");
+    static const char *const k_kitty_affirmative_tokens[] = {
+        "kitty",
+        ">|ghostty",
+        ">|libghostty",
+        NULL,
+    };
+
+    return input_response_matches_any_case_insensitive(buffer, k_kitty_affirmative_tokens);
 }
 
 static gboolean input_response_has_iterm2(const char *buffer) {
