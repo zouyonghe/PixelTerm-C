@@ -261,6 +261,52 @@ static void app_cli_probe_fixture_disable_raw_mode(InputHandler *handler, gpoint
     fixture->disable_raw_mode_calls++;
 }
 
+static void assert_app_cli_probe_resolves_to_kitty(const gchar *response,
+                                                   const gchar *env_key,
+                                                   const gchar *env_value) {
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .response = response,
+        .response_length = strlen(response),
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+    if (env_key && env_value) {
+        g_assert_true(g_setenv(env_key, env_value, TRUE));
+    }
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_false(config.force_text);
+    g_assert_false(config.force_sixel);
+    g_assert_true(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
 static void queue_env_restore(const gchar *name) {
     EnvVarRestore *saved = g_new0(EnvVarRestore, 1);
     saved->name = g_strdup(name);
@@ -960,6 +1006,24 @@ static void test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_
     g_string_free(probe_fixture.writes, TRUE);
 }
 
+static void test_cli_protocol_resolution_auto_accepts_libghostty_xtversion_as_kitty_signal(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    assert_app_cli_probe_resolves_to_kitty("\033P>|libghostty\033\\", "TERM_PROGRAM", "ghostty");
+}
+
+static void test_cli_protocol_resolution_auto_accepts_ghostty_xtversion_as_kitty_signal(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    assert_app_cli_probe_resolves_to_kitty("\033P>|Ghostty 1.2.3\033\\", "TERM", "xterm-ghostty");
+}
+
 static void test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_sixel_first_order(
     AppCliFixture *fixture,
     gconstpointer user_data) {
@@ -1111,6 +1175,10 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_affirmative_signal_before_generic_probe_order",
                      test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_accepts_libghostty_xtversion_as_kitty_signal",
+                     test_cli_protocol_resolution_auto_accepts_libghostty_xtversion_as_kitty_signal);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_accepts_ghostty_xtversion_as_kitty_signal",
+                     test_cli_protocol_resolution_auto_accepts_ghostty_xtversion_as_kitty_signal);
     add_app_cli_test("/app_cli/protocol_resolution/auto_multi_protocol_hint_keeps_local_sixel_first_order",
                      test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_sixel_first_order);
     add_app_cli_test("/app_cli/protocol_resolution/auto_probe_avoids_raw_mode_transitions",

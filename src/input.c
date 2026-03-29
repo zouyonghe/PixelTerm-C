@@ -641,12 +641,52 @@ static gboolean input_response_has_sixel(const char *buffer) {
     return FALSE;
 }
 
-static gboolean input_response_has_kitty(const char *buffer) {
-    if (!buffer) {
+/* Probe replies are short ASCII payloads, so a simple sliding-window search
+ * keeps the matcher allocation-free while still using GLib's case-insensitive
+ * comparison helper for each candidate position. */
+static gboolean input_response_contains_case_insensitive(const char *buffer, const char *token) {
+    if (!buffer || !token || token[0] == '\0') {
         return FALSE;
     }
 
-    return strstr(buffer, "kitty") != NULL;
+    gsize token_length = strlen(token);
+    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (g_ascii_strncasecmp(cursor, token, token_length) == 0) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static gboolean input_response_matches_any_case_insensitive(const char *buffer,
+                                                            const char *const *tokens) {
+    if (!buffer || !tokens) {
+        return FALSE;
+    }
+
+    for (gsize i = 0; tokens[i] != NULL; i++) {
+        if (input_response_contains_case_insensitive(buffer, tokens[i])) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static gboolean input_response_has_kitty(const char *buffer) {
+    /* Kitty may identify itself directly, while Ghostty/libghostty advertise
+     * kitty-compatible XTVERSION payloads with a ">|..." prefix. Keep these
+     * affirmative markers together and match them case-insensitively so future
+     * probe-format updates only need token-list changes here. */
+    static const char *const k_kitty_affirmative_tokens[] = {
+        "kitty",
+        ">|ghostty",
+        ">|libghostty",
+        NULL,
+    };
+
+    return input_response_matches_any_case_insensitive(buffer, k_kitty_affirmative_tokens);
 }
 
 static gboolean input_response_has_iterm2(const char *buffer) {
