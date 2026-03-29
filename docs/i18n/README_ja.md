@@ -25,6 +25,22 @@ PixelTerm-C の表示例です。
 
 ## インストール
 
+macOS と Linux では、まず 1 コマンドのインストーラを使えます。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash
+```
+
+このインストーラは `macOS/Linux + amd64/arm64` を自動判定し、最新の GitHub Release バイナリを `/usr/local/bin/pixelterm` にインストールします。対象ディレクトリに書き込み権限がない場合だけ `sudo` を使います。
+
+`/usr/local/bin` 以外に入れたい場合は、インストール先ディレクトリを指定できます。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --bin-dir "$HOME/.local/bin"
+```
+
+パッケージマネージャや手動インストールを使いたい場合は、以下の方法も利用できます。
+
 ### パッケージマネージャ
 
 ```bash

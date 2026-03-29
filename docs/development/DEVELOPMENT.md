@@ -218,6 +218,7 @@ GString *output = chafa_canvas_print(canvas, term_info);
 - GCC or Clang with C11 support
 - Chafa development libraries
 - GLib 2.0 development libraries
+- Python 3.9+ for repository maintenance and script-backed test checks
 - GDK-Pixbuf development libraries
 - GIO development libraries (glib)
 - FFmpeg development libraries (`libavformat`, `libavcodec`, `libswscale`, `libavutil`)
@@ -241,7 +242,7 @@ make ARCH=aarch64
 ## Testing Strategy
 
 ### Unit Tests
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to verify the installer/docs integration
 - `bin/pixelterm-tests` directly covers common utilities plus browser, renderer, GIF player, terminal probe/protocol resolver helpers, CLI/startup paths, app-mode transitions, book core helpers, and the paused video-seek target-restore path
 - `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests` keep those mode-specific suites isolated from the main test linker graph
 - Targeted automated coverage should still be added when refactors touch routing, rendering, or state helpers outside the current baseline

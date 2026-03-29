@@ -25,7 +25,21 @@ Screenshot from a real PixelTerm-C session.
 
 ## Install
 
-Choose the install path that fits your setup:
+macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash
+```
+
+The installer auto-detects `macOS/Linux + amd64/arm64`, downloads the latest GitHub Release binary, and installs `pixelterm` to `/usr/local/bin/pixelterm`. It only uses `sudo` when that directory is not writable.
+
+Need a custom install directory instead of `/usr/local/bin`?
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --bin-dir "$HOME/.local/bin"
+```
+
+If you prefer a package manager or manual install, use one of these paths:
 
 ```bash
 # Arch Linux (AUR)
@@ -48,9 +62,12 @@ chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/p
 # macOS arm64 (Apple Silicon)
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
 chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
+```
 
-# If macOS blocks the installed binary, remove quarantine and try again.
-# xattr -dr com.apple.quarantine /usr/local/bin/pixelterm
+If macOS blocks the installed binary, remove quarantine and try again:
+
+```bash
+xattr -dr com.apple.quarantine /usr/local/bin/pixelterm
 ```
 
 ## Quick Start
@@ -151,7 +168,7 @@ If MuPDF is available, book support is built in automatically. Cross-compilation
 
 ## Verification Baseline
 
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`.
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to keep the installer/docs path in sync.
 - The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and the paused video-seek target-restore path.
 - File-manager, preview-grid, and book-preview flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
 - Linux CI validates MuPDF `pkg-config` metadata, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`.

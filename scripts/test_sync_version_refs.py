@@ -12,6 +12,7 @@ WORKTREE_ROOT = SCRIPT_PATH.resolve().parent.parent
 MODULE_SPEC = importlib.util.spec_from_file_location("sync_version_refs", SCRIPT_PATH)
 assert MODULE_SPEC is not None and MODULE_SPEC.loader is not None
 sync_version_refs = importlib.util.module_from_spec(MODULE_SPEC)
+sys.modules[MODULE_SPEC.name] = sync_version_refs
 MODULE_SPEC.loader.exec_module(sync_version_refs)
 
 APPROVED_TARGET_PATHS = (

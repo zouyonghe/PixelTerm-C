@@ -105,6 +105,7 @@ TEST_TARGET = $(BINDIR)/pixelterm-tests
 FILE_MANAGER_TEST_TARGET = $(BINDIR)/pixelterm-file-manager-tests
 PREVIEW_GRID_TEST_TARGET = $(BINDIR)/pixelterm-preview-grid-tests
 BOOK_PREVIEW_TEST_TARGET = $(BINDIR)/pixelterm-book-preview-tests
+INSTALL_SCRIPT_TEST = PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_install_script.py
 TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 FILE_MANAGER_TEST_SOURCE = tests/test_app_file_manager.c
@@ -192,6 +193,7 @@ test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(B
 	@$(FILE_MANAGER_TEST_TARGET)
 	@$(PREVIEW_GRID_TEST_TARGET)
 	@$(BOOK_PREVIEW_TEST_TARGET)
+	@$(INSTALL_SCRIPT_TEST)
 
 # Run with sample image
 run: $(TARGET)

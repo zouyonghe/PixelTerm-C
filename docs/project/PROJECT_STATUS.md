@@ -37,7 +37,7 @@ PixelTerm-C/
 - Dithering toggle and work-factor quality control
 
 ## Testing
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to verify the installer/docs path
 - `bin/pixelterm-tests` covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and video playback/seek regressions, including the paused-seek target-restore path
 - `bin/pixelterm-file-manager-tests` isolates file-manager navigation and selection-state regressions
 - `bin/pixelterm-preview-grid-tests` isolates preview-grid zoom, pagination, and short-last-page selection normalization regressions

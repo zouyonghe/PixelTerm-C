@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib.util
 import shutil
 import subprocess
@@ -13,6 +15,7 @@ MODULE_SPEC = importlib.util.spec_from_file_location(
 )
 assert MODULE_SPEC is not None and MODULE_SPEC.loader is not None
 release_notes = importlib.util.module_from_spec(MODULE_SPEC)
+sys.modules[MODULE_SPEC.name] = release_notes
 MODULE_SPEC.loader.exec_module(release_notes)
 
 
