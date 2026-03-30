@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.18: Warp auto-detection and installer stability follow-up.
+    - **Protocol Detection**: In local Warp sessions, trust the `WarpTerminal` family hint and keep `auto` on kitty even when Warp does not return the affirmative kitty probe reply that Ghostty-style terminals emit.
+    - **Installer**: Fix the release installer cleanup trap so successful installs no longer finish with an unbound `tmp_dir` shell error after writing the binary.
+    - **Testing**: Add regressions for Warp local auto-protocol fallback and the installer cleanup path so both follow-ups stay covered.
+
 - v1.7.17: Ghostty kitty auto-detection follow-up.
     - **Protocol Detection**: Treat Ghostty and libghostty XTVERSION replies as affirmative kitty-compatible signals so `auto` mode selects kitty instead of falling back to text in Ghostty-based terminals such as cmux.
     - **Terminal Compatibility**: Preserve the existing resolver order and conservative SSH behavior while broadening local kitty probe recognition for Ghostty-family replies.

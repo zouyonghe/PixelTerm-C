@@ -1072,6 +1072,51 @@ static void test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_si
     g_string_free(probe_fixture.writes, TRUE);
 }
 
+static void test_cli_protocol_resolution_auto_prefers_warp_hint_without_affirmative_probe(
+    AppCliFixture *fixture,
+    gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe_fixture = {
+        .writes = g_string_new(NULL),
+    };
+    AppConfig config;
+
+    queue_terminal_protocol_env_restore_and_clear();
+    g_assert_true(g_setenv("TERM_PROGRAM", "WarpTerminal", TRUE));
+
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    input_set_enable_raw_mode_observer_for_test(app_cli_probe_fixture_enable_raw_mode,
+                                                &probe_fixture);
+    input_set_disable_raw_mode_observer_for_test(app_cli_probe_fixture_disable_raw_mode,
+                                                 &probe_fixture);
+
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+
+    g_assert_false(config.force_text);
+    g_assert_false(config.force_sixel);
+    g_assert_true(config.force_kitty);
+    g_assert_false(config.force_iterm2);
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
+    g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
+
+    g_string_free(probe_fixture.writes, TRUE);
+}
+
 static void test_cli_protocol_resolution_auto_uses_text_when_probe_is_inconclusive(
     AppCliFixture *fixture,
     gconstpointer user_data) {
@@ -1181,6 +1226,8 @@ void register_app_cli_tests(void) {
                      test_cli_protocol_resolution_auto_accepts_ghostty_xtversion_as_kitty_signal);
     add_app_cli_test("/app_cli/protocol_resolution/auto_multi_protocol_hint_keeps_local_sixel_first_order",
                      test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_sixel_first_order);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_warp_hint_without_affirmative_probe",
+                     test_cli_protocol_resolution_auto_prefers_warp_hint_without_affirmative_probe);
     add_app_cli_test("/app_cli/protocol_resolution/auto_probe_avoids_raw_mode_transitions",
                      test_cli_protocol_resolution_auto_probe_avoids_raw_mode_transitions);
     add_app_cli_test("/app_cli/protocol_resolution/auto_direct_ssh_requires_affirmative_signal",

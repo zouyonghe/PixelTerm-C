@@ -438,6 +438,23 @@ static gboolean terminal_hint_primary_protocol(const TerminalProtocolHint *hint,
     return FALSE;
 }
 
+static gboolean terminal_hint_prefers_local_fallback_protocol(const TerminalProtocolHint *hint,
+                                                              TerminalResolvedProtocol *out_protocol) {
+    if (!hint || !out_protocol) {
+        return FALSE;
+    }
+
+    /* Warp documents kitty image support, but its default TERM remains
+     * xterm-256color, so local auto-detection needs to trust the family hint
+     * once the Warp-specific probe path stays inconclusive. */
+    if (strcmp(hint->name, "warp") == 0 && hint->supports_kitty) {
+        *out_protocol = TERMINAL_RESOLVED_PROTOCOL_KITTY;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 static gboolean probe_protocol_support(TerminalResolvedProtocol protocol) {
     switch (protocol) {
         case TERMINAL_RESOLVED_PROTOCOL_SIXEL:
@@ -494,6 +511,11 @@ static void collect_auto_protocol_inputs(TerminalProtocolResolverInput *input) {
     }
 
     if (direct_ssh) {
+        return;
+    }
+
+    if (terminal_hint_prefers_local_fallback_protocol(hint, &input->probe_protocol)) {
+        input->has_probe = TRUE;
         return;
     }
 
