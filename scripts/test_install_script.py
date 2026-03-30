@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -116,6 +117,43 @@ class InstallScriptCLITest(unittest.TestCase):
             result.stdout,
         )
         self.assertIn("/usr/local/bin/pixelterm", result.stdout)
+
+    def test_install_completes_without_unbound_tmp_dir_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_bin_dir = temp_path / "fake-bin"
+            install_dir = temp_path / "install-bin"
+            fake_bin_dir.mkdir()
+
+            fake_curl = fake_bin_dir / "curl"
+            fake_curl.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -eu\n"
+                "out=''\n"
+                'while [ "$#" -gt 0 ]; do\n'
+                '  case "$1" in\n'
+                '    -o) out="$2"; shift 2 ;;\n'
+                "    *) shift ;;\n"
+                "  esac\n"
+                "done\n"
+                "printf '#!/usr/bin/env bash\\nexit 0\\n' > \"$out\"\n"
+                'chmod 0755 "$out"\n',
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+
+            result = run_script(
+                "--bin-dir",
+                str(install_dir),
+                env={
+                    "PATH": f"{fake_bin_dir}:{os.environ['PATH']}",
+                    "PIXELTERM_INSTALL_UNAME_S": "Linux",
+                    "PIXELTERM_INSTALL_UNAME_M": "x86_64",
+                },
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertTrue((install_dir / "pixelterm").exists())
 
 
 class InstallReadmeTest(unittest.TestCase):

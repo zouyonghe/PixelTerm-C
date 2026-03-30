@@ -6,6 +6,7 @@ INSTALL_DIR="/usr/local/bin"
 DRY_RUN=0
 PRINT_ASSET_NAME=0
 PRINT_INSTALL_PATH=0
+TMP_DIR=""
 
 usage() {
   cat <<'EOF'
@@ -34,6 +35,12 @@ log() {
 die() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
+}
+
+cleanup_tmp_dir() {
+  if [ -n "${TMP_DIR}" ] && [ -d "${TMP_DIR}" ]; then
+    rm -rf "${TMP_DIR}"
+  fi
 }
 
 detect_uname_s() {
@@ -212,7 +219,6 @@ main() {
   local asset_name
   local url
   local destination
-  local tmp_dir
   local tmp_file
   local os_name
   local arch_name
@@ -243,9 +249,8 @@ main() {
     exit 0
   fi
 
-  tmp_dir="$(mktemp -d)"
-  tmp_file="${tmp_dir}/${asset_name}"
-  trap 'rm -rf "${tmp_dir}"' EXIT
+  TMP_DIR="$(mktemp -d)"
+  tmp_file="${TMP_DIR}/${asset_name}"
 
   log "Downloading ${asset_name}..."
   download_binary "${tmp_file}"
@@ -259,5 +264,7 @@ main() {
     log "If macOS blocks the binary, run: xattr -dr com.apple.quarantine ${destination}"
   fi
 }
+
+trap cleanup_tmp_dir EXIT
 
 main "$@"
