@@ -344,17 +344,13 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
                 app_refresh_display(app);
             }
             break;
-        case KEY_TAB: {
-            gchar *book_path = app->book.path ? g_strdup(app->book.path) : NULL;
-            app_close_book(app);
-            app_enter_file_manager(app);
-            if (book_path) {
-                app_file_manager_select_path(app, book_path);
-                g_free(book_path);
+        case KEY_TAB:
+            if (app_enter_book_page(app, app->book.preview_selected) == ERROR_NONE) {
+                app_render_book_page(app);
+            } else {
+                app_refresh_display(app);
             }
-            app_render_file_manager(app);
             break;
-        }
         case (KeyCode)'t':
         case (KeyCode)'T':
             if (app->book.toc) {
@@ -421,13 +417,23 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
             break;
         case KEY_ENTER:
         case 13:
-        case KEY_TAB:
             if (app_enter_book_preview(app) == ERROR_NONE) {
                 app_render_book_preview(app);
             } else {
                 app_refresh_display(app);
             }
             break;
+        case KEY_TAB: {
+            gchar *book_path = app->book.path ? g_strdup(app->book.path) : NULL;
+            app_close_book(app);
+            app_enter_file_manager(app);
+            if (book_path) {
+                app_file_manager_select_path(app, book_path);
+                g_free(book_path);
+            }
+            app_render_file_manager(app);
+            break;
+        }
         case (KeyCode)'t':
         case (KeyCode)'T':
             if (app->book.toc) {

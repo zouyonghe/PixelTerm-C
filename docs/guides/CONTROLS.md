@@ -105,7 +105,7 @@ Note: Book view automatically switches between single-page and double-page layou
 | PgUp/PgDn | Page up/down through the grid |
 | P | Jump to page (type digits, Enter to jump, P/ESC to cancel) |
 | Enter | Open selected page in Book Reader |
-| TAB | Return to File Manager |
+| TAB | Switch to Book Reader for the selected page |
 | +/= | Zoom in |
 | - | Zoom out |
 

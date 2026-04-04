@@ -3,6 +3,7 @@
 
 #include "app.h"
 #include "app_single_render_test_internal.h"
+#include "input_dispatch_test_support.h"
 #include "ui_render_utils.h"
 #include "../src/app_single_render_internal.h"
 
@@ -200,6 +201,7 @@ void app_preloader_update_terminal(PixelTermApp *app) {
 
 ErrorCode app_render_book_page(PixelTermApp *app) {
     (void)app;
+    g_input_dispatch_stub_state.book_page_render_calls++;
     return ERROR_NONE;
 }
 

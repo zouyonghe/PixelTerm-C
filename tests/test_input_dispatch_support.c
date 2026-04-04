@@ -6,12 +6,19 @@ InputDispatchTestStubState g_input_dispatch_stub_state;
 
 void input_dispatch_test_reset_stubs(void) {
     memset(&g_input_dispatch_stub_state, 0, sizeof(g_input_dispatch_stub_state));
+    g_input_dispatch_stub_state.enter_at_position_mode = -1;
     g_input_dispatch_stub_state.video_seek_total_delta_ms = 0;
     g_input_dispatch_stub_state.delete_result = ERROR_NONE;
+    g_input_dispatch_stub_state.open_book_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_file_manager_result = ERROR_NONE;
+    g_input_dispatch_stub_state.exit_file_manager_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_preview_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_book_preview_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_book_page_result = ERROR_NONE;
+    g_input_dispatch_stub_state.file_manager_enter_result = ERROR_NONE;
+    g_input_dispatch_stub_state.file_manager_toggle_hidden_result = ERROR_NONE;
+    g_input_dispatch_stub_state.load_directory_result = ERROR_NONE;
+    g_input_dispatch_stub_state.enter_at_position_result = ERROR_NONE;
     g_input_dispatch_stub_state.video_seek_result = ERROR_NONE;
     g_input_dispatch_stub_state.next_image_result = ERROR_NONE;
     g_input_dispatch_stub_state.previous_image_result = ERROR_NONE;
@@ -190,12 +197,21 @@ void app_book_jump_clear_prompt(PixelTermApp *app) {
 
 void app_close_book(PixelTermApp *app) {
     (void)app;
+    g_input_dispatch_stub_state.close_book_calls++;
 }
 
 ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
     (void)app;
     (void)path;
+    g_input_dispatch_stub_state.file_manager_select_path_calls++;
     return ERROR_NONE;
+}
+
+ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
+    (void)app;
+    (void)filepath;
+    g_input_dispatch_stub_state.open_book_calls++;
+    return g_input_dispatch_stub_state.open_book_result;
 }
 
 ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
@@ -240,6 +256,78 @@ ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mo
 ErrorCode app_render_file_manager(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.file_manager_render_calls++;
+    return ERROR_NONE;
+}
+
+ErrorCode app_exit_file_manager(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.exit_file_manager_calls++;
+    return g_input_dispatch_stub_state.exit_file_manager_result;
+}
+
+ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter) {
+    (void)app;
+    (void)letter;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_left(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_right(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_up(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+ErrorCode app_file_manager_down(PixelTermApp *app) {
+    (void)app;
+    return ERROR_NONE;
+}
+
+gboolean app_file_manager_has_images(PixelTermApp *app) {
+    (void)app;
+    return g_input_dispatch_stub_state.file_manager_has_images;
+}
+
+ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
+    (void)app;
+    (void)directory;
+    g_input_dispatch_stub_state.load_directory_calls++;
+    return g_input_dispatch_stub_state.load_directory_result;
+}
+
+ErrorCode app_file_manager_enter(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.file_manager_enter_calls++;
+    return g_input_dispatch_stub_state.file_manager_enter_result;
+}
+
+ErrorCode app_file_manager_toggle_hidden(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.file_manager_toggle_hidden_calls++;
+    return g_input_dispatch_stub_state.file_manager_toggle_hidden_result;
+}
+
+ErrorCode app_file_manager_enter_at_position(PixelTermApp *app, gint mouse_x, gint mouse_y) {
+    g_input_dispatch_stub_state.enter_at_position_calls++;
+    g_input_dispatch_stub_state.last_mouse_x = mouse_x;
+    g_input_dispatch_stub_state.last_mouse_y = mouse_y;
+    if (app && g_input_dispatch_stub_state.enter_at_position_mode >= 0) {
+        app->mode = (AppMode)g_input_dispatch_stub_state.enter_at_position_mode;
+    }
+    return g_input_dispatch_stub_state.enter_at_position_result;
+}
+
+ErrorCode app_book_preview_scroll_pages(PixelTermApp *app, gint direction) {
+    (void)app;
+    (void)direction;
     return ERROR_NONE;
 }
 

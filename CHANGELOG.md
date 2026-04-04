@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.20: Book Tab cycling alignment.
+    - **Books**: Make `Tab` follow the documented three-mode cycle for books: file manager to book preview, book preview to reader, and reader back to file manager.
+    - **Controls**: Update the on-screen book preview hint and control guides so `Tab` now clearly advertises opening the selected page for reading instead of returning early.
+    - **Testing**: Add focused regressions for book preview `Tab` entry into reader mode, file-manager `Tab` entry into book preview, and file-manager double-click dispatch.
+
 - v1.7.19: Book reader Enter shortcut repair.
     - **Books**: Restore the documented `Enter` shortcut in reader mode so pressing Enter opens book preview instead of doing nothing.
     - **Input Handling**: Keep `Enter` aligned with `Tab` for switching from the reader into page-grid preview, matching the shipped controls and on-screen hints.

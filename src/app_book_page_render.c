@@ -9,7 +9,7 @@ static const HelpSegment k_book_page_help_segments[] = {
     {"P", "Page"},
     {"T", "TOC"},
     {"Enter", "Preview"},
-    {"TAB", "Toggle"},
+    {"TAB", "Files"},
     {"~", "Zen"},
     {"ESC", "Exit"}
 };
