@@ -10,6 +10,8 @@ void input_dispatch_test_reset_stubs(void) {
     g_input_dispatch_stub_state.delete_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_file_manager_result = ERROR_NONE;
     g_input_dispatch_stub_state.enter_preview_result = ERROR_NONE;
+    g_input_dispatch_stub_state.enter_book_preview_result = ERROR_NONE;
+    g_input_dispatch_stub_state.enter_book_page_result = ERROR_NONE;
     g_input_dispatch_stub_state.video_seek_result = ERROR_NONE;
     g_input_dispatch_stub_state.next_image_result = ERROR_NONE;
     g_input_dispatch_stub_state.previous_image_result = ERROR_NONE;
@@ -98,10 +100,101 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+ErrorCode app_enter_book_preview(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.enter_book_preview_calls++;
+    return g_input_dispatch_stub_state.enter_book_preview_result;
+}
+
 ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index) {
     (void)app;
     (void)old_index;
     g_input_dispatch_stub_state.book_preview_selection_render_calls++;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_move_selection(PixelTermApp *app, gint delta_row, gint delta_col) {
+    (void)app;
+    (void)delta_row;
+    (void)delta_col;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_page_move(PixelTermApp *app, gint direction) {
+    (void)app;
+    (void)direction;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_change_zoom(PixelTermApp *app, gint delta) {
+    (void)app;
+    (void)delta;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_preview_jump_to_page(PixelTermApp *app, gint page_index) {
+    if (app) {
+        app->book.preview_selected = page_index;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
+    if (app) {
+        app->book.page = page_index;
+    }
+    g_input_dispatch_stub_state.enter_book_page_calls++;
+    return g_input_dispatch_stub_state.enter_book_page_result;
+}
+
+ErrorCode app_render_book_toc(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.book_toc_render_calls++;
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_toc_move_selection(PixelTermApp *app, gint delta) {
+    if (app) {
+        app->book.toc_selected += delta;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_toc_page_move(PixelTermApp *app, gint direction) {
+    if (app) {
+        app->book.toc_selected += direction;
+    }
+    return ERROR_NONE;
+}
+
+ErrorCode app_book_toc_sync_to_page(PixelTermApp *app, gint page_index) {
+    if (app) {
+        app->book.toc_selected = page_index;
+    }
+    return ERROR_NONE;
+}
+
+gint app_book_toc_get_selected_page(PixelTermApp *app) {
+    return app ? app->book.toc_selected : -1;
+}
+
+void app_book_jump_render_prompt(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.book_jump_prompt_render_calls++;
+}
+
+void app_book_jump_clear_prompt(PixelTermApp *app) {
+    (void)app;
+    g_input_dispatch_stub_state.book_jump_prompt_clear_calls++;
+}
+
+void app_close_book(PixelTermApp *app) {
+    (void)app;
+}
+
+ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
+    (void)app;
+    (void)path;
     return ERROR_NONE;
 }
 

@@ -14,6 +14,7 @@ void register_input_dispatch_pending_clicks_tests(void);
 void register_input_dispatch_delete_tests(void);
 void register_input_dispatch_core_tests(void);
 void register_input_dispatch_key_single_tests(void);
+void register_input_dispatch_key_book_tests(void);
 void register_preview_shared_tests(void);
 void register_video_player_tests(void);
 void register_app_media_session_tests(void);
@@ -306,6 +307,7 @@ int main(int argc, char **argv) {
     register_input_dispatch_delete_tests();
     register_input_dispatch_core_tests();
     register_input_dispatch_key_single_tests();
+    register_input_dispatch_key_book_tests();
     register_preview_shared_tests();
     register_terminal_protocols_tests();
     register_app_cli_tests();

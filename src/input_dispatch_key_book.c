@@ -419,6 +419,8 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
         case (KeyCode)'P':
             book_jump_start(app);
             break;
+        case KEY_ENTER:
+        case 13:
         case KEY_TAB:
             if (app_enter_book_preview(app) == ERROR_NONE) {
                 app_render_book_preview(app);

@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.19: Book reader Enter shortcut repair.
+    - **Books**: Restore the documented `Enter` shortcut in reader mode so pressing Enter opens book preview instead of doing nothing.
+    - **Input Handling**: Keep `Enter` aligned with `Tab` for switching from the reader into page-grid preview, matching the shipped controls and on-screen hints.
+    - **Testing**: Add a focused reader `Enter` regression for book input dispatch and include the book key-dispatch module in the main test binary.
+
 - v1.7.18: Warp auto-detection and installer stability follow-up.
     - **Protocol Detection**: In local Warp sessions, trust the `WarpTerminal` family hint and keep `auto` on kitty even when Warp does not return the affirmative kitty probe reply that Ghostty-style terminals emit.
     - **Installer**: Fix the release installer cleanup trap so successful installs no longer finish with an unbound `tmp_dir` shell error after writing the binary.
