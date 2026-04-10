@@ -46,6 +46,9 @@ pixelterm --work-factor 7 /path/to/image.jpg
 # Force output protocol (auto, text, sixel, kitty, iterm2)
 pixelterm --protocol kitty /path/to/image.jpg
 
+# Tune text-mode symbol selection (auto, half, quarter)
+pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
+
 # Gamma correction for image rendering
 # Note: defaults to 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
@@ -67,6 +70,7 @@ pixelterm -- --config=gallery.txt
 - `--` stops option parsing, so anything after it is treated as `PATH`.
 - CLI flags override config file values because config loading happens before argument parsing.
 - `--preload` and `--alt-screen` accept `true/false`, `yes/no`, `on/off`, and `1/0`.
+- `--text-symbols` only affects text rendering, whether selected explicitly with `--protocol text` or chosen by the automatic fallback.
 - A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
 - Config groups are applied in this order: `[default]`, then the first matching terminal-specific group from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
 - If `PATH` is an unsupported regular file, PixelTerm-C falls back to that file's canonical parent directory and opens file manager mode there.

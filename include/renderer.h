@@ -15,6 +15,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    TextSymbolMode text_symbol_mode;
     gdouble gamma;
     
     // Advanced quality settings

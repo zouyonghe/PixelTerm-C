@@ -88,8 +88,8 @@ static gboolean init_render_test_app(PixelTermApp *app) {
         return FALSE;
     }
 
-    app->gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, 1.0);
-    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, 1.0);
+    app->gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     if (!app->gif_player || !app->video_player) {
         destroy_render_test_app(app);
         return FALSE;

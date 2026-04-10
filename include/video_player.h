@@ -107,7 +107,7 @@ typedef struct {
   } VideoPlayer;
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                              gboolean force_iterm2, gdouble gamma);
+                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma);
 void video_player_destroy(VideoPlayer *player);
 void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
 void video_player_set_render_area(VideoPlayer *player,

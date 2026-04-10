@@ -53,6 +53,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    TextSymbolMode text_symbol_mode;
     gdouble gamma;
 } ImagePreloader;
 
@@ -90,7 +91,7 @@ void preloader_destroy(ImagePreloader *preloader);
  */
 ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor,
                                gboolean force_text, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2,
-                               gdouble gamma);
+                               TextSymbolMode text_symbol_mode, gdouble gamma);
 /**
  * @brief Starts the preloader's worker thread.
  * 

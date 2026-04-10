@@ -4,6 +4,7 @@
 #include "app_cli.h"
 #include "app_config_runtime.h"
 #include "input.h"
+#include "process_env.h"
 #include "terminal_probe.h"
 
 #include <stdlib.h>
@@ -25,16 +26,19 @@ static const gchar * const k_app_cli_env_keys[] = {
     NULL,
 };
 
-#define APP_CLI_ENV_KEY_COUNT (G_N_ELEMENTS(k_app_cli_env_keys) - 1)
-
 typedef struct {
-    gchar *saved_values[APP_CLI_ENV_KEY_COUNT];
+    gint unused;
 } AppCliFixture;
 
 typedef struct {
     const gchar *value;
     AppProtocolMode expected_mode;
 } ProtocolCase;
+
+typedef struct {
+    const gchar *value;
+    TextSymbolMode expected_mode;
+} TextSymbolCase;
 
 typedef struct {
     char **argv;
@@ -50,11 +54,6 @@ typedef struct {
 } BooleanAliasCase;
 
 typedef struct {
-    gchar *name;
-    gchar *value;
-} EnvVarRestore;
-
-typedef struct {
     const gchar *response;
     gsize response_length;
     gsize response_offset;
@@ -65,8 +64,6 @@ typedef struct {
 } AppCliProbeFixture;
 
 static gchar *g_app_cli_shared_config_root = NULL;
-
-static void queue_env_restore(const gchar *name);
 
 static void remove_path(gpointer data) {
     if (!data) {
@@ -123,23 +120,6 @@ static void app_cli_cleanup_shared_config_root(void) {
 
     gchar *root = g_steal_pointer(&g_app_cli_shared_config_root);
     remove_tree(root);
-}
-
-static void restore_env_var(gpointer data) {
-    EnvVarRestore *saved = data;
-    if (!saved) {
-        return;
-    }
-
-    if (saved->value) {
-        g_setenv(saved->name, saved->value, TRUE);
-    } else {
-        g_unsetenv(saved->name);
-    }
-
-    g_free(saved->name);
-    g_free(saved->value);
-    g_free(saved);
 }
 
 static gboolean app_cli_probe_fixture_stdin_is_tty(gpointer user_data) {
@@ -242,11 +222,10 @@ static void queue_terminal_protocol_env_restore_and_clear(void) {
     };
 
     for (gsize i = 0; keys[i] != NULL; i++) {
-        queue_env_restore(keys[i]);
-        g_unsetenv(keys[i]);
+        pixelterm_env_unset_for_test(keys[i]);
     }
 
-    g_assert_true(g_setenv("TERM", "pixelterm-test-unknown", TRUE));
+    pixelterm_env_set_for_test("TERM", "pixelterm-test-unknown");
 }
 
 static void app_cli_probe_fixture_enable_raw_mode(InputHandler *handler, gpointer user_data) {
@@ -283,7 +262,7 @@ static void assert_app_cli_probe_resolves_to_kitty(const gchar *response,
 
     queue_terminal_protocol_env_restore_and_clear();
     if (env_key && env_value) {
-        g_assert_true(g_setenv(env_key, env_value, TRUE));
+        pixelterm_env_set_for_test(env_key, env_value);
     }
 
     terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
@@ -305,13 +284,6 @@ static void assert_app_cli_probe_resolves_to_kitty(const gchar *response,
     g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
 
     g_string_free(probe_fixture.writes, TRUE);
-}
-
-static void queue_env_restore(const gchar *name) {
-    EnvVarRestore *saved = g_new0(EnvVarRestore, 1);
-    saved->name = g_strdup(name);
-    saved->value = g_strdup(g_getenv(name));
-    g_test_queue_destroy(restore_env_var, saved);
 }
 
 static const gchar *app_cli_shared_config_root(void) {
@@ -336,33 +308,23 @@ static const gchar *app_cli_shared_config_root(void) {
 
 static void clear_app_cli_env(void) {
     for (gsize i = 0; k_app_cli_env_keys[i]; i++) {
-        g_unsetenv(k_app_cli_env_keys[i]);
+        pixelterm_env_unset_for_test(k_app_cli_env_keys[i]);
     }
 }
 
 static void app_cli_fixture_set_up(AppCliFixture *fixture, gconstpointer user_data) {
+    (void)fixture;
     (void)user_data;
 
-    for (gsize i = 0; i < APP_CLI_ENV_KEY_COUNT; i++) {
-        fixture->saved_values[i] = g_strdup(g_getenv(k_app_cli_env_keys[i]));
-    }
-
+    pixelterm_env_reset_for_test();
     clear_app_cli_env();
-    g_assert_true(g_setenv("XDG_CONFIG_HOME", app_cli_shared_config_root(), TRUE));
+    pixelterm_env_set_for_test("XDG_CONFIG_HOME", app_cli_shared_config_root());
 }
 
 static void app_cli_fixture_tear_down(AppCliFixture *fixture, gconstpointer user_data) {
+    (void)fixture;
     (void)user_data;
-
-    for (gsize i = 0; i < APP_CLI_ENV_KEY_COUNT; i++) {
-        if (fixture->saved_values[i]) {
-            g_setenv(k_app_cli_env_keys[i], fixture->saved_values[i], TRUE);
-        } else {
-            g_unsetenv(k_app_cli_env_keys[i]);
-        }
-
-        g_clear_pointer(&fixture->saved_values[i], g_free);
-    }
+    pixelterm_env_reset_for_test();
 }
 
 static void add_app_cli_test(const gchar *path,
@@ -682,6 +644,36 @@ static void test_cli_protocol_argument_parses_supported_modes(AppCliFixture *fix
     }
 }
 
+static void test_cli_text_symbols_argument_parses_supported_modes(AppCliFixture *fixture,
+                                                                  gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    static const TextSymbolCase cases[] = {
+        {"auto", TEXT_SYMBOL_MODE_AUTO},
+        {"HALF", TEXT_SYMBOL_MODE_HALF},
+        {"quarter", TEXT_SYMBOL_MODE_QUARTER},
+    };
+
+    for (gsize i = 0; i < G_N_ELEMENTS(cases); i++) {
+        AppConfig config;
+        gchar *path = NULL;
+        app_config_init(&config);
+
+        char *argv[] = {
+            "pixelterm",
+            "--text-symbols",
+            (char *)cases[i].value,
+            NULL,
+        };
+
+        g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_NONE);
+        g_assert_null(path);
+        g_assert_cmpint(config.text_symbol_mode, ==, cases[i].expected_mode);
+        g_free(path);
+    }
+}
+
 static void test_cli_help_mentions_xdg_and_home_config_defaults(AppCliFixture *fixture,
                                                                 gconstpointer user_data) {
     (void)fixture;
@@ -733,6 +725,7 @@ static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture 
     config.force_sixel = FALSE;
     config.force_kitty = TRUE;
     config.force_iterm2 = FALSE;
+    config.text_symbol_mode = TEXT_SYMBOL_MODE_QUARTER;
 
     app.running = TRUE;
     app.video_scale = 2.0;
@@ -748,6 +741,7 @@ static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture 
     g_assert_false(app.force_sixel);
     g_assert_true(app.force_kitty);
     g_assert_false(app.force_iterm2);
+    g_assert_cmpint(app.text_symbol_mode, ==, TEXT_SYMBOL_MODE_QUARTER);
     g_assert_true(app.running);
     g_assert_cmpfloat_with_epsilon(app.video_scale, 2.0, 0.0001);
 }
@@ -764,14 +758,16 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
         "clear_workaround=false\n"
         "work_factor=3\n"
         "protocol=text\n"
+        "text_symbols=quarter\n"
         "gamma=1.25\n"
         "\n"
         "[WarpTerminal]\n"
         "alt_screen=false\n"
         "clear_workaround=true\n"
-        "protocol=kitty\n");
+        "protocol=kitty\n"
+        "text_symbols=half\n");
 
-    g_assert_true(g_setenv("TERM_PROGRAM", "WarpTerminal", TRUE));
+    pixelterm_env_set_for_test("TERM_PROGRAM", "WarpTerminal");
 
     AppConfig config;
     gchar *path = NULL;
@@ -786,16 +782,15 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     g_assert_true(config.clear_workaround_enabled);
     g_assert_cmpint(config.work_factor, ==, 3);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_KITTY);
+    g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_HALF);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
     g_free(path);
 }
 
 static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(void) {
-    queue_env_restore("TERM_PROGRAM");
-    queue_env_restore("XDG_CONFIG_HOME");
-
-    g_unsetenv("XDG_CONFIG_HOME");
+    pixelterm_env_reset_for_test();
+    clear_app_cli_env();
     (void)g_get_user_config_dir();
 
     gchar *config_root = make_temp_config_root();
@@ -807,15 +802,17 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
         "clear_workaround=false\n"
         "work_factor=3\n"
         "protocol=text\n"
+        "text_symbols=quarter\n"
         "gamma=1.25\n"
         "\n"
         "[WarpTerminal]\n"
         "alt_screen=false\n"
         "clear_workaround=true\n"
-        "protocol=kitty\n");
+        "protocol=kitty\n"
+        "text_symbols=half\n");
 
-    g_assert_true(g_setenv("XDG_CONFIG_HOME", config_root, TRUE));
-    g_assert_true(g_setenv("TERM_PROGRAM", "WarpTerminal", TRUE));
+    pixelterm_env_set_for_test("XDG_CONFIG_HOME", config_root);
+    pixelterm_env_set_for_test("TERM_PROGRAM", "WarpTerminal");
 
     AppConfig config;
     gchar *path = NULL;
@@ -830,11 +827,13 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
     g_assert_true(config.clear_workaround_enabled);
     g_assert_cmpint(config.work_factor, ==, 3);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_KITTY);
+    g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_HALF);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
 
     g_free(path);
     g_free(config_root);
+    pixelterm_env_reset_for_test();
 }
 
 static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
@@ -850,6 +849,7 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
         "clear_workaround=false\n"
         "work_factor=2\n"
         "protocol=text\n"
+        "text_symbols=half\n"
         "gamma=1.5\n");
 
     AppConfig config;
@@ -870,6 +870,8 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
         "8",
         "--protocol",
         "sixel",
+        "--text-symbols",
+        "quarter",
         "--gamma",
         "2.5",
         "sample.png",
@@ -884,6 +886,7 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
     g_assert_true(config.clear_workaround_enabled);
     g_assert_cmpint(config.work_factor, ==, 8);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_SIXEL);
+    g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_QUARTER);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 2.5, 0.0001);
     g_free(path);
@@ -983,7 +986,7 @@ static void test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_
     AppConfig config;
 
     queue_terminal_protocol_env_restore_and_clear();
-    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
 
     terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
     g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
@@ -1049,7 +1052,7 @@ static void test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_si
     AppConfig config;
 
     queue_terminal_protocol_env_restore_and_clear();
-    g_assert_true(g_setenv("TERM_PROGRAM", "WezTerm", TRUE));
+    pixelterm_env_set_for_test("TERM_PROGRAM", "WezTerm");
 
     terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
     g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
@@ -1094,7 +1097,7 @@ static void test_cli_protocol_resolution_auto_prefers_warp_hint_without_affirmat
     AppConfig config;
 
     queue_terminal_protocol_env_restore_and_clear();
-    g_assert_true(g_setenv("TERM_PROGRAM", "WarpTerminal", TRUE));
+    pixelterm_env_set_for_test("TERM_PROGRAM", "WarpTerminal");
 
     terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
     g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
@@ -1185,7 +1188,7 @@ static void test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_si
     AppConfig config;
 
     queue_terminal_protocol_env_restore_and_clear();
-    g_assert_true(g_setenv("SSH_CONNECTION", "client 22 server 22", TRUE));
+    pixelterm_env_set_for_test("SSH_CONNECTION", "client 22 server 22");
 
     terminal_probe_set_transport_hooks_for_test(&hooks, &probe_fixture);
     g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
@@ -1218,6 +1221,8 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/help_mentions_xdg_and_home_config_defaults",
                      test_cli_help_mentions_xdg_and_home_config_defaults);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/text_symbols",
+                     test_cli_text_symbols_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_affirmative_signal_before_generic_probe_order",
                      test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order);
     add_app_cli_test("/app_cli/protocol_resolution/auto_accepts_libghostty_xtversion_as_kitty_signal",

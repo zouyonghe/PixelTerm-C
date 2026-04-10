@@ -51,7 +51,7 @@ typedef struct {
  *         or NULL if memory allocation fails.
  */
 GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                          gboolean force_iterm2, gdouble gamma);
+                          gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma);
 /**
  * @brief Destroys a `GifPlayer` instance and frees all associated resources.
  * 

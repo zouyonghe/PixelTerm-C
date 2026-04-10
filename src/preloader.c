@@ -169,6 +169,7 @@ ImagePreloader* preloader_create(void) {
     preloader->force_sixel = FALSE;
     preloader->force_kitty = FALSE;
     preloader->force_iterm2 = FALSE;
+    preloader->text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
     preloader->gamma = 1.0;
 
     // Default terminal dimensions
@@ -216,7 +217,7 @@ void preloader_destroy(ImagePreloader *preloader) {
 // Initialize preloader
 ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enabled, gint work_factor,
                                gboolean force_text, gboolean force_sixel, gboolean force_kitty, gboolean force_iterm2,
-                               gdouble gamma) {
+                               TextSymbolMode text_symbol_mode, gdouble gamma) {
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -231,6 +232,7 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
     preloader->force_sixel = force_sixel;
     preloader->force_kitty = force_kitty;
     preloader->force_iterm2 = force_iterm2;
+    preloader->text_symbol_mode = text_symbol_mode;
     preloader->gamma = gamma;
 
     return ERROR_NONE;
@@ -730,6 +732,7 @@ gpointer preloader_worker_thread(gpointer data) {
         .force_sixel = preloader->force_sixel,
         .force_kitty = preloader->force_kitty,
         .force_iterm2 = preloader->force_iterm2,
+        .text_symbol_mode = preloader->text_symbol_mode,
         .gamma = preloader->gamma,
         .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,

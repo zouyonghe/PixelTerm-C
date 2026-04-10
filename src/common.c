@@ -1,4 +1,6 @@
 #include "common.h"
+#include "process_env.h"
+
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -668,7 +670,7 @@ void get_terminal_cell_geometry(gint *cell_width, gint *cell_height) {
 // Calculate terminal cell aspect ratio from pixel dimensions
 gdouble get_terminal_cell_aspect_ratio(void) {
     gint width, height, pixel_width, pixel_height;
-    const gchar *konsole_ver = g_getenv("KONSOLE_VERSION");
+    const gchar *konsole_ver = pixelterm_getenv("KONSOLE_VERSION");
     const gboolean is_konsole = (konsole_ver && *konsole_ver);
     const gdouble fallback = is_konsole ? 0.55 : 0.5; // Konsole tends to need a slightly wider glyph
 

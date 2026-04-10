@@ -85,6 +85,100 @@ static gchar *create_png_file(void) {
     return path;
 }
 
+typedef enum {
+    TEST_PATTERN_TOP_HALF = 0,
+    TEST_PATTERN_BOTTOM_LEFT_QUARTER,
+    TEST_PATTERN_LEFT_HALF
+} RendererTestPattern;
+
+typedef struct {
+    gunichar code_point;
+    gint raw_fg;
+    gint raw_bg;
+} RenderedCell;
+
+static void fill_test_pattern_rgba(guint8 *pixels, RendererTestPattern pattern) {
+    memset(pixels, 0, 8 * 8 * 4);
+
+    for (gint y = 0; y < 8; y++) {
+        for (gint x = 0; x < 8; x++) {
+            gboolean on = FALSE;
+            if (pattern == TEST_PATTERN_TOP_HALF) {
+                on = y < 4;
+            } else if (pattern == TEST_PATTERN_BOTTOM_LEFT_QUARTER) {
+                on = x < 4 && y >= 4;
+            } else if (pattern == TEST_PATTERN_LEFT_HALF) {
+                on = x < 4;
+            }
+
+            guint8 *pixel = pixels + ((y * 8 + x) * 4);
+            pixel[0] = on ? 255 : 0;
+            pixel[1] = on ? 255 : 0;
+            pixel[2] = on ? 255 : 0;
+            pixel[3] = 255;
+        }
+    }
+}
+
+static RenderedCell render_test_pattern_cell(TextSymbolMode mode, RendererTestPattern pattern) {
+    ImageRenderer *renderer = renderer_create();
+    g_assert_nonnull(renderer);
+
+    RendererConfig config = {
+        .max_width = 1,
+        .max_height = 1,
+        .preserve_aspect_ratio = TRUE,
+        .dither = FALSE,
+        .color_space = CHAFA_COLOR_SPACE_RGB,
+        .work_factor = 6,
+        .force_text = TRUE,
+        .force_sixel = FALSE,
+        .force_kitty = FALSE,
+        .force_iterm2 = FALSE,
+        .text_symbol_mode = mode,
+        .gamma = 1.0,
+        .dither_mode = CHAFA_DITHER_MODE_NONE,
+        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
+        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
+    };
+
+    g_assert_cmpint(renderer_initialize(renderer, &config), ==, ERROR_NONE);
+
+    guint8 pixels[8 * 8 * 4];
+    fill_test_pattern_rgba(pixels, pattern);
+    chafa_canvas_draw_all_pixels(renderer->canvas,
+                                 CHAFA_PIXEL_RGBA8_UNASSOCIATED,
+                                 pixels,
+                                 8,
+                                 8,
+                                 8 * 4);
+
+    RenderedCell cell = {
+        .code_point = chafa_canvas_get_char_at(renderer->canvas, 0, 0),
+        .raw_fg = 0,
+        .raw_bg = 0
+    };
+    chafa_canvas_get_raw_colors_at(renderer->canvas, 0, 0, &cell.raw_fg, &cell.raw_bg);
+    renderer_destroy(renderer);
+    return cell;
+}
+
+static gboolean rendered_cell_equals(const RenderedCell *a, const RenderedCell *b) {
+    return a && b &&
+           a->code_point == b->code_point &&
+           a->raw_fg == b->raw_fg &&
+           a->raw_bg == b->raw_bg;
+}
+
+static gboolean rendered_cell_is_left_half_split(const RenderedCell *cell) {
+    if (!cell) {
+        return FALSE;
+    }
+
+    return (cell->code_point == 0x258C && cell->raw_fg == 0xFFFFFF && cell->raw_bg == 0x000000) ||
+           (cell->code_point == 0x2590 && cell->raw_fg == 0x000000 && cell->raw_bg == 0xFFFFFF);
+}
+
 static void test_renderer_cache_roundtrip(void) {
     ImageRenderer *renderer = renderer_create();
     g_assert_nonnull(renderer);
@@ -172,6 +266,25 @@ static void test_renderer_is_graphics_mode_true_for_forced_kitty_mode(void) {
     renderer_destroy(renderer);
 }
 
+static void test_renderer_text_symbol_mode_half_reduces_quadrant_detail(void) {
+    RenderedCell auto_cell = render_test_pattern_cell(TEXT_SYMBOL_MODE_AUTO, TEST_PATTERN_BOTTOM_LEFT_QUARTER);
+    RenderedCell half_cell = render_test_pattern_cell(TEXT_SYMBOL_MODE_HALF, TEST_PATTERN_BOTTOM_LEFT_QUARTER);
+
+    g_assert_false(rendered_cell_equals(&auto_cell, &half_cell));
+}
+
+static void test_renderer_text_symbol_mode_quarter_preserves_quadrant_detail(void) {
+    RenderedCell auto_cell = render_test_pattern_cell(TEXT_SYMBOL_MODE_AUTO, TEST_PATTERN_BOTTOM_LEFT_QUARTER);
+    RenderedCell quarter_cell = render_test_pattern_cell(TEXT_SYMBOL_MODE_QUARTER, TEST_PATTERN_BOTTOM_LEFT_QUARTER);
+
+    g_assert_true(rendered_cell_equals(&auto_cell, &quarter_cell));
+}
+
+static void test_renderer_text_symbol_mode_quarter_keeps_exact_half_split(void) {
+    RenderedCell quarter_cell = render_test_pattern_cell(TEXT_SYMBOL_MODE_QUARTER, TEST_PATTERN_LEFT_HALF);
+    g_assert_true(rendered_cell_is_left_half_split(&quarter_cell));
+}
+
 static void test_renderer_get_image_dimensions_valid(void) {
     gchar *path = create_png_file();
 
@@ -214,6 +327,12 @@ void register_renderer_tests(void) {
                     test_renderer_is_graphics_mode_false_for_text_mode);
     g_test_add_func("/renderer/is_graphics_mode/forced_kitty_mode",
                     test_renderer_is_graphics_mode_true_for_forced_kitty_mode);
+    g_test_add_func("/renderer/text_symbol_mode/half_reduces_quadrant_detail",
+                    test_renderer_text_symbol_mode_half_reduces_quadrant_detail);
+    g_test_add_func("/renderer/text_symbol_mode/quarter_preserves_quadrant_detail",
+                    test_renderer_text_symbol_mode_quarter_preserves_quadrant_detail);
+    g_test_add_func("/renderer/text_symbol_mode/quarter_keeps_exact_half_split",
+                    test_renderer_text_symbol_mode_quarter_keeps_exact_half_split);
     g_test_add_func("/renderer/get_image_dimensions/valid", test_renderer_get_image_dimensions_valid);
     g_test_add_func("/renderer/get_image_dimensions/invalid", test_renderer_get_image_dimensions_invalid);
     g_test_add_func("/renderer/is_image_supported", test_renderer_is_image_supported);

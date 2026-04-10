@@ -1,6 +1,6 @@
 #include "terminal_protocols.h"
+#include "process_env.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 static const TerminalProtocolHint k_terminal_protocol_hints[] = {
@@ -261,8 +261,8 @@ static gboolean terminal_env_matches_hint(const TerminalProtocolHint *hint) {
         return FALSE;
     }
 
-    const char *term = getenv("TERM");
-    const char *term_program = getenv("TERM_PROGRAM");
+    const char *term = pixelterm_getenv("TERM");
+    const char *term_program = pixelterm_getenv("TERM_PROGRAM");
 
     if (terminal_value_matches(term, hint->terms, FALSE)) {
         return TRUE;
@@ -272,7 +272,7 @@ static gboolean terminal_env_matches_hint(const TerminalProtocolHint *hint) {
     }
 
     for (gsize i = 0; hint->env_vars[i]; i++) {
-        const char *env_val = getenv(hint->env_vars[i]);
+        const char *env_val = pixelterm_getenv(hint->env_vars[i]);
         if (env_val && *env_val) {
             return TRUE;
         }
@@ -301,7 +301,7 @@ const TerminalProtocolHint* terminal_protocol_env_match(void) {
 }
 
 static gboolean terminal_env_var_present(const char *name) {
-    const char *value = getenv(name);
+    const char *value = pixelterm_getenv(name);
     return value && value[0] != '\0';
 }
 

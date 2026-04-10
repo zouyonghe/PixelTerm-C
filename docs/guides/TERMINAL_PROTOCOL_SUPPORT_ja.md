@@ -52,11 +52,14 @@
 # 現在の実行だけプロトコルを固定する
 pixelterm --protocol kitty /path/to/image.jpg
 
+# text プロトコルのまま quarter-block の細部を優先する
+pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
+
 # 利用可能な値
 pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
 ```
 
-`config.ini` に `protocol = auto|text|sixel|kitty|iterm2` を書くこともできます。そこでも非 `auto` の値は `--protocol` と同じく `auto` を迂回します。端末別セクションは `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME`、`TERM` の順で最初に一致したものが使われます。CLI と設定ファイルの現在の書式は [config.example.ini](../../config.example.ini) と [USAGE_ja.md](USAGE_ja.md) を参照してください。
+`config.ini` に `protocol = auto|text|sixel|kitty|iterm2` を書くこともできます。テキスト描画では、`text_symbols = auto|half|quarter` によって、端末安全な既定の記号集合を維持するか、より強い half-block / quarter-block の手動記号集合へ切り替えられます。端末別セクションは `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME`、`TERM` の順で最初に一致したものが使われます。CLI と設定ファイルの現在の書式は [config.example.ini](../../config.example.ini) と [USAGE_ja.md](USAGE_ja.md) を参照してください。
 
 ## 範囲に関するメモ
 

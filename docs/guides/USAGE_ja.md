@@ -46,6 +46,9 @@ pixelterm --work-factor 7 /path/to/image.jpg
 # 出力プロトコルを固定する（auto, text, sixel, kitty, iterm2）
 pixelterm --protocol kitty /path/to/image.jpg
 
+# テキストモードの記号集合を調整する（auto, half, quarter）
+pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
+
 # 画像描画のガンマ補正
 # 注: デフォルトは 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
@@ -63,6 +66,7 @@ pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 - パスを付けずに `pixelterm` を実行すると、カレントディレクトリを対象にファイルマネージャモードで起動します。
 - 設定ファイルは先に読み込まれ、その後に CLI 引数が解釈されるため、明示的な CLI オプションが設定値を上書きします。
 - `--preload` と `--alt-screen` では、`true/false`、`yes/no`、`on/off`、`1/0` が使えます。
+- `--text-symbols` は、`--protocol text` を明示した場合でも、自動判定が text に落ちた場合でも、テキスト描画にだけ影響します。
 - デフォルトの設定ファイルが存在しない場合は無視されますが、`--config` で指定したファイルが存在しない場合はエラーになります。
 - 設定グループは、`[default]` の後に `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME`、`TERM` の順で最初に一致した端末別グループが適用されます。
 - 描画結果が崩れる場合は `--protocol` を明示するか、[TROUBLESHOOTING_ja.md](TROUBLESHOOTING_ja.md) を参照してください。

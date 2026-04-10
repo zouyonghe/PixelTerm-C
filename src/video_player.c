@@ -1012,7 +1012,7 @@ static void video_player_clear_decode(VideoPlayer *player) {
 }
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                              gboolean force_iterm2, gdouble gamma) {
+                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma) {
     VideoPlayer *player = g_new0(VideoPlayer, 1);
     if (!player) {
         return NULL;
@@ -1093,6 +1093,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
             .force_sixel = force_sixel,
             .force_kitty = force_kitty,
             .force_iterm2 = force_iterm2,
+            .text_symbol_mode = text_symbol_mode,
             .gamma = gamma,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
@@ -1273,6 +1274,7 @@ static RendererConfig video_player_render_worker_config(VideoPlayer *player) {
         .force_sixel = FALSE,
         .force_kitty = FALSE,
         .force_iterm2 = FALSE,
+        .text_symbol_mode = TEXT_SYMBOL_MODE_AUTO,
         .gamma = 1.0,
         .dither_mode = CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,

@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.7.20-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.21-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
@@ -109,6 +109,8 @@ For more usage examples and options, see [USAGE.md](docs/guides/USAGE.md).
 ## Configuration
 
 PixelTerm-C reads `$XDG_CONFIG_HOME/pixelterm/config.ini`, falling back to `$HOME/.config/pixelterm/config.ini` when `XDG_CONFIG_HOME` is unset or empty, and you can pass a custom file with `--config`. Start from [`config.example.ini`](config.example.ini), use `[default]` for shared settings, then add terminal-specific sections that match `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. CLI flags are parsed after config loading, so explicit command-line options override config values.
+
+When you are using text output, `--text-symbols auto|half|quarter` or `text_symbols = auto|half|quarter` lets you keep Chafa's terminal-safe defaults or switch to stronger half-block-heavy / quad-heavy manual symbol sets.
 
 Quick setup:
 

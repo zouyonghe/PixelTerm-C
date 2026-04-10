@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.21: Text block rendering modes and cleaner test runs.
+    - **Text Rendering**: Add `--text-symbols auto|half|quarter` and matching config support so text-mode rendering can explicitly use half-block or quarter-block symbol sets instead of the default automatic symbol pool.
+    - **Docs**: Update the English, Chinese, and Japanese README, usage, and terminal-protocol guides to document the new text-symbol modes and examples consistently.
+    - **Testing**: Replace test-time process environment mutation with shared overrides so `make test` no longer floods output with GLib `unsetenv()` thread-safety debug warnings after threaded cases run.
+
 - v1.7.20: Book Tab cycling alignment.
     - **Books**: Make `Tab` follow the documented three-mode cycle for books: file manager to book preview, book preview to reader, and reader back to file manager.
     - **Controls**: Update the on-screen book preview hint and control guides so `Tab` now clearly advertises opening the selected page for reading instead of returning early.

@@ -47,6 +47,12 @@ typedef enum {
     ERROR_INVALID_ARGS
 } ErrorCode;
 
+typedef enum {
+    TEXT_SYMBOL_MODE_AUTO = 0,
+    TEXT_SYMBOL_MODE_HALF,
+    TEXT_SYMBOL_MODE_QUARTER
+} TextSymbolMode;
+
 // Function declarations
 /**
  * @brief Checks if a file is an image based on its file extension.

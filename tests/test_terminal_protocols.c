@@ -1,5 +1,6 @@
 #include <glib.h>
 
+#include "process_env.h"
 #include "terminal_probe.h"
 #include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
@@ -35,10 +36,8 @@ static const gchar * const k_terminal_env_keys[] = {
     NULL,
 };
 
-#define TERMINAL_PROTOCOL_ENV_KEY_COUNT (G_N_ELEMENTS(k_terminal_env_keys) - 1)
-
 typedef struct {
-    gchar *saved_values[TERMINAL_PROTOCOL_ENV_KEY_COUNT];
+    gint unused;
 } TerminalProtocolEnvFixture;
 
 static gchar *g_terminal_protocol_baseline_term = NULL;
@@ -46,32 +45,22 @@ static gchar *g_terminal_protocol_baseline_term_program = NULL;
 
 static void clear_terminal_protocol_env(void) {
     for (gsize i = 0; k_terminal_env_keys[i]; i++) {
-        g_unsetenv(k_terminal_env_keys[i]);
+        pixelterm_env_unset_for_test(k_terminal_env_keys[i]);
     }
 }
 
 static void terminal_protocol_env_fixture_set_up(TerminalProtocolEnvFixture *fixture,
                                                  gconstpointer user_data) {
+    (void)fixture;
     (void)user_data;
-
-    for (gsize i = 0; i < TERMINAL_PROTOCOL_ENV_KEY_COUNT; i++) {
-        fixture->saved_values[i] = g_strdup(g_getenv(k_terminal_env_keys[i]));
-    }
+    pixelterm_env_reset_for_test();
 }
 
 static void terminal_protocol_env_fixture_tear_down(TerminalProtocolEnvFixture *fixture,
                                                     gconstpointer user_data) {
+    (void)fixture;
     (void)user_data;
-
-    for (gsize i = 0; i < TERMINAL_PROTOCOL_ENV_KEY_COUNT; i++) {
-        if (fixture->saved_values[i]) {
-            g_setenv(k_terminal_env_keys[i], fixture->saved_values[i], TRUE);
-        } else {
-            g_unsetenv(k_terminal_env_keys[i]);
-        }
-
-        g_clear_pointer(&fixture->saved_values[i], g_free);
-    }
+    pixelterm_env_reset_for_test();
 }
 
 static void add_terminal_protocol_test(
@@ -400,7 +389,7 @@ static void test_terminal_protocol_resolver_direct_ssh_requires_affirmative_sign
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("SSH_CONNECTION", "client 22 server 22", TRUE));
+    pixelterm_env_set_for_test("SSH_CONNECTION", "client 22 server 22");
 
     TerminalProtocolResolverInput input = {
         .has_probe = TRUE,
@@ -421,7 +410,7 @@ static void test_terminal_protocol_kitty_term_match_is_weak_candidate(TerminalPr
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
 
     assert_weak_candidate_name("kitty");
 }
@@ -432,7 +421,7 @@ static void test_terminal_protocol_iterm2_term_program_match_is_weak_candidate(T
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM_PROGRAM", "iterm.app", TRUE));
+    pixelterm_env_set_for_test("TERM_PROGRAM", "iterm.app");
 
     assert_weak_candidate_name("iterm2");
 }
@@ -443,7 +432,7 @@ static void test_terminal_protocol_contour_env_match_is_weak_candidate(TerminalP
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERMINAL_NAME", "contour", TRUE));
+    pixelterm_env_set_for_test("TERMINAL_NAME", "contour");
 
     assert_weak_candidate_name("contour");
 }
@@ -454,7 +443,7 @@ static void test_terminal_protocol_kitty_live_helper_keeps_current_behavior(Term
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
 
     assert_live_support(TRUE, FALSE, FALSE);
 }
@@ -465,7 +454,7 @@ static void test_terminal_protocol_iterm2_live_helper_keeps_current_behavior(Ter
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM_PROGRAM", "iterm.app", TRUE));
+    pixelterm_env_set_for_test("TERM_PROGRAM", "iterm.app");
 
     assert_live_support(FALSE, TRUE, TRUE);
 }
@@ -476,7 +465,7 @@ static void test_terminal_protocol_contour_live_helper_keeps_current_behavior(Te
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERMINAL_NAME", "contour", TRUE));
+    pixelterm_env_set_for_test("TERMINAL_NAME", "contour");
 
     assert_live_support(FALSE, FALSE, TRUE);
 }
@@ -487,8 +476,8 @@ static void test_terminal_protocol_unknown_terminal_has_no_known_support(Termina
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "unknown-256color", TRUE));
-    g_assert_true(g_setenv("TERM_PROGRAM", "mystery-terminal", TRUE));
+    pixelterm_env_set_for_test("TERM", "unknown-256color");
+    pixelterm_env_set_for_test("TERM_PROGRAM", "mystery-terminal");
 
     g_assert_null(terminal_protocol_env_weak_candidate());
     assert_live_support(FALSE, FALSE, FALSE);
@@ -500,8 +489,8 @@ static void test_terminal_protocol_env_match_prefers_first_weak_candidate(Termin
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
-    g_assert_true(g_setenv("TERM_PROGRAM", "iTerm2", TRUE));
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("TERM_PROGRAM", "iTerm2");
 
     assert_weak_candidate_name("kitty");
 }
@@ -512,8 +501,8 @@ static void test_terminal_protocol_live_helper_precedence_keeps_current_behavior
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "xterm-kitty", TRUE));
-    g_assert_true(g_setenv("TERM_PROGRAM", "iTerm2", TRUE));
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("TERM_PROGRAM", "iTerm2");
 
     assert_live_support(TRUE, TRUE, TRUE);
 }
@@ -524,8 +513,8 @@ static void test_terminal_protocol_env_restoration_mutation_canary(TerminalProto
     (void)user_data;
 
     clear_terminal_protocol_env();
-    g_assert_true(g_setenv("TERM", "pixelterm-test-term", TRUE));
-    g_assert_true(g_setenv("TERM_PROGRAM", "pixelterm-test-program", TRUE));
+    pixelterm_env_set_for_test("TERM", "pixelterm-test-term");
+    pixelterm_env_set_for_test("TERM_PROGRAM", "pixelterm-test-program");
 }
 
 static void test_terminal_protocol_env_restoration_preserves_original_values(TerminalProtocolEnvFixture *fixture,
@@ -533,6 +522,8 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
     (void)fixture;
     (void)user_data;
 
+    g_assert_cmpstr(pixelterm_getenv("TERM"), ==, g_terminal_protocol_baseline_term);
+    g_assert_cmpstr(pixelterm_getenv("TERM_PROGRAM"), ==, g_terminal_protocol_baseline_term_program);
     g_assert_cmpstr(g_getenv("TERM"), ==, g_terminal_protocol_baseline_term);
     g_assert_cmpstr(g_getenv("TERM_PROGRAM"), ==, g_terminal_protocol_baseline_term_program);
 }

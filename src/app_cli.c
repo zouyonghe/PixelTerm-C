@@ -2,6 +2,7 @@
 
 #include "app_cli.h"
 #include "input.h"
+#include "process_env.h"
 #include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
 
@@ -28,6 +29,7 @@ static void print_usage(const char *program_name) {
            "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
+    printf("  %-29s %s\n", "--text-symbols MODE", "Text symbol set: auto, half, quarter");
     printf("  %-29s %s\n", "--config PATH",
            "Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini, fallback: $HOME/.config/pixelterm/config.ini)");
     printf("  %-29s %s\n", "--gamma G",
@@ -80,10 +82,29 @@ static gboolean parse_protocol_mode(const char *value, AppProtocolMode *out_mode
     return FALSE;
 }
 
+static gboolean parse_text_symbol_mode(const char *value, TextSymbolMode *out_mode) {
+    if (!value || !out_mode) {
+        return FALSE;
+    }
+    if (g_ascii_strcasecmp(value, "auto") == 0) {
+        *out_mode = TEXT_SYMBOL_MODE_AUTO;
+        return TRUE;
+    }
+    if (g_ascii_strcasecmp(value, "half") == 0) {
+        *out_mode = TEXT_SYMBOL_MODE_HALF;
+        return TRUE;
+    }
+    if (g_ascii_strcasecmp(value, "quarter") == 0) {
+        *out_mode = TEXT_SYMBOL_MODE_QUARTER;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static gchar *app_default_config_path(void) {
-    const gchar *config_dir = g_getenv("XDG_CONFIG_HOME");
+    const gchar *config_dir = pixelterm_getenv("XDG_CONFIG_HOME");
     if (!config_dir || config_dir[0] == '\0') {
-        config_dir = g_getenv("HOME");
+        config_dir = pixelterm_getenv("HOME");
         if (!config_dir || config_dir[0] == '\0') {
             config_dir = g_get_home_dir();
         }
@@ -104,10 +125,10 @@ static const char *app_config_base_group(GKeyFile *key_file) {
 
 static const char *app_config_terminal_group(GKeyFile *key_file) {
     const char *candidates[] = {
-        getenv("TERM_PROGRAM"),
-        getenv("LC_TERMINAL"),
-        getenv("TERMINAL_NAME"),
-        getenv("TERM"),
+        pixelterm_getenv("TERM_PROGRAM"),
+        pixelterm_getenv("LC_TERMINAL"),
+        pixelterm_getenv("TERMINAL_NAME"),
+        pixelterm_getenv("TERM"),
         NULL
     };
     for (gsize i = 0; candidates[i]; i++) {
@@ -249,6 +270,25 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
             return FALSE;
         }
         config->protocol_mode = mode;
+        g_free(value);
+    }
+
+    if (g_key_file_has_key(key_file, group, "text_symbols", NULL)) {
+        GError *error = NULL;
+        gchar *value = g_key_file_get_string(key_file, group, "text_symbols", &error);
+        if (error) {
+            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", path, error->message);
+            g_error_free(error);
+            g_free(value);
+            return FALSE;
+        }
+        TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
+        if (!parse_text_symbol_mode(value, &mode)) {
+            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", path, value);
+            g_free(value);
+            return FALSE;
+        }
+        config->text_symbol_mode = mode;
         g_free(value);
     }
 
@@ -587,6 +627,7 @@ void app_config_init(AppConfig *config) {
     config->force_sixel = FALSE;
     config->force_kitty = FALSE;
     config->force_iterm2 = FALSE;
+    config->text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
 }
 
 ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *config) {
@@ -602,6 +643,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
         {"protocol", required_argument, 0, 1005},
         {"gamma", required_argument, 0, 1006},
         {"config", required_argument, 0, 1007},
+        {"text-symbols", required_argument, 0, 1008},
         {0, 0, 0, 0}
     };
 
@@ -702,6 +744,15 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             }
             case 1007: // --config
                 break;
+            case 1008: { // --text-symbols
+                TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
+                if (!parse_text_symbol_mode(optarg, &mode)) {
+                    fprintf(stderr, "Unknown text symbol mode: %s\n", optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                config->text_symbol_mode = mode;
+                break;
+            }
             case '?':
                 // Check if it's a long option (starts with --)
                 if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {

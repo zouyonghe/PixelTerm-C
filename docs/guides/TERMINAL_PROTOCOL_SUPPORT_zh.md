@@ -52,11 +52,14 @@
 # 为当前运行显式指定协议
 pixelterm --protocol kitty /path/to/image.jpg
 
+# 保持 text 协议，但优先保留 quarter-block 细节
+pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
+
 # 可用值
 pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
 ```
 
-你也可以在 `config.ini` 里设置 `protocol = auto|text|sixel|kitty|iterm2`。其中任何非 `auto` 的值都会像 `--protocol` 一样跳过自动解析。终端专用分组会按照 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME`、`TERM` 的顺序，取第一个匹配值。当前 CLI 和配置语法见 [config.example.ini](../../config.example.ini) 和 [USAGE_zh.md](USAGE_zh.md)。
+你也可以在 `config.ini` 里设置 `protocol = auto|text|sixel|kitty|iterm2`。对于文本渲染，`text_symbols = auto|half|quarter` 可控制 PixelTerm-C 保持终端安全默认符号集，或切换到更激进的 half-block / quarter-block 手动符号集。终端专用分组会按照 `TERM_PROGRAM`、`LC_TERMINAL`、`TERMINAL_NAME`、`TERM` 的顺序，取第一个匹配值。当前 CLI 和配置语法见 [config.example.ini](../../config.example.ini) 和 [USAGE_zh.md](USAGE_zh.md)。
 
 ## 适用范围说明
 

@@ -215,8 +215,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 preloader_stop(app->preloader);
                 preloader_cache_clear(app->preloader);
                 preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
-                                     app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2,
-                                     app->gamma);
+                                     app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma);
                 preloader_start(app->preloader);
             }
             app_render_by_mode(app);

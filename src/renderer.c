@@ -49,6 +49,37 @@ static ChafaDitherMode renderer_get_sixel_default_dither_mode(void) {
 #endif
 }
 
+static ChafaSymbolTags renderer_get_text_symbol_tags(const ImageRenderer *renderer,
+                                                     ChafaTermInfo *term_info) {
+    ChafaSymbolTags safe_tags = renderer_get_safe_symbol_tags(term_info);
+
+    if (!renderer) {
+        return safe_tags != CHAFA_SYMBOL_TAG_NONE ? safe_tags : CHAFA_SYMBOL_TAG_ALL;
+    }
+
+    /*
+     * Chafa's symbol map API is allow-list based: it can include or exclude
+     * symbol classes, but it does not expose weighted "prefer quad while still
+     * keeping everything else" controls. The explicit half/quarter modes are
+     * therefore strong manual overrides over auto's terminal-safe selection.
+     */
+    switch (renderer->config.text_symbol_mode) {
+        case TEXT_SYMBOL_MODE_HALF:
+            return CHAFA_SYMBOL_TAG_SPACE |
+                   CHAFA_SYMBOL_TAG_SOLID |
+                   CHAFA_SYMBOL_TAG_HALF |
+                   CHAFA_SYMBOL_TAG_INVERTED;
+        case TEXT_SYMBOL_MODE_QUARTER:
+            return CHAFA_SYMBOL_TAG_SPACE |
+                   CHAFA_SYMBOL_TAG_SOLID |
+                   CHAFA_SYMBOL_TAG_QUAD |
+                   CHAFA_SYMBOL_TAG_INVERTED;
+        case TEXT_SYMBOL_MODE_AUTO:
+        default:
+            return safe_tags != CHAFA_SYMBOL_TAG_NONE ? safe_tags : CHAFA_SYMBOL_TAG_ALL;
+    }
+}
+
 static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
     if (!renderer) {
         return FALSE;
@@ -120,6 +151,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.force_sixel = FALSE;
     renderer->config.force_kitty = FALSE;
     renderer->config.force_iterm2 = FALSE;
+    renderer->config.text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
     renderer->config.gamma = 1.0;
 
     // Maximize quality settings
@@ -235,7 +267,7 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
 
     // Set symbol map with safe symbols for the terminal
     ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-    chafa_symbol_map_add_by_tags(symbol_map, renderer_get_safe_symbol_tags(renderer->term_info));
+    chafa_symbol_map_add_by_tags(symbol_map, renderer_get_text_symbol_tags(renderer, renderer->term_info));
     chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
     chafa_symbol_map_unref(symbol_map);
 
@@ -502,7 +534,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
         // Refresh symbol map based on new terminal capabilities
         ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-        chafa_symbol_map_add_by_tags(symbol_map, renderer_get_safe_symbol_tags(renderer->term_info));
+        chafa_symbol_map_add_by_tags(symbol_map, renderer_get_text_symbol_tags(renderer, renderer->term_info));
         chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
         chafa_symbol_map_unref(symbol_map);
 

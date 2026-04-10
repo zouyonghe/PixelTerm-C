@@ -43,6 +43,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    TextSymbolMode text_symbol_mode;
 } AppConfig;
 
 typedef struct {
@@ -140,6 +141,7 @@ typedef struct {
     gboolean force_sixel;
     gboolean force_kitty;
     gboolean force_iterm2;
+    TextSymbolMode text_symbol_mode;
     gboolean needs_redraw;
     AppMode mode;  // Current UI mode (single/preview/file manager/book)
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager

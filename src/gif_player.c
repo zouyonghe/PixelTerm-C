@@ -13,7 +13,7 @@
 
 // Create a new GIF player instance
 GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                          gboolean force_iterm2, gdouble gamma) {
+                          gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma) {
     GifPlayer *player = g_new0(GifPlayer, 1);
     if (!player) {
         return NULL;
@@ -64,6 +64,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
             .force_sixel = force_sixel,
             .force_kitty = force_kitty,
             .force_iterm2 = force_iterm2,
+            .text_symbol_mode = text_symbol_mode,
             .gamma = gamma,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,

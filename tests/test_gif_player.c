@@ -3,7 +3,7 @@
 #include "gif_player.h"
 
 static void test_gif_player_new_renderer_state(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     if (player->renderer) {
@@ -16,7 +16,7 @@ static void test_gif_player_new_renderer_state(void) {
 }
 
 static void test_gif_player_set_renderer_ownership(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     ImageRenderer *renderer = renderer_create();
@@ -31,7 +31,7 @@ static void test_gif_player_set_renderer_ownership(void) {
 }
 
 static void test_gif_player_default_state(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     g_assert_false(gif_player_is_playing(player));
@@ -43,7 +43,7 @@ static void test_gif_player_default_state(void) {
 }
 
 static void test_gif_player_play_without_load(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     g_assert_cmpint(gif_player_play(player), ==, ERROR_INVALID_IMAGE);
@@ -52,7 +52,7 @@ static void test_gif_player_play_without_load(void) {
 }
 
 static void test_gif_player_pause_stop_without_play(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     g_assert_cmpint(gif_player_pause(player), ==, ERROR_NONE);
@@ -63,7 +63,7 @@ static void test_gif_player_pause_stop_without_play(void) {
 }
 
 static void test_gif_player_load_invalid_path(void) {
-    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, 1.0);
+    GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
 
     g_assert_cmpint(gif_player_load(player, "/path/does/not/exist.gif"), ==, ERROR_FILE_NOT_FOUND);

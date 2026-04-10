@@ -52,11 +52,14 @@ This page summarizes the terminal and graphics-protocol support notes currently 
 # Force a protocol for the current run
 pixelterm --protocol kitty /path/to/image.jpg
 
+# Keep text mode but bias it toward quadrant detail
+pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
+
 # Available values
 pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
 ```
 
-You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. Any non-`auto` value there bypasses `auto` the same way as `--protocol`. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../../config.example.ini) and [USAGE.md](USAGE.md) for the current CLI and config syntax.
+You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For text rendering, `text_symbols = auto|half|quarter` controls whether PixelTerm-C keeps the terminal-safe default symbol set or switches to stronger half-block-heavy / quad-heavy manual symbol sets. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../../config.example.ini) and [USAGE.md](USAGE.md) for the current CLI and config syntax.
 
 ## Scope notes
 

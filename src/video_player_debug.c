@@ -1,4 +1,5 @@
 #include "video_player_debug_internal.h"
+#include "process_env.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -55,11 +56,11 @@ static void video_player_debug_config_init_unlocked(void) {
         return;
     }
 
-    const gchar *enabled_env = g_getenv("PIXELTERM_DEBUG_VIDEO");
+    const gchar *enabled_env = pixelterm_getenv("PIXELTERM_DEBUG_VIDEO");
     video_player_debug_config.enabled =
         enabled_env && *enabled_env && g_strcmp0(enabled_env, "0") != 0;
 
-    const gchar *path_env = g_getenv("PIXELTERM_DEBUG_VIDEO_LOG");
+    const gchar *path_env = pixelterm_getenv("PIXELTERM_DEBUG_VIDEO_LOG");
     if (!path_env || !*path_env) {
         path_env = "/tmp/pixelterm-video.log";
     }
