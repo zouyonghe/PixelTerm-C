@@ -38,6 +38,7 @@ typedef struct {
     gint last_frame_height;
     gint fixed_frame_top_row;
     gboolean fixed_frame_valid;
+    GPtrArray *last_frame_lines;
 } GifPlayer;
 
 // GIF Player functions

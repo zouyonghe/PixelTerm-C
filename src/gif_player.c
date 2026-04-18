@@ -11,6 +11,163 @@
 // Suppress deprecation warnings for GdkPixbufAnimation and GTimeVal
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
+static void gif_player_clear_line_cache(GifPlayer *player) {
+    if (!player || !player->last_frame_lines) {
+        return;
+    }
+
+    g_ptr_array_free(player->last_frame_lines, TRUE);
+    player->last_frame_lines = NULL;
+}
+
+static void gif_player_present_rendered_frame(GifPlayer *player,
+                                              const GString *result,
+                                              gint rendered_w,
+                                              gint rendered_h,
+                                              gboolean graphics_mode) {
+    if (!player || !result) {
+        return;
+    }
+
+    if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
+        gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
+        gint term_h = player->render_term_height;
+        gint area_top = player->render_area_top_row;
+        gint area_bottom = area_top + player->render_area_height - 1;
+        if (term_h > 0 && area_bottom > term_h) {
+            area_bottom = term_h;
+        }
+
+        gint effective_w = rendered_w > 0 ? rendered_w : player->render_max_width;
+        if (term_w > 0 && effective_w > term_w) {
+            effective_w = term_w;
+        }
+        gint left_pad = (term_w > effective_w) ? (term_w - effective_w) / 2 : 0;
+        if (left_pad < 0) {
+            left_pad = 0;
+        }
+
+        gint image_top_row = area_top;
+        if (player->fixed_frame_valid) {
+            image_top_row = player->fixed_frame_top_row;
+        } else if (player->render_area_height > 0 && rendered_h > 0 && rendered_h < player->render_area_height) {
+            gint vpad = (player->render_area_height - rendered_h) / 2;
+            if (vpad > 0) {
+                image_top_row = area_top + vpad;
+            }
+            player->fixed_frame_top_row = image_top_row;
+            player->fixed_frame_valid = TRUE;
+        } else {
+            player->fixed_frame_top_row = image_top_row;
+            player->fixed_frame_valid = TRUE;
+        }
+
+        gint row = image_top_row;
+        gint lines_printed = 0;
+        gboolean has_newline = !graphics_mode && memchr(result->str, '\n', result->len) != NULL;
+
+        if (graphics_mode) {
+            gif_player_clear_line_cache(player);
+            gint col = 1 + left_pad;
+            if (col < 1) {
+                col = 1;
+            }
+            printf("\033[%d;%dH", row, col);
+            if (result->len > 0) {
+                fwrite(result->str, 1, result->len, stdout);
+            }
+            lines_printed = rendered_h > 0 ? rendered_h : 1;
+        } else if (!has_newline) {
+            gif_player_clear_line_cache(player);
+            printf("\033[%d;1H", row);
+            if (left_pad > 0) {
+                gchar *pad_buffer = g_malloc(left_pad);
+                memset(pad_buffer, ' ', left_pad);
+                fwrite(pad_buffer, 1, left_pad, stdout);
+                g_free(pad_buffer);
+            }
+            if (result->len > 0) {
+                fwrite(result->str, 1, result->len, stdout);
+            }
+            lines_printed = rendered_h > 0 ? rendered_h : 1;
+        } else {
+            GPtrArray *new_lines = g_ptr_array_new_with_free_func(g_free);
+            const gchar *line_ptr = result->str;
+            const gchar *end = result->str + result->len;
+            gint line_index = 0;
+
+            while (line_ptr && line_ptr < end && row <= area_bottom) {
+                const gchar *newline = memchr(line_ptr, '\n', end - line_ptr);
+                gint line_len = newline ? (gint)(newline - line_ptr) : (gint)(end - line_ptr);
+                gint full_len = left_pad + line_len;
+                gchar *full_line = g_malloc(full_len + 1);
+                if (left_pad > 0) {
+                    memset(full_line, ' ', left_pad);
+                }
+                if (line_len > 0) {
+                    memcpy(full_line + left_pad, line_ptr, line_len);
+                }
+                full_line[full_len] = '\0';
+
+                const gchar *prev_line = NULL;
+                if (player->last_frame_lines && line_index < (gint)player->last_frame_lines->len) {
+                    prev_line = g_ptr_array_index(player->last_frame_lines, line_index);
+                }
+                if (!prev_line || strcmp(prev_line, full_line) != 0) {
+                    printf("\033[%d;1H\033[2K", row);
+                    if (full_len > 0) {
+                        fwrite(full_line, 1, full_len, stdout);
+                    }
+                }
+
+                g_ptr_array_add(new_lines, full_line);
+                lines_printed++;
+                line_index++;
+                if (!newline) {
+                    break;
+                }
+                line_ptr = newline + 1;
+                row++;
+            }
+
+            gif_player_clear_line_cache(player);
+            player->last_frame_lines = new_lines;
+        }
+
+        if (player->last_frame_height > 0) {
+            gint prev_top = player->last_frame_top_row;
+            gint prev_bottom = prev_top + player->last_frame_height - 1;
+            gint new_top = image_top_row;
+            gint new_bottom = image_top_row + (lines_printed > 0 ? (lines_printed - 1) : -1);
+            if (prev_top < area_top) {
+                prev_top = area_top;
+            }
+            if (prev_bottom > area_bottom) {
+                prev_bottom = area_bottom;
+            }
+            for (gint r = prev_top; r <= prev_bottom; r++) {
+                if (r < new_top || r > new_bottom) {
+                    printf("\033[%d;1H\033[2K", r);
+                }
+            }
+        }
+
+        player->last_frame_top_row = image_top_row;
+        player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
+    } else {
+        gif_player_clear_line_cache(player);
+        printf("\033[H");
+        if (result->len > 0) {
+            fwrite(result->str, 1, result->len, stdout);
+        }
+        printf("\033[J");
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 0;
+    }
+
+    fflush(stdout);
+}
+
 // Create a new GIF player instance
 GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
                           gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma) {
@@ -42,6 +199,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
     player->last_frame_height = 0;
     player->fixed_frame_top_row = 0;
     player->fixed_frame_valid = FALSE;
+    player->last_frame_lines = NULL;
     player->owns_renderer = FALSE;
     
     // Initialize internal renderer
@@ -124,6 +282,7 @@ void gif_player_set_render_area(GifPlayer *player,
         player->fixed_frame_valid = FALSE;
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
+        gif_player_clear_line_cache(player);
     }
 }
 
@@ -151,6 +310,8 @@ void gif_player_destroy(GifPlayer *player) {
     if (player->renderer && player->owns_renderer) {
         renderer_destroy(player->renderer);
     }
+
+    gif_player_clear_line_cache(player);
 
     g_free(player);
 }
@@ -205,6 +366,7 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
     player->fixed_frame_valid = FALSE;
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
+    gif_player_clear_line_cache(player);
     
     // Initialize iterator
     player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
@@ -237,106 +399,30 @@ static void render_current_frame_internal(GifPlayer *player) {
 
     // Render image data with the shared renderer
     GString *result = renderer_render_image_data(player->renderer, pixels, width, height, rowstride, n_channels);
-    
+
     if (result) {
-        if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
-            gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
-            gint term_h = player->render_term_height;
-            gint area_top = player->render_area_top_row;
-            gint area_bottom = area_top + player->render_area_height - 1;
-            if (term_h > 0 && area_bottom > term_h) {
-                area_bottom = term_h;
-            }
-
-            gint rendered_w = 0, rendered_h = 0;
-            renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
-            gint effective_w = rendered_w > 0 ? rendered_w : player->render_max_width;
-            if (term_w > 0 && effective_w > term_w) {
-                effective_w = term_w;
-            }
-            gint left_pad = (term_w > effective_w) ? (term_w - effective_w) / 2 : 0;
-            if (left_pad < 0) left_pad = 0;
-
-            gint image_top_row = area_top;
-            if (player->fixed_frame_valid) {
-                image_top_row = player->fixed_frame_top_row;
-            } else if (player->render_area_height > 0 && rendered_h > 0 && rendered_h < player->render_area_height) {
-                gint vpad = (player->render_area_height - rendered_h) / 2;
-                if (vpad > 0) {
-                    image_top_row = area_top + vpad;
-                }
-                player->fixed_frame_top_row = image_top_row;
-                player->fixed_frame_valid = TRUE;
-            } else {
-                player->fixed_frame_top_row = image_top_row;
-                player->fixed_frame_valid = TRUE;
-            }
-
-            gchar *pad_buffer = NULL;
-            if (left_pad > 0) {
-                pad_buffer = g_malloc(left_pad);
-                memset(pad_buffer, ' ', left_pad);
-            }
-
-            const gchar *line_ptr = result->str;
-            gint row = image_top_row;
-            gint lines_printed = 0;
-            if (!strchr(result->str, '\n')) {
-                printf("\033[%d;1H", row);
-                if (left_pad > 0) {
-                    fwrite(pad_buffer, 1, left_pad, stdout);
-                }
-                fwrite(result->str, 1, result->len, stdout);
-                lines_printed = rendered_h > 0 ? rendered_h : 1;
-            } else {
-                while (line_ptr && *line_ptr && row <= area_bottom) {
-                    const gchar *newline = strchr(line_ptr, '\n');
-                    gint line_len = newline ? (gint)(newline - line_ptr) : (gint)strlen(line_ptr);
-                    printf("\033[%d;1H\033[2K", row);
-                    if (left_pad > 0) {
-                        fwrite(pad_buffer, 1, left_pad, stdout);
-                    }
-                    if (line_len > 0) {
-                        fwrite(line_ptr, 1, line_len, stdout);
-                    }
-                    lines_printed++;
-                    if (!newline) {
-                        break;
-                    }
-                    line_ptr = newline + 1;
-                    row++;
-                }
-            }
-            g_free(pad_buffer);
-            // Clear only rows that were previously used but are no longer covered.
-            if (player->last_frame_height > 0) {
-                gint prev_top = player->last_frame_top_row;
-                gint prev_bottom = prev_top + player->last_frame_height - 1;
-                gint new_top = image_top_row;
-                gint new_bottom = image_top_row + (lines_printed > 0 ? (lines_printed - 1) : -1);
-                if (prev_top < area_top) prev_top = area_top;
-                if (prev_bottom > area_bottom) prev_bottom = area_bottom;
-                for (gint r = prev_top; r <= prev_bottom; r++) {
-                    if (r < new_top || r > new_bottom) {
-                        printf("\033[%d;1H\033[2K", r);
-                    }
-                }
-            }
-
-            player->last_frame_top_row = image_top_row;
-            player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
-        } else {
-            // Fallback to full-frame rendering when layout is unavailable.
-            printf("\033[H");
-            printf("%s", result->str);
-            printf("\033[J");
-            player->last_frame_top_row = 0;
-            player->last_frame_height = 0;
-        }
-
+        gint rendered_w = 0;
+        gint rendered_h = 0;
+        renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
+        gif_player_present_rendered_frame(player,
+                                          result,
+                                          rendered_w,
+                                          rendered_h,
+                                          renderer_is_graphics_mode(player->renderer));
         g_string_free(result, TRUE);
-        fflush(stdout);
     }
+}
+
+void gif_player_present_rendered_frame_for_test(GifPlayer *player,
+                                                const GString *rendered,
+                                                gint rendered_width,
+                                                gint rendered_height,
+                                                gboolean graphics_mode) {
+    gif_player_present_rendered_frame(player,
+                                      rendered,
+                                      rendered_width,
+                                      rendered_height,
+                                      graphics_mode);
 }
 
 // Timer callback
@@ -388,6 +474,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
     player->fixed_frame_valid = FALSE;
     player->last_frame_top_row = 0;
     player->last_frame_height = 0;
+    gif_player_clear_line_cache(player);
     
     // Render the first frame immediately
     render_current_frame_internal(player);
@@ -432,6 +519,8 @@ ErrorCode gif_player_stop(GifPlayer *player) {
         g_source_remove(player->timer_id);
         player->timer_id = 0;
     }
+
+    gif_player_clear_line_cache(player);
     
     // Reset iterator if needed to return to start
     // Next play or load will handle iterator reset
