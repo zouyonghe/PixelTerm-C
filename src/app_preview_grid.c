@@ -728,6 +728,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
             {"PgUp/PgDn", "Page"},
             {"Enter", "Open"},
             {"TAB", "Toggle"},
+            {"?", "Help"},
             {"r", "Delete"},
             {"+/-", "Zoom"},
             {"~", "Zen"},

@@ -129,6 +129,7 @@ typedef struct {
     // Application state
     gboolean running;
     gboolean info_visible;  // Track if info is currently displayed
+    gboolean help_visible;  // Track if help overlay is currently displayed
     gboolean ui_text_hidden; // Hide all UI text overlays (single/preview)
     gboolean show_fps; // Toggle FPS overlay in video view
     gdouble video_scale; // Scale factor for video render size

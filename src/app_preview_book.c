@@ -874,6 +874,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
             {"T", "TOC"},
             {"Enter", "Open"},
             {"TAB", "Read"},
+            {"?", "Help"},
             {"+/-", "Zoom"},
             {"~", "Zen"},
             {"ESC", "Exit"}

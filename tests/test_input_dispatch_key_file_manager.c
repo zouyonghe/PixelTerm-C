@@ -46,6 +46,31 @@ static void cleanup_file_manager_app(PixelTermApp *app) {
     g_free(app->file_manager.directory);
 }
 
+static PixelTermApp make_file_manager_list_app(void) {
+    PixelTermApp app = {0};
+    app.mode = APP_MODE_FILE_MANAGER;
+    app.file_manager.entries = g_list_append(app.file_manager.entries, g_strdup("alpha.jpg"));
+    app.file_manager.entries = g_list_append(app.file_manager.entries, g_strdup("bravo.jpg"));
+    app.file_manager.entries_count = 2;
+    app.file_manager.selected_entry = 1;
+    app.file_manager.selected_link_index = -1;
+    app.file_manager.directory = g_strdup("/");
+    return app;
+}
+
+static void test_vim_keys_navigate_before_letter_jump(void) {
+    PixelTermApp app = make_file_manager_list_app();
+    InputEvent event = make_key_event((KeyCode)'k');
+
+    input_dispatch_test_reset_stubs();
+
+    input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
+
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 1);
+
+    cleanup_file_manager_app(&app);
+}
+
 static void test_tab_on_book_selection_enters_book_preview(void) {
     gchar *dir = create_temp_dir();
     gchar *book_path = write_book_fixture(dir);
@@ -72,4 +97,6 @@ static void test_tab_on_book_selection_enters_book_preview(void) {
 void register_input_dispatch_key_file_manager_tests(void) {
     g_test_add_func("/input_dispatch_key_file_manager/tab/book_selection_enters_book_preview",
                     test_tab_on_book_selection_enters_book_preview);
+    g_test_add_func("/input_dispatch_key_file_manager/vim_keys/navigate_before_letter_jump",
+                    test_vim_keys_navigate_before_letter_jump);
 }

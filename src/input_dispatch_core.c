@@ -233,6 +233,9 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 }
             }
             return TRUE;
+        case (KeyCode)'?':
+            app_display_help(app);
+            return TRUE;
         case (KeyCode)'f':
         case (KeyCode)'F':
             input_dispatch_key_modes_toggle_video_fps(app);

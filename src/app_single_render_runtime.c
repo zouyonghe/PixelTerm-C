@@ -5,6 +5,8 @@
 #include "preload_control.h"
 #include "app_single_render_internal.h"
 
+void app_render_help_overlay(PixelTermApp *app);
+
 ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
@@ -12,6 +14,22 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
 
     app->info_visible = !app->info_visible;
     return app_render_current_image(app);
+}
+
+ErrorCode app_display_help(PixelTermApp *app) {
+    if (!app) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    app->help_visible = !app->help_visible;
+    if (!app->help_visible) {
+        return app_render_by_mode(app);
+    }
+    ErrorCode err = app_render_by_mode(app);
+    if (err != ERROR_NONE) {
+        return err;
+    }
+    app_render_help_overlay(app);
+    return ERROR_NONE;
 }
 
 ErrorCode app_refresh_display(PixelTermApp *app) {

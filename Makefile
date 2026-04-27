@@ -122,7 +122,7 @@ TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o 
 		$(OBJDIR)/video_player_clock.o $(OBJDIR)/video_player_debug.o $(OBJDIR)/video_player_seek.o $(OBJDIR)/video_player.o $(OBJDIR)/terminal_probe.o $(OBJDIR)/terminal_protocols.o $(OBJDIR)/terminal_protocol_resolver.o $(OBJDIR)/app_cli.o $(OBJDIR)/book.o \
 		$(OBJDIR)/app_startup.o
 FILE_MANAGER_TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/process_env.o $(OBJDIR)/app_core.o $(OBJDIR)/app_mode.o \
-		$(OBJDIR)/app_file_manager.o
+		$(OBJDIR)/app_file_manager.o $(OBJDIR)/app_file_manager_render.o $(OBJDIR)/text_utils.o
 PREVIEW_GRID_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_grid.o $(OBJDIR)/ui_render_utils.o $(OBJDIR)/text_utils.o
 BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o
 

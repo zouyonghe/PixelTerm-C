@@ -93,6 +93,14 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     return ERROR_NONE;
 }
 
+ErrorCode app_display_help(PixelTermApp *app) {
+    g_input_dispatch_stub_state.display_help_calls++;
+    if (app) {
+        app->help_visible = !app->help_visible;
+    }
+    return ERROR_NONE;
+}
+
 ErrorCode app_handle_mouse_click_book_preview(PixelTermApp *app,
                                               gint mouse_x,
                                               gint mouse_y,
@@ -315,12 +323,16 @@ ErrorCode app_file_manager_right(PixelTermApp *app) {
 }
 
 ErrorCode app_file_manager_up(PixelTermApp *app) {
-    (void)app;
+    if (app && app->file_manager.selected_entry > 0) {
+        app->file_manager.selected_entry--;
+    }
     return ERROR_NONE;
 }
 
 ErrorCode app_file_manager_down(PixelTermApp *app) {
-    (void)app;
+    if (app && app->file_manager.selected_entry + 1 < app->file_manager.entries_count) {
+        app->file_manager.selected_entry++;
+    }
     return ERROR_NONE;
 }
 

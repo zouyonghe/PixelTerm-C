@@ -570,18 +570,32 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
 
     // Check if it's a directory
     if (g_file_test(selected_path, G_FILE_TEST_IS_DIR)) {
+        gchar *selected_base = g_path_get_basename(selected_path);
+        gboolean entering_parent = selected_base && g_strcmp0(selected_base, "..") == 0;
+        g_free(selected_base);
+        gchar *child_dir = entering_parent && app->file_manager.directory
+                           ? g_strdup(app->file_manager.directory)
+                           : NULL;
+
         // Load the selected directory
-        g_free(app->file_manager.directory);
-        app->file_manager.directory = g_canonicalize_filename(selected_path, NULL);
-        if (!app->file_manager.directory) {
+        gchar *new_directory = g_canonicalize_filename(selected_path, NULL);
+        if (!new_directory) {
+            g_free(child_dir);
             return ERROR_FILE_NOT_FOUND;
         }
+        g_free(app->file_manager.directory);
+        app->file_manager.directory = new_directory;
         // Reset selection to first entry when changing directory
         app->file_manager.selected_entry = 0;
         app_file_manager_invalidate_selection_cache(app);
         app->file_manager.scroll_offset = 0;
         // Refresh file manager with new directory
-        return app_file_manager_refresh(app);
+        ErrorCode err = app_file_manager_refresh(app);
+        if (err == ERROR_NONE && child_dir) {
+            (void)app_file_manager_select_path(app, child_dir);
+        }
+        g_free(child_dir);
+        return err;
     } else {
         if (is_valid_book_file(selected_path)) {
             ErrorCode error = app_open_book(app, selected_path);

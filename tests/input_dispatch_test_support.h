@@ -17,6 +17,7 @@ typedef struct {
     gint video_seek_calls;
     gint refresh_display_calls;
     gint display_image_info_calls;
+    gint display_help_calls;
     gint book_change_page_calls;
     gint delete_calls;
     gint render_by_mode_calls;

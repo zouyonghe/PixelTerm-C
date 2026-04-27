@@ -77,6 +77,50 @@ static gboolean directory_contains_books(const gchar *dir_path) {
     return FALSE;
 }
 
+static gchar *app_file_manager_format_size(gint64 size) {
+    if (size < 0) {
+        size = 0;
+    }
+    if (size < 1024) {
+        return g_strdup_printf("%" G_GINT64_FORMAT " B", size);
+    }
+    if (size < 1024 * 1024) {
+        return g_strdup_printf("%.1f KB", size / 1024.0);
+    }
+    if (size < (gint64)1024 * 1024 * 1024) {
+        return g_strdup_printf("%.1f MB", size / (1024.0 * 1024.0));
+    }
+    return g_strdup_printf("%.1f GB", size / (1024.0 * 1024.0 * 1024.0));
+}
+
+static gchar *app_file_manager_build_row(const gchar *type_label,
+                                         const gchar *name,
+                                         const gchar *meta,
+                                         gint row_width) {
+    gint label_width = utf8_display_width(type_label);
+    gint name_width = utf8_display_width(name);
+    gint meta_width = meta ? utf8_display_width(meta) : 0;
+    gint min_gap = meta_width > 0 ? 2 : 0;
+    gint trailing_pad = meta_width > 0 ? 3 : 0;
+    gint gap_width = row_width - label_width - name_width - meta_width - trailing_pad;
+    if (gap_width < min_gap) {
+        gap_width = min_gap;
+    }
+    GString *row = g_string_new(NULL);
+    g_string_append(row, type_label);
+    g_string_append(row, name);
+    for (gint i = 0; i < gap_width; i++) {
+        g_string_append_c(row, ' ');
+    }
+    if (meta_width > 0) {
+        g_string_append(row, meta);
+        for (gint i = 0; i < trailing_pad; i++) {
+            g_string_append_c(row, ' ');
+        }
+    }
+    return g_string_free(row, FALSE);
+}
+
 typedef struct {
     gint col_width;
     gint cols;
@@ -391,7 +435,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     FileManagerViewport viewport = app_file_manager_compute_viewport(app);
     app->file_manager.scroll_offset = viewport.start_row;
     gint total_entries = viewport.total_entries;
-    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   Ctrl+H Hidden   ESC Exit";
+    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ? Help   ESC Exit";
     gint start_row = viewport.start_row;
     gint end_row = viewport.end_row;
     gint rows_to_render = viewport.rows_to_render;
@@ -458,142 +502,71 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gboolean is_dir_with_media = is_dir && directory_contains_media(entry);
         gboolean is_dir_with_books = is_dir && directory_contains_books(entry);
 
-        gint max_display_width = (app->term_width / 2) - 2;
+        gboolean is_valid_media = (!is_dir && is_valid_media_file(entry));
+        gboolean is_valid_book = (!is_dir && is_valid_book_file(entry));
+        gboolean invalid = ((is_image || is_video) && !is_valid_media) || (is_book && !is_valid_book);
+
+        const char *type_label = "[FILE] ";
+        if (is_dir) {
+            type_label = "[DIR]  ";
+        } else if (invalid) {
+            type_label = "[!]    ";
+        } else if (is_image) {
+            type_label = "[IMG]  ";
+        } else if (is_video) {
+            type_label = "[VID]  ";
+        } else if (is_book) {
+            type_label = "[BOOK] ";
+        }
+        gint label_width = utf8_display_width(type_label);
+        gint list_width = app->term_width - 4;
+        if (list_width > 96) list_width = 96;
+        if (list_width < 24) list_width = app->term_width;
+        gint list_col = (app->term_width > list_width) ? ((app->term_width - list_width) / 2) : 0;
+
+        gchar *meta = NULL;
+        if (invalid) {
+            meta = g_strdup("Invalid");
+        } else if (!is_dir) {
+            meta = app_file_manager_format_size(get_file_size(entry));
+        }
+
+        gint meta_width = meta ? utf8_display_width(meta) : 0;
+        gint max_display_width = list_width - label_width - (meta_width > 0 ? meta_width + 5 : 0);
         if (max_display_width < 15) max_display_width = 15;
 
         if (name_len > max_display_width) {
-            gint max_display = max_display_width - 3;
-            if (max_display > 8) {
-                gint start_len = max_display / 2;
-                gint end_len = max_display - start_len;
-
-                gint char_count = 0;
-                const gchar *p = print_name;
-                while (*p) {
-                    gunichar ch = g_utf8_get_char_validated(p, -1);
-                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                        char_count++;
-                        p++;
-                    } else {
-                        char_count++;
-                        p = g_utf8_next_char(p);
-                    }
-                }
-
-                gint start_byte = 0;
-                gint current_char = 0;
-                p = print_name;
-                while (*p && current_char < start_len) {
-                    gunichar ch = g_utf8_get_char_validated(p, -1);
-                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                        p++;
-                    } else {
-                        p = g_utf8_next_char(p);
-                    }
-                    current_char++;
-                }
-                start_byte = p - print_name;
-
-                current_char = 0;
-                const gchar *end_p = print_name;
-                while (*end_p) {
-                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
-                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                        end_p++;
-                    } else {
-                        end_p = g_utf8_next_char(end_p);
-                    }
-                    current_char++;
-                }
-
-                current_char = 0;
-                end_p = print_name;
-                while (*end_p && current_char < char_count - end_len) {
-                    gunichar ch = g_utf8_get_char_validated(end_p, -1);
-                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                        end_p++;
-                    } else {
-                        end_p = g_utf8_next_char(end_p);
-                    }
-                    current_char++;
-                }
-                gint end_byte = end_p - print_name;
-
-                gchar *start_part = g_strndup(print_name, start_byte);
-                gchar *end_part = g_strdup(print_name + end_byte);
-                g_free(print_name);
-                print_name = g_strdup_printf("%s...%s", start_part, end_part);
-                g_free(start_part);
-                g_free(end_part);
-            } else {
-                gint truncate_len = max_display;
-                gint display_width = 0;
-                const gchar *p = print_name;
-                const gchar *truncate_pos = print_name;
-
-                while (*p && display_width < truncate_len) {
-                    gunichar ch = g_utf8_get_char_validated(p, -1);
-                    if (ch == (gunichar)-1 || ch == (gunichar)-2) {
-                        display_width++;
-                        truncate_pos = p + 1;
-                        p++;
-                    } else {
-                        gint char_width = g_unichar_iswide(ch) ? 2 : 1;
-                        if (display_width + char_width > truncate_len) {
-                            break;
-                        }
-                        display_width += char_width;
-                        truncate_pos = g_utf8_next_char(p);
-                        p = truncate_pos;
-                    }
-                }
-
-                gchar *shortened = g_strndup(print_name, truncate_pos - print_name);
-                g_free(print_name);
-                print_name = g_strdup_printf("%s...", shortened);
-                g_free(shortened);
-            }
+            gchar *truncated = truncate_utf8_middle_keep_suffix(print_name, max_display_width);
+            g_free(print_name);
+            print_name = truncated;
             name_len = utf8_display_width(print_name);
         }
 
-        gint pad = (app->term_width > name_len) ? (app->term_width - name_len) / 2 : 0;
-        if (pad + name_len > app->term_width) {
-            pad = MAX(0, app->term_width - name_len);
-        }
-        for (gint s = 0; s < pad; s++) putchar(' ');
+        for (gint s = 0; s < list_col; s++) putchar(' ');
 
-        gboolean is_valid_media = (!is_dir && is_valid_media_file(entry));
-        gboolean is_valid_book = (!is_dir && is_valid_book_file(entry));
         gboolean selected = (idx == app->file_manager.selected_entry);
-        if ((is_image || is_video) && !is_valid_media) {
-            if (selected) {
-                printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
-            } else {
-                printf("\033[31m%s [Invalid]\033[0m", print_name);
-            }
-        } else if (is_book && !is_valid_book) {
-            if (selected) {
-                printf("\033[47;30m%s\033[0m\033[31m [Invalid]\033[0m", print_name);
-            } else {
-                printf("\033[31m%s [Invalid]\033[0m", print_name);
-            }
-        } else if (selected) {
-            printf("\033[47;30m%s\033[0m", print_name);
+        gchar *row_text = app_file_manager_build_row(type_label, print_name, meta, list_width);
+        if (selected) {
+            printf("\033[47;30m%s\033[0m", row_text);
+        } else if (invalid) {
+            printf("\033[31m%s\033[0m", row_text);
         } else if (is_dir_with_images || is_dir_with_media || is_dir_with_books) {
-            printf("\033[33m%s\033[0m", print_name);
+            printf("\033[33m%s\033[0m", row_text);
         } else if (is_dir) {
-            printf("\033[34m%s\033[0m", print_name);
+            printf("\033[34m%s\033[0m", row_text);
         } else if (is_image) {
-            printf("\033[32m%s\033[0m", print_name);
+            printf("\033[32m%s\033[0m", row_text);
         } else if (is_video) {
-            printf("\033[35m%s\033[0m", print_name);
+            printf("\033[35m%s\033[0m", row_text);
         } else if (is_book) {
-            printf("\033[36m%s\033[0m", print_name);
+            printf("\033[36m%s\033[0m", row_text);
         } else {
-            printf("%s", print_name);
+            printf("%s", row_text);
         }
 
 
+        g_free(row_text);
+        g_free(meta);
         g_free(print_name);
         g_free(display_name);
     }
@@ -611,7 +584,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     printf("\033[36m←\033[0m Parent   ");
     printf("\033[36m→/Enter\033[0m Open   ");
     printf("\033[36mTAB\033[0m Toggle   ");
-    printf("\033[36mCtrl+H\033[0m Hidden   ");
+    printf("\033[36m?\033[0m Help   ");
     printf("\033[36mESC\033[0m Exit");
 
     fflush(stdout);

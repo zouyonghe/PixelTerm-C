@@ -288,6 +288,18 @@ static void test_navigation_failure_does_not_refresh_or_advance_queue(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_input_maps_fullwidth_question_to_help_key(void) {
+    static const gchar fullwidth_question[] = "\xEF\xBC\x9F";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(fullwidth_question, sizeof(fullwidth_question) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, (KeyCode)'?');
+}
+
 typedef struct {
     PixelTermApp *app;
 } ToggleVideoFpsCall;
@@ -345,4 +357,6 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_fps_second_toggle_restores_stats_row);
     g_test_add_func("/input_dispatch_key_single/navigation/failure_does_not_refresh_or_advance_queue",
                     test_navigation_failure_does_not_refresh_or_advance_queue);
+    g_test_add_func("/input/input_maps_fullwidth_question_to_help_key",
+                    test_input_maps_fullwidth_question_to_help_key);
 }

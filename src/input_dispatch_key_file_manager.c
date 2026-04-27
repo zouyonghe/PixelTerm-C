@@ -80,17 +80,6 @@ static const gchar* file_manager_selected_path(PixelTermApp *app) {
 void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                                                   InputHandler *input_handler,
                                                   const InputEvent *event) {
-    if ((event->key_code >= 'A' && event->key_code <= 'Z') ||
-        (event->key_code >= 'a' && event->key_code <= 'z')) {
-        gint old_selected = app->file_manager.selected_entry;
-        gint old_scroll = app->file_manager.scroll_offset;
-        app_file_manager_jump_to_letter(app, (char)event->key_code);
-        if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-            app_render_file_manager(app);
-        }
-        return;
-    }
-
     switch (event->key_code) {
         case KEY_LEFT:
         case (KeyCode)'h': {
@@ -239,6 +228,15 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             }
             break;
         default:
+            if ((event->key_code >= 'A' && event->key_code <= 'Z') ||
+                (event->key_code >= 'a' && event->key_code <= 'z')) {
+                gint old_selected = app->file_manager.selected_entry;
+                gint old_scroll = app->file_manager.scroll_offset;
+                app_file_manager_jump_to_letter(app, (char)event->key_code);
+                if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
+                    app_render_file_manager(app);
+                }
+            }
             break;
     }
 }

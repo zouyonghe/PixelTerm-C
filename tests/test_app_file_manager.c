@@ -1,5 +1,7 @@
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include "app.h"
 #include "app_media_session.h"
@@ -10,6 +12,40 @@
 static const guint8 k_png_data[] = {
     0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A
 };
+
+typedef void (*RenderCaptureFunc)(gpointer user_data);
+
+static gchar *capture_render_output(RenderCaptureFunc render_func, gpointer user_data) {
+    gchar *template = g_strdup_printf("%s/pixelterm-file-manager-render-XXXXXX", g_get_tmp_dir());
+    int fd = g_mkstemp(template);
+    g_assert_cmpint(fd, >=, 0);
+
+    int saved_stdout = dup(STDOUT_FILENO);
+    g_assert_cmpint(saved_stdout, >=, 0);
+
+    fflush(stdout);
+    g_assert_cmpint(dup2(fd, STDOUT_FILENO), >=, 0);
+    close(fd);
+
+    render_func(user_data);
+
+    fflush(stdout);
+    g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
+    close(saved_stdout);
+
+    gchar *output = NULL;
+    GError *error = NULL;
+    g_assert_true(g_file_get_contents(template, &output, NULL, &error));
+    g_assert_no_error(error);
+    g_remove(template);
+    g_free(template);
+    return output;
+}
+
+static void render_file_manager_capture(gpointer user_data) {
+    PixelTermApp *app = (PixelTermApp *)user_data;
+    g_assert_cmpint(app_render_file_manager(app), ==, ERROR_NONE);
+}
 
 FileBrowser *browser_create(void) {
     return NULL;
@@ -432,6 +468,55 @@ static void test_enter_child_directory_defaults_to_first_real_entry(void) {
     g_free(dir);
 }
 
+static void test_enter_parent_entry_selects_directory_just_left(void) {
+    gchar *dir = create_temp_dir();
+    gchar *child_dir = create_dir_in_dir(dir, "child");
+    gchar *sibling_dir = create_dir_in_dir(dir, "aardvark");
+    gchar *child_file = write_file_in_dir(child_dir, "inside.png", k_png_data, sizeof(k_png_data));
+    PixelTermApp app = {0};
+
+    init_file_manager_app(&app, child_dir, 24);
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app.file_manager.selected_entry, ==, 1);
+    g_assert_cmpint(app_file_manager_up(&app), ==, ERROR_NONE);
+    g_assert_cmpstr(selected_path(&app), !=, child_dir);
+
+    g_assert_cmpint(app_file_manager_enter(&app), ==, ERROR_NONE);
+
+    g_assert_cmpstr(app.file_manager.directory, ==, dir);
+    g_assert_cmpstr(selected_path(&app), ==, child_dir);
+
+    cleanup_file_manager_app(&app);
+    g_free(child_dir);
+    g_free(sibling_dir);
+    g_free(child_file);
+    g_free(dir);
+}
+
+static void test_render_selected_row_uses_full_width_highlight_with_size(void) {
+    gchar *dir = create_temp_dir();
+    gchar *a_png = write_file_in_dir(dir, "a.png", k_png_data, sizeof(k_png_data));
+    PixelTermApp app = {0};
+
+    init_file_manager_app(&app, dir, 24);
+    app.term_width = 80;
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app_file_manager_select_path(&app, a_png), ==, ERROR_NONE);
+
+    gchar *output = capture_render_output(render_file_manager_capture, &app);
+
+    g_assert_nonnull(g_strstr_len(output, -1, "\033[47;30m[IMG]  a.png"));
+    g_assert_nonnull(g_strstr_len(output, -1, "8 B"));
+    g_assert_nonnull(g_strstr_len(output, -1, "8 B   \033[0m"));
+
+    g_free(output);
+    cleanup_file_manager_app(&app);
+    g_free(a_png);
+    g_free(dir);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
 
@@ -453,6 +538,10 @@ int main(int argc, char **argv) {
                     test_navigation_wraps_and_clamps_scroll_at_paging_boundaries);
     g_test_add_func("/app_file_manager/enter/child_directory_defaults_to_first_real_entry",
                     test_enter_child_directory_defaults_to_first_real_entry);
+    g_test_add_func("/app_file_manager/enter/parent_entry_selects_directory_just_left",
+                    test_enter_parent_entry_selects_directory_just_left);
+    g_test_add_func("/app_file_manager/render/selected_row_uses_full_width_highlight_with_size",
+                    test_render_selected_row_uses_full_width_highlight_with_size);
 
     return g_test_run();
 }

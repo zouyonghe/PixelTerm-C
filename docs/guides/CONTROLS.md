@@ -8,6 +8,7 @@
 |-----|----------|
 | ESC | Exit application |
 | Ctrl+C | Force exit |
+| ? | Show/hide full shortcut help |
 
 ### Mouse Controls
 
@@ -111,12 +112,14 @@ Note: Book view automatically switches between single-page and double-page layou
 
 ### File Manager Mode
 
-This mode allows browsing through directories and files. Note that Vim-style navigation (h/j/k/l) is not supported here, as letter keys are reserved for quickly jumping to file entries.
+This mode allows browsing through directories and files. Vim-style navigation (h/j/k/l) is supported; other letters still jump to matching file entries.
 
 | Key | Function |
 |-----|----------|
 | ←/→ | Go to parent directory / Open selected directory/file |
 | ↑/↓ | Navigate entries up/down |
+| h/l | Go to parent directory / Open selected directory/file |
+| k/j | Navigate entries up/down |
 | Enter | Open selected directory or file |
 | TAB | Open image preview/book preview or return |
 | Backspace | Toggle hidden files |

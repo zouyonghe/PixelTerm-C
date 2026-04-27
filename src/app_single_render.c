@@ -80,6 +80,7 @@ static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepa
             {"Enter", "Preview"},
             {"TAB", "Toggle"},
             {"i", "Info"},
+            {"?", "Help"},
             {"r", "Delete"},
             {"~", "Zen"},
             {"ESC", "Exit"}
@@ -121,9 +122,9 @@ static void app_render_info_overlay_row(gint row,
 }
 
 static void app_render_info_overlay(PixelTermApp *app,
-                                    const gchar *filepath,
-                                    gint image_area_top_row,
-                                    gint image_area_height) {
+                                     const gchar *filepath,
+                                     gint image_area_top_row,
+                                     gint image_area_height) {
     if (!app || !filepath || !app->info_visible) {
         return;
     }
@@ -212,6 +213,179 @@ static void app_render_info_overlay(PixelTermApp *app,
     g_free(safe_basename);
     g_free(dirname);
     g_free(basename);
+}
+
+static const char *app_mode_display_name(const PixelTermApp *app) {
+    if (!app) {
+        return "Help";
+    }
+    if (app_is_file_manager_mode(app)) {
+        return "File Manager Help";
+    }
+    if (app_is_preview_mode(app)) {
+        return "Preview Grid Help";
+    }
+    if (app_is_book_mode(app)) {
+        return "Book Reader Help";
+    }
+    if (app_is_book_preview_mode(app)) {
+        return "Book Preview Help";
+    }
+    return "Image View Help";
+}
+
+typedef struct {
+    const char *key;
+    const char *action;
+} HelpOverlayRow;
+
+static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsize *out_count) {
+    static const HelpOverlayRow single_rows[] = {
+        {"h/k, Left/Up", "Previous media"},
+        {"l/j, Right/Down", "Next media"},
+        {"Enter", "Preview grid"},
+        {"Tab", "File manager"},
+        {"i", "File info"},
+        {"r", "Delete"},
+        {"~", "Zen mode"},
+        {"?", "Close help"}
+    };
+    static const HelpOverlayRow preview_rows[] = {
+        {"h/j/k/l", "Move selection"},
+        {"Arrows", "Move selection"},
+        {"PgUp/PgDn", "Page grid"},
+        {"Enter", "Open selected media"},
+        {"Tab", "File manager"},
+        {"+/-", "Zoom grid"},
+        {"r", "Delete"},
+        {"?", "Close help"}
+    };
+    static const HelpOverlayRow file_manager_rows[] = {
+        {"h / Left", "Parent directory"},
+        {"l / Right", "Open selection"},
+        {"Enter", "Open selection"},
+        {"k / Up", "Move up"},
+        {"j / Down", "Move down"},
+        {"Tab", "Preview current folder"},
+        {"Backspace", "Toggle hidden files"},
+        {"Other letters", "Jump to matching entry"},
+        {"?", "Close help"}
+    };
+    static const HelpOverlayRow book_rows[] = {
+        {"h / Left", "Previous page"},
+        {"l / Right", "Next page"},
+        {"k / Up", "Previous page/spread"},
+        {"j / Down", "Next page/spread"},
+        {"P", "Jump to page"},
+        {"T", "Table of contents"},
+        {"Enter", "Page preview"},
+        {"?", "Close help"}
+    };
+    static const HelpOverlayRow book_preview_rows[] = {
+        {"h/j/k/l", "Move selection"},
+        {"Arrows", "Move selection"},
+        {"PgUp/PgDn", "Page grid"},
+        {"P", "Jump to page"},
+        {"T", "Table of contents"},
+        {"Enter / Tab", "Open page"},
+        {"+/-", "Zoom grid"},
+        {"?", "Close help"}
+    };
+
+    const HelpOverlayRow *rows = single_rows;
+    gsize count = G_N_ELEMENTS(single_rows);
+    if (app_is_file_manager_mode(app)) {
+        rows = file_manager_rows;
+        count = G_N_ELEMENTS(file_manager_rows);
+    } else if (app_is_preview_mode(app)) {
+        rows = preview_rows;
+        count = G_N_ELEMENTS(preview_rows);
+    } else if (app_is_book_mode(app)) {
+        rows = book_rows;
+        count = G_N_ELEMENTS(book_rows);
+    } else if (app_is_book_preview_mode(app)) {
+        rows = book_preview_rows;
+        count = G_N_ELEMENTS(book_preview_rows);
+    }
+    if (out_count) {
+        *out_count = count;
+    }
+    return rows;
+}
+
+static void app_render_help_overlay_row(gint row,
+                                        gint start_col,
+                                        gint inner_width,
+                                        gint key_width,
+                                        const HelpOverlayRow *help_row) {
+    if (!help_row) {
+        return;
+    }
+    gint action_width = inner_width - key_width - 7;
+    if (action_width < 8) {
+        action_width = 8;
+    }
+    gchar *key = truncate_utf8_for_display(help_row->key, key_width);
+    gchar *action = truncate_utf8_for_display(help_row->action, action_width);
+
+    printf("\033[%d;%dH\033[97;48;5;236m|%-*s|\033[0m", row, start_col, inner_width, "");
+    printf("\033[%d;%dH\033[36;48;5;236m%s\033[0m", row, start_col + 2, key);
+    printf("\033[%d;%dH\033[97;48;5;236m%s\033[0m", row, start_col + key_width + 5, action);
+
+    g_free(action);
+    g_free(key);
+}
+
+void app_render_help_overlay(PixelTermApp *app) {
+    if (!app) {
+        return;
+    }
+    get_terminal_size(&app->term_width, &app->term_height);
+    if (app->term_width < 32 || app->term_height < 8) {
+        return;
+    }
+
+    gsize line_count = 0;
+    const HelpOverlayRow *rows = app_help_rows_for_mode(app, &line_count);
+    const char *title = app_mode_display_name(app);
+    gint key_width = 0;
+    gint action_width = 0;
+    for (gsize i = 0; i < line_count; i++) {
+        key_width = MAX(key_width, utf8_display_width(rows[i].key));
+        action_width = MAX(action_width, utf8_display_width(rows[i].action));
+    }
+    if (key_width > 18) {
+        key_width = 18;
+    }
+    gint inner_width = key_width + action_width + 7;
+    if (inner_width > 68) {
+        inner_width = 68;
+    }
+    if (inner_width > app->term_width - 6) {
+        inner_width = app->term_width - 6;
+    }
+    if (inner_width < 28) {
+        inner_width = 28;
+    }
+    gint panel_width = inner_width + 2;
+    gint panel_height = (gint)line_count + 4;
+    if (panel_height > app->term_height) {
+        panel_height = app->term_height;
+    }
+    gint start_col = MAX(1, ((app->term_width - panel_width) / 2) + 1);
+    gint start_row = MAX(1, ((app->term_height - panel_height) / 2) + 1);
+    if (start_row + panel_height - 1 > app->term_height) {
+        start_row = MAX(1, app->term_height - panel_height + 1);
+    }
+
+    app_render_info_overlay_border(start_row, start_col, inner_width);
+    app_render_info_overlay_row(start_row + 1, start_col, inner_width, title, TRUE, "\033[1;96;48;5;236m");
+    app_render_info_overlay_row(start_row + 2, start_col, inner_width, "", FALSE, "\033[97;48;5;236m");
+    for (gsize i = 0; i < line_count && start_row + (gint)i + 3 < start_row + panel_height - 1; i++) {
+        app_render_help_overlay_row(start_row + (gint)i + 3, start_col, inner_width, key_width, &rows[i]);
+    }
+    app_render_info_overlay_border(start_row + panel_height - 1, start_col, inner_width);
+    fflush(stdout);
 }
 
 static void app_apply_info_overlay_render_mode(const PixelTermApp *app,
@@ -465,6 +639,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 {"+/-", "Scale"},
                 {"Enter", "Preview"},
                 {"TAB", "Toggle"},
+                {"?", "Help"},
                 {"r", "Delete"},
                 {"~", "Zen"},
                 {"ESC", "Exit"}
@@ -829,6 +1004,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             {"Enter", "Preview"},
             {"TAB", "Toggle"},
             {"i", "Info"},
+            {"?", "Help"},
             {"r", "Delete"},
             {"~", "Zen"},
             {"ESC", "Exit"}

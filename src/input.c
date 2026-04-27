@@ -436,7 +436,7 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         }
     } else {
         // Regular character (including basic UTF-8 punctuation we care about)
-        // Some IMEs/terminals send a fullwidth tilde '～' (U+FF5E) which is UTF-8: EF BD 9E.
+        // Some IMEs/terminals send fullwidth punctuation while the app expects ASCII shortcuts.
         if (c == 0xEF) {
             gint b2 = input_read_char_with_timeout(handler, 5);
             if (b2 < 0) b2 = (unsigned char)b2;
@@ -444,6 +444,8 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
             if (b3 < 0) b3 = (unsigned char)b3;
             if (b2 == 0xBD && b3 == 0x9E) {
                 event->key_code = (KeyCode)'~';
+            } else if (b2 == 0xBC && b3 == 0x9F) {
+                event->key_code = (KeyCode)'?';
             } else {
                 event->key_code = KEY_UNKNOWN;
             }
