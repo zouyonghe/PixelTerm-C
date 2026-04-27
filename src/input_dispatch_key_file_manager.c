@@ -2,12 +2,8 @@
 
 #include "input_dispatch_media_internal.h"
 
-static const KeyCode g_nav_keys_lr[] = {
-    KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
-};
 static const KeyCode g_nav_keys_ud[] = {
-    KEY_UP, (KeyCode)'k', KEY_LEFT, (KeyCode)'h', KEY_RIGHT, (KeyCode)'l', KEY_DOWN, (KeyCode)'j',
-    KEY_PAGE_UP, KEY_PAGE_DOWN
+    KEY_UP, KEY_DOWN, KEY_PAGE_UP, KEY_PAGE_DOWN
 };
 
 static gboolean key_in_list(KeyCode key, const KeyCode *keys, size_t key_count) {
@@ -81,8 +77,7 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                                                   InputHandler *input_handler,
                                                   const InputEvent *event) {
     switch (event->key_code) {
-        case KEY_LEFT:
-        case (KeyCode)'h': {
+        case KEY_LEFT: {
             gint old_selected = app->file_manager.selected_entry;
             gint old_scroll = app->file_manager.scroll_offset;
             GList *old_entries = app->file_manager.entries;
@@ -97,11 +92,9 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             if (err == ERROR_NONE && state_changed) {
                 app_render_file_manager(app);
             }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
-        case KEY_RIGHT:
-        case (KeyCode)'l': {
+        case KEY_RIGHT: {
             gint old_selected = app->file_manager.selected_entry;
             gint old_scroll = app->file_manager.scroll_offset;
             GList *old_entries = app->file_manager.entries;
@@ -120,10 +113,8 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             } else if (app_is_file_manager_mode(app)) {
                 app_render_file_manager(app);
             }
-            skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
         }
-        case (KeyCode)'k':
         case KEY_UP: {
             gint old_selected = app->file_manager.selected_entry;
             gint old_scroll = app->file_manager.scroll_offset;
@@ -134,7 +125,6 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
         }
-        case (KeyCode)'j':
         case KEY_DOWN: {
             gint old_selected = app->file_manager.selected_entry;
             gint old_scroll = app->file_manager.scroll_offset;

@@ -265,6 +265,27 @@ static void test_ui_preview_header_lines_follow_visibility(void) {
     g_assert_cmpint(ui_preview_header_lines(&app), ==, 0);
 }
 
+static void test_grid_renderer_forces_text_when_help_overlay_visible(void) {
+    PixelTermApp app = {0};
+    app.force_kitty = TRUE;
+    app.help_visible = TRUE;
+    app.render_work_factor = 1;
+    app.text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
+    app.gamma = 1.0;
+
+    ErrorCode error = ERROR_NONE;
+    ImageRenderer *renderer = app_create_grid_renderer(&app, 8, 4, &error);
+
+    g_assert_nonnull(renderer);
+    g_assert_cmpint(error, ==, ERROR_NONE);
+    g_assert_true(renderer->config.force_text);
+    g_assert_false(renderer->config.force_kitty);
+    g_assert_false(renderer->config.force_iterm2);
+    g_assert_false(renderer->config.force_sixel);
+
+    renderer_destroy(renderer);
+}
+
 void register_preview_shared_tests(void) {
     g_test_add_func("/preview_shared/draw_rendered_lines/centers_both_axes",
                     test_draw_rendered_lines_centers_both_axes);
@@ -284,4 +305,6 @@ void register_preview_shared_tests(void) {
                     test_ui_single_view_layout_contract_is_stable);
     g_test_add_func("/preview_shared/ui_render/preview_header_lines_follow_visibility",
                     test_ui_preview_header_lines_follow_visibility);
+    g_test_add_func("/preview_shared/grid_renderer/forces_text_when_help_overlay_visible",
+                    test_grid_renderer_forces_text_when_help_overlay_visible);
 }

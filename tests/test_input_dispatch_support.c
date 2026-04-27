@@ -308,7 +308,8 @@ ErrorCode app_exit_file_manager(PixelTermApp *app) {
 
 ErrorCode app_file_manager_jump_to_letter(PixelTermApp *app, char letter) {
     (void)app;
-    (void)letter;
+    g_input_dispatch_stub_state.file_manager_jump_to_letter_calls++;
+    g_input_dispatch_stub_state.last_file_manager_jump_letter = letter;
     return ERROR_NONE;
 }
 

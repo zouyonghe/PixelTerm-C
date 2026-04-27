@@ -261,14 +261,14 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"?", "Close help"}
     };
     static const HelpOverlayRow file_manager_rows[] = {
-        {"h / Left", "Parent directory"},
-        {"l / Right", "Open selection"},
+        {"Left", "Parent directory"},
+        {"Right", "Open selection"},
         {"Enter", "Open selection"},
-        {"k / Up", "Move up"},
-        {"j / Down", "Move down"},
+        {"Up", "Move up"},
+        {"Down", "Move down"},
         {"Tab", "Preview current folder"},
         {"Backspace", "Toggle hidden files"},
-        {"Other letters", "Jump to matching entry"},
+        {"A-Z / a-z", "Jump to matching entry"},
         {"?", "Close help"}
     };
     static const HelpOverlayRow book_rows[] = {
@@ -393,7 +393,7 @@ static void app_apply_info_overlay_render_mode(const PixelTermApp *app,
                                                gboolean *force_sixel,
                                                gboolean *force_kitty,
                                                gboolean *force_iterm2) {
-    if (!app || !app->info_visible) {
+    if (!app || (!app->info_visible && !app->help_visible)) {
         return;
     }
     if (force_text) {
@@ -464,7 +464,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     } else if (is_animated_image) {
         active_kind = MEDIA_KIND_ANIMATED_IMAGE;
     }
-    if (app->info_visible && active_kind == MEDIA_KIND_ANIMATED_IMAGE) {
+    if ((app->info_visible || app->help_visible) && active_kind == MEDIA_KIND_ANIMATED_IMAGE) {
         active_kind = MEDIA_KIND_IMAGE;
     }
     app_media_stop_inactive_players(app, active_kind);
@@ -814,7 +814,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             return ERROR_INVALID_IMAGE;
         }
     } else {
-        if (app->preloader && app->preload_enabled && !app->info_visible) {
+        if (app->preloader && app->preload_enabled && !app->info_visible && !app->help_visible) {
             rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
         }
 
@@ -880,7 +880,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                    &image_height);
 
             // Add to cache if preloader is available
-            if (app->preloader && app->preload_enabled && !app->info_visible) {
+            if (app->preloader && app->preload_enabled && !app->info_visible && !app->help_visible) {
                 preloader_cache_add(app->preloader,
                                     filepath,
                                     rendered,
@@ -1014,7 +1014,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // If it's an animated image and player is available, start playing if animated
-    if (gif_is_animated && app->gif_player && !app->info_visible) {
+    if (gif_is_animated && app->gif_player && !app->info_visible && !app->help_visible) {
         // For first render, just show the first frame, then start animation
         APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
         // Indicate that we are currently displaying an animated GIF

@@ -283,6 +283,27 @@ static void test_info_overlay_forces_text_rendering_over_graphics_modes(void) {
     destroy_render_test_app(&app);
 }
 
+static void test_help_overlay_forces_text_rendering_over_graphics_modes(void) {
+    PixelTermApp app = {0};
+    if (!init_render_test_app(&app)) {
+        g_test_skip("media players unavailable");
+        return;
+    }
+
+    app_single_render_reset_stubs();
+    app.current_index = 2;
+    app.help_visible = TRUE;
+    app.force_kitty = TRUE;
+
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
+    g_assert_true(g_app_single_render_stub_state.last_force_text);
+    g_assert_false(g_app_single_render_stub_state.last_force_kitty);
+    g_assert_false(g_app_single_render_stub_state.last_force_iterm2);
+    g_assert_false(g_app_single_render_stub_state.last_force_sixel);
+
+    destroy_render_test_app(&app);
+}
+
 static void test_info_overlay_pauses_animated_gif_updates(void) {
     PixelTermApp app = {0};
     if (!init_render_test_app(&app)) {
@@ -353,6 +374,8 @@ void register_app_single_render_integration_tests(void) {
                     test_info_overlay_renders_even_when_ui_text_is_hidden);
     g_test_add_func("/app_single_render/info_overlay/forces_text_rendering_over_graphics_modes",
                     test_info_overlay_forces_text_rendering_over_graphics_modes);
+    g_test_add_func("/app_single_render/help_overlay/forces_text_rendering_over_graphics_modes",
+                    test_help_overlay_forces_text_rendering_over_graphics_modes);
     g_test_add_func("/app_single_render/info_overlay/pauses_animated_gif_updates",
                     test_info_overlay_pauses_animated_gif_updates);
     g_test_add_func("/app_single_render/info_overlay/bypasses_preloader_cache",

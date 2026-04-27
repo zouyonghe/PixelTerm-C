@@ -58,7 +58,7 @@ static PixelTermApp make_file_manager_list_app(void) {
     return app;
 }
 
-static void test_vim_keys_navigate_before_letter_jump(void) {
+static void test_letter_keys_jump_before_vim_navigation(void) {
     PixelTermApp app = make_file_manager_list_app();
     InputEvent event = make_key_event((KeyCode)'k');
 
@@ -66,7 +66,9 @@ static void test_vim_keys_navigate_before_letter_jump(void) {
 
     input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
 
-    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_jump_to_letter_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.last_file_manager_jump_letter, ==, 'k');
+    g_assert_cmpint(app.file_manager.selected_entry, ==, 1);
 
     cleanup_file_manager_app(&app);
 }
@@ -97,6 +99,6 @@ static void test_tab_on_book_selection_enters_book_preview(void) {
 void register_input_dispatch_key_file_manager_tests(void) {
     g_test_add_func("/input_dispatch_key_file_manager/tab/book_selection_enters_book_preview",
                     test_tab_on_book_selection_enters_book_preview);
-    g_test_add_func("/input_dispatch_key_file_manager/vim_keys/navigate_before_letter_jump",
-                    test_vim_keys_navigate_before_letter_jump);
+    g_test_add_func("/input_dispatch_key_file_manager/letter_keys/jump_before_vim_navigation",
+                    test_letter_keys_jump_before_vim_navigation);
 }

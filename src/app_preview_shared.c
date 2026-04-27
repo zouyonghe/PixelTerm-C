@@ -169,6 +169,12 @@ ImageRenderer* app_create_grid_renderer(const PixelTermApp *app,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
     };
+    if (app->help_visible) {
+        config.force_text = TRUE;
+        config.force_sixel = FALSE;
+        config.force_kitty = FALSE;
+        config.force_iterm2 = FALSE;
+    }
 
     ImageRenderer *renderer = renderer_create();
     if (!renderer) {

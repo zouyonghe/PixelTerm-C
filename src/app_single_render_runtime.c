@@ -4,6 +4,7 @@
 #include "text_utils.h"
 #include "preload_control.h"
 #include "app_single_render_internal.h"
+#include "ui_render_utils.h"
 
 void app_render_help_overlay(PixelTermApp *app);
 
@@ -21,6 +22,11 @@ ErrorCode app_display_help(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
     app->help_visible = !app->help_visible;
+    if (app->help_visible) {
+        ui_clear_kitty_images(app);
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+    }
     if (!app->help_visible) {
         return app_render_by_mode(app);
     }

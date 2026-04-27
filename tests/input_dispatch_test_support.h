@@ -35,6 +35,8 @@ typedef struct {
     gint file_manager_enter_calls;
     gint file_manager_toggle_hidden_calls;
     gint file_manager_select_path_calls;
+    gint file_manager_jump_to_letter_calls;
+    char last_file_manager_jump_letter;
     gint load_directory_calls;
     gint enter_at_position_calls;
     gint last_mouse_x;

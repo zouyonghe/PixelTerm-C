@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.7.25: Help overlay and file-manager navigation polish.
+    - **Help Overlay**: Keep `?` help visible above image and preview-grid content by clearing graphics-protocol placements, forcing text rendering while help is open, and bypassing preloaded graphics thumbnails that could cover the panel.
+    - **File Manager Controls**: Make English letters consistently jump to matching entries by first letter, while keeping arrow keys as the primary visible navigation controls.
+    - **File Manager UI**: Improve list readability with fixed-width rows, full-row selection highlighting, file type labels, and lightweight size/status metadata.
+    - **Input Compatibility**: Treat fullwidth Chinese/Japanese `？` as the help shortcut so help works without switching input methods.
+    - **Testing**: Add regressions for help overlay text fallback, preview renderer behavior, file-manager letter jumps, parent-directory reselection, full-row highlighting, and fullwidth question-mark input.
+
 - v1.7.24: Video stats toggle row restoration fix.
     - **Video Overlay**: Fix the `f` toggle in single-video view so hiding the refresh-rate overlay actually clears the on-screen stats row instead of leaving stale FPS text behind.
     - **Display Consistency**: Use a shared stats-row constant for both video drawing and overlay teardown, so future layout adjustments cannot desynchronize where stats are rendered versus cleared.

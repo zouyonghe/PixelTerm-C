@@ -52,7 +52,7 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
     gint rendered_h = 0;
     gboolean graphics_mode = FALSE;
 
-    if (app->preloader && app->preload_enabled) {
+    if (!app->help_visible && app->preloader && app->preload_enabled) {
         rendered = preloader_get_cached_image(app->preloader,
                                               filepath,
                                               context->content_width,
@@ -114,7 +114,7 @@ static GridRenderResult app_preview_render_cell(const GridRenderContext *context
         graphics_mode = renderer_is_graphics_mode(render_ctx->renderer);
     }
 
-    if (!rendered_from_preload && app->preloader && app->preload_enabled) {
+    if (!rendered_from_preload && !app->help_visible && app->preloader && app->preload_enabled) {
         preloader_cache_add(app->preloader,
                             filepath,
                             rendered,
