@@ -61,6 +61,8 @@ ErrorCode app_next_image(PixelTermApp *app) {
         app->needs_redraw = FALSE;
         if (result == ERROR_NONE && app->current_index + 1 < app->total_images) {
             app->current_index++;
+            app->info_visible = FALSE;
+            app->help_visible = FALSE;
         }
     }
     g_input_dispatch_stub_state.next_image_calls++;
@@ -73,6 +75,8 @@ ErrorCode app_previous_image(PixelTermApp *app) {
         app->needs_redraw = FALSE;
         if (result == ERROR_NONE && app->current_index > 0) {
             app->current_index--;
+            app->info_visible = FALSE;
+            app->help_visible = FALSE;
         }
     }
     g_input_dispatch_stub_state.previous_image_calls++;

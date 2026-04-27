@@ -27,6 +27,12 @@ typedef struct {
     const char *style;
 } UiRowCaptureArgs;
 
+typedef struct {
+    gint term_width;
+    gint term_height;
+    UIPanel panel;
+} UIPanelCaptureArgs;
+
 static gchar *capture_output(PreviewDrawFunc draw_func, gpointer user_data) {
     gchar *template = g_strdup_printf("%s/pixelterm-preview-shared-XXXXXX", g_get_tmp_dir());
     int fd = g_mkstemp(template);
@@ -89,6 +95,11 @@ static void draw_preview_content_capture(gpointer user_data) {
 static void draw_centered_row_capture(gpointer user_data) {
     UiRowCaptureArgs *args = (UiRowCaptureArgs *)user_data;
     ui_render_centered_row(args->row, args->term_width, args->text, args->style);
+}
+
+static void draw_panel_capture(gpointer user_data) {
+    UIPanelCaptureArgs *args = (UIPanelCaptureArgs *)user_data;
+    ui_render_panel(args->term_width, args->term_height, &args->panel);
 }
 
 static gchar *capture_draw_output(gint content_x,
@@ -163,6 +174,10 @@ static gchar *capture_centered_row_output(gint row,
         .style = style
     };
     return capture_output(draw_centered_row_capture, &args);
+}
+
+static gchar *capture_panel_output(UIPanelCaptureArgs *args) {
+    return capture_output(draw_panel_capture, args);
 }
 
 static void test_draw_rendered_lines_centers_both_axes(void) {
@@ -286,6 +301,37 @@ static void test_grid_renderer_forces_text_when_help_overlay_visible(void) {
     renderer_destroy(renderer);
 }
 
+static void test_ui_render_panel_draws_title_rows_and_truncates_columns(void) {
+    const char *lines[] = {"Summary line"};
+    const UIPanelRow rows[] = {
+        {"LongShortcutName", "Very long action label that should be truncated"},
+        {"?", "Close help"}
+    };
+    UIPanelCaptureArgs args = {
+        .term_width = 58,
+        .term_height = 12,
+        .panel = {
+            .title = "Panel Title",
+            .lines = lines,
+            .line_count = G_N_ELEMENTS(lines),
+            .rows = rows,
+            .row_count = G_N_ELEMENTS(rows),
+            .min_inner_width = 24,
+            .max_inner_width = 46
+        }
+    };
+
+    gchar *output = capture_panel_output(&args);
+
+    g_assert_nonnull(g_strstr_len(output, -1, "Panel Title"));
+    g_assert_nonnull(g_strstr_len(output, -1, "Summary line"));
+    g_assert_nonnull(g_strstr_len(output, -1, "LongShortcutName"));
+    g_assert_nonnull(g_strstr_len(output, -1, "..."));
+    g_assert_nonnull(g_strstr_len(output, -1, "Close help"));
+
+    g_free(output);
+}
+
 void register_preview_shared_tests(void) {
     g_test_add_func("/preview_shared/draw_rendered_lines/centers_both_axes",
                     test_draw_rendered_lines_centers_both_axes);
@@ -305,6 +351,8 @@ void register_preview_shared_tests(void) {
                     test_ui_single_view_layout_contract_is_stable);
     g_test_add_func("/preview_shared/ui_render/preview_header_lines_follow_visibility",
                     test_ui_preview_header_lines_follow_visibility);
+    g_test_add_func("/preview_shared/ui_render/panel_draws_title_rows_and_truncates_columns",
+                    test_ui_render_panel_draws_title_rows_and_truncates_columns);
     g_test_add_func("/preview_shared/grid_renderer/forces_text_when_help_overlay_visible",
                     test_grid_renderer_forces_text_when_help_overlay_visible);
 }

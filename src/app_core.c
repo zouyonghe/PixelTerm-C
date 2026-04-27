@@ -255,6 +255,7 @@ ErrorCode app_next_image(PixelTermApp *app) {
     if (old_index != app->current_index) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;  // Reset info visibility when switching images
+        app->help_visible = FALSE;  // Reset help overlay so rendering returns to the active protocol
         app->image_zoom = 1.0;
         app->image_pan_x = 0.0;
         app->image_pan_y = 0.0;
@@ -285,6 +286,7 @@ ErrorCode app_previous_image(PixelTermApp *app) {
     if (old_index != app->current_index) {
         app->needs_redraw = TRUE;
         app->info_visible = FALSE;  // Reset info visibility when switching images
+        app->help_visible = FALSE;  // Reset help overlay so rendering returns to the active protocol
         app->image_zoom = 1.0;
         app->image_pan_x = 0.0;
         app->image_pan_y = 0.0;
@@ -307,6 +309,7 @@ ErrorCode app_goto_image(PixelTermApp *app, gint index) {
             app->current_index = index;
             app->needs_redraw = TRUE;
             app->info_visible = FALSE;  // Reset info visibility when switching images
+            app->help_visible = FALSE;  // Reset help overlay so rendering returns to the active protocol
             app->image_zoom = 1.0;
             app->image_pan_x = 0.0;
             app->image_pan_y = 0.0;

@@ -93,34 +93,6 @@ static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepa
     fflush(stdout);
 }
 
-static void app_render_info_overlay_border(gint row, gint start_col, gint inner_width) {
-    printf("\033[%d;%dH\033[97;48;5;236m+", row, start_col);
-    for (gint i = 0; i < inner_width; i++) {
-        putchar('-');
-    }
-    printf("+\033[0m");
-}
-
-static void app_render_info_overlay_row(gint row,
-                                        gint start_col,
-                                        gint inner_width,
-                                        const gchar *text,
-                                        gboolean centered,
-                                        const gchar *style) {
-    gint content_width = inner_width > 2 ? inner_width - 2 : inner_width;
-    gchar *display = truncate_utf8_middle_keep_suffix(text ? text : "", content_width);
-    gint text_width = utf8_display_width(display);
-    gint text_col = start_col + 2;
-    if (centered && text_width < content_width) {
-        text_col += (content_width - text_width) / 2;
-    }
-
-    printf("\033[%d;%dH\033[97;48;5;236m|%-*s|\033[0m", row, start_col, inner_width, "");
-    printf("\033[%d;%dH%s%s\033[0m", row, text_col, style, display);
-
-    g_free(display);
-}
-
 static void app_render_info_overlay(PixelTermApp *app,
                                      const gchar *filepath,
                                      gint image_area_top_row,
@@ -131,22 +103,14 @@ static void app_render_info_overlay(PixelTermApp *app,
 
     gint available_bottom = MIN(app->term_height - 3, image_area_top_row + image_area_height - 1);
     gint available_height = available_bottom - image_area_top_row + 1;
-    gint inner_width = app->term_width - 10;
-    if (inner_width > 74) {
-        inner_width = 74;
-    }
-    if (inner_width < 24) {
+    if (app->term_width < 28) {
         return;
     }
 
-    const gint panel_height = 10;
+    const gint panel_height = 9;
     if (available_height < panel_height) {
         return;
     }
-
-    gint panel_width = inner_width + 2;
-    gint start_col = MAX(1, ((app->term_width - panel_width) / 2) + 1);
-    gint start_row = image_area_top_row + (available_height - panel_height) / 2;
 
     gint width = 0;
     gint height = 0;
@@ -174,8 +138,7 @@ static void app_render_info_overlay(PixelTermApp *app,
     gchar *line_aspect = have_dimensions
                              ? g_strdup_printf("Aspect: %.2f", aspect_ratio)
                              : g_strdup("Aspect: unknown");
-    const gchar *lines[] = {
-        "File Info",
+    const char *lines[] = {
         line_name,
         line_path,
         line_index,
@@ -184,23 +147,14 @@ static void app_render_info_overlay(PixelTermApp *app,
         line_format,
         line_aspect,
     };
-
-    app_render_info_overlay_border(start_row, start_col, inner_width);
-    app_render_info_overlay_row(start_row + 1,
-                                start_col,
-                                inner_width,
-                                lines[0],
-                                TRUE,
-                                "\033[1;96;48;5;236m");
-    for (gsize i = 1; i < G_N_ELEMENTS(lines); i++) {
-        app_render_info_overlay_row(start_row + (gint)i + 1,
-                                    start_col,
-                                    inner_width,
-                                    lines[i],
-                                    FALSE,
-                                    "\033[97;48;5;236m");
-    }
-    app_render_info_overlay_border(start_row + panel_height - 1, start_col, inner_width);
+    UIPanel panel = {
+        .title = "File Info",
+        .lines = lines,
+        .line_count = G_N_ELEMENTS(lines),
+        .min_inner_width = 50,
+        .max_inner_width = 74
+    };
+    ui_render_panel(app->term_width, app->term_height, &panel);
 
     g_free(line_aspect);
     g_free(line_format);
@@ -234,13 +188,8 @@ static const char *app_mode_display_name(const PixelTermApp *app) {
     return "Image View Help";
 }
 
-typedef struct {
-    const char *key;
-    const char *action;
-} HelpOverlayRow;
-
-static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsize *out_count) {
-    static const HelpOverlayRow single_rows[] = {
+static const UIPanelRow *app_help_rows_for_mode(const PixelTermApp *app, gsize *out_count) {
+    static const UIPanelRow single_rows[] = {
         {"h/k, Left/Up", "Previous media"},
         {"l/j, Right/Down", "Next media"},
         {"Enter", "Preview grid"},
@@ -250,7 +199,7 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"~", "Zen mode"},
         {"?", "Close help"}
     };
-    static const HelpOverlayRow preview_rows[] = {
+    static const UIPanelRow preview_rows[] = {
         {"h/j/k/l", "Move selection"},
         {"Arrows", "Move selection"},
         {"PgUp/PgDn", "Page grid"},
@@ -260,7 +209,7 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"r", "Delete"},
         {"?", "Close help"}
     };
-    static const HelpOverlayRow file_manager_rows[] = {
+    static const UIPanelRow file_manager_rows[] = {
         {"Left", "Parent directory"},
         {"Right", "Open selection"},
         {"Enter", "Open selection"},
@@ -271,7 +220,7 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"A-Z / a-z", "Jump to matching entry"},
         {"?", "Close help"}
     };
-    static const HelpOverlayRow book_rows[] = {
+    static const UIPanelRow book_rows[] = {
         {"h / Left", "Previous page"},
         {"l / Right", "Next page"},
         {"k / Up", "Previous page/spread"},
@@ -281,7 +230,7 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"Enter", "Page preview"},
         {"?", "Close help"}
     };
-    static const HelpOverlayRow book_preview_rows[] = {
+    static const UIPanelRow book_preview_rows[] = {
         {"h/j/k/l", "Move selection"},
         {"Arrows", "Move selection"},
         {"PgUp/PgDn", "Page grid"},
@@ -292,7 +241,7 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
         {"?", "Close help"}
     };
 
-    const HelpOverlayRow *rows = single_rows;
+    const UIPanelRow *rows = single_rows;
     gsize count = G_N_ELEMENTS(single_rows);
     if (app_is_file_manager_mode(app)) {
         rows = file_manager_rows;
@@ -313,29 +262,6 @@ static const HelpOverlayRow *app_help_rows_for_mode(const PixelTermApp *app, gsi
     return rows;
 }
 
-static void app_render_help_overlay_row(gint row,
-                                        gint start_col,
-                                        gint inner_width,
-                                        gint key_width,
-                                        const HelpOverlayRow *help_row) {
-    if (!help_row) {
-        return;
-    }
-    gint action_width = inner_width - key_width - 7;
-    if (action_width < 8) {
-        action_width = 8;
-    }
-    gchar *key = truncate_utf8_for_display(help_row->key, key_width);
-    gchar *action = truncate_utf8_for_display(help_row->action, action_width);
-
-    printf("\033[%d;%dH\033[97;48;5;236m|%-*s|\033[0m", row, start_col, inner_width, "");
-    printf("\033[%d;%dH\033[36;48;5;236m%s\033[0m", row, start_col + 2, key);
-    printf("\033[%d;%dH\033[97;48;5;236m%s\033[0m", row, start_col + key_width + 5, action);
-
-    g_free(action);
-    g_free(key);
-}
-
 void app_render_help_overlay(PixelTermApp *app) {
     if (!app) {
         return;
@@ -346,46 +272,16 @@ void app_render_help_overlay(PixelTermApp *app) {
     }
 
     gsize line_count = 0;
-    const HelpOverlayRow *rows = app_help_rows_for_mode(app, &line_count);
+    const UIPanelRow *rows = app_help_rows_for_mode(app, &line_count);
     const char *title = app_mode_display_name(app);
-    gint key_width = 0;
-    gint action_width = 0;
-    for (gsize i = 0; i < line_count; i++) {
-        key_width = MAX(key_width, utf8_display_width(rows[i].key));
-        action_width = MAX(action_width, utf8_display_width(rows[i].action));
-    }
-    if (key_width > 18) {
-        key_width = 18;
-    }
-    gint inner_width = key_width + action_width + 7;
-    if (inner_width > 68) {
-        inner_width = 68;
-    }
-    if (inner_width > app->term_width - 6) {
-        inner_width = app->term_width - 6;
-    }
-    if (inner_width < 28) {
-        inner_width = 28;
-    }
-    gint panel_width = inner_width + 2;
-    gint panel_height = (gint)line_count + 4;
-    if (panel_height > app->term_height) {
-        panel_height = app->term_height;
-    }
-    gint start_col = MAX(1, ((app->term_width - panel_width) / 2) + 1);
-    gint start_row = MAX(1, ((app->term_height - panel_height) / 2) + 1);
-    if (start_row + panel_height - 1 > app->term_height) {
-        start_row = MAX(1, app->term_height - panel_height + 1);
-    }
-
-    app_render_info_overlay_border(start_row, start_col, inner_width);
-    app_render_info_overlay_row(start_row + 1, start_col, inner_width, title, TRUE, "\033[1;96;48;5;236m");
-    app_render_info_overlay_row(start_row + 2, start_col, inner_width, "", FALSE, "\033[97;48;5;236m");
-    for (gsize i = 0; i < line_count && start_row + (gint)i + 3 < start_row + panel_height - 1; i++) {
-        app_render_help_overlay_row(start_row + (gint)i + 3, start_col, inner_width, key_width, &rows[i]);
-    }
-    app_render_info_overlay_border(start_row + panel_height - 1, start_col, inner_width);
-    fflush(stdout);
+    UIPanel panel = {
+        .title = title,
+        .rows = rows,
+        .row_count = line_count,
+        .min_inner_width = 28,
+        .max_inner_width = 68
+    };
+    ui_render_panel(app->term_width, app->term_height, &panel);
 }
 
 static void app_apply_info_overlay_render_mode(const PixelTermApp *app,

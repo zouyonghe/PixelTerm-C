@@ -172,3 +172,115 @@ void ui_clear_area(const PixelTermApp *app, gint top_row, gint height) {
         printf("\033[%d;1H\033[2K", row);
     }
 }
+
+static void ui_panel_border(gint row, gint start_col, gint inner_width) {
+    printf("\033[%d;%dH\033[97;48;5;236m+", row, start_col);
+    for (gint i = 0; i < inner_width; i++) {
+        putchar('-');
+    }
+    printf("+\033[0m");
+}
+
+static void ui_panel_blank_row(gint row, gint start_col, gint inner_width) {
+    printf("\033[%d;%dH\033[97;48;5;236m|", row, start_col);
+    for (gint i = 0; i < inner_width; i++) {
+        putchar(' ');
+    }
+    printf("|\033[0m");
+}
+
+static void ui_panel_text_row(gint row,
+                              gint start_col,
+                              gint inner_width,
+                              const char *text,
+                              gboolean centered,
+                              const char *style) {
+    gchar *truncated = truncate_utf8_for_display(text ? text : "", inner_width);
+    gint text_width = utf8_display_width(truncated);
+    gint offset = centered && inner_width > text_width ? (inner_width - text_width) / 2 : 1;
+    if (offset < 1) {
+        offset = 1;
+    }
+    ui_panel_blank_row(row, start_col, inner_width);
+    printf("\033[%d;%dH%s%s\033[0m", row, start_col + offset, style ? style : "\033[97;48;5;236m", truncated);
+    g_free(truncated);
+}
+
+static void ui_panel_pair_row(gint row,
+                              gint start_col,
+                              gint inner_width,
+                              gint left_width,
+                              const UIPanelRow *panel_row) {
+    gint right_width = inner_width - left_width - 7;
+    if (right_width < 8) {
+        right_width = 8;
+    }
+    gchar *left = truncate_utf8_for_display(panel_row && panel_row->left ? panel_row->left : "", left_width);
+    gchar *right = truncate_utf8_middle_keep_suffix(panel_row && panel_row->right ? panel_row->right : "", right_width);
+    ui_panel_blank_row(row, start_col, inner_width);
+    printf("\033[%d;%dH\033[36;48;5;236m%s\033[0m", row, start_col + 2, left);
+    printf("\033[%d;%dH\033[97;48;5;236m%s\033[0m", row, start_col + left_width + 5, right);
+    g_free(right);
+    g_free(left);
+}
+
+void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
+    if (!panel || term_width < 8 || term_height < 4) {
+        return;
+    }
+
+    gint left_width = 0;
+    gint right_width = 0;
+    for (gsize i = 0; i < panel->row_count; i++) {
+        left_width = MAX(left_width, utf8_display_width(panel->rows[i].left));
+        right_width = MAX(right_width, utf8_display_width(panel->rows[i].right));
+    }
+    if (left_width > 18) {
+        left_width = 18;
+    }
+
+    gint content_width = utf8_display_width(panel->title);
+    for (gsize i = 0; i < panel->line_count; i++) {
+        content_width = MAX(content_width, utf8_display_width(panel->lines[i]));
+    }
+    if (panel->row_count > 0) {
+        content_width = MAX(content_width, left_width + right_width + 7);
+    }
+
+    gint inner_width = content_width;
+    if (panel->min_inner_width > 0) {
+        inner_width = MAX(inner_width, panel->min_inner_width);
+    }
+    if (panel->max_inner_width > 0) {
+        inner_width = MIN(inner_width, panel->max_inner_width);
+    }
+    inner_width = MIN(inner_width, term_width - 4);
+    inner_width = MAX(inner_width, 4);
+
+    gint panel_height = 3 + (gint)panel->line_count + (gint)panel->row_count;
+    if (panel->line_count > 0 && panel->row_count > 0) {
+        panel_height++;
+    }
+    panel_height = MIN(panel_height, term_height);
+
+    gint panel_width = inner_width + 2;
+    gint start_col = MAX(1, ((term_width - panel_width) / 2) + 1);
+    gint start_row = MAX(1, ((term_height - panel_height) / 2) + 1);
+
+    ui_panel_border(start_row, start_col, inner_width);
+    ui_panel_text_row(start_row + 1, start_col, inner_width, panel->title, TRUE, "\033[1;96;48;5;236m");
+
+    gint row = start_row + 2;
+    for (gsize i = 0; i < panel->line_count && row < start_row + panel_height - 1; i++, row++) {
+        ui_panel_text_row(row, start_col, inner_width, panel->lines[i], FALSE, "\033[97;48;5;236m");
+    }
+    if (panel->line_count > 0 && panel->row_count > 0 && row < start_row + panel_height - 1) {
+        ui_panel_blank_row(row, start_col, inner_width);
+        row++;
+    }
+    for (gsize i = 0; i < panel->row_count && row < start_row + panel_height - 1; i++, row++) {
+        ui_panel_pair_row(row, start_col, inner_width, left_width, &panel->rows[i]);
+    }
+    ui_panel_border(start_row + panel_height - 1, start_col, inner_width);
+    fflush(stdout);
+}
