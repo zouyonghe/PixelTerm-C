@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "video_player.h"
+#include "media_buffer.h"
 #include "pixbuf_utils.h"
 
 #if defined(CHAFA_MAJOR_VERSION) && defined(CHAFA_MINOR_VERSION)
@@ -101,37 +102,14 @@ static gboolean renderer_validate_pixel_data(gint width,
     if (width <= 0 || height <= 0 || rowstride <= 0) {
         return FALSE;
     }
+    /* Chafa rendering paths operate on RGB/RGBA-like pixel data; grayscale
+     * sources are expected to be expanded by the decoder before this point.
+     */
     if (n_channels < 3) {
         return FALSE;
     }
 
-    gsize pixel_count = 0;
-    if (!g_size_checked_mul(&pixel_count, (gsize)width, (gsize)height)) {
-        return FALSE;
-    }
-    if (pixel_count > PIXELTERM_MAX_DECODED_PIXELS) {
-        return FALSE;
-    }
-
-    gsize min_rowstride = 0;
-    if (!g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)n_channels)) {
-        return FALSE;
-    }
-    if ((gsize)rowstride < min_rowstride) {
-        return FALSE;
-    }
-
-    gsize buffer_size = 0;
-    if (!g_size_checked_mul(&buffer_size, (gsize)height, (gsize)rowstride)) {
-        return FALSE;
-    }
-    if (buffer_size > PIXELTERM_MAX_DECODED_BUFFER_BYTES) {
-        return FALSE;
-    }
-    if (buffer_size_out) {
-        *buffer_size_out = buffer_size;
-    }
-    return TRUE;
+    return media_buffer_validate_layout(width, height, rowstride, n_channels, buffer_size_out);
 }
 
 static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, gint height,

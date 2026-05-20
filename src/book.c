@@ -429,6 +429,9 @@ static void book_outline_to_list(BookDocument *doc,
 
         outline = outline->next;
     }
+    if (outline && *count >= BOOK_TOC_MAX_ITEMS) {
+        traversal->truncated = TRUE;
+    }
 }
 
 BookToc* book_load_toc(BookDocument *doc) {

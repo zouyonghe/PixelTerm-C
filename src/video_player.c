@@ -4,6 +4,7 @@
 #include "video_player_clock_internal.h"
 #include "video_player_debug_internal.h"
 #include "video_player_seek_internal.h"
+#include "media_buffer.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -55,8 +56,6 @@ static gint video_player_live_instances = 0;
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
     VIDEO_PLAYER_MAX_SILENCE_US = 1000000,
-    /* Bound decoded video frames from untrusted files before renderer copies. */
-    VIDEO_PLAYER_MAX_DECODED_PIXELS = PIXELTERM_MAX_DECODED_PIXELS,
     VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
     VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
     VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE = 4,
@@ -64,39 +63,12 @@ enum {
     VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
 };
 
-#define VIDEO_PLAYER_MAX_FRAME_BYTES PIXELTERM_MAX_DECODED_BUFFER_BYTES
-
 static gboolean video_player_dimensions_within_limits(gint width, gint height) {
-    if (width <= 0 || height <= 0) {
-        return FALSE;
-    }
-
-    gsize pixels = 0;
-    if (!g_size_checked_mul(&pixels, (gsize)width, (gsize)height)) {
-        return FALSE;
-    }
-    return pixels <= VIDEO_PLAYER_MAX_DECODED_PIXELS;
+    return media_buffer_dimensions_within_limits(width, height);
 }
 
 static gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsize *buffer_size_out) {
-    if (buffer_size_out) {
-        *buffer_size_out = 0;
-    }
-    if (height <= 0 || rowstride <= 0) {
-        return FALSE;
-    }
-
-    gsize buffer_size = 0;
-    if (!g_size_checked_mul(&buffer_size, (gsize)height, (gsize)rowstride)) {
-        return FALSE;
-    }
-    if (buffer_size > VIDEO_PLAYER_MAX_FRAME_BYTES) {
-        return FALSE;
-    }
-    if (buffer_size_out) {
-        *buffer_size_out = buffer_size;
-    }
-    return TRUE;
+    return media_buffer_size_within_limits(height, rowstride, buffer_size_out);
 }
 
 
