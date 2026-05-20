@@ -42,5 +42,9 @@ gint64 video_player_seek_target_ms_for_test(VideoPlayer *player, gint64 delta_ms
 RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player);
 gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gsize *buffer_size);
 gboolean video_player_dimensions_within_limits_for_test(gint width, gint height);
+gboolean video_player_rgba_layout_within_limits_for_test(gint width,
+                                                         gint height,
+                                                         gint rowstride,
+                                                         gsize *buffer_size);
 
 #endif

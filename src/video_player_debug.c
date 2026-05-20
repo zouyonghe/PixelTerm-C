@@ -127,6 +127,7 @@ static gboolean video_player_debug_should_log(const gchar *event) {
            g_strcmp0(event, "worker-drop-stale") == 0 ||
            g_strcmp0(event, "worker-skip-full") == 0 ||
            g_strcmp0(event, "worker-drop-late") == 0 ||
+           g_strcmp0(event, "worker-drop-bad-layout") == 0 ||
            g_strcmp0(event, "worker-render-null") == 0 ||
            g_strcmp0(event, "render-first") == 0 ||
            g_strcmp0(event, "render-time") == 0 ||

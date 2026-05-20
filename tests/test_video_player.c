@@ -2274,6 +2274,20 @@ static void test_frame_buffer_size_rejects_non_positive_metadata(void) {
     g_assert_false(video_player_frame_buffer_size_for_test(4, 0, &buffer_size));
 }
 
+static void test_rgba_layout_accepts_valid_metadata(void) {
+    gsize buffer_size = 0;
+
+    g_assert_true(video_player_rgba_layout_within_limits_for_test(10, 10, 40, &buffer_size));
+    g_assert_cmpuint(buffer_size, ==, 400);
+}
+
+static void test_rgba_layout_rejects_short_rowstride(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(video_player_rgba_layout_within_limits_for_test(10, 10, 39, &buffer_size));
+    g_assert_cmpuint(buffer_size, ==, 0);
+}
+
 static void test_dimensions_within_limits_accepts_max_geometry(void) {
     g_assert_true(video_player_dimensions_within_limits_for_test(PIXELTERM_MAX_DECODED_PIXELS, 1));
 }
@@ -2355,6 +2369,10 @@ void register_video_player_tests(void) {
                     test_frame_buffer_size_rejects_overflow);
     g_test_add_func("/video_player/frame_buffer_size/rejects_non_positive_metadata",
                     test_frame_buffer_size_rejects_non_positive_metadata);
+    g_test_add_func("/video_player/rgba_layout/accepts_valid_metadata",
+                    test_rgba_layout_accepts_valid_metadata);
+    g_test_add_func("/video_player/rgba_layout/rejects_short_rowstride",
+                    test_rgba_layout_rejects_short_rowstride);
     g_test_add_func("/video_player/dimensions_within_limits/accepts_max_geometry",
                     test_dimensions_within_limits_accepts_max_geometry);
     g_test_add_func("/video_player/dimensions_within_limits/rejects_large_geometry",

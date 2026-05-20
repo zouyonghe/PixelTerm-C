@@ -71,6 +71,13 @@ static gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsiz
     return media_buffer_size_within_limits(height, rowstride, buffer_size_out);
 }
 
+static gboolean video_player_rgba_layout_within_limits(gint width,
+                                                       gint height,
+                                                       gint rowstride,
+                                                       gsize *buffer_size_out) {
+    return media_buffer_validate_layout(width, height, rowstride, 4, 1, buffer_size_out);
+}
+
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
     if (!player) {
@@ -966,6 +973,10 @@ static gint video_player_alloc_rgba_buffer(AVFrame *rgba_frame,
     if (buffer_size < 0) {
         return -1;
     }
+    if (!video_player_rgba_layout_within_limits(width, height, rgba_frame->linesize[0], NULL)) {
+        av_freep(&rgba_frame->data[0]);
+        return -1;
+    }
 
     *rgba_buffer_out = rgba_frame->data[0];
     return buffer_size;
@@ -1315,6 +1326,13 @@ gboolean video_player_dimensions_within_limits_for_test(gint width, gint height)
     return video_player_dimensions_within_limits(width, height);
 }
 
+gboolean video_player_rgba_layout_within_limits_for_test(gint width,
+                                                         gint height,
+                                                         gint rowstride,
+                                                         gsize *buffer_size) {
+    return video_player_rgba_layout_within_limits(width, height, rowstride, buffer_size);
+}
+
 static void video_player_render_worker_refresh_layout(VideoPlayer *player,
                                                       ImageRenderer *renderer,
                                                       guint *layout_generation_inout) {
@@ -1592,9 +1610,16 @@ static gpointer video_player_worker_thread(gpointer user_data) {
             continue;
         }
         gsize buffer_size = 0;
-        if (!video_player_frame_buffer_size(player->video_height,
-                                            player->rgba_frame->linesize[0],
-                                            &buffer_size)) {
+        if (!video_player_rgba_layout_within_limits(player->video_width,
+                                                    player->video_height,
+                                                    player->rgba_frame->linesize[0],
+                                                    &buffer_size)) {
+            video_player_debug_log(player,
+                                   "worker-drop-bad-layout",
+                                   pts_ms,
+                                   player->video_width,
+                                   player->video_height,
+                                   player->rgba_frame->linesize[0]);
             decoded_frame_destroy(decoded);
             continue;
         }
