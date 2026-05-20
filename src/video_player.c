@@ -55,6 +55,7 @@ static gint video_player_live_instances = 0;
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
     VIDEO_PLAYER_MAX_SILENCE_US = 1000000,
+    /* Bound decoded video frames from untrusted files before renderer copies. */
     VIDEO_PLAYER_MAX_DECODED_PIXELS = 4096 * 4096,
     VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
     VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
@@ -63,6 +64,7 @@ enum {
     VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
 };
 
+/* Keep copied frame buffers below the same single-buffer DoS guard as images. */
 #define VIDEO_PLAYER_MAX_FRAME_BYTES ((gsize)512 * 1024 * 1024)
 
 static gboolean video_player_dimensions_within_limits(gint width, gint height) {

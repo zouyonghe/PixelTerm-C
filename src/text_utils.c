@@ -7,14 +7,24 @@ gchar* sanitize_for_terminal(const gchar *text) {
         return g_strdup("");
     }
 
-    gchar *safe = g_strdup(text);
-    for (gchar *p = safe; *p; ++p) {
-        unsigned char c = (unsigned char)*p;
-        if (c < 0x20 || c == 0x7f || c == '\033' || (c >= 0x80 && c <= 0x9f)) {
-            *p = '?';
+    GString *safe = g_string_sized_new(strlen(text));
+    const gchar *p = text;
+    while (*p) {
+        gunichar ch = g_utf8_get_char_validated(p, -1);
+        if (ch == (gunichar)-1 || ch == (gunichar)-2) {
+            g_string_append_c(safe, '?');
+            p++;
+            continue;
         }
+
+        if (ch < 0x20 || ch == 0x7f || (ch >= 0x80 && ch <= 0x9f)) {
+            g_string_append_c(safe, '?');
+        } else {
+            g_string_append_unichar(safe, ch);
+        }
+        p = g_utf8_next_char(p);
     }
-    return safe;
+    return g_string_free(safe, FALSE);
 }
 
 gint utf8_display_width(const gchar *text) {

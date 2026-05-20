@@ -298,6 +298,12 @@ static void test_book_fallback_page_image_free_frees_pixels(void) {
     g_assert_cmpint(g_book_fallback_free_calls, ==, 1);
 }
 
+static void test_book_toc_limits_are_zero_based(void) {
+    g_assert_true(book_toc_level_allowed(0));
+    g_assert_true(book_toc_level_allowed(BOOK_TOC_MAX_DEPTH - 1));
+    g_assert_false(book_toc_level_allowed(BOOK_TOC_MAX_DEPTH));
+}
+
 void register_book_tests(void) {
     g_test_add_func("/book/open/null_path", test_book_open_rejects_null_path);
     g_test_add_func("/book/open/missing_path", test_book_open_reports_missing_path);
@@ -306,6 +312,8 @@ void register_book_tests(void) {
     g_test_add_func("/book/null_helpers_are_safe", test_book_null_helpers_are_safe);
     g_test_add_func("/book/fallback/page_image_free/frees_pixels",
                     test_book_fallback_page_image_free_frees_pixels);
+    g_test_add_func("/book/toc/limits_are_zero_based",
+                    test_book_toc_limits_are_zero_based);
     g_test_add_func("/book/page_image_free/resets_and_is_idempotent",
                     test_book_page_image_free_resets_and_is_idempotent);
 }

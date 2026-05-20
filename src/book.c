@@ -1,5 +1,17 @@
 #include "book.h"
 
+/*
+ * Bound untrusted document outlines so malformed PDFs/EPUBs cannot consume
+ * unbounded stack or memory while building the table of contents. Levels are
+ * zero-based: BOOK_TOC_MAX_DEPTH allows levels 0..63.
+ */
+#define BOOK_TOC_MAX_DEPTH 64
+#define BOOK_TOC_MAX_ITEMS 4096
+
+static gboolean book_toc_level_allowed(gint level) {
+    return level >= 0 && level < BOOK_TOC_MAX_DEPTH;
+}
+
 #ifdef HAVE_MUPDF
 
 #include <fcntl.h>
@@ -342,19 +354,18 @@ void book_page_image_free(BookPageImage *image) {
     book_reset_image(image);
 }
 
-#define BOOK_TOC_MAX_DEPTH 64
-#define BOOK_TOC_MAX_ITEMS 4096
-
 static void book_outline_to_list(BookDocument *doc,
                                  fz_outline *outline,
-                                 gint level,
-                                 BookTocItem **head,
-                                 BookTocItem **tail,
-                                 gint *count) {
-    if (!head || !tail || !count) {
+                                  gint level,
+                                  BookTocItem **head,
+                                  BookTocItem **tail,
+                                  gint *count,
+                                  gboolean *truncated) {
+    if (!head || !tail || !count || !truncated) {
         return;
     }
-    if (level > BOOK_TOC_MAX_DEPTH || *count >= BOOK_TOC_MAX_ITEMS) {
+    if (!book_toc_level_allowed(level) || *count >= BOOK_TOC_MAX_ITEMS) {
+        *truncated = TRUE;
         return;
     }
     fz_var(outline);
@@ -386,7 +397,7 @@ static void book_outline_to_list(BookDocument *doc,
         (*count)++;
 
         if (outline->down) {
-            book_outline_to_list(doc, outline->down, level + 1, head, tail, count);
+            book_outline_to_list(doc, outline->down, level + 1, head, tail, count, truncated);
         }
 
         outline = outline->next;
@@ -416,7 +427,13 @@ BookToc* book_load_toc(BookDocument *doc) {
     toc->count = 0;
 
     BookTocItem *tail = NULL;
-    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count);
+    gboolean truncated = FALSE;
+    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count, &truncated);
+    if (truncated) {
+        g_warning("Book table of contents was truncated at %d levels or %d items",
+                  BOOK_TOC_MAX_DEPTH,
+                  BOOK_TOC_MAX_ITEMS);
+    }
 
     fz_drop_outline(doc->ctx, outline);
     return toc;

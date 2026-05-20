@@ -6,6 +6,7 @@
 #include "video_player.h"
 #include "pixbuf_utils.h"
 
+/* Cap decoded image buffers from untrusted files before handing them to Chafa. */
 #define RENDERER_MAX_DECODED_BYTES ((gsize)512 * 1024 * 1024)
 
 #if defined(CHAFA_MAJOR_VERSION) && defined(CHAFA_MINOR_VERSION)
