@@ -1,5 +1,13 @@
 # Changelog
 
+- v1.7.27: Installer integrity, rendering hardening, and vivid color controls.
+    - **Color Controls**: Add an explicit `--color-enhance off|vivid` mode so users can opt into stronger image saturation while keeping default rendering unchanged.
+    - **Installer Integrity**: Verify release binaries against published `SHA256SUMS`, support pinned `--version <tag>` installs, and keep `--version latest` on the latest-release download path.
+    - **Rendering Safety**: Harden terminal sanitizing, media buffer validation, and book table-of-contents limits so malformed metadata, control bytes, or oversized decoded buffers are rejected more predictably.
+    - **File Manager Performance**: Cache directory media summaries during render passes so nested media-folder status is reused instead of recalculated repeatedly.
+    - **CI Hardening**: Run the test suite under AddressSanitizer debug builds and isolate debug artifacts from normal build outputs.
+    - **Testing**: Add regressions for installer checksum/download failures, vivid color enhancement, terminal sanitizing, media buffer limits, file-manager directory media summaries, and ASan-clean test ownership paths.
+
 - v1.7.26: Overlay panel stability and video help/info fixes.
     - **Overlay Panels**: Route single-image help and info panels through the shared centered panel renderer so overlay layout, truncation, and borders stay consistent.
     - **Resize Stability**: Make terminal resize repainting wait for dimensions to settle, clear stale graphics placements, and avoid partial clears while overlays are visible so image, GIF, and panel layers no longer smear together.
