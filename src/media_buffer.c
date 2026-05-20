@@ -34,9 +34,10 @@ gboolean media_buffer_dimensions_within_limits(gint width, gint height) {
         return FALSE;
     }
     if (pixels > PIXELTERM_MAX_DECODED_PIXELS) {
-        media_buffer_debug_reject("Rejecting media geometry over decoded pixel cap: pixels=%llu cap=%llu",
-                                  (unsigned long long)pixels,
-                                  (unsigned long long)PIXELTERM_MAX_DECODED_PIXELS);
+        // cppcheck-suppress unknownMacro
+        media_buffer_debug_reject("Rejecting media geometry over decoded pixel cap: pixels=%" G_GSIZE_FORMAT " cap=%" G_GSIZE_FORMAT,
+                                  pixels,
+                                  (gsize)PIXELTERM_MAX_DECODED_PIXELS);
         return FALSE;
     }
     return TRUE;
@@ -57,9 +58,10 @@ gboolean media_buffer_size_within_limits(gint height, gint rowstride, gsize *buf
         return FALSE;
     }
     if (buffer_size > PIXELTERM_MAX_DECODED_BUFFER_BYTES) {
-        media_buffer_debug_reject("Rejecting media buffer over decoded byte cap: size=%llu cap=%llu",
-                                  (unsigned long long)buffer_size,
-                                  (unsigned long long)PIXELTERM_MAX_DECODED_BUFFER_BYTES);
+        // cppcheck-suppress unknownMacro
+        media_buffer_debug_reject("Rejecting media buffer over decoded byte cap: size=%" G_GSIZE_FORMAT " cap=%" G_GSIZE_FORMAT,
+                                  buffer_size,
+                                  (gsize)PIXELTERM_MAX_DECODED_BUFFER_BYTES);
         return FALSE;
     }
     if (buffer_size_out) {
@@ -96,15 +98,17 @@ gboolean media_buffer_validate_layout(gint width,
 
     gsize min_rowstride = 0;
     if (!g_size_checked_mul(&min_rowstride, (gsize)width, bytes_per_pixel)) {
-        media_buffer_debug_reject("Rejecting media layout with overflowing minimum rowstride: width=%d bytes_per_pixel=%llu",
+        // cppcheck-suppress unknownMacro
+        media_buffer_debug_reject("Rejecting media layout with overflowing minimum rowstride: width=%d bytes_per_pixel=%" G_GSIZE_FORMAT,
                                   width,
-                                  (unsigned long long)bytes_per_pixel);
+                                  bytes_per_pixel);
         return FALSE;
     }
     if (rowstride <= 0 || (gsize)rowstride < min_rowstride) {
-        media_buffer_debug_reject("Rejecting media layout with short rowstride: rowstride=%d minimum=%llu",
+        // cppcheck-suppress unknownMacro
+        media_buffer_debug_reject("Rejecting media layout with short rowstride: rowstride=%d minimum=%" G_GSIZE_FORMAT,
                                   rowstride,
-                                  (unsigned long long)min_rowstride);
+                                  min_rowstride);
         return FALSE;
     }
 
