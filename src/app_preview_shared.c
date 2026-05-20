@@ -152,24 +152,7 @@ ImageRenderer* app_create_grid_renderer(const PixelTermApp *app,
         return NULL;
     }
 
-    RendererConfig config = {
-        .max_width = MAX(2, content_width),
-        .max_height = MAX(2, content_height),
-        .preserve_aspect_ratio = TRUE,
-        .dither = app->dither_enabled,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = app->render_work_factor,
-        .force_text = app->force_text,
-        .force_sixel = app->force_sixel,
-        .force_kitty = app->force_kitty,
-        .force_iterm2 = app->force_iterm2,
-        .text_symbol_mode = app->text_symbol_mode,
-        .gamma = app->gamma,
-        .color_enhance = app->color_enhance,
-        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
-        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
-    };
+    RendererConfig config = app_renderer_config_from_app(app, MAX(2, content_width), MAX(2, content_height));
     if (app->help_visible) {
         config.force_text = TRUE;
         config.force_sixel = FALSE;

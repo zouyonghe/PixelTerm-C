@@ -1,6 +1,36 @@
 #include "book.h"
 
+/*
+ * Bound untrusted document outlines so malformed PDFs/EPUBs cannot consume
+ * unbounded stack or memory while building the table of contents. Levels are
+ * zero-based: BOOK_TOC_MAX_DEPTH allows levels 0..63.
+ */
+#define BOOK_TOC_MAX_DEPTH 64
+#define BOOK_TOC_MAX_ITEMS 4096
+
+#if defined(HAVE_MUPDF) || defined(PIXELTERM_BOOK_TESTING)
+static gboolean book_toc_level_allowed(gint level) {
+    return level >= 0 && level < BOOK_TOC_MAX_DEPTH;
+}
+
+#ifdef PIXELTERM_BOOK_TESTING
+gboolean book_toc_level_allowed_for_test(gint level) {
+    return book_toc_level_allowed(level);
+}
+
+gint book_toc_max_depth_for_test(void) {
+    return BOOK_TOC_MAX_DEPTH;
+}
+#endif
+#endif
+
 #ifdef HAVE_MUPDF
+
+typedef struct {
+    gboolean truncated;
+    gint observed_depth;
+    gint observed_items;
+} BookTocTraversal;
 
 #include <fcntl.h>
 #include <math.h>
@@ -344,15 +374,26 @@ void book_page_image_free(BookPageImage *image) {
 
 static void book_outline_to_list(BookDocument *doc,
                                  fz_outline *outline,
-                                 gint level,
-                                 BookTocItem **head,
-                                 BookTocItem **tail,
-                                 gint *count) {
-    if (!head || !tail || !count) {
+                                  gint level,
+                                  BookTocItem **head,
+                                  BookTocItem **tail,
+                                  gint *count,
+                                  BookTocTraversal *traversal) {
+    if (!head || !tail || !count || !traversal) {
+        return;
+    }
+    if (level > traversal->observed_depth) {
+        traversal->observed_depth = level;
+    }
+    if (*count > traversal->observed_items) {
+        traversal->observed_items = *count;
+    }
+    if (!book_toc_level_allowed(level) || *count >= BOOK_TOC_MAX_ITEMS) {
+        traversal->truncated = TRUE;
         return;
     }
     fz_var(outline);
-    while (outline) {
+    while (outline && *count < BOOK_TOC_MAX_ITEMS) {
         BookTocItem *item = g_new0(BookTocItem, 1);
         item->title = g_strdup(outline->title ? outline->title : "");
         item->level = level;
@@ -378,12 +419,18 @@ static void book_outline_to_list(BookDocument *doc,
         }
         *tail = item;
         (*count)++;
+        if (*count > traversal->observed_items) {
+            traversal->observed_items = *count;
+        }
 
         if (outline->down) {
-            book_outline_to_list(doc, outline->down, level + 1, head, tail, count);
+            book_outline_to_list(doc, outline->down, level + 1, head, tail, count, traversal);
         }
 
         outline = outline->next;
+    }
+    if (outline && *count >= BOOK_TOC_MAX_ITEMS) {
+        traversal->truncated = TRUE;
     }
 }
 
@@ -410,7 +457,15 @@ BookToc* book_load_toc(BookDocument *doc) {
     toc->count = 0;
 
     BookTocItem *tail = NULL;
-    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count);
+    BookTocTraversal traversal = {0};
+    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count, &traversal);
+    if (traversal.truncated) {
+        g_warning("Book table of contents was truncated at %d levels or %d items; observed depth %d, items %d",
+                  BOOK_TOC_MAX_DEPTH,
+                  BOOK_TOC_MAX_ITEMS,
+                  traversal.observed_depth,
+                  traversal.observed_items);
+    }
 
     fz_drop_outline(doc->ctx, outline);
     return toc;

@@ -4,6 +4,7 @@
 #include "video_player_clock_internal.h"
 #include "video_player_debug_internal.h"
 #include "video_player_seek_internal.h"
+#include "media_buffer.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -61,6 +62,21 @@ enum {
     VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE = 6,
     VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
 };
+
+static gboolean video_player_dimensions_within_limits(gint width, gint height) {
+    return media_buffer_dimensions_within_limits(width, height);
+}
+
+static gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsize *buffer_size_out) {
+    return media_buffer_size_within_limits(height, rowstride, buffer_size_out);
+}
+
+static gboolean video_player_rgba_layout_within_limits(gint width,
+                                                       gint height,
+                                                       gint rowstride,
+                                                       gsize *buffer_size_out) {
+    return media_buffer_validate_layout(width, height, rowstride, 4, 1, buffer_size_out);
+}
 
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -943,7 +959,7 @@ static gint video_player_alloc_rgba_buffer(AVFrame *rgba_frame,
                                           guint8 **rgba_buffer_out) {
     gint buffer_size = 0;
 
-    if (!rgba_frame || !rgba_buffer_out || width <= 0 || height <= 0) {
+    if (!rgba_frame || !rgba_buffer_out || !video_player_dimensions_within_limits(width, height)) {
         return -1;
     }
 
@@ -955,6 +971,10 @@ static gint video_player_alloc_rgba_buffer(AVFrame *rgba_frame,
                                  AV_PIX_FMT_RGBA,
                                  32);
     if (buffer_size < 0) {
+        return -1;
+    }
+    if (!video_player_rgba_layout_within_limits(width, height, rgba_frame->linesize[0], NULL)) {
+        av_freep(&rgba_frame->data[0]);
         return -1;
     }
 
@@ -1298,6 +1318,21 @@ RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player) {
     return video_player_render_worker_config(player);
 }
 
+gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gsize *buffer_size) {
+    return video_player_frame_buffer_size(height, rowstride, buffer_size);
+}
+
+gboolean video_player_dimensions_within_limits_for_test(gint width, gint height) {
+    return video_player_dimensions_within_limits(width, height);
+}
+
+gboolean video_player_rgba_layout_within_limits_for_test(gint width,
+                                                         gint height,
+                                                         gint rowstride,
+                                                         gsize *buffer_size) {
+    return video_player_rgba_layout_within_limits(width, height, rowstride, buffer_size);
+}
+
 static void video_player_render_worker_refresh_layout(VideoPlayer *player,
                                                       ImageRenderer *renderer,
                                                       guint *layout_generation_inout) {
@@ -1574,7 +1609,20 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         if (!decoded) {
             continue;
         }
-        gint buffer_size = player->video_height * player->rgba_frame->linesize[0];
+        gsize buffer_size = 0;
+        if (!video_player_rgba_layout_within_limits(player->video_width,
+                                                    player->video_height,
+                                                    player->rgba_frame->linesize[0],
+                                                    &buffer_size)) {
+            video_player_debug_log(player,
+                                   "worker-drop-bad-layout",
+                                   pts_ms,
+                                   player->video_width,
+                                   player->video_height,
+                                   player->rgba_frame->linesize[0]);
+            decoded_frame_destroy(decoded);
+            continue;
+        }
         decoded->pixels = g_memdup2(player->rgba_frame->data[0], buffer_size);
         if (!decoded->pixels) {
             decoded_frame_destroy(decoded);
@@ -1988,6 +2036,15 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
 
     int width = codec_context->width;
     int height = codec_context->height;
+    if (!video_player_dimensions_within_limits(width, height)) {
+        av_frame_free(&decode_frame);
+        av_frame_free(&rgba_frame);
+        av_packet_free(&packet);
+        avcodec_free_context(&codec_context);
+        avformat_close_input(&format_context);
+        return ERROR_INVALID_IMAGE;
+    }
+
     int rgba_buffer_size = video_player_alloc_rgba_buffer(rgba_frame, width, height, &rgba_buffer);
     if (rgba_buffer_size <= 0) {
         av_frame_free(&decode_frame);

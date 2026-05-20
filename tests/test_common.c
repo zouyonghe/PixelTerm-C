@@ -39,6 +39,7 @@ static void test_video_player_debug_filter_covers_logged_events(void) {
     g_assert_true(video_player_debug_should_log_for_test("worker-drop-stale"));
     g_assert_true(video_player_debug_should_log_for_test("worker-skip-full"));
     g_assert_true(video_player_debug_should_log_for_test("worker-drop-late"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-drop-bad-layout"));
     g_assert_true(video_player_debug_should_log_for_test("worker-render-null"));
     g_assert_true(video_player_debug_should_log_for_test("render-first"));
     g_assert_true(video_player_debug_should_log_for_test("render-time"));

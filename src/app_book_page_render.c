@@ -1,4 +1,5 @@
 #include "app.h"
+#include "app_config_runtime.h"
 #include "text_utils.h"
 #include "ui_render_utils.h"
 
@@ -52,25 +53,7 @@ static void app_print_rendered_at(const GString *rendered, gint top_row, gint le
 static RendererConfig app_book_make_renderer_config(const PixelTermApp *app,
                                                     gint max_width,
                                                     gint max_height) {
-    RendererConfig config = {
-        .max_width = max_width,
-        .max_height = max_height,
-        .preserve_aspect_ratio = TRUE,
-        .dither = app->dither_enabled,
-        .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = app->render_work_factor,
-        .force_text = app->force_text,
-        .force_sixel = app->force_sixel,
-        .force_kitty = app->force_kitty,
-        .force_iterm2 = app->force_iterm2,
-        .text_symbol_mode = app->text_symbol_mode,
-        .gamma = app->gamma,
-        .color_enhance = app->color_enhance,
-        .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
-        .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
-        .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
-    };
-    return config;
+    return app_renderer_config_from_app(app, max_width, max_height);
 }
 
 static void app_book_render_header(const PixelTermApp *app) {

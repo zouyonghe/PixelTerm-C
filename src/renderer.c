@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "video_player.h"
+#include "media_buffer.h"
 #include "pixbuf_utils.h"
 
 #if defined(CHAFA_MAJOR_VERSION) && defined(CHAFA_MINOR_VERSION)
@@ -90,13 +91,37 @@ static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
     return TRUE;
 }
 
+static gboolean renderer_validate_pixel_data(gint width,
+                                             gint height,
+                                             gint rowstride,
+                                             gint n_channels,
+                                             gsize *buffer_size_out) {
+    if (buffer_size_out) {
+        *buffer_size_out = 0;
+    }
+    if (width <= 0 || height <= 0 || rowstride <= 0) {
+        return FALSE;
+    }
+    /* Chafa rendering paths operate on RGB/RGBA-like pixel data; grayscale
+     * sources are expected to be expanded by the decoder before this point.
+     */
+    if (n_channels < 3) {
+        return FALSE;
+    }
+
+    return media_buffer_validate_layout(width, height, rowstride, n_channels, 1, buffer_size_out);
+}
+
 static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, gint height,
                                           gint rowstride, gint n_channels, gdouble gamma) {
     if (!pixel_data || width <= 0 || height <= 0 || rowstride <= 0 || n_channels < 3) {
         return NULL;
     }
 
-    gsize buffer_size = (gsize)height * (gsize)rowstride;
+    gsize buffer_size = 0;
+    if (!renderer_validate_pixel_data(width, height, rowstride, n_channels, &buffer_size)) {
+        return NULL;
+    }
     guint8 *adjusted = g_malloc(buffer_size);
     if (!adjusted) {
         return NULL;
@@ -149,7 +174,10 @@ static guint8 *renderer_apply_color_enhance_copy(const guint8 *pixel_data,
         return NULL;
     }
 
-    gsize buffer_size = (gsize)height * (gsize)rowstride;
+    gsize buffer_size = 0;
+    if (!renderer_validate_pixel_data(width, height, rowstride, n_channels, &buffer_size)) {
+        return NULL;
+    }
     guint8 *adjusted = g_malloc(buffer_size);
     if (!adjusted) {
         return NULL;
@@ -181,6 +209,14 @@ guint8 *renderer_color_enhance_copy_for_test(const guint8 *pixel_data,
                                              gint n_channels,
                                              ColorEnhanceMode mode) {
     return renderer_apply_color_enhance_copy(pixel_data, width, height, rowstride, n_channels, mode);
+}
+
+gboolean renderer_validate_pixel_data_for_test(gint width,
+                                               gint height,
+                                               gint rowstride,
+                                               gint n_channels,
+                                               gsize *buffer_size) {
+    return renderer_validate_pixel_data(width, height, rowstride, n_channels, buffer_size);
 }
 
 // Create a new renderer
@@ -415,7 +451,8 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
                                    gint height,
                                    gint rowstride,
                                    gint n_channels) {
-    if (!renderer || !pixel_data || width <= 0 || height <= 0) {
+    if (!renderer || !pixel_data ||
+        !renderer_validate_pixel_data(width, height, rowstride, n_channels, NULL)) {
         return NULL;
     }
 

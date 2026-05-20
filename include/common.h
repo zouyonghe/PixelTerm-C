@@ -21,6 +21,10 @@
 #define MAX_PATH_LEN 4096
 #define MAX_CACHE_SIZE 50
 #define PRELOAD_QUEUE_SIZE 10
+/* Shared single-buffer cap for decoded media from untrusted files. */
+#define PIXELTERM_MAX_DECODED_BUFFER_BYTES ((gsize)512 * 1024 * 1024)
+/* Shared decoded geometry cap to avoid expensive hostile media dimensions. */
+#define PIXELTERM_MAX_DECODED_PIXELS (4096 * 4096)
 
 // Supported image formats
 extern const char* const SUPPORTED_EXTENSIONS[];

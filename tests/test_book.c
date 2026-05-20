@@ -25,11 +25,13 @@ static void book_fallback_test_g_free(gpointer data) {
 #define book_load_toc fallback_book_load_toc
 #define book_toc_free fallback_book_toc_free
 #define g_free book_fallback_test_g_free
+#define PIXELTERM_BOOK_TESTING 1
 #ifdef HAVE_MUPDF
 #undef HAVE_MUPDF
 #endif
 #include "../src/book.c"
 #undef g_free
+#undef PIXELTERM_BOOK_TESTING
 #undef book_open
 #undef book_close
 #undef book_get_path
@@ -298,6 +300,14 @@ static void test_book_fallback_page_image_free_frees_pixels(void) {
     g_assert_cmpint(g_book_fallback_free_calls, ==, 1);
 }
 
+static void test_book_toc_limits_are_zero_based(void) {
+    gint max_depth = book_toc_max_depth_for_test();
+
+    g_assert_true(book_toc_level_allowed_for_test(0));
+    g_assert_true(book_toc_level_allowed_for_test(max_depth - 1));
+    g_assert_false(book_toc_level_allowed_for_test(max_depth));
+}
+
 void register_book_tests(void) {
     g_test_add_func("/book/open/null_path", test_book_open_rejects_null_path);
     g_test_add_func("/book/open/missing_path", test_book_open_reports_missing_path);
@@ -306,6 +316,8 @@ void register_book_tests(void) {
     g_test_add_func("/book/null_helpers_are_safe", test_book_null_helpers_are_safe);
     g_test_add_func("/book/fallback/page_image_free/frees_pixels",
                     test_book_fallback_page_image_free_frees_pixels);
+    g_test_add_func("/book/toc/limits_are_zero_based",
+                    test_book_toc_limits_are_zero_based);
     g_test_add_func("/book/page_image_free/resets_and_is_idempotent",
                     test_book_page_image_free_resets_and_is_idempotent);
 }

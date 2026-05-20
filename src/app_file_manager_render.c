@@ -82,6 +82,7 @@ static gchar *app_file_manager_format_size(gint64 size) {
         size = 0;
     }
     if (size < 1024) {
+        // cppcheck-suppress unknownMacro
         return g_strdup_printf("%" G_GINT64_FORMAT " B", size);
     }
     if (size < 1024 * 1024) {

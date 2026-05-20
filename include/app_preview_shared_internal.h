@@ -2,6 +2,7 @@
 #define APP_PREVIEW_SHARED_INTERNAL_H
 
 #include "app.h"
+#include "app_config_runtime.h"
 #include "grid_render.h"
 
 gint app_preview_bottom_reserved_lines(const PixelTermApp *app);
