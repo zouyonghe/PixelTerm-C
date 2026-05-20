@@ -261,11 +261,17 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
 
     // Initialize video player
     app->video_player = video_player_new(app->render_work_factor, app->force_text, app->force_sixel,
-                                         app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma);
+                                          app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma);
     if (!app->video_player) {
         gif_player_destroy(app->gif_player);
         app->gif_player = NULL;
         return ERROR_MEMORY_ALLOC;
+    }
+    if (app->gif_player->renderer) {
+        app->gif_player->renderer->config.color_enhance = app->color_enhance;
+    }
+    if (app->video_player->renderer) {
+        app->video_player->renderer->config.color_enhance = app->color_enhance;
     }
 
     return ERROR_NONE;

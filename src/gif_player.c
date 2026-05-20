@@ -224,6 +224,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
             .force_iterm2 = force_iterm2,
             .text_symbol_mode = text_symbol_mode,
             .gamma = gamma,
+            .color_enhance = COLOR_ENHANCE_OFF,
             .dither_mode = CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

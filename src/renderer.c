@@ -91,7 +91,7 @@ static gboolean renderer_should_apply_gamma(const ImageRenderer *renderer) {
 }
 
 static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, gint height,
-                                         gint rowstride, gint n_channels, gdouble gamma) {
+                                          gint rowstride, gint n_channels, gdouble gamma) {
     if (!pixel_data || width <= 0 || height <= 0 || rowstride <= 0) {
         return NULL;
     }
@@ -126,6 +126,63 @@ static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, g
     return adjusted;
 }
 
+static guint8 renderer_clamp_channel(double value) {
+    if (value < 0.0) {
+        return 0;
+    }
+    if (value > 255.0) {
+        return 255;
+    }
+    return (guint8)(value + 0.5);
+}
+
+static guint8 *renderer_apply_color_enhance_copy(const guint8 *pixel_data,
+                                                 gint width,
+                                                 gint height,
+                                                 gint rowstride,
+                                                 gint n_channels,
+                                                 ColorEnhanceMode mode) {
+    if (!pixel_data || width <= 0 || height <= 0 || rowstride <= 0) {
+        return NULL;
+    }
+    if (mode == COLOR_ENHANCE_OFF) {
+        return NULL;
+    }
+
+    gsize buffer_size = (gsize)height * (gsize)rowstride;
+    guint8 *adjusted = g_malloc(buffer_size);
+    if (!adjusted) {
+        return NULL;
+    }
+    memcpy(adjusted, pixel_data, buffer_size);
+
+    for (gint y = 0; y < height; y++) {
+        guint8 *row = adjusted + ((gsize)y * (gsize)rowstride);
+        for (gint x = 0; x < width; x++) {
+            guint8 *px = row + (gsize)x * (gsize)n_channels;
+            double r = px[0];
+            double g = px[1];
+            double b = px[2];
+            double luma = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            px[0] = renderer_clamp_channel(luma + (r - luma) * 1.18);
+            px[1] = renderer_clamp_channel(luma + (g - luma) * 1.18);
+            px[2] = renderer_clamp_channel(luma + (b - luma) * 1.18);
+        }
+    }
+
+    return adjusted;
+}
+
+guint8 *renderer_color_enhance_copy_for_test(const guint8 *pixel_data,
+                                             gint width,
+                                             gint height,
+                                             gint rowstride,
+                                             gint n_channels,
+                                             ColorEnhanceMode mode) {
+    return renderer_apply_color_enhance_copy(pixel_data, width, height, rowstride, n_channels, mode);
+}
+
 // Create a new renderer
 ImageRenderer* renderer_create(void) {
     ImageRenderer *renderer = g_new0(ImageRenderer, 1);
@@ -153,6 +210,7 @@ ImageRenderer* renderer_create(void) {
     renderer->config.force_iterm2 = FALSE;
     renderer->config.text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
     renderer->config.gamma = 1.0;
+    renderer->config.color_enhance = COLOR_ENHANCE_OFF;
 
     // Maximize quality settings
     renderer->config.work_factor = 9; // High CPU usage for best character matching
@@ -379,6 +437,7 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
 
     const guint8 *pixels_to_draw = pixel_data;
     guint8 *adjusted = NULL;
+    guint8 *enhanced = NULL;
     if (renderer_should_apply_gamma(renderer)) {
         adjusted = renderer_apply_gamma_copy(pixel_data, width, height, rowstride, n_channels,
                                              renderer->config.gamma);
@@ -386,10 +445,16 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
             pixels_to_draw = adjusted;
         }
     }
+    enhanced = renderer_apply_color_enhance_copy(pixels_to_draw, width, height, rowstride,
+                                                 n_channels, renderer->config.color_enhance);
+    if (enhanced) {
+        pixels_to_draw = enhanced;
+    }
 
     // Draw pixels to canvas
     chafa_canvas_draw_all_pixels(renderer->canvas, pixel_type,
                                 pixels_to_draw, width, height, rowstride);
+    g_free(enhanced);
     g_free(adjusted);
 
     // Generate output - use NULL for term_info to force generic ANSI output with RGB

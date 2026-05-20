@@ -53,6 +53,9 @@ pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
 # Note: defaults to 1.0
 pixelterm --gamma 0.8 /path/to/image.jpg
 
+# Lightly boost color separation before rendering (off, vivid)
+pixelterm --color-enhance vivid /path/to/image.jpg
+
 # Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini; falls back to $HOME/.config/pixelterm/config.ini when XDG_CONFIG_HOME is unset or empty)
 pixelterm --config ~/.config/pixelterm/config.ini /path/to/image.jpg
 
@@ -71,6 +74,7 @@ pixelterm -- --config=gallery.txt
 - CLI flags override config file values because config loading happens before argument parsing.
 - `--preload` and `--alt-screen` accept `true/false`, `yes/no`, `on/off`, and `1/0`.
 - `--text-symbols` only affects text rendering, whether selected explicitly with `--protocol text` or chosen by the automatic fallback.
+- `--color-enhance vivid` is a default-off pre-rendering color adjustment. It can make muted images look clearer in terminal text output, at a small CPU cost.
 - A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
 - Config groups are applied in this order: `[default]`, then the first matching terminal-specific group from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
 - If `PATH` is an unsupported regular file, PixelTerm-C falls back to that file's canonical parent directory and opens file manager mode there.

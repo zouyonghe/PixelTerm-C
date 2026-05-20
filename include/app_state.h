@@ -44,6 +44,7 @@ typedef struct {
     gboolean force_kitty;
     gboolean force_iterm2;
     TextSymbolMode text_symbol_mode;
+    ColorEnhanceMode color_enhance;
 } AppConfig;
 
 typedef struct {
@@ -143,6 +144,7 @@ typedef struct {
     gboolean force_kitty;
     gboolean force_iterm2;
     TextSymbolMode text_symbol_mode;
+    ColorEnhanceMode color_enhance;
     gboolean needs_redraw;
     AppMode mode;  // Current UI mode (single/preview/file manager/book)
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager

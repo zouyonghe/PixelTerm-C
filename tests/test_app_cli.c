@@ -41,6 +41,11 @@ typedef struct {
 } TextSymbolCase;
 
 typedef struct {
+    const gchar *value;
+    ColorEnhanceMode expected_mode;
+} ColorEnhanceCase;
+
+typedef struct {
     char **argv;
     gchar **path_out;
     AppConfig *config;
@@ -721,6 +726,7 @@ static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture 
     config.clear_workaround_enabled = TRUE;
     config.work_factor = 4;
     config.gamma = 1.75;
+    config.color_enhance = COLOR_ENHANCE_VIVID;
     config.force_text = TRUE;
     config.force_sixel = FALSE;
     config.force_kitty = TRUE;
@@ -737,6 +743,7 @@ static void test_cli_apply_runtime_copies_app_owned_config_fields(AppCliFixture 
     g_assert_true(app.clear_workaround_enabled);
     g_assert_cmpint(app.render_work_factor, ==, 4);
     g_assert_cmpfloat_with_epsilon(app.gamma, 1.75, 0.0001);
+    g_assert_cmpint(app.color_enhance, ==, COLOR_ENHANCE_VIVID);
     g_assert_true(app.force_text);
     g_assert_false(app.force_sixel);
     g_assert_true(app.force_kitty);
@@ -759,13 +766,15 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
         "work_factor=3\n"
         "protocol=text\n"
         "text_symbols=quarter\n"
+        "color_enhance=off\n"
         "gamma=1.25\n"
         "\n"
         "[WarpTerminal]\n"
         "alt_screen=false\n"
         "clear_workaround=true\n"
         "protocol=kitty\n"
-        "text_symbols=half\n");
+        "text_symbols=half\n"
+        "color_enhance=vivid\n");
 
     pixelterm_env_set_for_test("TERM_PROGRAM", "WarpTerminal");
 
@@ -783,6 +792,7 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     g_assert_cmpint(config.work_factor, ==, 3);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_KITTY);
     g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_HALF);
+    g_assert_cmpint(config.color_enhance, ==, COLOR_ENHANCE_VIVID);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
     g_free(path);
@@ -803,13 +813,15 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
         "work_factor=3\n"
         "protocol=text\n"
         "text_symbols=quarter\n"
+        "color_enhance=off\n"
         "gamma=1.25\n"
         "\n"
         "[WarpTerminal]\n"
         "alt_screen=false\n"
         "clear_workaround=true\n"
         "protocol=kitty\n"
-        "text_symbols=half\n");
+        "text_symbols=half\n"
+        "color_enhance=vivid\n");
 
     pixelterm_env_set_for_test("XDG_CONFIG_HOME", config_root);
     pixelterm_env_set_for_test("TERM_PROGRAM", "WarpTerminal");
@@ -828,6 +840,7 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
     g_assert_cmpint(config.work_factor, ==, 3);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_KITTY);
     g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_HALF);
+    g_assert_cmpint(config.color_enhance, ==, COLOR_ENHANCE_VIVID);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
 
@@ -850,6 +863,7 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
         "work_factor=2\n"
         "protocol=text\n"
         "text_symbols=half\n"
+        "color_enhance=off\n"
         "gamma=1.5\n");
 
     AppConfig config;
@@ -872,6 +886,8 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
         "sixel",
         "--text-symbols",
         "quarter",
+        "--color-enhance",
+        "vivid",
         "--gamma",
         "2.5",
         "sample.png",
@@ -887,9 +903,50 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
     g_assert_cmpint(config.work_factor, ==, 8);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_SIXEL);
     g_assert_cmpint(config.text_symbol_mode, ==, TEXT_SYMBOL_MODE_QUARTER);
+    g_assert_cmpint(config.color_enhance, ==, COLOR_ENHANCE_VIVID);
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 2.5, 0.0001);
     g_free(path);
+}
+
+static void test_cli_color_enhance_argument_parses_supported_modes(AppCliFixture *fixture,
+                                                                   gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    const ColorEnhanceCase cases[] = {
+        {"off", COLOR_ENHANCE_OFF},
+        {"vivid", COLOR_ENHANCE_VIVID},
+        {"VIVID", COLOR_ENHANCE_VIVID},
+    };
+
+    for (gsize i = 0; i < G_N_ELEMENTS(cases); i++) {
+        AppConfig config;
+        gchar *path = NULL;
+        app_config_init(&config);
+
+        char *argv[] = {"pixelterm", "--color-enhance", (char *)cases[i].value, "sample.png", NULL};
+
+        g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_NONE);
+        g_assert_cmpint(config.color_enhance, ==, cases[i].expected_mode);
+        g_assert_cmpstr(path, ==, "sample.png");
+        g_free(path);
+    }
+}
+
+static void test_cli_color_enhance_argument_rejects_unknown_mode(AppCliFixture *fixture,
+                                                                 gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    app_config_init(&config);
+
+    char *argv[] = {"pixelterm", "--color-enhance", "neon", NULL};
+
+    g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
 }
 
 static void test_cli_double_dash_preserves_positional_config_like_path(AppCliFixture *fixture,
@@ -1223,6 +1280,10 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/parse/text_symbols",
                      test_cli_text_symbols_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/color_enhance",
+                     test_cli_color_enhance_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/color_enhance_invalid",
+                     test_cli_color_enhance_argument_rejects_unknown_mode);
     add_app_cli_test("/app_cli/protocol_resolution/auto_prefers_affirmative_signal_before_generic_probe_order",
                      test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_generic_probe_order);
     add_app_cli_test("/app_cli/protocol_resolution/auto_accepts_libghostty_xtversion_as_kitty_signal",

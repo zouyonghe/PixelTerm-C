@@ -680,6 +680,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             .force_iterm2 = app->force_iterm2,
             .text_symbol_mode = app->text_symbol_mode,
             .gamma = app->gamma,
+            .color_enhance = app->color_enhance,
             .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
             .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
             .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
@@ -750,6 +751,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                 .force_iterm2 = app->force_iterm2,
                 .text_symbol_mode = app->text_symbol_mode,
                 .gamma = app->gamma,
+                .color_enhance = app->color_enhance,
                 .dither_mode = app->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
                 .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
                 .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES

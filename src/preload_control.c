@@ -28,7 +28,7 @@ ErrorCode app_preloader_enable(PixelTermApp *app, gboolean queue_tasks) {
         }
         preloader_initialize(app->preloader, app->dither_enabled, app->render_work_factor,
                              app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2,
-                             app->text_symbol_mode, app->gamma);
+                             app->text_symbol_mode, app->gamma, app->color_enhance);
         created = TRUE;
     }
 

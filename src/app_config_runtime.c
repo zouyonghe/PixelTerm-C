@@ -15,4 +15,5 @@ void app_config_apply_runtime(PixelTermApp *app, const AppConfig *config) {
     app->force_kitty = config->force_kitty;
     app->force_iterm2 = config->force_iterm2;
     app->text_symbol_mode = config->text_symbol_mode;
+    app->color_enhance = config->color_enhance;
 }

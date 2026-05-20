@@ -320,6 +320,44 @@ static void test_renderer_is_image_supported(void) {
     g_assert_true(renderer_is_image_supported(path));
 }
 
+static void test_renderer_color_enhance_off_keeps_pixels_unchanged(void) {
+    const guint8 pixels[] = {120, 80, 70, 255};
+
+    guint8 *adjusted = renderer_color_enhance_copy_for_test(pixels,
+                                                            1,
+                                                            1,
+                                                            4,
+                                                            4,
+                                                            COLOR_ENHANCE_OFF);
+
+    g_assert_null(adjusted);
+    g_assert_cmpuint(pixels[0], ==, 120);
+    g_assert_cmpuint(pixels[1], ==, 80);
+    g_assert_cmpuint(pixels[2], ==, 70);
+    g_assert_cmpuint(pixels[3], ==, 255);
+}
+
+static void test_renderer_color_enhance_vivid_boosts_color_separation(void) {
+    const guint8 pixels[] = {120, 80, 70, 255};
+
+    guint8 *adjusted = renderer_color_enhance_copy_for_test(pixels,
+                                                            1,
+                                                            1,
+                                                            4,
+                                                            4,
+                                                            COLOR_ENHANCE_VIVID);
+
+    g_assert_nonnull(adjusted);
+    g_assert_cmpuint(adjusted[0], >, pixels[0]);
+    g_assert_cmpuint(adjusted[1], <, pixels[1]);
+    g_assert_cmpuint(adjusted[2], <, pixels[2]);
+    g_assert_cmpuint(adjusted[3], ==, pixels[3]);
+    g_assert_cmpuint(adjusted[0], <=, 255);
+    g_assert_cmpuint(adjusted[1], <=, 255);
+    g_assert_cmpuint(adjusted[2], <=, 255);
+    g_free(adjusted);
+}
+
 void register_renderer_tests(void) {
     g_test_add_func("/renderer/cache_roundtrip", test_renderer_cache_roundtrip);
     g_test_add_func("/renderer/get_rendered_dimensions", test_renderer_get_rendered_dimensions_defaults);
@@ -336,4 +374,8 @@ void register_renderer_tests(void) {
     g_test_add_func("/renderer/get_image_dimensions/valid", test_renderer_get_image_dimensions_valid);
     g_test_add_func("/renderer/get_image_dimensions/invalid", test_renderer_get_image_dimensions_invalid);
     g_test_add_func("/renderer/is_image_supported", test_renderer_is_image_supported);
+    g_test_add_func("/renderer/color_enhance/off_keeps_pixels_unchanged",
+                    test_renderer_color_enhance_off_keeps_pixels_unchanged);
+    g_test_add_func("/renderer/color_enhance/vivid_boosts_color_separation",
+                    test_renderer_color_enhance_vivid_boosts_color_separation);
 }

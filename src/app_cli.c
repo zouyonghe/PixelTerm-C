@@ -30,6 +30,7 @@ static void print_usage(const char *program_name) {
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
     printf("  %-29s %s\n", "--text-symbols MODE", "Text symbol set: auto, half, quarter");
+    printf("  %-29s %s\n", "--color-enhance MODE", "Color enhancement: off, vivid");
     printf("  %-29s %s\n", "--config PATH",
            "Load configuration file (default: $XDG_CONFIG_HOME/pixelterm/config.ini, fallback: $HOME/.config/pixelterm/config.ini)");
     printf("  %-29s %s\n", "--gamma G",
@@ -96,6 +97,21 @@ static gboolean parse_text_symbol_mode(const char *value, TextSymbolMode *out_mo
     }
     if (g_ascii_strcasecmp(value, "quarter") == 0) {
         *out_mode = TEXT_SYMBOL_MODE_QUARTER;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean parse_color_enhance_mode(const char *value, ColorEnhanceMode *out_mode) {
+    if (!value || !out_mode) {
+        return FALSE;
+    }
+    if (g_ascii_strcasecmp(value, "off") == 0) {
+        *out_mode = COLOR_ENHANCE_OFF;
+        return TRUE;
+    }
+    if (g_ascii_strcasecmp(value, "vivid") == 0) {
+        *out_mode = COLOR_ENHANCE_VIVID;
         return TRUE;
     }
     return FALSE;
@@ -289,6 +305,25 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
             return FALSE;
         }
         config->text_symbol_mode = mode;
+        g_free(value);
+    }
+
+    if (g_key_file_has_key(key_file, group, "color_enhance", NULL)) {
+        GError *error = NULL;
+        gchar *value = g_key_file_get_string(key_file, group, "color_enhance", &error);
+        if (error) {
+            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", path, error->message);
+            g_error_free(error);
+            g_free(value);
+            return FALSE;
+        }
+        ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
+        if (!parse_color_enhance_mode(value, &mode)) {
+            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", path, value);
+            g_free(value);
+            return FALSE;
+        }
+        config->color_enhance = mode;
         g_free(value);
     }
 
@@ -628,6 +663,7 @@ void app_config_init(AppConfig *config) {
     config->force_kitty = FALSE;
     config->force_iterm2 = FALSE;
     config->text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
+    config->color_enhance = COLOR_ENHANCE_OFF;
 }
 
 ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *config) {
@@ -644,6 +680,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
         {"gamma", required_argument, 0, 1006},
         {"config", required_argument, 0, 1007},
         {"text-symbols", required_argument, 0, 1008},
+        {"color-enhance", required_argument, 0, 1009},
         {0, 0, 0, 0}
     };
 
@@ -751,6 +788,15 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
                     return ERROR_INVALID_ARGS;
                 }
                 config->text_symbol_mode = mode;
+                break;
+            }
+            case 1009: { // --color-enhance
+                ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
+                if (!parse_color_enhance_mode(optarg, &mode)) {
+                    fprintf(stderr, "Unknown color enhancement mode: %s\n", optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                config->color_enhance = mode;
                 break;
             }
             case '?':

@@ -13,6 +13,7 @@ PixelTerm-C is a terminal-native browser for images, video, and books. It helps 
 - Switch between single-view, grid preview, book reader, and file manager modes.
 - Use keyboard or mouse navigation across image, video, and book workflows.
 - Adjust rendering with preload, dithering, gamma, and config-based terminal overrides.
+- Optionally boost muted colors with a lightweight vivid color-enhancement mode.
 - Build from source on Linux and macOS, or install a release binary for amd64 and arm64.
 
 ## Screenshot

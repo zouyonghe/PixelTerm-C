@@ -53,6 +53,11 @@ typedef enum {
     TEXT_SYMBOL_MODE_QUARTER
 } TextSymbolMode;
 
+typedef enum {
+    COLOR_ENHANCE_OFF = 0,
+    COLOR_ENHANCE_VIVID
+} ColorEnhanceMode;
+
 // Function declarations
 /**
  * @brief Checks if a file is an image based on its file extension.
