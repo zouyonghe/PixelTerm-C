@@ -24,6 +24,9 @@ static void book_fallback_test_g_free(gpointer data) {
 #define book_page_image_free fallback_book_page_image_free
 #define book_load_toc fallback_book_load_toc
 #define book_toc_free fallback_book_toc_free
+#ifdef g_free
+#undef g_free
+#endif
 #define g_free book_fallback_test_g_free
 #define PIXELTERM_BOOK_TESTING 1
 #ifdef HAVE_MUPDF
