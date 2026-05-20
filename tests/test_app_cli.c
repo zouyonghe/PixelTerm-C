@@ -758,7 +758,7 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     (void)fixture;
     (void)user_data;
 
-    write_default_config_file(
+    gchar *default_config_path = write_default_config_file(
         "[default]\n"
         "preload=false\n"
         "alt_screen=true\n"
@@ -796,6 +796,7 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
     g_free(path);
+    g_free(default_config_path);
 }
 
 static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(void) {
@@ -804,7 +805,7 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
     (void)g_get_user_config_dir();
 
     gchar *config_root = make_temp_config_root();
-    write_default_config_file_at_root(
+    gchar *default_config_path = write_default_config_file_at_root(
         config_root,
         "[default]\n"
         "preload=false\n"
@@ -845,6 +846,7 @@ static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
 
     g_free(path);
+    g_free(default_config_path);
     g_free(config_root);
     pixelterm_env_reset_for_test();
 }
@@ -907,6 +909,7 @@ static void test_cli_flags_override_loaded_config_values(AppCliFixture *fixture,
     g_assert_true(config.gamma_set);
     g_assert_cmpfloat_with_epsilon(config.gamma, 2.5, 0.0001);
     g_free(path);
+    g_free(config_path);
 }
 
 static void test_cli_color_enhance_argument_parses_supported_modes(AppCliFixture *fixture,

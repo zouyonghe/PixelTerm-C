@@ -99,6 +99,7 @@ static void test_classify_path_without_argument_uses_current_directory(void) {
     g_free(expected_dir);
     g_free(original_dir);
     g_free(decision.path);
+    g_free(temp_dir);
 }
 
 static void test_classify_path_rejects_missing_path(void) {
@@ -126,6 +127,7 @@ static void test_classify_path_directory_returns_directory_target(void) {
     g_assert_cmpstr(decision.path, ==, temp_dir);
 
     g_free(decision.path);
+    g_free(temp_dir);
 }
 
 static void test_classify_path_book_returns_book_target(void) {
@@ -142,6 +144,7 @@ static void test_classify_path_book_returns_book_target(void) {
 
     g_free(decision.path);
     g_free(book_path);
+    g_free(temp_dir);
 }
 
 static void test_classify_path_media_returns_media_target(void) {
@@ -160,6 +163,7 @@ static void test_classify_path_media_returns_media_target(void) {
 
     g_free(decision.path);
     g_free(media_path);
+    g_free(temp_dir);
 }
 
 static void test_classify_path_non_media_file_falls_back_to_parent_directory(void) {
@@ -176,6 +180,7 @@ static void test_classify_path_non_media_file_falls_back_to_parent_directory(voi
 
     g_free(decision.path);
     g_free(text_path);
+    g_free(temp_dir);
 }
 
 static void test_classify_relative_non_media_file_returns_canonical_parent_directory(void) {
@@ -211,6 +216,7 @@ static void test_classify_relative_non_media_file_returns_canonical_parent_direc
     g_free(original_dir);
     g_free(decision.path);
     g_free(text_path);
+    g_free(temp_dir);
 }
 
 void register_app_startup_tests(void) {
