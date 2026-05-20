@@ -109,7 +109,7 @@ static gboolean renderer_validate_pixel_data(gint width,
         return FALSE;
     }
 
-    return media_buffer_validate_layout(width, height, rowstride, n_channels, buffer_size_out);
+    return media_buffer_validate_layout(width, height, rowstride, n_channels, 1, buffer_size_out);
 }
 
 static guint8 *renderer_apply_gamma_copy(const guint8 *pixel_data, gint width, gint height,
@@ -451,9 +451,8 @@ GString* renderer_render_image_data(ImageRenderer *renderer,
                                    gint height,
                                    gint rowstride,
                                    gint n_channels) {
-    gsize buffer_size = 0;
     if (!renderer || !pixel_data ||
-        !renderer_validate_pixel_data(width, height, rowstride, n_channels, &buffer_size)) {
+        !renderer_validate_pixel_data(width, height, rowstride, n_channels, NULL)) {
         return NULL;
     }
 

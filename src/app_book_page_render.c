@@ -1,4 +1,5 @@
 #include "app.h"
+#include "app_config_runtime.h"
 #include "text_utils.h"
 #include "ui_render_utils.h"
 

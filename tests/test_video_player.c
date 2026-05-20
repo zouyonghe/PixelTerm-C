@@ -2274,6 +2274,22 @@ static void test_frame_buffer_size_rejects_non_positive_metadata(void) {
     g_assert_false(video_player_frame_buffer_size_for_test(4, 0, &buffer_size));
 }
 
+static void test_dimensions_within_limits_accepts_max_geometry(void) {
+    g_assert_true(video_player_dimensions_within_limits_for_test(PIXELTERM_MAX_DECODED_PIXELS, 1));
+}
+
+static void test_dimensions_within_limits_rejects_large_geometry(void) {
+    g_assert_false(video_player_dimensions_within_limits_for_test(PIXELTERM_MAX_DECODED_PIXELS + 1, 1));
+}
+
+static void test_dimensions_within_limits_rejects_non_positive_metadata(void) {
+    g_assert_false(video_player_dimensions_within_limits_for_test(0, 10));
+    g_assert_false(video_player_dimensions_within_limits_for_test(10, 0));
+    g_assert_false(video_player_dimensions_within_limits_for_test(-1, 10));
+    g_assert_false(video_player_dimensions_within_limits_for_test(10, -1));
+    g_assert_false(video_player_dimensions_within_limits_for_test(-1, -1));
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -2339,6 +2355,12 @@ void register_video_player_tests(void) {
                     test_frame_buffer_size_rejects_overflow);
     g_test_add_func("/video_player/frame_buffer_size/rejects_non_positive_metadata",
                     test_frame_buffer_size_rejects_non_positive_metadata);
+    g_test_add_func("/video_player/dimensions_within_limits/accepts_max_geometry",
+                    test_dimensions_within_limits_accepts_max_geometry);
+    g_test_add_func("/video_player/dimensions_within_limits/rejects_large_geometry",
+                    test_dimensions_within_limits_rejects_large_geometry);
+    g_test_add_func("/video_player/dimensions_within_limits/rejects_non_positive_metadata",
+                    test_dimensions_within_limits_rejects_non_positive_metadata);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_shallow",
                     test_should_not_drop_late_frame_when_backlog_is_shallow);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_medium",

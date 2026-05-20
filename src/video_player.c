@@ -1311,6 +1311,10 @@ gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gs
     return video_player_frame_buffer_size(height, rowstride, buffer_size);
 }
 
+gboolean video_player_dimensions_within_limits_for_test(gint width, gint height) {
+    return video_player_dimensions_within_limits(width, height);
+}
+
 static void video_player_render_worker_refresh_layout(VideoPlayer *player,
                                                       ImageRenderer *renderer,
                                                       guint *layout_generation_inout) {

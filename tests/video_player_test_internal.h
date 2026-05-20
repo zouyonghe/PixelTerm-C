@@ -41,5 +41,6 @@ gint64 video_player_current_position_ms_for_test(VideoPlayer *player);
 gint64 video_player_seek_target_ms_for_test(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms);
 RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player);
 gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gsize *buffer_size);
+gboolean video_player_dimensions_within_limits_for_test(gint width, gint height);
 
 #endif

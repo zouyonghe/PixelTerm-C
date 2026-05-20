@@ -36,17 +36,23 @@ gboolean media_buffer_size_within_limits(gint height, gint rowstride, gsize *buf
 gboolean media_buffer_validate_layout(gint width,
                                       gint height,
                                       gint rowstride,
-                                      gint bytes_per_pixel,
+                                      gint n_channels,
+                                      gint bytes_per_channel,
                                       gsize *buffer_size_out) {
     if (buffer_size_out) {
         *buffer_size_out = 0;
     }
-    if (bytes_per_pixel <= 0 || !media_buffer_dimensions_within_limits(width, height)) {
+    if (n_channels <= 0 || bytes_per_channel <= 0 || !media_buffer_dimensions_within_limits(width, height)) {
+        return FALSE;
+    }
+
+    gsize bytes_per_pixel = 0;
+    if (!g_size_checked_mul(&bytes_per_pixel, (gsize)n_channels, (gsize)bytes_per_channel)) {
         return FALSE;
     }
 
     gsize min_rowstride = 0;
-    if (!g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)bytes_per_pixel)) {
+    if (!g_size_checked_mul(&min_rowstride, (gsize)width, bytes_per_pixel)) {
         return FALSE;
     }
     if (rowstride <= 0 || (gsize)rowstride < min_rowstride) {

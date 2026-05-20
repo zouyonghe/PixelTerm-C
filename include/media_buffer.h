@@ -8,7 +8,8 @@ gboolean media_buffer_size_within_limits(gint height, gint rowstride, gsize *buf
 gboolean media_buffer_validate_layout(gint width,
                                       gint height,
                                       gint rowstride,
-                                      gint bytes_per_pixel,
+                                      gint n_channels,
+                                      gint bytes_per_channel,
                                       gsize *buffer_size_out);
 
 #endif // MEDIA_BUFFER_H
