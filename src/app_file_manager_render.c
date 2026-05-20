@@ -2,79 +2,59 @@
 #include "text_utils.h"
 #include "app_file_manager_internal.h"
 
-static gboolean directory_contains_media(const gchar *dir_path) {
+typedef struct {
+    gboolean has_images;
+    gboolean has_media;
+    gboolean has_books;
+} DirectoryMediaSummary;
+
+static DirectoryMediaSummary directory_media_summary_scan(const gchar *dir_path) {
+    DirectoryMediaSummary summary = {0};
     if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
-        return FALSE;
+        return summary;
     }
 
     GDir *dir = g_dir_open(dir_path, 0, NULL);
     if (!dir) {
-        return FALSE;
+        return summary;
     }
 
     const gchar *filename;
     while ((filename = g_dir_read_name(dir))) {
         gchar *full_path = g_build_filename(dir_path, filename, NULL);
-        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_media_file(full_path)) {
-            g_free(full_path);
-            g_dir_close(dir);
-            return TRUE;
+        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR)) {
+            if (is_image_file(full_path)) {
+                summary.has_images = TRUE;
+                summary.has_media = TRUE;
+            } else if (is_video_file(full_path)) {
+                summary.has_media = TRUE;
+            } else if (is_book_file(full_path)) {
+                summary.has_books = TRUE;
+            }
         }
         g_free(full_path);
+
+        if (summary.has_images && summary.has_media && summary.has_books) {
+            break;
+        }
     }
 
     g_dir_close(dir);
-    return FALSE;
+    return summary;
 }
 
-static gboolean directory_contains_images(const gchar *dir_path) {
-    if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
-        return FALSE;
+static const DirectoryMediaSummary *directory_media_summary_get(GHashTable *cache, const gchar *dir_path) {
+    if (!cache || !dir_path) {
+        return NULL;
     }
 
-    GDir *dir = g_dir_open(dir_path, 0, NULL);
-    if (!dir) {
-        return FALSE;
+    DirectoryMediaSummary *summary = g_hash_table_lookup(cache, dir_path);
+    if (!summary) {
+        summary = g_new0(DirectoryMediaSummary, 1);
+        *summary = directory_media_summary_scan(dir_path);
+        g_hash_table_insert(cache, g_strdup(dir_path), summary);
     }
-
-    const gchar *filename;
-    while ((filename = g_dir_read_name(dir))) {
-        gchar *full_path = g_build_filename(dir_path, filename, NULL);
-        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_image_file(full_path)) {
-            g_free(full_path);
-            g_dir_close(dir);
-            return TRUE;
-        }
-        g_free(full_path);
-    }
-
-    g_dir_close(dir);
-    return FALSE;
-}
-
-static gboolean directory_contains_books(const gchar *dir_path) {
-    if (!dir_path || !g_file_test(dir_path, G_FILE_TEST_IS_DIR)) {
-        return FALSE;
-    }
-
-    GDir *dir = g_dir_open(dir_path, 0, NULL);
-    if (!dir) {
-        return FALSE;
-    }
-
-    const gchar *filename;
-    while ((filename = g_dir_read_name(dir))) {
-        gchar *full_path = g_build_filename(dir_path, filename, NULL);
-        if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) && is_book_file(full_path)) {
-            g_free(full_path);
-            g_dir_close(dir);
-            return TRUE;
-        }
-        g_free(full_path);
-    }
-
-    g_dir_close(dir);
-    return FALSE;
+    return summary;
 }
 
 static gchar *app_file_manager_format_size(gint64 size) {
@@ -433,6 +413,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     }
 
     FileManagerViewport viewport = app_file_manager_compute_viewport(app);
+    GHashTable *directory_media_cache = g_hash_table_new_full(g_str_hash, g_str_equal,
+                                                             g_free, g_free);
     app->file_manager.scroll_offset = viewport.start_row;
     gint total_entries = viewport.total_entries;
     const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ? Help   ESC Exit";
@@ -498,9 +480,12 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gboolean is_image = (!is_dir && is_image_file(entry));
         gboolean is_video = (!is_dir && is_video_file(entry));
         gboolean is_book = (!is_dir && is_book_file(entry));
-        gboolean is_dir_with_images = is_dir && directory_contains_images(entry);
-        gboolean is_dir_with_media = is_dir && directory_contains_media(entry);
-        gboolean is_dir_with_books = is_dir && directory_contains_books(entry);
+        const DirectoryMediaSummary *dir_summary = is_dir
+            ? directory_media_summary_get(directory_media_cache, entry)
+            : NULL;
+        gboolean is_dir_with_images = dir_summary ? dir_summary->has_images : FALSE;
+        gboolean is_dir_with_media = dir_summary ? dir_summary->has_media : FALSE;
+        gboolean is_dir_with_books = dir_summary ? dir_summary->has_books : FALSE;
 
         gboolean is_valid_media = (!is_dir && is_valid_media_file(entry));
         gboolean is_valid_book = (!is_dir && is_valid_book_file(entry));
@@ -593,5 +578,6 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (free_dir) {
         g_free((gchar*)current_dir);
     }
+    g_hash_table_destroy(directory_media_cache);
     return ERROR_NONE;
 }

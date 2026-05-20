@@ -517,6 +517,31 @@ static void test_render_selected_row_uses_full_width_highlight_with_size(void) {
     g_free(dir);
 }
 
+static void test_render_marks_directory_containing_media(void) {
+    gchar *dir = create_temp_dir();
+    gchar *child_dir = create_dir_in_dir(dir, "child");
+    gchar *child_png = write_file_in_dir(child_dir, "inside.png", k_png_data, sizeof(k_png_data));
+    gchar *a_png = write_file_in_dir(dir, "a.png", k_png_data, sizeof(k_png_data));
+    PixelTermApp app = {0};
+
+    init_file_manager_app(&app, dir, 24);
+    app.term_width = 80;
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app_file_manager_select_path(&app, a_png), ==, ERROR_NONE);
+
+    gchar *output = capture_render_output(render_file_manager_capture, &app);
+
+    g_assert_nonnull(g_strstr_len(output, -1, "\033[33m[DIR]  child/"));
+
+    g_free(output);
+    cleanup_file_manager_app(&app);
+    g_free(child_dir);
+    g_free(child_png);
+    g_free(a_png);
+    g_free(dir);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
 
@@ -542,6 +567,8 @@ int main(int argc, char **argv) {
                     test_enter_parent_entry_selects_directory_just_left);
     g_test_add_func("/app_file_manager/render/selected_row_uses_full_width_highlight_with_size",
                     test_render_selected_row_uses_full_width_highlight_with_size);
+    g_test_add_func("/app_file_manager/render/marks_directory_containing_media",
+                    test_render_marks_directory_containing_media);
 
     return g_test_run();
 }
