@@ -6,9 +6,6 @@
 #include "video_player.h"
 #include "pixbuf_utils.h"
 
-/* Cap decoded image buffers from untrusted files before handing them to Chafa. */
-#define RENDERER_MAX_DECODED_BYTES ((gsize)512 * 1024 * 1024)
-
 #if defined(CHAFA_MAJOR_VERSION) && defined(CHAFA_MINOR_VERSION)
 #define PIXELTERM_CHAFA_AT_LEAST(major, minor) \
     ((CHAFA_MAJOR_VERSION > (major)) || \
@@ -104,7 +101,7 @@ static gboolean renderer_validate_pixel_data(gint width,
     if (width <= 0 || height <= 0 || rowstride <= 0) {
         return FALSE;
     }
-    if (n_channels != 3 && n_channels != 4) {
+    if (n_channels < 3) {
         return FALSE;
     }
 
@@ -120,7 +117,7 @@ static gboolean renderer_validate_pixel_data(gint width,
     if (!g_size_checked_mul(&buffer_size, (gsize)height, (gsize)rowstride)) {
         return FALSE;
     }
-    if (buffer_size > RENDERER_MAX_DECODED_BYTES) {
+    if (buffer_size > PIXELTERM_MAX_DECODED_BUFFER_BYTES) {
         return FALSE;
     }
     if (buffer_size_out) {

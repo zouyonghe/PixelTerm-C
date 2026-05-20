@@ -64,8 +64,7 @@ enum {
     VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
 };
 
-/* Keep copied frame buffers below the same single-buffer DoS guard as images. */
-#define VIDEO_PLAYER_MAX_FRAME_BYTES ((gsize)512 * 1024 * 1024)
+#define VIDEO_PLAYER_MAX_FRAME_BYTES PIXELTERM_MAX_DECODED_BUFFER_BYTES
 
 static gboolean video_player_dimensions_within_limits(gint width, gint height) {
     if (width <= 0 || height <= 0) {

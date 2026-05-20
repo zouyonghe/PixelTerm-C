@@ -8,9 +8,21 @@
 #define BOOK_TOC_MAX_DEPTH 64
 #define BOOK_TOC_MAX_ITEMS 4096
 
-static gboolean G_GNUC_UNUSED book_toc_level_allowed(gint level) {
+#if defined(HAVE_MUPDF) || defined(PIXELTERM_BOOK_TESTING)
+static gboolean book_toc_level_allowed(gint level) {
     return level >= 0 && level < BOOK_TOC_MAX_DEPTH;
 }
+
+#ifdef PIXELTERM_BOOK_TESTING
+gboolean book_toc_level_allowed_for_test(gint level) {
+    return book_toc_level_allowed(level);
+}
+
+gint book_toc_max_depth_for_test(void) {
+    return BOOK_TOC_MAX_DEPTH;
+}
+#endif
+#endif
 
 #ifdef HAVE_MUPDF
 
