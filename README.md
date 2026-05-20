@@ -40,6 +40,12 @@ Need a custom install directory instead of `/usr/local/bin`?
 curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --bin-dir "$HOME/.local/bin"
 ```
 
+Need a reproducible install? Pin a release tag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.7.26
+```
+
 If you prefer a package manager or manual install, use one of these paths:
 
 ```bash

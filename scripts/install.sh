@@ -7,17 +7,18 @@ DRY_RUN=0
 PRINT_ASSET_NAME=0
 PRINT_INSTALL_PATH=0
 TMP_DIR=""
-CHECKSUMS_URL="https://github.com/%s/releases/latest/download/SHA256SUMS"
+RELEASE_VERSION=""
 
 usage() {
   cat <<'EOF'
-Install PixelTerm-C from the latest GitHub Release.
+Install PixelTerm-C from a GitHub Release.
 
 Usage:
   bash install.sh [options]
 
 Options:
   --bin-dir <dir>       Install pixelterm into the given directory
+  --version <tag>       Install a specific release tag instead of latest
   --dry-run             Print the resolved download URL and destination
   --print-asset-name    Print the detected release asset name and exit
   --print-install-path  Print the final install path and exit
@@ -26,6 +27,7 @@ Options:
 Examples:
   curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --bin-dir "$HOME/.local/bin"
+  curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.7.26
 EOF
 }
 
@@ -112,14 +114,23 @@ release_asset_name() {
   printf 'pixelterm-%s-%s\n' "${arch_name}" "${os_name}"
 }
 
+release_selector() {
+  if [ -n "${RELEASE_VERSION}" ]; then
+    printf 'download/%s' "${RELEASE_VERSION}"
+    return
+  fi
+
+  printf 'latest/download'
+}
+
 download_url() {
   local asset_name
   asset_name="$(release_asset_name)"
-  printf 'https://github.com/%s/releases/latest/download/%s\n' "${REPO_SLUG}" "${asset_name}"
+  printf 'https://github.com/%s/releases/%s/%s\n' "${REPO_SLUG}" "$(release_selector)" "${asset_name}"
 }
 
 checksums_url() {
-  printf "${CHECKSUMS_URL}\n" "${REPO_SLUG}"
+  printf 'https://github.com/%s/releases/%s/SHA256SUMS\n' "${REPO_SLUG}" "$(release_selector)"
 }
 
 install_path() {
@@ -242,6 +253,11 @@ parse_args() {
         INSTALL_DIR="$2"
         shift 2
         ;;
+      --version)
+        [ "$#" -ge 2 ] || die "Missing value for --version"
+        RELEASE_VERSION="$2"
+        shift 2
+        ;;
       --dry-run)
         DRY_RUN=1
         shift
@@ -294,6 +310,11 @@ main() {
 
   if [ "${DRY_RUN}" -eq 1 ]; then
     log "Resolved platform: ${os_name}/${arch_name}"
+    if [ -n "${RELEASE_VERSION}" ]; then
+      log "Release version: ${RELEASE_VERSION}"
+    else
+      log "Release version: latest"
+    fi
     log "Release asset: ${asset_name}"
     log "Download URL: ${url}"
     log "Install destination: ${destination}"
