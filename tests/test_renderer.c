@@ -372,6 +372,18 @@ static void test_renderer_color_enhance_skips_short_pixel_formats(void) {
     g_assert_null(adjusted);
 }
 
+static void test_renderer_validate_pixel_data_rejects_short_rowstride(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(renderer_validate_pixel_data_for_test(4, 2, 11, 3, &buffer_size));
+}
+
+static void test_renderer_validate_pixel_data_rejects_unsupported_channels(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(renderer_validate_pixel_data_for_test(1, 1, 2, 2, &buffer_size));
+}
+
 void register_renderer_tests(void) {
     g_test_add_func("/renderer/cache_roundtrip", test_renderer_cache_roundtrip);
     g_test_add_func("/renderer/get_rendered_dimensions", test_renderer_get_rendered_dimensions_defaults);
@@ -394,4 +406,8 @@ void register_renderer_tests(void) {
                     test_renderer_color_enhance_vivid_boosts_color_separation);
     g_test_add_func("/renderer/color_enhance/skips_short_pixel_formats",
                     test_renderer_color_enhance_skips_short_pixel_formats);
+    g_test_add_func("/renderer/validate_pixel_data/rejects_short_rowstride",
+                    test_renderer_validate_pixel_data_rejects_short_rowstride);
+    g_test_add_func("/renderer/validate_pixel_data/rejects_unsupported_channels",
+                    test_renderer_validate_pixel_data_rejects_unsupported_channels);
 }

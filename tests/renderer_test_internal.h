@@ -12,5 +12,10 @@ guint8 *renderer_color_enhance_copy_for_test(const guint8 *pixel_data,
                                              gint rowstride,
                                              gint n_channels,
                                              ColorEnhanceMode mode);
+gboolean renderer_validate_pixel_data_for_test(gint width,
+                                               gint height,
+                                               gint rowstride,
+                                               gint n_channels,
+                                               gsize *buffer_size);
 
 #endif

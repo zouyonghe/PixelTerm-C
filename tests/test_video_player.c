@@ -2261,6 +2261,19 @@ static void test_render_worker_config_uses_player_color_enhance_without_renderer
     video_player_destroy(player);
 }
 
+static void test_frame_buffer_size_rejects_overflow(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(video_player_frame_buffer_size_for_test(G_MAXINT, G_MAXINT, &buffer_size));
+}
+
+static void test_frame_buffer_size_rejects_non_positive_metadata(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(video_player_frame_buffer_size_for_test(0, 4, &buffer_size));
+    g_assert_false(video_player_frame_buffer_size_for_test(4, 0, &buffer_size));
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -2322,6 +2335,10 @@ void register_video_player_tests(void) {
                     test_render_layout_generation_increments_only_on_layout_change);
     g_test_add_func("/video_player/render_worker_config/uses_player_color_enhance_without_renderer",
                     test_render_worker_config_uses_player_color_enhance_without_renderer);
+    g_test_add_func("/video_player/frame_buffer_size/rejects_overflow",
+                    test_frame_buffer_size_rejects_overflow);
+    g_test_add_func("/video_player/frame_buffer_size/rejects_non_positive_metadata",
+                    test_frame_buffer_size_rejects_non_positive_metadata);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_shallow",
                     test_should_not_drop_late_frame_when_backlog_is_shallow);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_medium",

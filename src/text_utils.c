@@ -10,7 +10,7 @@ gchar* sanitize_for_terminal(const gchar *text) {
     gchar *safe = g_strdup(text);
     for (gchar *p = safe; *p; ++p) {
         unsigned char c = (unsigned char)*p;
-        if (c < 0x20 || c == 0x7f || c == '\033') {
+        if (c < 0x20 || c == 0x7f || c == '\033' || (c >= 0x80 && c <= 0x9f)) {
             *p = '?';
         }
     }

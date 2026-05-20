@@ -55,12 +55,48 @@ static gint video_player_live_instances = 0;
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
     VIDEO_PLAYER_MAX_SILENCE_US = 1000000,
+    VIDEO_PLAYER_MAX_DECODED_PIXELS = 4096 * 4096,
     VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
     VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
     VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE = 4,
     VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE = 6,
     VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
 };
+
+#define VIDEO_PLAYER_MAX_FRAME_BYTES ((gsize)512 * 1024 * 1024)
+
+static gboolean video_player_dimensions_within_limits(gint width, gint height) {
+    if (width <= 0 || height <= 0) {
+        return FALSE;
+    }
+
+    gsize pixels = 0;
+    if (!g_size_checked_mul(&pixels, (gsize)width, (gsize)height)) {
+        return FALSE;
+    }
+    return pixels <= VIDEO_PLAYER_MAX_DECODED_PIXELS;
+}
+
+static gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsize *buffer_size_out) {
+    if (buffer_size_out) {
+        *buffer_size_out = 0;
+    }
+    if (height <= 0 || rowstride <= 0) {
+        return FALSE;
+    }
+
+    gsize buffer_size = 0;
+    if (!g_size_checked_mul(&buffer_size, (gsize)height, (gsize)rowstride)) {
+        return FALSE;
+    }
+    if (buffer_size > VIDEO_PLAYER_MAX_FRAME_BYTES) {
+        return FALSE;
+    }
+    if (buffer_size_out) {
+        *buffer_size_out = buffer_size;
+    }
+    return TRUE;
+}
 
 
 static gint video_player_get_frame_delay_ms(VideoPlayer *player) {
@@ -943,7 +979,7 @@ static gint video_player_alloc_rgba_buffer(AVFrame *rgba_frame,
                                           guint8 **rgba_buffer_out) {
     gint buffer_size = 0;
 
-    if (!rgba_frame || !rgba_buffer_out || width <= 0 || height <= 0) {
+    if (!rgba_frame || !rgba_buffer_out || !video_player_dimensions_within_limits(width, height)) {
         return -1;
     }
 
@@ -1298,6 +1334,10 @@ RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player) {
     return video_player_render_worker_config(player);
 }
 
+gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gsize *buffer_size) {
+    return video_player_frame_buffer_size(height, rowstride, buffer_size);
+}
+
 static void video_player_render_worker_refresh_layout(VideoPlayer *player,
                                                       ImageRenderer *renderer,
                                                       guint *layout_generation_inout) {
@@ -1574,7 +1614,13 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         if (!decoded) {
             continue;
         }
-        gint buffer_size = player->video_height * player->rgba_frame->linesize[0];
+        gsize buffer_size = 0;
+        if (!video_player_frame_buffer_size(player->video_height,
+                                            player->rgba_frame->linesize[0],
+                                            &buffer_size)) {
+            decoded_frame_destroy(decoded);
+            continue;
+        }
         decoded->pixels = g_memdup2(player->rgba_frame->data[0], buffer_size);
         if (!decoded->pixels) {
             decoded_frame_destroy(decoded);
@@ -1988,6 +2034,15 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
 
     int width = codec_context->width;
     int height = codec_context->height;
+    if (!video_player_dimensions_within_limits(width, height)) {
+        av_frame_free(&decode_frame);
+        av_frame_free(&rgba_frame);
+        av_packet_free(&packet);
+        avcodec_free_context(&codec_context);
+        avformat_close_input(&format_context);
+        return ERROR_INVALID_IMAGE;
+    }
+
     int rgba_buffer_size = video_player_alloc_rgba_buffer(rgba_frame, width, height, &rgba_buffer);
     if (rgba_buffer_size <= 0) {
         av_frame_free(&decode_frame);

@@ -342,6 +342,9 @@ void book_page_image_free(BookPageImage *image) {
     book_reset_image(image);
 }
 
+#define BOOK_TOC_MAX_DEPTH 64
+#define BOOK_TOC_MAX_ITEMS 4096
+
 static void book_outline_to_list(BookDocument *doc,
                                  fz_outline *outline,
                                  gint level,
@@ -351,8 +354,11 @@ static void book_outline_to_list(BookDocument *doc,
     if (!head || !tail || !count) {
         return;
     }
+    if (level > BOOK_TOC_MAX_DEPTH || *count >= BOOK_TOC_MAX_ITEMS) {
+        return;
+    }
     fz_var(outline);
-    while (outline) {
+    while (outline && *count < BOOK_TOC_MAX_ITEMS) {
         BookTocItem *item = g_new0(BookTocItem, 1);
         item->title = g_strdup(outline->title ? outline->title : "");
         item->level = level;
