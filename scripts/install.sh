@@ -115,7 +115,7 @@ release_asset_name() {
 }
 
 release_selector() {
-  if [ -n "${RELEASE_VERSION}" ]; then
+  if [ -n "${RELEASE_VERSION}" ] && [ "${RELEASE_VERSION}" != "latest" ]; then
     printf 'download/%s' "${RELEASE_VERSION}"
     return
   fi
@@ -154,12 +154,12 @@ run_privileged() {
   die "Install target is not writable and sudo is not available"
 }
 
-download_binary() {
+download_file() {
   local url
   local destination
 
-  url="$(download_url)"
-  destination="$1"
+  url="$1"
+  destination="$2"
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "${url}" -o "${destination}"
@@ -174,24 +174,12 @@ download_binary() {
   die "curl or wget is required to download PixelTerm-C"
 }
 
+download_binary() {
+  download_file "$(download_url)" "$1"
+}
+
 download_checksums() {
-  local url
-  local destination
-
-  url="$(checksums_url)"
-  destination="$1"
-
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "${url}" -o "${destination}"
-    return 0
-  fi
-
-  if command -v wget >/dev/null 2>&1; then
-    wget -qO "${destination}" "${url}"
-    return 0
-  fi
-
-  die "curl or wget is required to download release checksums"
+  download_file "$(checksums_url)" "$1"
 }
 
 verify_checksum() {

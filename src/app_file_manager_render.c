@@ -43,16 +43,20 @@ static DirectoryMediaSummary directory_media_summary_scan(const gchar *dir_path)
     return summary;
 }
 
-static const DirectoryMediaSummary *directory_media_summary_get(GHashTable *cache, const gchar *dir_path) {
+static const DirectoryMediaSummary *directory_media_summary_get(GHashTable **cache, const gchar *dir_path) {
     if (!cache || !dir_path) {
         return NULL;
     }
 
-    DirectoryMediaSummary *summary = g_hash_table_lookup(cache, dir_path);
+    if (!*cache) {
+        *cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+    }
+
+    DirectoryMediaSummary *summary = g_hash_table_lookup(*cache, dir_path);
     if (!summary) {
         summary = g_new0(DirectoryMediaSummary, 1);
         *summary = directory_media_summary_scan(dir_path);
-        g_hash_table_insert(cache, g_strdup(dir_path), summary);
+        g_hash_table_insert(*cache, g_strdup(dir_path), summary);
     }
     return summary;
 }
@@ -414,8 +418,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     }
 
     FileManagerViewport viewport = app_file_manager_compute_viewport(app);
-    GHashTable *directory_media_cache = g_hash_table_new_full(g_str_hash, g_str_equal,
-                                                             g_free, g_free);
+    GHashTable *directory_media_cache = NULL;
     app->file_manager.scroll_offset = viewport.start_row;
     gint total_entries = viewport.total_entries;
     const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ? Help   ESC Exit";
@@ -482,7 +485,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         gboolean is_video = (!is_dir && is_video_file(entry));
         gboolean is_book = (!is_dir && is_book_file(entry));
         const DirectoryMediaSummary *dir_summary = is_dir
-            ? directory_media_summary_get(directory_media_cache, entry)
+            ? directory_media_summary_get(&directory_media_cache, entry)
             : NULL;
         gboolean is_dir_with_images = dir_summary ? dir_summary->has_images : FALSE;
         gboolean is_dir_with_media = dir_summary ? dir_summary->has_media : FALSE;
@@ -579,6 +582,8 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (free_dir) {
         g_free((gchar*)current_dir);
     }
-    g_hash_table_destroy(directory_media_cache);
+    if (directory_media_cache) {
+        g_hash_table_destroy(directory_media_cache);
+    }
     return ERROR_NONE;
 }

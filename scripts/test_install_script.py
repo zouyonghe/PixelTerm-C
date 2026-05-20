@@ -138,6 +138,26 @@ class InstallScriptCLITest(unittest.TestCase):
             result.stdout,
         )
 
+    def test_dry_run_treats_latest_version_as_latest_selector(self) -> None:
+        result = run_script(
+            "--dry-run",
+            "--version",
+            "latest",
+            env={
+                "PIXELTERM_INSTALL_UNAME_S": "Linux",
+                "PIXELTERM_INSTALL_UNAME_M": "x86_64",
+            },
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Release version: latest", result.stdout)
+        self.assertIn(
+            "https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/"
+            "pixelterm-amd64-linux",
+            result.stdout,
+        )
+        self.assertNotIn("/releases/download/latest/", result.stdout)
+
     def test_install_completes_without_unbound_tmp_dir_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
