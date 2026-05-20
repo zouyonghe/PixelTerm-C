@@ -82,7 +82,7 @@ static gchar *app_file_manager_format_size(gint64 size) {
         size = 0;
     }
     if (size < 1024) {
-        return g_strdup_printf("%" G_GINT64_FORMAT " B", size);
+        return g_strdup_printf("%lld B", (long long)size);
     }
     if (size < 1024 * 1024) {
         return g_strdup_printf("%.1f KB", size / 1024.0);
