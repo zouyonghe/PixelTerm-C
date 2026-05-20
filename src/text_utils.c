@@ -7,10 +7,12 @@ gchar* sanitize_for_terminal(const gchar *text) {
         return g_strdup("");
     }
 
-    GString *safe = g_string_sized_new(strlen(text));
+    gsize len = strlen(text);
+    GString *safe = g_string_sized_new(len);
     const gchar *p = text;
+    const gchar *end = text + len;
     while (*p) {
-        gunichar ch = g_utf8_get_char_validated(p, -1);
+        gunichar ch = g_utf8_get_char_validated(p, end - p);
         if (ch == (gunichar)-1 || ch == (gunichar)-2) {
             g_string_append_c(safe, '?');
             p++;

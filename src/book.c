@@ -26,6 +26,12 @@ gint book_toc_max_depth_for_test(void) {
 
 #ifdef HAVE_MUPDF
 
+typedef struct {
+    gboolean truncated;
+    gint observed_depth;
+    gint observed_items;
+} BookTocTraversal;
+
 #include <fcntl.h>
 #include <math.h>
 #include <mupdf/fitz.h>
@@ -372,12 +378,18 @@ static void book_outline_to_list(BookDocument *doc,
                                   BookTocItem **head,
                                   BookTocItem **tail,
                                   gint *count,
-                                  gboolean *truncated) {
-    if (!head || !tail || !count || !truncated) {
+                                  BookTocTraversal *traversal) {
+    if (!head || !tail || !count || !traversal) {
         return;
     }
+    if (level > traversal->observed_depth) {
+        traversal->observed_depth = level;
+    }
+    if (*count > traversal->observed_items) {
+        traversal->observed_items = *count;
+    }
     if (!book_toc_level_allowed(level) || *count >= BOOK_TOC_MAX_ITEMS) {
-        *truncated = TRUE;
+        traversal->truncated = TRUE;
         return;
     }
     fz_var(outline);
@@ -407,9 +419,12 @@ static void book_outline_to_list(BookDocument *doc,
         }
         *tail = item;
         (*count)++;
+        if (*count > traversal->observed_items) {
+            traversal->observed_items = *count;
+        }
 
         if (outline->down) {
-            book_outline_to_list(doc, outline->down, level + 1, head, tail, count, truncated);
+            book_outline_to_list(doc, outline->down, level + 1, head, tail, count, traversal);
         }
 
         outline = outline->next;
@@ -439,12 +454,14 @@ BookToc* book_load_toc(BookDocument *doc) {
     toc->count = 0;
 
     BookTocItem *tail = NULL;
-    gboolean truncated = FALSE;
-    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count, &truncated);
-    if (truncated) {
-        g_warning("Book table of contents was truncated at %d levels or %d items",
+    BookTocTraversal traversal = {0};
+    book_outline_to_list(doc, outline, 0, &toc->items, &tail, &toc->count, &traversal);
+    if (traversal.truncated) {
+        g_warning("Book table of contents was truncated at %d levels or %d items; observed depth %d, items %d",
                   BOOK_TOC_MAX_DEPTH,
-                  BOOK_TOC_MAX_ITEMS);
+                  BOOK_TOC_MAX_ITEMS,
+                  traversal.observed_depth,
+                  traversal.observed_items);
     }
 
     fz_drop_outline(doc->ctx, outline);

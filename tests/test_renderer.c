@@ -391,6 +391,16 @@ static void test_renderer_validate_pixel_data_accepts_extra_channels(void) {
     g_assert_cmpuint(buffer_size, ==, 5);
 }
 
+static void test_renderer_validate_pixel_data_rejects_large_geometry(void) {
+    gsize buffer_size = 0;
+
+    g_assert_false(renderer_validate_pixel_data_for_test(1,
+                                                         PIXELTERM_MAX_DECODED_PIXELS + 1,
+                                                         3,
+                                                         3,
+                                                         &buffer_size));
+}
+
 void register_renderer_tests(void) {
     g_test_add_func("/renderer/cache_roundtrip", test_renderer_cache_roundtrip);
     g_test_add_func("/renderer/get_rendered_dimensions", test_renderer_get_rendered_dimensions_defaults);
@@ -419,4 +429,6 @@ void register_renderer_tests(void) {
                     test_renderer_validate_pixel_data_rejects_unsupported_channels);
     g_test_add_func("/renderer/validate_pixel_data/accepts_extra_channels",
                     test_renderer_validate_pixel_data_accepts_extra_channels);
+    g_test_add_func("/renderer/validate_pixel_data/rejects_large_geometry",
+                    test_renderer_validate_pixel_data_rejects_large_geometry);
 }

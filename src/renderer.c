@@ -105,6 +105,14 @@ static gboolean renderer_validate_pixel_data(gint width,
         return FALSE;
     }
 
+    gsize pixel_count = 0;
+    if (!g_size_checked_mul(&pixel_count, (gsize)width, (gsize)height)) {
+        return FALSE;
+    }
+    if (pixel_count > PIXELTERM_MAX_DECODED_PIXELS) {
+        return FALSE;
+    }
+
     gsize min_rowstride = 0;
     if (!g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)n_channels)) {
         return FALSE;
