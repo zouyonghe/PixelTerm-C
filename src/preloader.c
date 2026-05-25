@@ -42,6 +42,29 @@ static PreloadCacheKey* preload_cache_key_new(const char *filepath, gint width, 
     return key;
 }
 
+static void preloader_clear_queue_locked(ImagePreloader *preloader) {
+    while (!g_queue_is_empty(preloader->task_queue)) {
+        PreloadTask *task = (PreloadTask*)g_queue_pop_head(preloader->task_queue);
+        g_free(task->filepath);
+        g_free(task);
+    }
+}
+
+static void preloader_cache_cleanup_locked(ImagePreloader *preloader) {
+    guint size = g_hash_table_size(preloader->preload_cache);
+    if (size <= preloader->max_cache_size) {
+        return;
+    }
+
+    while (g_hash_table_size(preloader->preload_cache) > preloader->max_cache_size) {
+        gpointer key = g_queue_pop_tail(preloader->lru_queue);
+        if (!key) {
+            break;
+        }
+        g_hash_table_remove(preloader->preload_cache, key);
+    }
+}
+
 static void preloader_normalize_dims(ImagePreloader *preloader, gint *width, gint *height) {
     if (!preloader || !width || !height) {
         return;
@@ -221,12 +244,14 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
     if (!preloader) {
         return ERROR_MEMORY_ALLOC;
     }
-    preloader->dither_enabled = dither_enabled;
     if (work_factor < 1) {
         work_factor = 1;
     } else if (work_factor > 9) {
         work_factor = 9;
     }
+
+    g_mutex_lock(&preloader->mutex);
+    preloader->dither_enabled = dither_enabled;
     preloader->work_factor = work_factor;
     preloader->force_text = force_text;
     preloader->force_sixel = force_sixel;
@@ -235,6 +260,7 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
     preloader->text_symbol_mode = text_symbol_mode;
     preloader->gamma = gamma;
     preloader->color_enhance = color_enhance;
+    g_mutex_unlock(&preloader->mutex);
 
     return ERROR_NONE;
 }
@@ -285,6 +311,7 @@ ErrorCode preloader_stop(ImagePreloader *preloader) {
 
     g_mutex_lock(&preloader->mutex);
     preloader->status = PRELOADER_IDLE;
+    preloader_clear_queue_locked(preloader);
     g_mutex_unlock(&preloader->mutex);
 
     return ERROR_NONE;
@@ -378,7 +405,9 @@ ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *fi
 
     gint task_width = target_width;
     gint task_height = target_height;
+    g_mutex_lock(&preloader->mutex);
     preloader_normalize_dims(preloader, &task_width, &task_height);
+    g_mutex_unlock(&preloader->mutex);
 
     if (current_index < 0) {
         return ERROR_NONE;
@@ -421,11 +450,7 @@ ErrorCode preloader_clear_queue(ImagePreloader *preloader) {
 
     g_mutex_lock(&preloader->mutex);
 
-    while (!g_queue_is_empty(preloader->task_queue)) {
-        PreloadTask *task = (PreloadTask*)g_queue_pop_head(preloader->task_queue);
-        g_free(task->filepath);
-        g_free(task);
-    }
+    preloader_clear_queue_locked(preloader);
 
     g_mutex_unlock(&preloader->mutex);
 
@@ -562,7 +587,7 @@ void preloader_cache_add(ImagePreloader *preloader,
 
     // Check cache size and cleanup if necessary before inserting new
     if (g_hash_table_size(preloader->preload_cache) >= preloader->max_cache_size) {
-        preloader_cache_cleanup(preloader);
+        preloader_cache_cleanup_locked(preloader);
     }
 
     // Add to cache with dimensions
@@ -633,19 +658,9 @@ void preloader_cache_cleanup(ImagePreloader *preloader) {
         return;
     }
 
-    guint size = g_hash_table_size(preloader->preload_cache);
-    if (size <= preloader->max_cache_size) {
-        return;
-    }
-
-    // Remove oldest entries from LRU tail
-    while (g_hash_table_size(preloader->preload_cache) > preloader->max_cache_size) {
-        gpointer key = g_queue_pop_tail(preloader->lru_queue);
-        if (!key) {
-            break;
-        }
-        g_hash_table_remove(preloader->preload_cache, key);
-    }
+    g_mutex_lock(&preloader->mutex);
+    preloader_cache_cleanup_locked(preloader);
+    g_mutex_unlock(&preloader->mutex);
 }
 
 // Enable preloader
@@ -715,28 +730,46 @@ gpointer preloader_worker_thread(gpointer data) {
         return NULL;
     }
 
-    // Get current terminal dimensions
+    // Snapshot mutable configuration before creating the worker-local renderer.
     gint term_width, term_height;
+    gboolean dither_enabled;
+    gint work_factor;
+    gboolean force_text;
+    gboolean force_sixel;
+    gboolean force_kitty;
+    gboolean force_iterm2;
+    TextSymbolMode text_symbol_mode;
+    gdouble gamma;
+    ColorEnhanceMode color_enhance;
     g_mutex_lock(&preloader->mutex);
     term_width = preloader->term_width;
     term_height = preloader->term_height;
+    dither_enabled = preloader->dither_enabled;
+    work_factor = preloader->work_factor;
+    force_text = preloader->force_text;
+    force_sixel = preloader->force_sixel;
+    force_kitty = preloader->force_kitty;
+    force_iterm2 = preloader->force_iterm2;
+    text_symbol_mode = preloader->text_symbol_mode;
+    gamma = preloader->gamma;
+    color_enhance = preloader->color_enhance;
     g_mutex_unlock(&preloader->mutex);
 
     RendererConfig config = {
         .max_width = term_width,
         .max_height = term_height,
         .preserve_aspect_ratio = TRUE,
-        .dither = preloader->dither_enabled,
+        .dither = dither_enabled,
         .color_space = CHAFA_COLOR_SPACE_RGB,
-        .work_factor = preloader->work_factor,
-        .force_text = preloader->force_text,
-        .force_sixel = preloader->force_sixel,
-        .force_kitty = preloader->force_kitty,
-        .force_iterm2 = preloader->force_iterm2,
-        .text_symbol_mode = preloader->text_symbol_mode,
-        .gamma = preloader->gamma,
-        .color_enhance = preloader->color_enhance,
-        .dither_mode = preloader->dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
+        .work_factor = work_factor,
+        .force_text = force_text,
+        .force_sixel = force_sixel,
+        .force_kitty = force_kitty,
+        .force_iterm2 = force_iterm2,
+        .text_symbol_mode = text_symbol_mode,
+        .gamma = gamma,
+        .color_enhance = color_enhance,
+        .dither_mode = dither_enabled ? CHAFA_DITHER_MODE_ORDERED : CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
     };
@@ -790,7 +823,6 @@ gpointer preloader_worker_thread(gpointer data) {
         if (task) {
             gint task_width = task->target_width;
             gint task_height = task->target_height;
-            preloader_normalize_dims(preloader, &task_width, &task_height);
 
             // Reconfigure target size when tasks demand different geometry
             if (task_width != current_max_width || task_height != current_max_height) {

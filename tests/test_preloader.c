@@ -178,6 +178,38 @@ static void test_preloader_get_cached_render_info_miss_resets_dimensions(void) {
     preloader_destroy(preloader);
 }
 
+static void test_preloader_stop_clears_pending_tasks(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+
+    g_assert_cmpint(preloader_add_task(preloader, "one.png", 1, 10, 5), ==, ERROR_NONE);
+    g_assert_cmpint(preloader_add_task(preloader, "two.png", 2, 10, 5), ==, ERROR_NONE);
+    g_assert_cmpuint(g_queue_get_length(preloader->task_queue), ==, 2);
+
+    g_assert_cmpint(preloader_stop(preloader), ==, ERROR_NONE);
+    g_assert_cmpuint(g_queue_get_length(preloader->task_queue), ==, 0);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_cache_cleanup_public_wrapper_enforces_limit(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    preloader->max_cache_size = 1;
+
+    GString *first = g_string_new("first");
+    GString *second = g_string_new("second");
+    preloader_cache_add(preloader, "first.png", first, 7, 3, FALSE, 10, 5);
+    preloader_cache_add(preloader, "second.png", second, 7, 3, FALSE, 10, 5);
+    g_string_free(first, TRUE);
+    g_string_free(second, TRUE);
+
+    preloader_cache_cleanup(preloader);
+    g_assert_cmpuint(g_hash_table_size(preloader->preload_cache), ==, 1);
+
+    preloader_destroy(preloader);
+}
+
 void register_preloader_tests(void) {
     g_test_add_func("/preloader/get_cached_image/caller_owned_copy",
                     test_preloader_get_cached_image_returns_caller_owned_copy);
@@ -195,4 +227,8 @@ void register_preloader_tests(void) {
                     test_preloader_get_cached_render_info_miss_resets_graphics_mode);
     g_test_add_func("/preloader/get_cached_render_info/miss_resets_dimensions",
                     test_preloader_get_cached_render_info_miss_resets_dimensions);
+    g_test_add_func("/preloader/stop/clears_pending_tasks",
+                    test_preloader_stop_clears_pending_tasks);
+    g_test_add_func("/preloader/cache_cleanup/public_wrapper_enforces_limit",
+                    test_preloader_cache_cleanup_public_wrapper_enforces_limit);
 }

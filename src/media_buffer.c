@@ -8,10 +8,10 @@ static gint media_buffer_rejection_log_count = 0;
 
 static void media_buffer_debug_reject(const gchar *format, ...) {
     gint previous_count = g_atomic_int_add(&media_buffer_rejection_log_count, 1);
-    if (previous_count > MEDIA_BUFFER_REJECTION_LOG_LIMIT) {
+    if (previous_count >= MEDIA_BUFFER_REJECTION_LOG_LIMIT) {
         return;
     }
-    if (previous_count == MEDIA_BUFFER_REJECTION_LOG_LIMIT) {
+    if (previous_count == MEDIA_BUFFER_REJECTION_LOG_LIMIT - 1) {
         g_debug("Further media buffer rejection logs suppressed");
         return;
     }

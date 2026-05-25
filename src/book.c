@@ -237,6 +237,18 @@ static gdouble book_compute_scale(gdouble page_w, gdouble page_h, gint target_px
     return scale;
 }
 
+static gint book_clamped_target_pixels(gint cells, gint cell_px) {
+    const gint max_dim = 4096;
+    gint64 pixels = (gint64)cells * (gint64)cell_px;
+    if (pixels < 1) {
+        return 1;
+    }
+    if (pixels > max_dim) {
+        return max_dim;
+    }
+    return (gint)pixels;
+}
+
 ErrorCode book_render_page(BookDocument *doc,
                            gint page_index,
                            gint target_cols,
@@ -259,10 +271,8 @@ ErrorCode book_render_page(BookDocument *doc,
     if (target_cols < 1) target_cols = 1;
     if (target_rows < 1) target_rows = 1;
 
-    gint target_px_w = target_cols * cell_w;
-    gint target_px_h = target_rows * cell_h;
-    if (target_px_w < 1) target_px_w = 1;
-    if (target_px_h < 1) target_px_h = 1;
+    gint target_px_w = book_clamped_target_pixels(target_cols, cell_w);
+    gint target_px_h = book_clamped_target_pixels(target_rows, cell_h);
 
     fz_context *ctx = doc->ctx;
     fz_page *page = NULL;
