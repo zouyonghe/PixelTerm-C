@@ -585,11 +585,6 @@ void preloader_cache_add(ImagePreloader *preloader,
         return;
     }
 
-    // Check cache size and cleanup if necessary before inserting new
-    if (g_hash_table_size(preloader->preload_cache) >= preloader->max_cache_size) {
-        preloader_cache_cleanup_locked(preloader);
-    }
-
     // Add to cache with dimensions
     PreloadCacheKey *key = preload_cache_key_new(filepath, key_width, key_height);
     CachedImageData *value = g_new0(CachedImageData, 1);
@@ -615,6 +610,7 @@ void preloader_cache_add(ImagePreloader *preloader,
     g_hash_table_insert(preloader->preload_cache, key, value);
     g_queue_remove(preloader->lru_queue, key);
     g_queue_push_head(preloader->lru_queue, key);
+    preloader_cache_cleanup_locked(preloader);
 
     g_mutex_unlock(&preloader->mutex);
 }

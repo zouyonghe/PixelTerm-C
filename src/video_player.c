@@ -49,6 +49,7 @@ static void video_player_render_work_finished(VideoPlayer *player);
 static void video_player_handle_terminal_eof(VideoPlayer *player);
 static void video_player_handle_worker_eof(VideoPlayer *player);
 static void video_player_stop_worker(VideoPlayer *player);
+static void video_player_resume_playback_loop(VideoPlayer *player);
 gint video_player_calc_delay_ms(VideoPlayer *player);
 static gboolean video_player_tick(gpointer user_data);
 static gboolean video_player_render_frame(VideoPlayer *player);
@@ -1183,6 +1184,7 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     g_mutex_lock(&player->render_mutex);
     gboolean replacing_renderer = player->renderer && player->renderer != renderer;
     g_mutex_unlock(&player->render_mutex);
+    gboolean was_playing = replacing_renderer && renderer && video_player_is_playing(player);
     if (replacing_renderer) {
         video_player_stop_worker(player);
     }
@@ -1194,6 +1196,10 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     player->renderer = renderer;
     player->owns_renderer = FALSE;
     g_mutex_unlock(&player->render_mutex);
+
+    if (was_playing) {
+        video_player_resume_playback_loop(player);
+    }
 }
 
 void video_player_set_render_area(VideoPlayer *player,

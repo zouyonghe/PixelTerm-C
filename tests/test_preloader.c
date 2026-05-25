@@ -195,6 +195,27 @@ static void test_preloader_stop_clears_pending_tasks(void) {
 static void test_preloader_cache_cleanup_public_wrapper_enforces_limit(void) {
     ImagePreloader *preloader = preloader_create();
     g_assert_nonnull(preloader);
+    preloader->max_cache_size = 2;
+
+    GString *first = g_string_new("first");
+    GString *second = g_string_new("second");
+    preloader_cache_add(preloader, "first.png", first, 7, 3, FALSE, 10, 5);
+    preloader_cache_add(preloader, "second.png", second, 7, 3, FALSE, 10, 5);
+    g_string_free(first, TRUE);
+    g_string_free(second, TRUE);
+
+    preloader->max_cache_size = 1;
+    g_assert_cmpuint(g_hash_table_size(preloader->preload_cache), ==, 2);
+
+    preloader_cache_cleanup(preloader);
+    g_assert_cmpuint(g_hash_table_size(preloader->preload_cache), ==, 1);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_cache_add_enforces_limit_after_insert(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
     preloader->max_cache_size = 1;
 
     GString *first = g_string_new("first");
@@ -204,8 +225,13 @@ static void test_preloader_cache_cleanup_public_wrapper_enforces_limit(void) {
     g_string_free(first, TRUE);
     g_string_free(second, TRUE);
 
-    preloader_cache_cleanup(preloader);
     g_assert_cmpuint(g_hash_table_size(preloader->preload_cache), ==, 1);
+    g_assert_null(preloader_get_cached_image(preloader, "first.png", 10, 5));
+
+    GString *cached = preloader_get_cached_image(preloader, "second.png", 10, 5);
+    g_assert_nonnull(cached);
+    g_assert_cmpstr(cached->str, ==, "second");
+    g_string_free(cached, TRUE);
 
     preloader_destroy(preloader);
 }
@@ -231,4 +257,6 @@ void register_preloader_tests(void) {
                     test_preloader_stop_clears_pending_tasks);
     g_test_add_func("/preloader/cache_cleanup/public_wrapper_enforces_limit",
                     test_preloader_cache_cleanup_public_wrapper_enforces_limit);
+    g_test_add_func("/preloader/cache_add/enforces_limit_after_insert",
+                    test_preloader_cache_add_enforces_limit_after_insert);
 }
