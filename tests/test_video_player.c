@@ -6,10 +6,9 @@
 #include <unistd.h>
 
 #include "process_env.h"
+#include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
-
-typedef RenderedFrame VideoFrame;
 
 static gsize test_video_player_sync_once = 0;
 
@@ -2364,6 +2363,16 @@ static void test_dimensions_within_limits_rejects_non_positive_metadata(void) {
     g_assert_false(video_player_dimensions_within_limits_for_test(-1, -1));
 }
 
+static void test_create_sws_context_rejects_invalid_dimensions(void) {
+    AVCodecContext codec_context = {0};
+    codec_context.pix_fmt = AV_PIX_FMT_YUV420P;
+
+    g_assert_null(video_player_create_sws_context(&codec_context, 0, 10));
+    g_assert_null(video_player_create_sws_context(&codec_context, 10, 0));
+    g_assert_null(video_player_create_sws_context(&codec_context, -1, 10));
+    g_assert_null(video_player_create_sws_context(&codec_context, 10, -1));
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -2441,6 +2450,8 @@ void register_video_player_tests(void) {
                     test_dimensions_within_limits_rejects_large_geometry);
     g_test_add_func("/video_player/dimensions_within_limits/rejects_non_positive_metadata",
                     test_dimensions_within_limits_rejects_non_positive_metadata);
+    g_test_add_func("/video_player/create_sws_context/rejects_invalid_dimensions",
+                    test_create_sws_context_rejects_invalid_dimensions);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_shallow",
                     test_should_not_drop_late_frame_when_backlog_is_shallow);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_medium",

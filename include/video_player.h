@@ -28,6 +28,10 @@ typedef struct {
     guint generation;
 } RenderedFrame;
 
+/* Convenience alias used internally for the frame-queue head type.
+ * Centralized here so all internal modules share a single definition. */
+typedef RenderedFrame VideoFrame;
+
 #define VIDEO_PLAYER_STATS_ROW 3
 
 // Video playback structure
