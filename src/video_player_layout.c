@@ -67,13 +67,6 @@ void video_player_update_present_fps(VideoPlayer *player, gint64 now_us) {
 
 /* ───── Queue depth ───── */
 
-enum {
-    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
-    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
-    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE = 4,
-    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE = 6
-};
-
 void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h) {
     if (!player) {
         return;
@@ -91,4 +84,3 @@ void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint 
     g_cond_broadcast(&player->frame_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
 }
-

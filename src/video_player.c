@@ -553,8 +553,6 @@ static void video_player_reset_media_state(VideoPlayer *player) {
     }
     video_player_clear_line_cache(player);
     video_player_clear_decode(player);
-    player->eof_pending = FALSE;
-    player->eof_ended = FALSE;
     video_player_reset_timing_state(player);
 }
 
