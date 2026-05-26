@@ -3,6 +3,8 @@
 
 #include "video_player.h"
 
+#include <stdint.h>
+
 struct AVCodecContext;
 struct AVFormatContext;
 struct AVFrame;
@@ -10,7 +12,7 @@ struct AVPacket;
 struct SwsContext;
 
 /*
- * Internal decoder module — owns FFmpeg decode resources.
+ * Internal decoder module - owns FFmpeg decode resources.
  * Extracted from the VideoPlayer struct to isolate the decode layer
  * from render layout and playback-state concerns.
  *
@@ -47,7 +49,5 @@ gint64 video_player_rescale_pts_ms(VideoPlayer *player, int64_t pts);
 /* Worker-thread decoder helpers */
 gboolean video_player_get_draining(VideoPlayer *player);
 void video_player_set_draining(VideoPlayer *player, gboolean draining);
-
-/* Slot helpers — exported for seek and debugging code that touches decoder fields */
 
 #endif /* VIDEO_PLAYER_DECODE_INTERNAL_H */

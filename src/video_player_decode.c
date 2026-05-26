@@ -35,8 +35,12 @@ void video_player_ffmpeg_init_once(void) {
 /* ───── SWS context ───── */
 
 struct SwsContext *video_player_create_sws_context(const AVCodecContext *codec_context,
-                                                     gint width,
-                                                     gint height) {
+                                                      gint width,
+                                                      gint height) {
+    if (!codec_context) {
+        return NULL;
+    }
+
     enum AVPixelFormat src_pix_fmt = codec_context->pix_fmt;
     gboolean src_range_extended = FALSE;
     switch (src_pix_fmt) {

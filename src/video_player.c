@@ -26,10 +26,6 @@
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
-enum {
-    VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
-};
-
 static gboolean video_player_should_reject_rendered_frame_locked(VideoPlayer *player,
                                                                  VideoFrame *frame,
                                                                  gboolean check_stale_pts);
@@ -557,8 +553,6 @@ static void video_player_reset_media_state(VideoPlayer *player) {
     }
     video_player_clear_line_cache(player);
     video_player_clear_decode(player);
-    player->eof_pending = FALSE;
-    player->eof_ended = FALSE;
     video_player_reset_timing_state(player);
 }
 
@@ -2076,6 +2070,7 @@ void video_player_destroy(VideoPlayer *player) {
     }
 
     video_player_stop(player);
+    video_player_clear_line_cache(player);
     video_player_clear_decode(player);
 
     g_free(player->filepath);

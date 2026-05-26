@@ -3,8 +3,16 @@
 
 #include "video_player.h"
 
+enum {
+    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_AREA = 1500,
+    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_AREA = 3000,
+    VIDEO_PLAYER_QUEUE_DEPTH_LARGE_SIZE = 4,
+    VIDEO_PLAYER_QUEUE_DEPTH_MEDIUM_SIZE = 6,
+    VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE = 8
+};
+
 /*
- * Internal render-layout module — owns terminal area sizing, line caching,
+ * Internal render-layout module - owns terminal area sizing, line caching,
  * stats/io-tracking fields.
  *
  * All functions accept a VideoPlayer* and access only the layout fields:
