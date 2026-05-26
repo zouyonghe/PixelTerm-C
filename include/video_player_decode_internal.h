@@ -50,6 +50,5 @@ void video_player_set_draining(VideoPlayer *player, gboolean draining);
 gboolean video_player_has_renderer(VideoPlayer *player);
 
 /* Slot helpers — exported for seek and debugging code that touches decoder fields */
-void video_player_clear_decode_parts(VideoPlayer *player);
 
 #endif /* VIDEO_PLAYER_DECODE_INTERNAL_H */

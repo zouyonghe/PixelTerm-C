@@ -1,6 +1,7 @@
 #include "video_player_seek_internal.h"
 
 #include "video_player_clock_internal.h"
+#include "video_player_decode_internal.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -40,17 +41,6 @@ gint64 video_player_seek_target_ms(VideoPlayer *player, gint64 delta_ms, gint64 
         target_ms = duration_ms;
     }
     return target_ms;
-}
-
-static gint64 video_player_rescale_pts_ms(VideoPlayer *player, int64_t pts) {
-    if (!player || pts == AV_NOPTS_VALUE) {
-        return G_MININT64;
-    }
-    if (player->time_base_num <= 0 || player->time_base_den <= 0) {
-        return G_MININT64;
-    }
-    AVRational time_base = (AVRational){ player->time_base_num, player->time_base_den };
-    return av_rescale_q(pts, time_base, (AVRational){ 1, 1000 });
 }
 
 static VideoFrame *video_player_build_rendered_frame(ImageRenderer *renderer,
