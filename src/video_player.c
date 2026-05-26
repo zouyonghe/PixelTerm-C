@@ -809,6 +809,18 @@ static void video_player_debug_log_snapshot(VideoPlayer *player,
     video_player_debug_write_log(event, a, b, c, d, backlog, frame_delay, slow_level);
 }
 
+/* ───── Renderer presence (core concern) ───── */
+
+static gboolean video_player_has_renderer(VideoPlayer *player) {
+    if (!player) {
+        return FALSE;
+    }
+    g_mutex_lock(&player->render_mutex);
+    gboolean has_renderer = player->renderer != NULL;
+    g_mutex_unlock(&player->render_mutex);
+    return has_renderer;
+}
+
 static void video_player_start_worker(VideoPlayer *player) {
     if (!player || player->worker_thread || !video_player_has_renderer(player)) {
         return;

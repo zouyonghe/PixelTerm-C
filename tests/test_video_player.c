@@ -9,8 +9,6 @@
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
 
-typedef RenderedFrame VideoFrame;
-
 static gsize test_video_player_sync_once = 0;
 
 static GMutex decode_queue_push_mutex;

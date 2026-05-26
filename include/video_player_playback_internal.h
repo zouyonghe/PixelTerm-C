@@ -40,6 +40,12 @@ gboolean video_player_queue_peek_pts_ms(VideoPlayer *player, gint64 *pts_ms);
 /* Calc next tick delay, ms */
 gint video_player_calc_delay_ms(VideoPlayer *player);
 
+/* Slow level / late window — derived from frame_delay_ms (playback) and
+ * io_avg_ms (read-only access). Used to widen/tighten the late-frame
+ * threshold and to gate "should we drop?" decisions. */
+gint video_player_get_slow_level(VideoPlayer *player);
+gint64 video_player_calc_late_window_ms(VideoPlayer *player, gint multiplier, gint min_ms);
+
 /* Should this frame be dropped because it's too late? */
 gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms);
 

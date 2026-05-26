@@ -1,5 +1,4 @@
 #include "video_player_layout_internal.h"
-#include "video_player_playback_internal.h"
 
 /* ───── Pixel mode label ───── */
 
@@ -93,61 +92,3 @@ void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint 
     g_mutex_unlock(&player->queue_mutex);
 }
 
-/* ───── Slow level / late window ───── */
-
-gint video_player_get_slow_level(VideoPlayer *player) {
-    if (!player) {
-        return 0;
-    }
-
-    gint frame_delay = video_player_get_frame_delay_ms(player);
-    if (frame_delay <= 0) {
-        return 0;
-    }
-
-    g_mutex_lock(&player->state_mutex);
-    gboolean io_valid = player->io_avg_valid;
-    gdouble io_avg = player->io_avg_ms;
-    g_mutex_unlock(&player->state_mutex);
-    if (!io_valid || io_avg <= 0.0) {
-        return 0;
-    }
-    gdouble ratio = io_avg / (gdouble)frame_delay;
-    if (ratio > 1.6) {
-        return 2;
-    }
-    if (ratio > 1.2) {
-        return 1;
-    }
-    return 0;
-}
-
-gint64 video_player_calc_late_window_ms(VideoPlayer *player, gint multiplier, gint min_ms) {
-    if (!player || multiplier < 1) {
-        return min_ms > 0 ? min_ms : 0;
-    }
-    gint frame_delay = video_player_get_frame_delay_ms(player);
-    if (frame_delay <= 0) {
-        frame_delay = 10;
-    }
-    gint64 base = (gint64)frame_delay * multiplier;
-    if (min_ms > 0 && base < min_ms) {
-        base = min_ms;
-    }
-    gint slow_level = video_player_get_slow_level(player);
-    if (slow_level >= 2) {
-        gint64 tight = frame_delay / 2;
-        if (tight < 10) {
-            tight = 10;
-        }
-        return tight;
-    }
-    if (slow_level == 1) {
-        gint64 tight = frame_delay;
-        if (min_ms > 0 && tight < min_ms) {
-            tight = min_ms;
-        }
-        return tight;
-    }
-    return base;
-}

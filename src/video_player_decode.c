@@ -202,14 +202,7 @@ void video_player_set_draining(VideoPlayer *player, gboolean draining) {
     g_mutex_unlock(&player->state_mutex);
 }
 
-/* ───── Renderer presence ───── */
-
-gboolean video_player_has_renderer(VideoPlayer *player) {
-    if (!player) {
-        return FALSE;
-    }
-    g_mutex_lock(&player->render_mutex);
-    gboolean has_renderer = player->renderer != NULL;
-    g_mutex_unlock(&player->render_mutex);
-    return has_renderer;
-}
+/* ───── Renderer presence (moved to video_player.c core) ───── */
+/* video_player_has_renderer() now lives in video_player.c as a static
+ * function since it operates on render_mutex/renderer fields which are
+ * core VideoPlayer concerns, not decode-layer resources. */
