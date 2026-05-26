@@ -23,10 +23,6 @@ void video_player_update_present_fps(VideoPlayer *player, gint64 now_us);
 /* Queue depth (reads render dimensions) */
 void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h);
 
-/* Slow level / late window */
-gint video_player_get_slow_level(VideoPlayer *player);
-gint64 video_player_calc_late_window_ms(VideoPlayer *player, gint multiplier, gint min_ms);
-
 /* Pixel mode label */
 const char *video_player_pixel_mode_label(ChafaPixelMode mode);
 

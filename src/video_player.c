@@ -23,8 +23,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef RenderedFrame VideoFrame;
-
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
@@ -813,6 +811,18 @@ static void video_player_debug_log_snapshot(VideoPlayer *player,
     gint frame_delay = video_player_get_frame_delay_ms(player);
     gint slow_level = video_player_get_slow_level(player);
     video_player_debug_write_log(event, a, b, c, d, backlog, frame_delay, slow_level);
+}
+
+/* ───── Renderer presence (core concern) ───── */
+
+static gboolean video_player_has_renderer(VideoPlayer *player) {
+    if (!player) {
+        return FALSE;
+    }
+    g_mutex_lock(&player->render_mutex);
+    gboolean has_renderer = player->renderer != NULL;
+    g_mutex_unlock(&player->render_mutex);
+    return has_renderer;
 }
 
 static void video_player_start_worker(VideoPlayer *player) {

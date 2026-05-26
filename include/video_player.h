@@ -28,6 +28,9 @@ typedef struct {
     guint generation;
 } RenderedFrame;
 
+/* Internal alias — used throughout the implementation for queue items. */
+typedef RenderedFrame VideoFrame;
+
 #define VIDEO_PLAYER_STATS_ROW 3
 
 // Video playback structure

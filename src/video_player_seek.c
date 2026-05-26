@@ -8,8 +8,6 @@
 #include <libavutil/avutil.h>
 #include <libswscale/swscale.h>
 
-typedef RenderedFrame VideoFrame;
-
 void video_player_queue_push(VideoPlayer *player, RenderedFrame *frame);
 
 static VideoPlayerSeekPreviewHook video_player_seek_preview_hook = NULL;

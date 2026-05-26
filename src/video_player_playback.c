@@ -1,14 +1,9 @@
 #include "video_player_playback_internal.h"
-#include "video_player_layout_internal.h"
 
 enum {
     VIDEO_PLAYER_LATE_DROP_BACKLOG_THRESHOLD = 5,
     VIDEO_PLAYER_MAX_SILENCE_US = 1000000
 };
-
-/* Layout structure of an enqueued rendered frame — kept in sync with the
- * RenderedFrame typedef in video_player.h. We only ever read .pts_ms here. */
-typedef RenderedFrame VideoFrame;
 
 /* ───── Playback generation ───── */
 
@@ -144,13 +139,80 @@ gint video_player_calc_delay_ms(VideoPlayer *player) {
     return (gint)wait_ms;
 }
 
+/* ───── Slow level / late window ─────
+ *
+ * These helpers derive timing thresholds from frame_delay_ms (playback) and
+ * io_avg_ms (layout-owned but accessed read-only here under state_mutex).
+ * They live in the playback module because the values are timing-derived and
+ * consumed by playback gating decisions (late drop, frame waiting). */
+
+gint video_player_get_slow_level(VideoPlayer *player) {
+    if (!player) {
+        return 0;
+    }
+
+    gint frame_delay = video_player_get_frame_delay_ms(player);
+    if (frame_delay <= 0) {
+        return 0;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    gboolean io_valid = player->io_avg_valid;
+    gdouble io_avg = player->io_avg_ms;
+    g_mutex_unlock(&player->state_mutex);
+    if (!io_valid || io_avg <= 0.0) {
+        return 0;
+    }
+    gdouble ratio = io_avg / (gdouble)frame_delay;
+    if (ratio > 1.6) {
+        return 2;
+    }
+    if (ratio > 1.2) {
+        return 1;
+    }
+    return 0;
+}
+
+gint64 video_player_calc_late_window_ms(VideoPlayer *player, gint multiplier, gint min_ms) {
+    if (!player || multiplier < 1) {
+        return min_ms > 0 ? min_ms : 0;
+    }
+    gint frame_delay = video_player_get_frame_delay_ms(player);
+    if (frame_delay <= 0) {
+        frame_delay = 10;
+    }
+    gint64 base = (gint64)frame_delay * multiplier;
+    if (min_ms > 0 && base < min_ms) {
+        base = min_ms;
+    }
+    gint slow_level = video_player_get_slow_level(player);
+    if (slow_level >= 2) {
+        gint64 tight = frame_delay / 2;
+        if (tight < 10) {
+            tight = 10;
+        }
+        return tight;
+    }
+    if (slow_level == 1) {
+        gint64 tight = frame_delay;
+        if (min_ms > 0 && tight < min_ms) {
+            tight = min_ms;
+        }
+        return tight;
+    }
+    return base;
+}
+
 /* ───── Late frame drop logic ───── */
 
 gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms) {
     if (!player) {
         return FALSE;
     }
-    if (player->rewind_needs_resync) {
+    g_mutex_lock(&player->state_mutex);
+    gboolean rewind_needs_resync = player->rewind_needs_resync;
+    g_mutex_unlock(&player->state_mutex);
+    if (rewind_needs_resync) {
         return FALSE;
     }
 

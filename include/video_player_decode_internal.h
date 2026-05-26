@@ -47,7 +47,6 @@ gint64 video_player_rescale_pts_ms(VideoPlayer *player, int64_t pts);
 /* Worker-thread decoder helpers */
 gboolean video_player_get_draining(VideoPlayer *player);
 void video_player_set_draining(VideoPlayer *player, gboolean draining);
-gboolean video_player_has_renderer(VideoPlayer *player);
 
 /* Slot helpers — exported for seek and debugging code that touches decoder fields */
 
