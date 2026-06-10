@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.7.29: VideoPlayer lifecycle guard follow-up.
+    - **Video Lifecycle Safety**: Stop playback immediately when detaching the video renderer, clear any active playback timer, and prevent tick scheduling when playback is inactive, EOF has ended, or no renderer is attached.
+    - **Renderer Replacement Clarity**: Keep worker restart behavior for renderer swaps while documenting that a later renderer reattach after detach remains idle until playback is explicitly started again.
+    - **Testing**: Add regressions for renderer detach cleanup, no-renderer tick suppression, inactive playback tick suppression, and EOF-ended tick suppression. The full test suite now reports 277/277 C TAP tests passing.
+
 - v1.7.28: VideoPlayer module refactor, race-condition hardening, and preloader thread safety.
     - **VideoPlayer Module Split**: Extract the monolithic `video_player.c` (2606→2097 lines) into three focused internal modules: `video_player_decode` (FFmpeg init, sws context, RGBA buffer, decode teardown), `video_player_layout` (line cache, I/O timing, queue depth, pixel-mode labels), and `video_player_playback` (generation counter, frame delay, EOF flags, clock/PTS helpers, late-frame drop logic). Each module has its own internal header with clear ownership boundaries.
     - **Race-Condition Hardening (PR #22)**: Fix renderer replacement to stop old workers before starting new ones. Harden book table-of-contents and media-buffer concurrent access. Add `state_mutex` protection for `rewind_needs_resync` reads in late-frame drop decisions.
