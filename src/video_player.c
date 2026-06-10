@@ -162,7 +162,7 @@ static void video_player_schedule_tick(VideoPlayer *player) {
     }
 }
 
-void video_player_schedule_tick_for_test(VideoPlayer *player) {
+G_GNUC_INTERNAL void video_player_schedule_tick_for_test(VideoPlayer *player) {
     video_player_schedule_tick(player);
 }
 
@@ -675,6 +675,8 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     g_mutex_lock(&player->render_mutex);
     gboolean replacing_renderer = player->renderer && player->renderer != renderer;
     g_mutex_unlock(&player->render_mutex);
+    /* Replacing with NULL detaches the renderer, so playback must stop now.
+     * Replacing with a renderer pauses workers during the swap and resumes. */
     gboolean was_playing = replacing_renderer && video_player_is_playing(player);
     guint timer_id = 0;
     if (replacing_renderer) {
