@@ -1332,7 +1332,7 @@ static void test_set_renderer_null_stops_playback_and_timer(void) {
 
     g_mutex_lock(&player->state_mutex);
     player->is_playing = TRUE;
-    player->timer_id = g_timeout_add(60000, timeout_source_noop, NULL);
+    player->timer_id = g_timeout_add(10, timeout_source_noop, NULL);
     guint active_timer_id = player->timer_id;
     g_mutex_unlock(&player->state_mutex);
     g_assert_cmpuint(active_timer_id, !=, 0);
@@ -1357,6 +1357,49 @@ static void test_schedule_tick_skips_when_eof_already_ended(void) {
     g_mutex_lock(&player->state_mutex);
     player->is_playing = TRUE;
     player->eof_ended = TRUE;
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_schedule_tick_for_test(player);
+
+    g_mutex_lock(&player->state_mutex);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_destroy(player);
+}
+
+static void test_schedule_tick_skips_when_not_playing(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    player->is_playing = FALSE;
+    player->eof_ended = FALSE;
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_schedule_tick_for_test(player);
+
+    g_mutex_lock(&player->state_mutex);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_destroy(player);
+}
+
+static void test_schedule_tick_skips_without_renderer(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    video_player_set_renderer(player, NULL);
+    g_mutex_lock(&player->state_mutex);
+    player->is_playing = TRUE;
+    player->eof_ended = FALSE;
     g_mutex_unlock(&player->state_mutex);
 
     video_player_schedule_tick_for_test(player);
@@ -2461,6 +2504,10 @@ void register_video_player_tests(void) {
                     test_set_renderer_null_stops_playback_and_timer);
     g_test_add_func("/video_player/schedule_tick/skips_when_eof_already_ended",
                     test_schedule_tick_skips_when_eof_already_ended);
+    g_test_add_func("/video_player/schedule_tick/skips_when_not_playing",
+                    test_schedule_tick_skips_when_not_playing);
+    g_test_add_func("/video_player/schedule_tick/skips_without_renderer",
+                    test_schedule_tick_skips_without_renderer);
     g_test_add_func("/video_player/seek_relative/after_eof_stops_parked_workers_before_preview",
                     test_seek_relative_after_eof_stops_parked_workers_before_preview);
     g_test_add_func("/video_player/seek_relative/after_eof_real_preview_does_not_crash",

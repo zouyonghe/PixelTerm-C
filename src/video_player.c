@@ -29,6 +29,7 @@ static gint video_player_live_instances = 0;
 static gboolean video_player_should_reject_rendered_frame_locked(VideoPlayer *player,
                                                                  VideoFrame *frame,
                                                                  gboolean check_stale_pts);
+static gboolean video_player_has_renderer(VideoPlayer *player);
 static ErrorCode video_player_seek_to_ms(VideoPlayer *player, gint64 current_ms, gint64 target_ms);
 static gboolean video_player_has_tail_work_locked(VideoPlayer *player);
 static gboolean video_player_finalize_pending_eof_if_drained(VideoPlayer *player);
@@ -139,7 +140,7 @@ static void video_player_schedule_tick(VideoPlayer *player) {
     g_mutex_lock(&player->state_mutex);
     gboolean is_playing = player->is_playing;
     g_mutex_unlock(&player->state_mutex);
-    if (!is_playing) {
+    if (!is_playing || !video_player_has_renderer(player)) {
         return;
     }
 
