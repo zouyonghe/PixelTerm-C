@@ -12,14 +12,16 @@ DEBUG_HARDENING ?= 0
 EXTRA_CFLAGS ?=
 OPTIMIZATION_CFLAGS ?= -O2
 ifeq ($(HARDENING),1)
-  HARDENING_CFLAGS ?= -fstack-protector-strong
-  FORTIFY_LEVEL ?= 2
-  FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS)
-  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
-    FORTIFY_CFLAGS ?=
+  ifeq ($(DEBUG),1)
+    ENABLE_HARDENING := $(DEBUG_HARDENING)
   else
-    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
+    ENABLE_HARDENING := 1
   endif
+else
+  ENABLE_HARDENING := 0
+endif
+ifeq ($(ENABLE_HARDENING),1)
+  HARDENING_CFLAGS ?= -fstack-protector-strong
   ifeq ($(UNAME_S),Linux)
     HARDENING_LDFLAGS ?= -Wl,-z,relro -Wl,-z,now
   else
@@ -29,6 +31,23 @@ else
   HARDENING_CFLAGS ?=
   FORTIFY_CFLAGS ?=
   HARDENING_LDFLAGS ?=
+endif
+FORTIFY_LEVEL ?= 2
+FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS) $(OPTIMIZATION_CFLAGS)
+FORTIFY_OPT_FLAGS := $(filter -O1 -O2 -O3 -Og -Os -Oz -Ofast,$(FORTIFY_SOURCE_FLAGS))
+FORTIFY_O0_FLAGS := $(filter -O0,$(FORTIFY_SOURCE_FLAGS))
+ifeq ($(ENABLE_HARDENING),1)
+  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_O0_FLAGS),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_OPT_FLAGS),)
+    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
+  else
+    FORTIFY_CFLAGS ?=
+  endif
+else
+  FORTIFY_CFLAGS ?=
 endif
 CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
@@ -54,13 +73,13 @@ ifeq ($(UNAME_S),Linux)
 else ifeq ($(UNAME_S),Darwin)
   LDFLAGS += -Wl,-dead_strip
 endif
-LDFLAGS += $(HARDENING_LDFLAGS)
+ifeq ($(ENABLE_HARDENING),1)
+  LDFLAGS += $(HARDENING_LDFLAGS)
+endif
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
-  ifeq ($(DEBUG_HARDENING),1)
-    CFLAGS += $(HARDENING_CFLAGS)
-  endif
-else
+endif
+ifeq ($(ENABLE_HARDENING),1)
   # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
   CFLAGS += $(HARDENING_CFLAGS) $(FORTIFY_CFLAGS)
 endif
