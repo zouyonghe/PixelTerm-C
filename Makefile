@@ -33,22 +33,6 @@ else
   HARDENING_LDFLAGS ?=
 endif
 FORTIFY_LEVEL ?= 2
-FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS) $(OPTIMIZATION_CFLAGS)
-FORTIFY_OPT_FLAGS := $(filter -O1 -O2 -O3 -Og -Os -Oz -Ofast,$(FORTIFY_SOURCE_FLAGS))
-FORTIFY_O0_FLAGS := $(filter -O0,$(FORTIFY_SOURCE_FLAGS))
-ifeq ($(ENABLE_HARDENING),1)
-  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
-    FORTIFY_CFLAGS ?=
-  else ifneq ($(FORTIFY_O0_FLAGS),)
-    FORTIFY_CFLAGS ?=
-  else ifneq ($(FORTIFY_OPT_FLAGS),)
-    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
-  else
-    FORTIFY_CFLAGS ?=
-  endif
-else
-  FORTIFY_CFLAGS ?=
-endif
 CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 DEPFLAGS = -MMD -MP
@@ -78,10 +62,6 @@ ifeq ($(ENABLE_HARDENING),1)
 endif
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
-endif
-ifeq ($(ENABLE_HARDENING),1)
-  # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
-  CFLAGS += $(HARDENING_CFLAGS) $(FORTIFY_CFLAGS)
 endif
 EXTRA_LIBS =
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists zlib >/dev/null 2>&1 && echo yes),)
@@ -143,6 +123,26 @@ else
   else
     $(warning mupdf not found; building without book support)
   endif
+endif
+FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS)
+FORTIFY_OPT_FLAGS := $(filter -O1 -O2 -O3 -Og -Os -Oz -Ofast,$(FORTIFY_SOURCE_FLAGS))
+FORTIFY_O0_FLAGS := $(filter -O0,$(FORTIFY_SOURCE_FLAGS))
+ifeq ($(ENABLE_HARDENING),1)
+  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_O0_FLAGS),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_OPT_FLAGS),)
+    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
+  else
+    FORTIFY_CFLAGS ?=
+  endif
+else
+  FORTIFY_CFLAGS ?=
+endif
+ifeq ($(ENABLE_HARDENING),1)
+  # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
+  CFLAGS += $(HARDENING_CFLAGS) $(FORTIFY_CFLAGS)
 endif
 SRCDIR = src
 OBJDIR = obj
