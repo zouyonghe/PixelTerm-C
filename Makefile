@@ -7,11 +7,15 @@ UNAME_S := $(shell uname -s)
 # GCC/Clang hardening defaults. Override these variables for toolchains that
 # do not support the flags or downstream builds that manage hardening elsewhere.
 HARDENING ?= 1
+DEBUG ?= 0
+DEBUG_HARDENING ?= 0
+EXTRA_CFLAGS ?=
 OPTIMIZATION_CFLAGS ?= -O2
 ifeq ($(HARDENING),1)
   HARDENING_CFLAGS ?= -fstack-protector-strong
   FORTIFY_LEVEL ?= 2
-  ifneq ($(findstring _FORTIFY_SOURCE,$(EXTRA_CFLAGS)),)
+  FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS)
+  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
     FORTIFY_CFLAGS ?=
   else
     FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
@@ -26,10 +30,8 @@ else
   FORTIFY_CFLAGS ?=
   HARDENING_LDFLAGS ?=
 endif
-CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) $(HARDENING_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
+CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
-DEBUG ?= 0
-EXTRA_CFLAGS ?=
 DEPFLAGS = -MMD -MP
 # Prefer the locally installed Chafa when both system and /usr/local versions exist
 LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
@@ -55,9 +57,12 @@ endif
 LDFLAGS += $(HARDENING_LDFLAGS)
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
+  ifeq ($(DEBUG_HARDENING),1)
+    CFLAGS += $(HARDENING_CFLAGS)
+  endif
 else
   # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
-  CFLAGS += $(FORTIFY_CFLAGS)
+  CFLAGS += $(HARDENING_CFLAGS) $(FORTIFY_CFLAGS)
 endif
 EXTRA_LIBS =
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists zlib >/dev/null 2>&1 && echo yes),)
