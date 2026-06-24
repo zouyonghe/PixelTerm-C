@@ -3,12 +3,29 @@ ARCH ?= amd64
 PREFIX ?= /usr/local
 INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
+UNAME_S := $(shell uname -s)
 # GCC/Clang hardening defaults. Override these variables for toolchains that
 # do not support the flags or downstream builds that manage hardening elsewhere.
+HARDENING ?= 1
 OPTIMIZATION_CFLAGS ?= -O2
-HARDENING_CFLAGS ?= -fstack-protector-strong
-FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2
-HARDENING_LDFLAGS ?=
+ifeq ($(HARDENING),1)
+  HARDENING_CFLAGS ?= -fstack-protector-strong
+  FORTIFY_LEVEL ?= 2
+  ifneq ($(findstring _FORTIFY_SOURCE,$(EXTRA_CFLAGS)),)
+    FORTIFY_CFLAGS ?=
+  else
+    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
+  endif
+  ifeq ($(UNAME_S),Linux)
+    HARDENING_LDFLAGS ?= -Wl,-z,relro -Wl,-z,now
+  else
+    HARDENING_LDFLAGS ?=
+  endif
+else
+  HARDENING_CFLAGS ?=
+  FORTIFY_CFLAGS ?=
+  HARDENING_LDFLAGS ?=
+endif
 CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) $(HARDENING_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 DEBUG ?= 0
@@ -29,14 +46,13 @@ PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavu
 LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 
-UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
   CFLAGS += -ffunction-sections -fdata-sections
-  HARDENING_LDFLAGS += -Wl,-z,relro -Wl,-z,now
-  LDFLAGS += -Wl,--gc-sections $(HARDENING_LDFLAGS)
+  LDFLAGS += -Wl,--gc-sections
 else ifeq ($(UNAME_S),Darwin)
   LDFLAGS += -Wl,-dead_strip
 endif
+LDFLAGS += $(HARDENING_LDFLAGS)
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
 else
