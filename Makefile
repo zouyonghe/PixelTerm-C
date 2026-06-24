@@ -3,10 +3,38 @@ ARCH ?= amd64
 PREFIX ?= /usr/local
 INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
-CFLAGS = -Wall -Wextra -std=c11 -O2 -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
-DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
+UNAME_S := $(shell uname -s)
+# GCC/Clang hardening defaults. Override these variables for toolchains that
+# do not support the flags or downstream builds that manage hardening elsewhere.
+HARDENING ?= 1
 DEBUG ?= 0
+DEBUG_HARDENING ?= 0
 EXTRA_CFLAGS ?=
+OPTIMIZATION_CFLAGS ?= -O2
+ifeq ($(HARDENING),1)
+  ifeq ($(DEBUG),1)
+    ENABLE_HARDENING := $(DEBUG_HARDENING)
+  else
+    ENABLE_HARDENING := 1
+  endif
+else
+  ENABLE_HARDENING := 0
+endif
+ifeq ($(ENABLE_HARDENING),1)
+  HARDENING_CFLAGS ?= -fstack-protector-strong
+  ifeq ($(UNAME_S),Linux)
+    HARDENING_LDFLAGS ?= -Wl,-z,relro -Wl,-z,now
+  else
+    HARDENING_LDFLAGS ?=
+  endif
+else
+  HARDENING_CFLAGS ?=
+  FORTIFY_CFLAGS ?=
+  HARDENING_LDFLAGS ?=
+endif
+FORTIFY_LEVEL ?= 2
+CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
+DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 DEPFLAGS = -MMD -MP
 # Prefer the locally installed Chafa when both system and /usr/local versions exist
 LDFLAGS += -Wl,-rpath -Wl,/usr/local/lib
@@ -23,12 +51,14 @@ PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavu
 LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
 INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 
-UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
   CFLAGS += -ffunction-sections -fdata-sections
   LDFLAGS += -Wl,--gc-sections
 else ifeq ($(UNAME_S),Darwin)
   LDFLAGS += -Wl,-dead_strip
+endif
+ifeq ($(ENABLE_HARDENING),1)
+  LDFLAGS += $(HARDENING_LDFLAGS)
 endif
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
@@ -93,6 +123,27 @@ else
   else
     $(warning mupdf not found; building without book support)
   endif
+endif
+FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS)
+# Any -O* optimization flag counts as optimized for default FORTIFY.
+FORTIFY_OPT_FLAGS := $(filter -O%,$(FORTIFY_SOURCE_FLAGS))
+FORTIFY_O0_FLAGS := $(filter -O0,$(FORTIFY_SOURCE_FLAGS))
+ifeq ($(ENABLE_HARDENING),1)
+  ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_O0_FLAGS),)
+    FORTIFY_CFLAGS ?=
+  else ifneq ($(FORTIFY_OPT_FLAGS),)
+    FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=$(FORTIFY_LEVEL)
+  else
+    FORTIFY_CFLAGS ?=
+  endif
+else
+  FORTIFY_CFLAGS ?=
+endif
+ifeq ($(ENABLE_HARDENING),1)
+  # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
+  CFLAGS += $(HARDENING_CFLAGS) $(FORTIFY_CFLAGS)
 endif
 SRCDIR = src
 OBJDIR = obj
