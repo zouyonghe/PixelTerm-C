@@ -125,7 +125,8 @@ else
   endif
 endif
 FORTIFY_SOURCE_FLAGS := $(CFLAGS) $(EXTRA_CFLAGS) $(CPPFLAGS)
-FORTIFY_OPT_FLAGS := $(filter -O1 -O2 -O3 -Og -Os -Oz -Ofast,$(FORTIFY_SOURCE_FLAGS))
+# Any -O* optimization flag counts as optimized for default FORTIFY.
+FORTIFY_OPT_FLAGS := $(filter -O%,$(FORTIFY_SOURCE_FLAGS))
 FORTIFY_O0_FLAGS := $(filter -O0,$(FORTIFY_SOURCE_FLAGS))
 ifeq ($(ENABLE_HARDENING),1)
   ifneq ($(findstring _FORTIFY_SOURCE,$(FORTIFY_SOURCE_FLAGS)),)
