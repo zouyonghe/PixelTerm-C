@@ -3,7 +3,13 @@ ARCH ?= amd64
 PREFIX ?= /usr/local
 INSTALL ?= install
 VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
-CFLAGS = -Wall -Wextra -std=c11 -O2 -fstack-protector-strong -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
+# GCC/Clang hardening defaults. Override these variables for toolchains that
+# do not support the flags or downstream builds that manage hardening elsewhere.
+OPTIMIZATION_CFLAGS ?= -O2
+HARDENING_CFLAGS ?= -fstack-protector-strong
+FORTIFY_CFLAGS ?= -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2
+HARDENING_LDFLAGS ?=
+CFLAGS = -Wall -Wextra -std=c11 $(OPTIMIZATION_CFLAGS) $(HARDENING_CFLAGS) -Wno-sign-compare -Wno-unused-variable -Wno-unused-but-set-variable -Wno-switch -DAPP_VERSION=\"$(VERSION)\"
 DEBUG_CFLAGS = -g -DDEBUG -fsanitize=address
 DEBUG ?= 0
 EXTRA_CFLAGS ?=
@@ -26,14 +32,16 @@ INCLUDES = -Iinclude $(shell $(PKG_CONFIG_CMD) --cflags glib-2.0 $(PKG_DEPS))
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
   CFLAGS += -ffunction-sections -fdata-sections
-  LDFLAGS += -Wl,--gc-sections -Wl,-z,relro -Wl,-z,now
+  HARDENING_LDFLAGS += -Wl,-z,relro -Wl,-z,now
+  LDFLAGS += -Wl,--gc-sections $(HARDENING_LDFLAGS)
 else ifeq ($(UNAME_S),Darwin)
   LDFLAGS += -Wl,-dead_strip
 endif
 ifeq ($(DEBUG),1)
   CFLAGS += $(DEBUG_CFLAGS)
 else
-  CFLAGS += -D_FORTIFY_SOURCE=2
+  # _FORTIFY_SOURCE needs optimization; keep OPTIMIZATION_CFLAGS at -O1 or higher for normal builds.
+  CFLAGS += $(FORTIFY_CFLAGS)
 endif
 EXTRA_LIBS =
 ifneq ($(shell $(PKG_CONFIG_CMD) --exists zlib >/dev/null 2>&1 && echo yes),)
