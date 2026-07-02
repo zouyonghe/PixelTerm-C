@@ -116,6 +116,9 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
         return ERROR_INVALID_ARGS;
     }
 
+    app->info_visible = FALSE;
+    app->help_visible = FALSE;
+
     if (k_modes[current].on_exit) {
         k_modes[current].on_exit(app);
     }

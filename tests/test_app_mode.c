@@ -151,6 +151,18 @@ static void test_media_navigation_clears_overlays(void) {
     g_list_free_full(app.image_files, g_free);
 }
 
+static void test_mode_transition_clears_overlays(void) {
+    PixelTermApp app = {0};
+    app.mode = APP_MODE_SINGLE;
+    app.info_visible = TRUE;
+    app.help_visible = TRUE;
+
+    g_assert_cmpint(app_transition_mode(&app, APP_MODE_FILE_MANAGER), ==, ERROR_NONE);
+    g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
+    g_assert_false(app.info_visible);
+    g_assert_false(app.help_visible);
+}
+
 void register_app_mode_tests(void) {
     g_test_add_func("/app_mode/transition/null_app", test_transition_null_app);
     g_test_add_func("/app_mode/transition/invalid_mode", test_transition_invalid_mode);
@@ -161,4 +173,5 @@ void register_app_mode_tests(void) {
     g_test_add_func("/app_mode/transition/to_non_single_stops_media", test_transition_to_non_single_stops_media);
     g_test_add_func("/app_mode/transition/common_round_trip_paths", test_transition_common_round_trip_paths);
     g_test_add_func("/app_mode/media_navigation/clears_overlays", test_media_navigation_clears_overlays);
+    g_test_add_func("/app_mode/transition/clears_overlays", test_mode_transition_clears_overlays);
 }

@@ -72,30 +72,93 @@ static gint ui_help_segments_visible_width(const HelpSegment *segments, gsize n)
     return width;
 }
 
+static gint ui_help_segments_visible_width_with_help(const HelpSegment *segments,
+                                                     gsize prefix_n,
+                                                     gssize help_index) {
+    gint width = ui_help_segments_visible_width(segments, prefix_n);
+    if (help_index >= 0) {
+        if (prefix_n > 0) {
+            width += 2;
+        }
+        width += utf8_display_width(segments[help_index].key);
+        width += 1;
+        width += utf8_display_width(segments[help_index].label);
+    }
+    return width;
+}
+
 void ui_print_centered_help_line(gint row, gint term_width, const HelpSegment *segments, gsize n) {
     if (term_width <= 0 || row <= 0) {
         return;
     }
     printf("\033[%d;1H\033[2K", row);
 
-    gint help_w = ui_help_segments_visible_width(segments, n);
+    if (!segments || n == 0) {
+        return;
+    }
+
+    gsize visible_n = 0;
+    for (gsize i = 1; i <= n; i++) {
+        if (ui_help_segments_visible_width(segments, i) <= term_width) {
+            visible_n = i;
+        } else {
+            break;
+        }
+    }
+
+    gssize help_index = -1;
+    for (gsize i = 0; i < n; i++) {
+        if (g_strcmp0(segments[i].key, "?") == 0) {
+            help_index = (gssize)i;
+            break;
+        }
+    }
+
+    gboolean append_help = FALSE;
+    if (visible_n < n && help_index >= 0 && (gsize)help_index >= visible_n) {
+        while (visible_n > 0 &&
+               ui_help_segments_visible_width_with_help(segments, visible_n - 1, help_index) > term_width) {
+            visible_n--;
+        }
+        if (ui_help_segments_visible_width_with_help(segments, visible_n > 0 ? visible_n - 1 : 0, help_index) <= term_width) {
+            append_help = TRUE;
+            if (visible_n > 0) {
+                visible_n--;
+            }
+        }
+    }
+
+    if (visible_n == 0 && !append_help) {
+        return;
+    }
+
+    gint help_w = append_help
+                     ? ui_help_segments_visible_width_with_help(segments, visible_n, help_index)
+                     : ui_help_segments_visible_width(segments, visible_n);
     gint pad = (help_w > 0 && term_width > help_w) ? (term_width - help_w) / 2 : 0;
     for (gint i = 0; i < pad; i++) {
         putchar(' ');
     }
 
     gint col = 1 + pad;
-    for (gsize i = 0; i < n; i++) {
+    for (gsize i = 0; i < visible_n; i++) {
         gint seg_w = utf8_display_width(segments[i].key) + 1 + utf8_display_width(segments[i].label);
-        gint trailing = (i + 1 < n) ? 2 : 0;
+        gint trailing = (i + 1 < visible_n || append_help) ? 2 : 0;
         if (col + seg_w + trailing - 1 > term_width) {
             break;
         }
         printf("\033[36m%s\033[0m %s", segments[i].key, segments[i].label);
         col += seg_w;
-        if (i + 1 < n) {
+        if (i + 1 < visible_n || append_help) {
             printf("  ");
             col += 2;
+        }
+    }
+
+    if (append_help && help_index >= 0) {
+        gint seg_w = utf8_display_width(segments[help_index].key) + 1 + utf8_display_width(segments[help_index].label);
+        if (col + seg_w - 1 <= term_width) {
+            printf("\033[36m%s\033[0m %s", segments[help_index].key, segments[help_index].label);
         }
     }
 }
