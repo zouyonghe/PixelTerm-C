@@ -53,7 +53,14 @@ static void app_print_rendered_at(const GString *rendered, gint top_row, gint le
 static RendererConfig app_book_make_renderer_config(const PixelTermApp *app,
                                                     gint max_width,
                                                     gint max_height) {
-    return app_renderer_config_from_app(app, max_width, max_height);
+    RendererConfig config = app_renderer_config_from_app(app, max_width, max_height);
+    if (app && (app->help_visible || app->info_visible)) {
+        config.force_text = TRUE;
+        config.force_sixel = FALSE;
+        config.force_kitty = FALSE;
+        config.force_iterm2 = FALSE;
+    }
+    return config;
 }
 
 static void app_book_render_header(const PixelTermApp *app) {

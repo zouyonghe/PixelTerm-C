@@ -9,8 +9,13 @@
 typedef struct {
     gint create_grid_renderer_calls;
     gint grid_render_calls;
+    gint renderer_initialize_calls;
     gint term_width;
     gint term_height;
+    gboolean last_force_text;
+    gboolean last_force_sixel;
+    gboolean last_force_kitty;
+    gboolean last_force_iterm2;
 } BookPreviewStubState;
 
 static BookPreviewStubState g_book_preview_stub_state;
@@ -163,6 +168,32 @@ static void test_page_move_round_trip_uses_clamped_column_on_partial_final_row(v
     cleanup_book_preview_app(&app);
 }
 
+static void test_book_page_help_overlay_forces_text_rendering(void) {
+    PixelTermApp app;
+
+    memset(&app, 0, sizeof(app));
+    app.mode = APP_MODE_BOOK;
+    app.term_width = 120;
+    app.term_height = 40;
+    app.book.doc = (BookDocument *)0x1;
+    app.book.page_count = 1;
+    app.force_kitty = TRUE;
+    app.help_visible = TRUE;
+
+    reset_book_preview_stubs();
+    g_book_preview_stub_state.term_width = app.term_width;
+    g_book_preview_stub_state.term_height = app.term_height;
+
+    g_assert_cmpint(app_render_book_page(&app), ==, ERROR_NONE);
+    g_assert_cmpint(g_book_preview_stub_state.renderer_initialize_calls, ==, 1);
+    g_assert_true(g_book_preview_stub_state.last_force_text);
+    g_assert_false(g_book_preview_stub_state.last_force_kitty);
+    g_assert_false(g_book_preview_stub_state.last_force_sixel);
+    g_assert_false(g_book_preview_stub_state.last_force_iterm2);
+
+    cleanup_book_preview_app(&app);
+}
+
 gint app_preview_bottom_reserved_lines(const PixelTermApp *app) {
     (void)app;
     return 0;
@@ -215,6 +246,23 @@ void renderer_destroy(ImageRenderer *renderer) {
     g_free(renderer);
 }
 
+ImageRenderer *renderer_create(void) {
+    return g_new0(ImageRenderer, 1);
+}
+
+ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *config) {
+    if (!renderer || !config) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    renderer->config = *config;
+    g_book_preview_stub_state.renderer_initialize_calls++;
+    g_book_preview_stub_state.last_force_text = config->force_text;
+    g_book_preview_stub_state.last_force_sixel = config->force_sixel;
+    g_book_preview_stub_state.last_force_kitty = config->force_kitty;
+    g_book_preview_stub_state.last_force_iterm2 = config->force_iterm2;
+    return ERROR_NONE;
+}
+
 void app_draw_grid_cell_background(const PreviewLayout *layout,
                                    gint cell_x,
                                    gint cell_y,
@@ -256,8 +304,13 @@ ErrorCode book_render_page(BookDocument *doc,
     (void)target_rows;
     if (out_image) {
         memset(out_image, 0, sizeof(*out_image));
+        out_image->pixels = (guint8 *)"x";
+        out_image->width = 1;
+        out_image->height = 1;
+        out_image->stride = 4;
+        out_image->channels = 4;
     }
-    return ERROR_INVALID_IMAGE;
+    return ERROR_NONE;
 }
 
 void book_page_image_free(BookPageImage *image) {
@@ -276,7 +329,7 @@ GString *renderer_render_image_data(ImageRenderer *renderer,
     (void)height;
     (void)rowstride;
     (void)n_channels;
-    return NULL;
+    return g_string_new("X");
 }
 
 void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height) {
@@ -292,6 +345,56 @@ void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint
 gboolean renderer_is_graphics_mode(const ImageRenderer *renderer) {
     (void)renderer;
     return FALSE;
+}
+
+RendererConfig app_renderer_config_from_app(const PixelTermApp *app, gint max_width, gint max_height) {
+    RendererConfig config = {0};
+    config.max_width = max_width;
+    config.max_height = max_height;
+    config.work_factor = app ? app->render_work_factor : 0;
+    config.force_text = app ? app->force_text : FALSE;
+    config.force_sixel = app ? app->force_sixel : FALSE;
+    config.force_kitty = app ? app->force_kitty : FALSE;
+    config.force_iterm2 = app ? app->force_iterm2 : FALSE;
+    config.text_symbol_mode = app ? app->text_symbol_mode : TEXT_SYMBOL_MODE_AUTO;
+    config.gamma = app ? app->gamma : 1.0;
+    config.color_enhance = app ? app->color_enhance : COLOR_ENHANCE_OFF;
+    return config;
+}
+
+gboolean app_book_use_double_page(const PixelTermApp *app) {
+    (void)app;
+    return FALSE;
+}
+
+void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height) {
+    if (max_width) {
+        *max_width = app && app->term_width > 0 ? app->term_width : 80;
+    }
+    if (max_height) {
+        gint height = app && app->term_height > 6 ? app->term_height - 6 : 1;
+        *max_height = height;
+    }
+}
+
+void ui_begin_sync_update(void) {
+}
+
+void ui_end_sync_update(void) {
+}
+
+void ui_clear_kitty_images(const PixelTermApp *app) {
+    (void)app;
+}
+
+void ui_clear_screen_for_refresh(const PixelTermApp *app) {
+    (void)app;
+}
+
+void ui_clear_area(const PixelTermApp *app, gint top_row, gint height) {
+    (void)app;
+    (void)top_row;
+    (void)height;
 }
 
 gchar *sanitize_for_terminal(const gchar *text) {
@@ -342,6 +445,8 @@ int main(int argc, char **argv) {
                     test_page_move_clamps_top_slot_on_short_last_page_after_render);
     g_test_add_func("/app_preview_book/page_move/round_trip_uses_clamped_column_on_partial_final_row",
                     test_page_move_round_trip_uses_clamped_column_on_partial_final_row);
+    g_test_add_func("/app_book_page/help_overlay/forces_text_rendering",
+                    test_book_page_help_overlay_forces_text_rendering);
 
     return g_test_run();
 }

@@ -181,7 +181,7 @@ TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/browser.o $(OBJDIR)/renderer.o 
 FILE_MANAGER_TEST_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/process_env.o $(OBJDIR)/app_core.o $(OBJDIR)/app_mode.o \
 		$(OBJDIR)/app_file_manager.o $(OBJDIR)/app_file_manager_render.o $(OBJDIR)/text_utils.o $(OBJDIR)/ui_render_utils.o
 PREVIEW_GRID_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_grid.o $(OBJDIR)/ui_render_utils.o $(OBJDIR)/text_utils.o
-BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o
+BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o $(OBJDIR)/app_book_page_render.o
 
 # Default target
 all: $(TARGET)
