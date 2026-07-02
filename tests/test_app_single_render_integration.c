@@ -136,7 +136,7 @@ static gboolean init_render_test_app(PixelTermApp *app) {
     }
 
     app->gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
-    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!app->gif_player || !app->video_player) {
         destroy_render_test_app(app);
         return FALSE;

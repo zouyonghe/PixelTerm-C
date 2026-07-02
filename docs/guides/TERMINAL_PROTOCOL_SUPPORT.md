@@ -21,11 +21,11 @@ This page summarizes the terminal and graphics-protocol support notes currently 
 | Terminal | Protocol notes | Status | Notes |
 |----------|----------------|--------|-------|
 | WezTerm | kitty, sixel, optional iTerm2 override | Documented | `config.example.ini` includes a `[WezTerm] protocol = iterm2` example. |
-| kitty | kitty | Documented | You can force it with `--protocol kitty`. |
+| kitty | kitty | Documented | You can force it with `--protocol kitty`. Native kitty may show little difference between direct and shared-memory transfer at modest terminal sizes. |
 | iTerm2 | iTerm2, sixel | Documented | You can force it with `--protocol iterm2`. |
 | Ghostty | kitty | Partially documented | If `auto` stays in text, try `--protocol kitty`. |
 | Rio | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
-| Warp | kitty | Partially documented | `config.example.ini` includes a `[WarpTerminal]` example with extra compatibility settings. |
+| Warp | kitty | Partially documented | `config.example.ini` includes a `[WarpTerminal]` example with extra compatibility settings. Prefer `kitty_transfer = direct` if shared-memory video makes the Warp UI sluggish. |
 | Contour | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
 | Konsole | kitty | Partially documented | If `auto` stays in text, try `--protocol kitty`. |
 | EAT | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
@@ -57,9 +57,21 @@ pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
 
 # Available values
 pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
+
+# Compare kitty video transfer paths
+pixelterm --protocol kitty --kitty-transfer direct /path/to/video.mp4
+pixelterm --protocol kitty --kitty-transfer shm /path/to/video.mp4
 ```
 
-You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For text rendering, `text_symbols = auto|half|quarter` controls whether PixelTerm-C keeps the terminal-safe default symbol set or switches to stronger half-block-heavy / quad-heavy manual symbol sets. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../../config.example.ini) and [USAGE.md](USAGE.md) for the current CLI and config syntax.
+You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For kitty video rendering, `kitty_transfer = auto|direct|shm` controls whether PixelTerm-C uses the regular inline kitty path or the kitty shared-memory fast path. For text rendering, `text_symbols = auto|half|quarter` controls whether PixelTerm-C keeps the terminal-safe default symbol set or switches to stronger half-block-heavy / quad-heavy manual symbol sets. Terminal-specific sections follow the first matching value from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`. See [config.example.ini](../../config.example.ini) and [USAGE.md](USAGE.md) for the current CLI and config syntax.
+
+## Kitty transfer modes
+
+- `auto`: default. PixelTerm-C uses conservative shared-memory detection for kitty video and otherwise keeps the direct inline path.
+- `direct`: always use Chafa's inline kitty output. This is useful for comparing behavior or avoiding terminal-specific shared-memory issues.
+- `shm`: force the kitty shared-memory path for video frames. If shared-memory setup fails for a frame, PixelTerm-C falls back to direct rendering.
+- `PIXELTERM_KITTY_SHM=1` remains available as a debug override for `auto`, but `config.ini` or `--kitty-transfer` is preferred for normal use.
+- If a kitty-compatible terminal becomes sluggish outside PixelTerm-C itself, for example, if the mouse cursor changes to a loading state or tabs become hard to switch, use `kitty_transfer = direct`. That usually means the terminal's own shared-memory graphics consumer is overloaded.
 
 ## Scope notes
 
@@ -67,3 +79,4 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 - Rendering behavior can still vary by terminal version, local settings, remote session setup, and whether protocol probing succeeds at runtime.
 - Direct SSH fallback currently stays conservative on purpose. If a remote, tmux, or screen setup hides the affirmative probe response you expect, prefer an explicit override.
 - If your terminal works better with an explicit protocol than with `auto`, prefer a local config override for that terminal.
+- Shared-memory kitty transfer is local-only by design. Avoid forcing it through SSH, tmux, or screen unless you are deliberately testing a setup that supports it.

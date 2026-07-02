@@ -7,6 +7,7 @@
 #include "video_player_layout_internal.h"
 #include "video_player_playback_internal.h"
 #include "video_player_seek_internal.h"
+#include "kitty_graphics.h"
 #include "media_buffer.h"
 
 #include <libavcodec/avcodec.h>
@@ -184,7 +185,21 @@ void video_frame_destroy(VideoFrame *frame) {
     if (frame->rendered) {
         g_string_free(frame->rendered, TRUE);
     }
+    if (frame->kitty_shm_name) {
+        kitty_graphics_shm_unlink(frame->kitty_shm_name);
+        g_free(frame->kitty_shm_name);
+    }
     g_free(frame);
+}
+
+static void video_frame_mark_kitty_shm_submitted(VideoFrame *frame) {
+    if (frame && frame->kitty_shm_name) {
+        /* Kitty t=s transfers hand unlink ownership to the terminal after the
+         * escape sequence is fully written and flushed. Unlinking here can
+         * race the terminal's shm_open(); unsubmitted frames are still cleaned
+         * up in video_frame_destroy(). */
+        g_clear_pointer(&frame->kitty_shm_name, g_free);
+    }
 }
 
 void video_player_queue_clear(VideoPlayer *player) {
@@ -568,7 +583,8 @@ static void video_player_reset_media_state(VideoPlayer *player) {
 }
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma) {
+                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma,
+                              KittyTransferMode kitty_transfer) {
     VideoPlayer *player = g_new0(VideoPlayer, 1);
     if (!player) {
         return NULL;
@@ -631,6 +647,8 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->present_fps_valid = FALSE;
     player->show_stats = FALSE;
     player->color_enhance = COLOR_ENHANCE_OFF;
+    player->kitty_transfer = kitty_transfer;
+    player->kitty_shm_enabled = kitty_graphics_should_use_shm(kitty_transfer);
 
     if (work_factor < 1) {
         work_factor = 1;
@@ -1259,19 +1277,46 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
         gint64 render_start_us = g_get_monotonic_time();
         video_player_render_worker_refresh_layout(player, renderer, &layout_generation);
 
-        GString *rendered = renderer_render_image_data(renderer,
-                                                       decoded->pixels,
-                                                       decoded->width,
-                                                       decoded->height,
-                                                       decoded->rowstride,
-                                                       4);
         gint rendered_w = 0;
         gint rendered_h = 0;
         ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-        if (rendered) {
+        GString *rendered = NULL;
+        gchar *kitty_shm_name = NULL;
+        gboolean try_kitty_shm = renderer->config.force_kitty &&
+                                 !renderer->config.force_text &&
+                                 !renderer->config.force_sixel &&
+                                 !renderer->config.force_iterm2 &&
+                                 player->kitty_shm_enabled;
+        if (try_kitty_shm && renderer_setup_canvas(renderer, decoded->width, decoded->height) == ERROR_NONE) {
             renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
-            if (renderer->canvas_config) {
-                pixel_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
+            KittyGraphicsFrame *kitty_frame = kitty_graphics_frame_new_shm_rgba(decoded->pixels,
+                                                                               decoded->width,
+                                                                               decoded->height,
+                                                                               decoded->rowstride,
+                                                                               rendered_w,
+                                                                               rendered_h);
+            if (kitty_frame) {
+                rendered = kitty_frame->command;
+                kitty_shm_name = kitty_frame->shm_name;
+                kitty_frame->command = NULL;
+                kitty_frame->shm_name = NULL;
+                pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+                kitty_graphics_frame_free(kitty_frame);
+            }
+        }
+        if (!rendered) {
+            g_clear_pointer(&kitty_shm_name, g_free);
+            rendered = renderer_render_image_data(renderer,
+                                                  decoded->pixels,
+                                                  decoded->width,
+                                                  decoded->height,
+                                                  decoded->rowstride,
+                                                  4);
+            if (rendered) {
+                renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
+                if (renderer->canvas_config) {
+                    pixel_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
+                }
             }
         }
         gint64 render_elapsed_us = g_get_monotonic_time() - render_start_us;
@@ -1287,11 +1332,16 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
         VideoFrame *frame = g_new0(VideoFrame, 1);
         if (!frame) {
             g_string_free(rendered, TRUE);
+            if (kitty_shm_name) {
+                kitty_graphics_shm_unlink(kitty_shm_name);
+                g_free(kitty_shm_name);
+            }
             decoded_frame_destroy(decoded);
             video_player_render_work_finished(player);
             continue;
         }
         frame->rendered = rendered;
+        frame->kitty_shm_name = kitty_shm_name;
         frame->rendered_width = rendered_w;
         frame->rendered_height = rendered_h;
         frame->pts_ms = decoded->pts_ms;
@@ -1365,6 +1415,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     gint rendered_w = frame->rendered_width;
     gint rendered_h = frame->rendered_height;
     gboolean graphics_mode = (frame->pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS);
+    gboolean kitty_shm_written = FALSE;
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
@@ -1411,9 +1462,11 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
                 col = 1;
             }
             printf("\033[%d;%dH", row, col);
+            size_t written = 0;
             if (result->len > 0) {
-                fwrite(result->str, 1, result->len, stdout);
+                written = fwrite(result->str, 1, result->len, stdout);
             }
+            kitty_shm_written = frame->kitty_shm_name && written == result->len;
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else if (!has_newline) {
             video_player_clear_line_cache(player);
@@ -1529,14 +1582,20 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     } else {
         video_player_clear_line_cache(player);
         printf("\033[H");
-        printf("%s", result->str);
+        size_t written = 0;
+        if (result->len > 0) {
+            written = fwrite(result->str, 1, result->len, stdout);
+        }
+        kitty_shm_written = frame->kitty_shm_name && written == result->len;
         printf("\033[J");
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
     }
     g_mutex_unlock(&player->state_mutex);
 
-    fflush(stdout);
+    if (fflush(stdout) == 0 && kitty_shm_written) {
+        video_frame_mark_kitty_shm_submitted(frame);
+    }
     gint64 io_end_us = g_get_monotonic_time();
     g_mutex_lock(&player->state_mutex);
     player->last_presented_pts_ms = frame->pts_ms;

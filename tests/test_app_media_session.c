@@ -21,7 +21,7 @@ static gboolean init_test_players(PixelTermApp *app) {
         return FALSE;
     }
     app->gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
-    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!app->gif_player || !app->video_player) {
         destroy_test_players(app);
         return FALSE;
@@ -45,7 +45,7 @@ static gboolean init_video_player_only(PixelTermApp *app) {
     if (!app) {
         return FALSE;
     }
-    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app->video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!app->video_player) {
         destroy_test_players(app);
         return FALSE;

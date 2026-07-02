@@ -78,7 +78,7 @@ static void test_transition_to_non_single_stops_media(void) {
     app.mode = APP_MODE_SINGLE;
 
     app.gif_player = gif_player_new(4, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
-    app.video_player = video_player_new(4, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app.video_player = video_player_new(4, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!app.gif_player || !app.video_player) {
         if (app.gif_player) {
             gif_player_destroy(app.gif_player);

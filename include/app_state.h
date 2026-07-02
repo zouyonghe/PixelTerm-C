@@ -2,6 +2,7 @@
 #define APP_STATE_H
 
 #include "common.h"
+#include "kitty_transfer.h"
 #include "preloader.h"
 #include "gif_player.h"
 #include "video_player.h"
@@ -45,6 +46,7 @@ typedef struct {
     gboolean force_iterm2;
     TextSymbolMode text_symbol_mode;
     ColorEnhanceMode color_enhance;
+    KittyTransferMode kitty_transfer;
 } AppConfig;
 
 typedef struct {
@@ -145,6 +147,7 @@ typedef struct {
     gboolean force_iterm2;
     TextSymbolMode text_symbol_mode;
     ColorEnhanceMode color_enhance;
+    KittyTransferMode kitty_transfer;
     gboolean needs_redraw;
     AppMode mode;  // Current UI mode (single/preview/file manager/book)
     gboolean show_hidden_files;  // Toggle visibility of dotfiles in file manager

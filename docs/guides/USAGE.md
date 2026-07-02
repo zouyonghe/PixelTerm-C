@@ -46,6 +46,9 @@ pixelterm --work-factor 7 /path/to/image.jpg
 # Force output protocol (auto, text, sixel, kitty, iterm2)
 pixelterm --protocol kitty /path/to/image.jpg
 
+# Select kitty video transfer mode (auto, direct, shm)
+pixelterm --protocol kitty --kitty-transfer shm /path/to/video.mp4
+
 # Tune text-mode symbol selection (auto, half, quarter)
 pixelterm --protocol text --text-symbols quarter /path/to/image.jpg
 
@@ -74,9 +77,11 @@ pixelterm -- --config=gallery.txt
 - CLI flags override config file values because config loading happens before argument parsing.
 - `--preload` and `--alt-screen` accept `true/false`, `yes/no`, `on/off`, and `1/0`.
 - `--text-symbols` only affects text rendering, whether selected explicitly with `--protocol text` or chosen by the automatic fallback.
+- `--kitty-transfer` only affects video frames rendered through the kitty protocol. `auto` is the normal choice, `direct` keeps Chafa's inline kitty output, and `shm` forces the shared-memory fast path with fallback to direct rendering if setup fails.
 - `--color-enhance vivid` is a default-off pre-rendering color adjustment. It can make muted images look clearer in terminal text output, at a small CPU cost.
 - A missing default config file is ignored, but a missing file passed with `--config` is treated as an error.
 - Config groups are applied in this order: `[default]`, then the first matching terminal-specific group from `TERM_PROGRAM`, `LC_TERMINAL`, `TERMINAL_NAME`, or `TERM`.
 - If `PATH` is an unsupported regular file, PixelTerm-C falls back to that file's canonical parent directory and opens file manager mode there.
 - A directory path is never treated as a valid book file; directories open in file manager mode instead.
 - If rendering looks wrong, try an explicit `--protocol` value or see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+- For repeatable kitty video tuning, prefer `kitty_transfer = auto|direct|shm` in `config.ini`; use `--kitty-transfer` for one-off A/B tests.
