@@ -215,7 +215,7 @@ static void test_mouse_closing_help_resets_input_timing_state(void) {
     input_handler.last_click_time.tv_usec = 200;
     input_handler.last_click_x = 12;
     input_handler.last_click_y = 6;
-    input_handler.last_click_button = MOUSE_BUTTON_LEFT;
+    input_handler.last_click_button = MOUSE_BUTTON_MIDDLE;
     input_handler.last_scroll_time.tv_sec = 300;
     input_handler.last_scroll_time.tv_usec = 400;
     input_handler.last_scroll_button = MOUSE_SCROLL_DOWN;
