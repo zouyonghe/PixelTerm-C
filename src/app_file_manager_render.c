@@ -1,6 +1,7 @@
 #include "app.h"
 #include "text_utils.h"
 #include "app_file_manager_internal.h"
+#include "ui_render_utils.h"
 
 typedef struct {
     gboolean has_images;
@@ -421,7 +422,6 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     GHashTable *directory_media_cache = NULL;
     app->file_manager.scroll_offset = viewport.start_row;
     gint total_entries = viewport.total_entries;
-    const char *help_text = "↑/↓ Move   ← Parent   →/Enter Open   TAB Toggle   ? Help   ESC Exit";
     gint start_row = viewport.start_row;
     gint end_row = viewport.end_row;
     gint rows_to_render = viewport.rows_to_render;
@@ -565,16 +565,15 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         printf("\033[%d;1H\033[2K", y);
     }
 
-    gint help_len = strlen(help_text);
-    gint help_pad = (app->term_width > help_len) ? (app->term_width - help_len) / 2 : 0;
-    printf("\033[%d;1H\033[2K", app->term_height);
-    for (gint i = 0; i < help_pad; i++) putchar(' ');
-    printf("\033[36m↑/↓\033[0m Move   ");
-    printf("\033[36m←\033[0m Parent   ");
-    printf("\033[36m→/Enter\033[0m Open   ");
-    printf("\033[36mTAB\033[0m Toggle   ");
-    printf("\033[36m?\033[0m Help   ");
-    printf("\033[36mESC\033[0m Exit");
+    const HelpSegment segments[] = {
+        {"↑/↓", "Move"},
+        {"→/Enter", "Open"},
+        {"?", "Help"},
+        {"←", "Parent"},
+        {"TAB", "Toggle"},
+        {"ESC", "Exit"}
+    };
+    ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
 
     fflush(stdout);
 
