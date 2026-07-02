@@ -39,6 +39,15 @@ static InputEvent make_key_event(KeyCode key_code) {
     return event;
 }
 
+static InputEvent make_mouse_event(InputEventType type, MouseButton button) {
+    InputEvent event = {0};
+    event.type = type;
+    event.mouse_button = button;
+    event.mouse_x = 12;
+    event.mouse_y = 6;
+    return event;
+}
+
 static void test_process_animations_only_runs_one_iteration_per_call(void) {
     PixelTermApp app = {0};
     GifPlayer gif = {0};
@@ -194,6 +203,44 @@ static void test_any_key_closes_help_overlay_without_mode_action(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.display_image_info_calls, ==, 0);
 }
 
+static void test_mouse_closing_help_resets_input_timing_state(void) {
+    PixelTermApp app = {0};
+    InputHandler input_handler = {0};
+    InputEvent event = make_mouse_event(INPUT_MOUSE_SCROLL, MOUSE_SCROLL_DOWN);
+
+    app.mode = APP_MODE_SINGLE;
+    app.total_images = 1;
+    app.help_visible = TRUE;
+    input_handler.last_click_time.tv_sec = 100;
+    input_handler.last_click_time.tv_usec = 200;
+    input_handler.last_click_x = 12;
+    input_handler.last_click_y = 6;
+    input_handler.last_click_button = MOUSE_BUTTON_LEFT;
+    input_handler.last_scroll_time.tv_sec = 300;
+    input_handler.last_scroll_time.tv_usec = 400;
+    input_handler.last_scroll_button = MOUSE_SCROLL_DOWN;
+    input_handler.last_scroll_x = 12;
+    input_handler.last_scroll_y = 6;
+    input_handler.ignore_input_until_us = 500;
+
+    input_dispatch_test_reset_stubs();
+    input_dispatch_core_handle_event(&app, &input_handler, &event);
+
+    g_assert_false(app.help_visible);
+    g_assert_cmpint(g_input_dispatch_stub_state.display_help_calls, ==, 1);
+    g_assert_cmpint(input_handler.last_click_time.tv_sec, ==, 0);
+    g_assert_cmpint(input_handler.last_click_time.tv_usec, ==, 0);
+    g_assert_cmpint(input_handler.last_click_x, ==, 0);
+    g_assert_cmpint(input_handler.last_click_y, ==, 0);
+    g_assert_cmpint(input_handler.last_click_button, ==, 0);
+    g_assert_cmpint(input_handler.last_scroll_time.tv_sec, ==, 0);
+    g_assert_cmpint(input_handler.last_scroll_time.tv_usec, ==, 0);
+    g_assert_cmpint(input_handler.last_scroll_button, ==, 0);
+    g_assert_cmpint(input_handler.last_scroll_x, ==, 0);
+    g_assert_cmpint(input_handler.last_scroll_y, ==, 0);
+    g_assert_cmpint(input_handler.ignore_input_until_us, ==, 0);
+}
+
 void register_input_dispatch_core_tests(void) {
     g_test_add_func("/input_dispatch_core/process_animations/only_runs_one_iteration_per_call",
                     test_process_animations_only_runs_one_iteration_per_call);
@@ -213,4 +260,6 @@ void register_input_dispatch_core_tests(void) {
                     test_question_key_opens_help_overlay);
     g_test_add_func("/input_dispatch_core/help_key/any_key_closes_without_mode_action",
                     test_any_key_closes_help_overlay_without_mode_action);
+    g_test_add_func("/input_dispatch_core/help_key/mouse_closing_help_resets_input_timing_state",
+                    test_mouse_closing_help_resets_input_timing_state);
 }

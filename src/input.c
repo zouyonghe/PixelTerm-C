@@ -80,6 +80,24 @@ void input_handler_destroy(InputHandler *handler) {
     g_free(handler);
 }
 
+void input_handler_reset_mouse_timing(InputHandler *handler) {
+    if (!handler) {
+        return;
+    }
+
+    handler->last_click_time.tv_sec = 0;
+    handler->last_click_time.tv_usec = 0;
+    handler->last_click_x = 0;
+    handler->last_click_y = 0;
+    handler->last_click_button = (MouseButton)0;
+    handler->last_scroll_time.tv_sec = 0;
+    handler->last_scroll_time.tv_usec = 0;
+    handler->last_scroll_button = (MouseButton)0;
+    handler->last_scroll_x = 0;
+    handler->last_scroll_y = 0;
+    handler->ignore_input_until_us = 0;
+}
+
 // Initialize input handler
 ErrorCode input_handler_initialize(InputHandler *handler) {
     if (!handler) {

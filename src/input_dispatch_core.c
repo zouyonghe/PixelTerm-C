@@ -371,6 +371,11 @@ static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, c
          event->type == INPUT_MOUSE_PRESS ||
          event->type == INPUT_MOUSE_DOUBLE_CLICK ||
          event->type == INPUT_MOUSE_SCROLL)) {
+        if (event->type == INPUT_MOUSE_PRESS ||
+            event->type == INPUT_MOUSE_DOUBLE_CLICK ||
+            event->type == INPUT_MOUSE_SCROLL) {
+            input_handler_reset_mouse_timing(input_handler);
+        }
         app_display_help(app);
         return;
     }

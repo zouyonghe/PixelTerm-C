@@ -123,6 +123,7 @@ InputHandler* input_handler_create(void);
  * @param handler A pointer to the `InputHandler` instance to destroy.
  */
 void input_handler_destroy(InputHandler *handler);
+void input_handler_reset_mouse_timing(InputHandler *handler);
 /**
  * @brief Initializes the `InputHandler` by saving the original terminal settings.
  * 
