@@ -380,6 +380,35 @@ static void test_ui_help_line_keeps_help_on_narrow_width(void) {
     g_free(output);
 }
 
+static void test_ui_help_line_preserves_prefix_order_before_help(void) {
+    const HelpSegment segments[] = {
+        {"A", "One"},
+        {"B", "Two"},
+        {"C", "Three"},
+        {"?", "Help"}
+    };
+    HelpLineCaptureArgs args = {
+        .row = 1,
+        .term_width = 20,
+        .segments = segments,
+        .count = G_N_ELEMENTS(segments)
+    };
+
+    gchar *output = capture_output(draw_help_line_capture, &args);
+
+    const gchar *first = g_strstr_len(output, -1, "A\033[0m One");
+    const gchar *second = g_strstr_len(output, -1, "B\033[0m Two");
+    const gchar *help = g_strstr_len(output, -1, "?\033[0m Help");
+    g_assert_nonnull(first);
+    g_assert_nonnull(second);
+    g_assert_nonnull(help);
+    g_assert_true(first < second);
+    g_assert_true(second < help);
+    g_assert_null(g_strstr_len(output, -1, "C\033[0m Three"));
+
+    g_free(output);
+}
+
 static void test_ui_render_panel_keeps_pair_rows_inside_narrow_panel(void) {
     const UIPanelRow rows[] = {
         {"LongShortcutName", "LongAction"}
@@ -436,6 +465,8 @@ void register_preview_shared_tests(void) {
                     test_ui_render_panel_draws_title_rows_and_truncates_columns);
     g_test_add_func("/preview_shared/ui_render/help_line_keeps_help_on_narrow_width",
                     test_ui_help_line_keeps_help_on_narrow_width);
+    g_test_add_func("/preview_shared/ui_render/help_line_preserves_prefix_order_before_help",
+                    test_ui_help_line_preserves_prefix_order_before_help);
     g_test_add_func("/preview_shared/ui_render/panel_keeps_pair_rows_inside_narrow_panel",
                     test_ui_render_panel_keeps_pair_rows_inside_narrow_panel);
     g_test_add_func("/preview_shared/ui_render/panel_tolerates_null_line_and_row_arrays",

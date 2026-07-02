@@ -117,14 +117,11 @@ void ui_print_centered_help_line(gint row, gint term_width, const HelpSegment *s
     gboolean append_help = FALSE;
     if (visible_n < n && help_index >= 0 && (gsize)help_index >= visible_n) {
         while (visible_n > 0 &&
-               ui_help_segments_visible_width_with_help(segments, visible_n - 1, help_index) > term_width) {
+               ui_help_segments_visible_width_with_help(segments, visible_n, help_index) > term_width) {
             visible_n--;
         }
-        if (ui_help_segments_visible_width_with_help(segments, visible_n > 0 ? visible_n - 1 : 0, help_index) <= term_width) {
+        if (ui_help_segments_visible_width_with_help(segments, visible_n, help_index) <= term_width) {
             append_help = TRUE;
-            if (visible_n > 0) {
-                visible_n--;
-            }
         }
     }
 
