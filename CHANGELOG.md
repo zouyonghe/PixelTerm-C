@@ -1,5 +1,10 @@
 # Changelog
 
+- v1.8.0: Book-reader help overlay release follow-up.
+    - **Book Reader Help**: Render book pages in text mode while help or info overlays are visible, preventing kitty/sixel/iTerm2 graphics placements from covering the centered help panel in Kitty, Warp, and other graphics-protocol terminals.
+    - **Overlay Consistency**: Align book-reader overlay rendering with the existing single-image/video overlay behavior so help panels remain readable across media modes.
+    - **Testing**: Link the real book-page renderer into the focused book test target and add a regression proving book help overlays force text rendering and disable graphics protocols.
+
 - v1.7.30: Kitty video transfer controls, help-overlay polish, and build hardening.
     - **Kitty Video Transfer**: Add `kitty_transfer = auto|direct|shm` and `--kitty-transfer auto|direct|shm` so kitty video playback can use a conservative shared-memory fast path locally while preserving direct inline rendering as the stable fallback.
     - **Terminal Compatibility**: Keep shared-memory transfer disabled by default for SSH, tmux, screen, and Warp-oriented examples; document `direct` as the safer option when a kitty-compatible terminal becomes sluggish.
