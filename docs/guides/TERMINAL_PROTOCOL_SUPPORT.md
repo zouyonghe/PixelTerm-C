@@ -25,7 +25,7 @@ This page summarizes the terminal and graphics-protocol support notes currently 
 | iTerm2 | iTerm2, sixel | Documented | You can force it with `--protocol iterm2`. |
 | Ghostty | kitty | Partially documented | If `auto` stays in text, try `--protocol kitty`. |
 | Rio | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
-| Warp | kitty | Partially documented | `config.example.ini` includes a `[WarpTerminal]` example with extra compatibility settings and optional kitty shared-memory video transfer. |
+| Warp | kitty | Partially documented | `config.example.ini` includes a `[WarpTerminal]` example with extra compatibility settings. Prefer `kitty_transfer = direct` if shared-memory video makes the Warp UI sluggish. |
 | Contour | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
 | Konsole | kitty | Partially documented | If `auto` stays in text, try `--protocol kitty`. |
 | EAT | sixel | Partially documented | If `auto` stays in text, try `--protocol sixel`. |
@@ -71,6 +71,7 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 - `direct`: always use Chafa's inline kitty output. This is useful for comparing behavior or avoiding terminal-specific shared-memory issues.
 - `shm`: force the kitty shared-memory path for video frames. If shared-memory setup fails for a frame, PixelTerm-C falls back to direct rendering.
 - `PIXELTERM_KITTY_SHM=1` remains available as a debug override for `auto`, but `config.ini` or `--kitty-transfer` is preferred for normal use.
+- If a kitty-compatible terminal becomes sluggish outside PixelTerm-C itself, for example mouse cursor changes to a loading state or tabs become hard to switch, use `kitty_transfer = direct`. That usually means the terminal's own shared-memory graphics consumer is overloaded.
 
 ## Scope notes
 
