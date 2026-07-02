@@ -4,7 +4,7 @@
 #include "kitty_graphics.h"
 
 static void test_kitty_graphics_shm_command_contains_expected_controls(void) {
-    GString *command = kitty_graphics_build_shm_command_for_test("/pixelterm-test", 16, 8, 4, 2, 512);
+    GString *command = kitty_graphics_build_shm_command("/pixelterm-test", 16, 8, 4, 2, 512);
     g_assert_nonnull(command);
     g_assert_true(g_str_has_prefix(command->str, "\033_G"));
     g_assert_nonnull(strstr(command->str, "a=T"));
@@ -22,10 +22,10 @@ static void test_kitty_graphics_shm_command_contains_expected_controls(void) {
 }
 
 static void test_kitty_graphics_shm_command_rejects_invalid_input(void) {
-    g_assert_null(kitty_graphics_build_shm_command_for_test(NULL, 16, 8, 4, 2, 512));
-    g_assert_null(kitty_graphics_build_shm_command_for_test("/x", 0, 8, 4, 2, 512));
-    g_assert_null(kitty_graphics_build_shm_command_for_test("/x", 16, 8, 0, 2, 512));
-    g_assert_null(kitty_graphics_build_shm_command_for_test("/x", 16, 8, 4, 2, 0));
+    g_assert_null(kitty_graphics_build_shm_command(NULL, 16, 8, 4, 2, 512));
+    g_assert_null(kitty_graphics_build_shm_command("/x", 0, 8, 4, 2, 512));
+    g_assert_null(kitty_graphics_build_shm_command("/x", 16, 8, 0, 2, 512));
+    g_assert_null(kitty_graphics_build_shm_command("/x", 16, 8, 4, 2, 0));
 }
 
 static void test_kitty_graphics_shm_auto_enabled_rejects_remote_context(void) {

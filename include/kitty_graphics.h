@@ -25,11 +25,11 @@ void kitty_graphics_frame_free(KittyGraphicsFrame *frame);
 
 void kitty_graphics_shm_unlink(const gchar *shm_name);
 
-GString *kitty_graphics_build_shm_command_for_test(const gchar *shm_name,
-                                                   gint width,
-                                                   gint height,
-                                                   gint display_width_cells,
-                                                   gint display_height_cells,
-                                                   gsize payload_size);
+GString *kitty_graphics_build_shm_command(const gchar *shm_name,
+                                          gint width,
+                                          gint height,
+                                          gint display_width_cells,
+                                          gint display_height_cells,
+                                          gsize payload_size);
 
 #endif // KITTY_GRAPHICS_H

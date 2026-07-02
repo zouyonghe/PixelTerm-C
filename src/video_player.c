@@ -644,6 +644,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->show_stats = FALSE;
     player->color_enhance = COLOR_ENHANCE_OFF;
     player->kitty_transfer = kitty_transfer;
+    player->kitty_shm_enabled = kitty_graphics_should_use_shm(kitty_transfer);
 
     if (work_factor < 1) {
         work_factor = 1;
@@ -1281,7 +1282,7 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
                                  !renderer->config.force_text &&
                                  !renderer->config.force_sixel &&
                                  !renderer->config.force_iterm2 &&
-                                 kitty_graphics_should_use_shm(player->kitty_transfer);
+                                 player->kitty_shm_enabled;
         if (try_kitty_shm && renderer_setup_canvas(renderer, decoded->width, decoded->height) == ERROR_NONE) {
             renderer_get_rendered_dimensions(renderer, &rendered_w, &rendered_h);
             KittyGraphicsFrame *kitty_frame = kitty_graphics_frame_new_shm_rgba(decoded->pixels,

@@ -93,6 +93,7 @@ typedef struct {
     gboolean show_stats;
     ColorEnhanceMode color_enhance;
     KittyTransferMode kitty_transfer;
+    gboolean kitty_shm_enabled;
 
     // FFmpeg state
     struct AVFormatContext *format_context;

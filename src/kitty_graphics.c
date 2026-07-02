@@ -41,12 +41,12 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
     return kitty_graphics_shm_auto_enabled();
 }
 
-GString *kitty_graphics_build_shm_command_for_test(const gchar *shm_name,
-                                                   gint width,
-                                                   gint height,
-                                                   gint display_width_cells,
-                                                   gint display_height_cells,
-                                                   gsize payload_size) {
+GString *kitty_graphics_build_shm_command(const gchar *shm_name,
+                                          gint width,
+                                          gint height,
+                                          gint display_width_cells,
+                                          gint display_height_cells,
+                                          gsize payload_size) {
     if (!shm_name || shm_name[0] == '\0' || width <= 0 || height <= 0 ||
         display_width_cells <= 0 || display_height_cells <= 0 || payload_size == 0) {
         return NULL;
@@ -204,12 +204,12 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
     munmap(mapped, payload_size);
     close(fd);
 
-    GString *command = kitty_graphics_build_shm_command_for_test(shm_name,
-                                                                 transfer_width,
-                                                                 transfer_height,
-                                                                 display_width_cells,
-                                                                 display_height_cells,
-                                                                 payload_size);
+    GString *command = kitty_graphics_build_shm_command(shm_name,
+                                                        transfer_width,
+                                                        transfer_height,
+                                                        display_width_cells,
+                                                        display_height_cells,
+                                                        payload_size);
     if (!command) {
         kitty_graphics_shm_unlink(shm_name);
         g_free(shm_name);
