@@ -2,7 +2,7 @@
 #define KITTY_GRAPHICS_H
 
 #include "common.h"
-#include "video_player.h"
+#include "kitty_transfer.h"
 
 typedef struct {
     GString *command;

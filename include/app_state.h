@@ -2,6 +2,7 @@
 #define APP_STATE_H
 
 #include "common.h"
+#include "kitty_transfer.h"
 #include "preloader.h"
 #include "gif_player.h"
 #include "video_player.h"

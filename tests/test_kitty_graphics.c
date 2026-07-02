@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "kitty_graphics.h"
+#include "process_env.h"
 
 static void test_kitty_graphics_shm_command_contains_expected_controls(void) {
     GString *command = kitty_graphics_build_shm_command("/pixelterm-test", 16, 8, 4, 2, 512);
@@ -29,41 +30,23 @@ static void test_kitty_graphics_shm_command_rejects_invalid_input(void) {
 }
 
 static void test_kitty_graphics_shm_auto_enabled_rejects_remote_context(void) {
-    gchar *old_override = g_strdup(g_getenv("PIXELTERM_KITTY_SHM"));
-    gchar *old_ssh = g_strdup(g_getenv("SSH_CONNECTION"));
-    gchar *old_term = g_strdup(g_getenv("TERM"));
-
-    g_unsetenv("PIXELTERM_KITTY_SHM");
-    g_setenv("SSH_CONNECTION", "host 1 host 2", TRUE);
-    g_setenv("TERM", "xterm-kitty", TRUE);
+    pixelterm_env_unset_for_test("PIXELTERM_KITTY_SHM");
+    pixelterm_env_set_for_test("SSH_CONNECTION", "host 1 host 2");
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
 
     g_assert_false(kitty_graphics_shm_auto_enabled());
 
-    if (old_override) g_setenv("PIXELTERM_KITTY_SHM", old_override, TRUE); else g_unsetenv("PIXELTERM_KITTY_SHM");
-    if (old_ssh) g_setenv("SSH_CONNECTION", old_ssh, TRUE); else g_unsetenv("SSH_CONNECTION");
-    if (old_term) g_setenv("TERM", old_term, TRUE); else g_unsetenv("TERM");
-    g_free(old_override);
-    g_free(old_ssh);
-    g_free(old_term);
+    pixelterm_env_reset_for_test();
 }
 
 static void test_kitty_graphics_shm_auto_enabled_allows_explicit_override(void) {
-    gchar *old_override = g_strdup(g_getenv("PIXELTERM_KITTY_SHM"));
-    gchar *old_ssh = g_strdup(g_getenv("SSH_CONNECTION"));
-    gchar *old_term = g_strdup(g_getenv("TERM"));
-
-    g_setenv("PIXELTERM_KITTY_SHM", "1", TRUE);
-    g_setenv("SSH_CONNECTION", "host 1 host 2", TRUE);
-    g_setenv("TERM", "xterm-256color", TRUE);
+    pixelterm_env_set_for_test("PIXELTERM_KITTY_SHM", "1");
+    pixelterm_env_set_for_test("SSH_CONNECTION", "host 1 host 2");
+    pixelterm_env_set_for_test("TERM", "xterm-256color");
 
     g_assert_true(kitty_graphics_shm_auto_enabled());
 
-    if (old_override) g_setenv("PIXELTERM_KITTY_SHM", old_override, TRUE); else g_unsetenv("PIXELTERM_KITTY_SHM");
-    if (old_ssh) g_setenv("SSH_CONNECTION", old_ssh, TRUE); else g_unsetenv("SSH_CONNECTION");
-    if (old_term) g_setenv("TERM", old_term, TRUE); else g_unsetenv("TERM");
-    g_free(old_override);
-    g_free(old_ssh);
-    g_free(old_term);
+    pixelterm_env_reset_for_test();
 }
 
 static void test_kitty_graphics_frame_rejects_rowstride_overflow(void) {
@@ -77,10 +60,22 @@ static void test_kitty_graphics_frame_rejects_rowstride_overflow(void) {
                                                     1));
 }
 
+static void test_kitty_graphics_frame_rejects_large_payload(void) {
+    guint8 pixel[4] = {0, 0, 0, 255};
+
+    g_assert_null(kitty_graphics_frame_new_shm_rgba(pixel,
+                                                    4097,
+                                                    512,
+                                                    4097 * 4,
+                                                    4097,
+                                                    512));
+}
+
 void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/shm_command/controls", test_kitty_graphics_shm_command_contains_expected_controls);
     g_test_add_func("/kitty_graphics/shm_command/rejects_invalid_input", test_kitty_graphics_shm_command_rejects_invalid_input);
     g_test_add_func("/kitty_graphics/shm_auto/rejects_remote_context", test_kitty_graphics_shm_auto_enabled_rejects_remote_context);
     g_test_add_func("/kitty_graphics/shm_auto/allows_explicit_override", test_kitty_graphics_shm_auto_enabled_allows_explicit_override);
     g_test_add_func("/kitty_graphics/frame/rejects_rowstride_overflow", test_kitty_graphics_frame_rejects_rowstride_overflow);
+    g_test_add_func("/kitty_graphics/frame/rejects_large_payload", test_kitty_graphics_frame_rejects_large_payload);
 }

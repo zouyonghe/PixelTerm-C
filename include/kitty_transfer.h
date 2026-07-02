@@ -1,0 +1,10 @@
+#ifndef KITTY_TRANSFER_H
+#define KITTY_TRANSFER_H
+
+typedef enum {
+    KITTY_TRANSFER_AUTO = 0,
+    KITTY_TRANSFER_DIRECT,
+    KITTY_TRANSFER_SHM
+} KittyTransferMode;
+
+#endif // KITTY_TRANSFER_H

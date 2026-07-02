@@ -2,6 +2,7 @@
 #define VIDEO_PLAYER_H
 
 #include "common.h"
+#include "kitty_transfer.h"
 #include "renderer.h"
 
 struct AVCodecContext;
@@ -32,12 +33,6 @@ typedef struct {
 /* Convenience alias used internally for the frame-queue head type.
  * Centralized here so all internal modules share a single definition. */
 typedef RenderedFrame VideoFrame;
-
-typedef enum {
-    KITTY_TRANSFER_AUTO = 0,
-    KITTY_TRANSFER_DIRECT,
-    KITTY_TRANSFER_SHM
-} KittyTransferMode;
 
 #define VIDEO_PLAYER_STATS_ROW 3
 

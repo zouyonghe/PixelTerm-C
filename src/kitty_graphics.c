@@ -1,10 +1,14 @@
 #include "kitty_graphics.h"
+#include "process_env.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+/* Keep shared-memory transfers bounded; larger frames fall back to direct kitty output. */
+#define KITTY_GRAPHICS_SHM_MAX_PAYLOAD_BYTES (8 * 1024 * 1024)
 
 static gboolean kitty_graphics_env_truthy(const gchar *value) {
     if (!value || value[0] == '\0') {
@@ -17,16 +21,17 @@ static gboolean kitty_graphics_env_truthy(const gchar *value) {
 }
 
 gboolean kitty_graphics_shm_auto_enabled(void) {
-    if (kitty_graphics_env_truthy(g_getenv("PIXELTERM_KITTY_SHM"))) {
+    if (kitty_graphics_env_truthy(pixelterm_getenv("PIXELTERM_KITTY_SHM"))) {
         return TRUE;
     }
 
-    if (g_getenv("SSH_CONNECTION") || g_getenv("SSH_CLIENT") || g_getenv("TMUX") || g_getenv("STY")) {
+    if (pixelterm_getenv("SSH_CONNECTION") || pixelterm_getenv("SSH_CLIENT") ||
+        pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) {
         return FALSE;
     }
 
-    const gchar *term = g_getenv("TERM");
-    const gchar *term_program = g_getenv("TERM_PROGRAM");
+    const gchar *term = pixelterm_getenv("TERM");
+    const gchar *term_program = pixelterm_getenv("TERM_PROGRAM");
     return (term && g_strcmp0(term, "xterm-kitty") == 0) ||
            (term_program && g_ascii_strcasecmp(term_program, "kitty") == 0);
 }
@@ -163,17 +168,34 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
         !g_size_checked_mul(&payload_size, payload_size, (gsize)4)) {
         return NULL;
     }
+    if (payload_size > KITTY_GRAPHICS_SHM_MAX_PAYLOAD_BYTES) {
+        return NULL;
+    }
 
     gchar *shm_name = kitty_graphics_make_shm_name();
     if (!shm_name) {
         return NULL;
     }
 
-    int fd = shm_open(shm_name, O_CREAT | O_EXCL | O_RDWR, S_IRUSR | S_IWUSR);
+    int flags = O_CREAT | O_EXCL | O_RDWR;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+
+    int fd = shm_open(shm_name, flags, S_IRUSR | S_IWUSR);
     if (fd < 0) {
         g_free(shm_name);
         return NULL;
     }
+
+#ifndef O_CLOEXEC
+    if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) {
+        shm_unlink(shm_name);
+        close(fd);
+        g_free(shm_name);
+        return NULL;
+    }
+#endif
 
     if (ftruncate(fd, (off_t)payload_size) != 0) {
         shm_unlink(shm_name);
