@@ -29,9 +29,9 @@ static void test_kitty_graphics_shm_command_rejects_invalid_input(void) {
 }
 
 static void test_kitty_graphics_shm_auto_enabled_rejects_remote_context(void) {
-    const gchar *old_override = g_getenv("PIXELTERM_KITTY_SHM");
-    const gchar *old_ssh = g_getenv("SSH_CONNECTION");
-    const gchar *old_term = g_getenv("TERM");
+    gchar *old_override = g_strdup(g_getenv("PIXELTERM_KITTY_SHM"));
+    gchar *old_ssh = g_strdup(g_getenv("SSH_CONNECTION"));
+    gchar *old_term = g_strdup(g_getenv("TERM"));
 
     g_unsetenv("PIXELTERM_KITTY_SHM");
     g_setenv("SSH_CONNECTION", "host 1 host 2", TRUE);
@@ -42,12 +42,15 @@ static void test_kitty_graphics_shm_auto_enabled_rejects_remote_context(void) {
     if (old_override) g_setenv("PIXELTERM_KITTY_SHM", old_override, TRUE); else g_unsetenv("PIXELTERM_KITTY_SHM");
     if (old_ssh) g_setenv("SSH_CONNECTION", old_ssh, TRUE); else g_unsetenv("SSH_CONNECTION");
     if (old_term) g_setenv("TERM", old_term, TRUE); else g_unsetenv("TERM");
+    g_free(old_override);
+    g_free(old_ssh);
+    g_free(old_term);
 }
 
 static void test_kitty_graphics_shm_auto_enabled_allows_explicit_override(void) {
-    const gchar *old_override = g_getenv("PIXELTERM_KITTY_SHM");
-    const gchar *old_ssh = g_getenv("SSH_CONNECTION");
-    const gchar *old_term = g_getenv("TERM");
+    gchar *old_override = g_strdup(g_getenv("PIXELTERM_KITTY_SHM"));
+    gchar *old_ssh = g_strdup(g_getenv("SSH_CONNECTION"));
+    gchar *old_term = g_strdup(g_getenv("TERM"));
 
     g_setenv("PIXELTERM_KITTY_SHM", "1", TRUE);
     g_setenv("SSH_CONNECTION", "host 1 host 2", TRUE);
@@ -58,6 +61,20 @@ static void test_kitty_graphics_shm_auto_enabled_allows_explicit_override(void) 
     if (old_override) g_setenv("PIXELTERM_KITTY_SHM", old_override, TRUE); else g_unsetenv("PIXELTERM_KITTY_SHM");
     if (old_ssh) g_setenv("SSH_CONNECTION", old_ssh, TRUE); else g_unsetenv("SSH_CONNECTION");
     if (old_term) g_setenv("TERM", old_term, TRUE); else g_unsetenv("TERM");
+    g_free(old_override);
+    g_free(old_ssh);
+    g_free(old_term);
+}
+
+static void test_kitty_graphics_frame_rejects_rowstride_overflow(void) {
+    guint8 pixel = 0;
+
+    g_assert_null(kitty_graphics_frame_new_shm_rgba(&pixel,
+                                                    G_MAXINT,
+                                                    1,
+                                                    G_MAXINT,
+                                                    1,
+                                                    1));
 }
 
 void register_kitty_graphics_tests(void) {
@@ -65,4 +82,5 @@ void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/shm_command/rejects_invalid_input", test_kitty_graphics_shm_command_rejects_invalid_input);
     g_test_add_func("/kitty_graphics/shm_auto/rejects_remote_context", test_kitty_graphics_shm_auto_enabled_rejects_remote_context);
     g_test_add_func("/kitty_graphics/shm_auto/allows_explicit_override", test_kitty_graphics_shm_auto_enabled_allows_explicit_override);
+    g_test_add_func("/kitty_graphics/frame/rejects_rowstride_overflow", test_kitty_graphics_frame_rejects_rowstride_overflow);
 }

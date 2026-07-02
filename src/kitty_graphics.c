@@ -141,7 +141,10 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                        gint rowstride,
                                                        gint display_width_cells,
                                                        gint display_height_cells) {
-    if (!pixels || width <= 0 || height <= 0 || rowstride < width * 4 ||
+    gsize required_rowstride = 0;
+    if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
+        !g_size_checked_mul(&required_rowstride, (gsize)width, (gsize)4) ||
+        required_rowstride > (gsize)G_MAXINT || (gsize)rowstride < required_rowstride ||
         display_width_cells <= 0 || display_height_cells <= 0) {
         return NULL;
     }
