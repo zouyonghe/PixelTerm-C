@@ -192,12 +192,12 @@ void video_frame_destroy(VideoFrame *frame) {
     g_free(frame);
 }
 
-static void video_frame_mark_kitty_shm_submitted(VideoFrame *frame, size_t written, size_t expected) {
-    if (frame && frame->kitty_shm_name && written == expected) {
+static void video_frame_mark_kitty_shm_submitted(VideoFrame *frame) {
+    if (frame && frame->kitty_shm_name) {
         /* Kitty t=s transfers hand unlink ownership to the terminal after the
-         * escape sequence is fully written. Unlinking here can race the
-         * terminal's shm_open(); unsubmitted frames are still cleaned up in
-         * video_frame_destroy(). */
+         * escape sequence is fully written and flushed. Unlinking here can
+         * race the terminal's shm_open(); unsubmitted frames are still cleaned
+         * up in video_frame_destroy(). */
         g_clear_pointer(&frame->kitty_shm_name, g_free);
     }
 }
@@ -1415,6 +1415,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     gint rendered_w = frame->rendered_width;
     gint rendered_h = frame->rendered_height;
     gboolean graphics_mode = (frame->pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS);
+    gboolean kitty_shm_written = FALSE;
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
@@ -1465,7 +1466,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
             if (result->len > 0) {
                 written = fwrite(result->str, 1, result->len, stdout);
             }
-            video_frame_mark_kitty_shm_submitted(frame, written, result->len);
+            kitty_shm_written = frame->kitty_shm_name && written == result->len;
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else if (!has_newline) {
             video_player_clear_line_cache(player);
@@ -1585,14 +1586,16 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
         if (result->len > 0) {
             written = fwrite(result->str, 1, result->len, stdout);
         }
-        video_frame_mark_kitty_shm_submitted(frame, written, result->len);
+        kitty_shm_written = frame->kitty_shm_name && written == result->len;
         printf("\033[J");
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
     }
     g_mutex_unlock(&player->state_mutex);
 
-    fflush(stdout);
+    if (fflush(stdout) == 0 && kitty_shm_written) {
+        video_frame_mark_kitty_shm_submitted(frame);
+    }
     gint64 io_end_us = g_get_monotonic_time();
     g_mutex_lock(&player->state_mutex);
     player->last_presented_pts_ms = frame->pts_ms;
