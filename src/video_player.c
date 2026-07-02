@@ -194,6 +194,10 @@ void video_frame_destroy(VideoFrame *frame) {
 
 static void video_frame_mark_kitty_shm_submitted(VideoFrame *frame, size_t written, size_t expected) {
     if (frame && frame->kitty_shm_name && written == expected) {
+        /* Kitty t=s transfers hand unlink ownership to the terminal after the
+         * escape sequence is fully written. Unlinking here can race the
+         * terminal's shm_open(); unsubmitted frames are still cleaned up in
+         * video_frame_destroy(). */
         g_clear_pointer(&frame->kitty_shm_name, g_free);
     }
 }
