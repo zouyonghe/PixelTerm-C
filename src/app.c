@@ -79,6 +79,7 @@ static void app_init_runtime_defaults(PixelTermApp *app) {
     app->render_work_factor = 9;
     app->gamma = 1.0;
     app->text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
+    app->kitty_transfer = KITTY_TRANSFER_AUTO;
     app->needs_redraw = TRUE;
     app->mode = APP_MODE_SINGLE;
     app->return_to_mode = RETURN_MODE_NONE;
@@ -261,7 +262,8 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
 
     // Initialize video player
     app->video_player = video_player_new(app->render_work_factor, app->force_text, app->force_sixel,
-                                          app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma);
+                                          app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma,
+                                          app->kitty_transfer);
     if (!app->video_player) {
         gif_player_destroy(app->gif_player);
         app->gif_player = NULL;

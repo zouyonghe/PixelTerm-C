@@ -22,6 +22,7 @@ void register_video_player_tests(void);
 void register_app_media_session_tests(void);
 void register_app_single_render_integration_tests(void);
 void register_terminal_protocols_tests(void);
+void register_kitty_graphics_tests(void);
 void register_app_cli_tests(void);
 void register_app_startup_tests(void);
 void register_book_tests(void);
@@ -315,6 +316,7 @@ int main(int argc, char **argv) {
     register_input_dispatch_mouse_modes_tests();
     register_preview_shared_tests();
     register_terminal_protocols_tests();
+    register_kitty_graphics_tests();
     register_app_cli_tests();
     register_app_startup_tests();
     register_book_tests();

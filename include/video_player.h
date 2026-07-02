@@ -21,6 +21,7 @@ typedef struct {
 
 typedef struct {
     GString *rendered;
+    gchar *kitty_shm_name;
     gint rendered_width;
     gint rendered_height;
     gint64 pts_ms;
@@ -31,6 +32,12 @@ typedef struct {
 /* Convenience alias used internally for the frame-queue head type.
  * Centralized here so all internal modules share a single definition. */
 typedef RenderedFrame VideoFrame;
+
+typedef enum {
+    KITTY_TRANSFER_AUTO = 0,
+    KITTY_TRANSFER_DIRECT,
+    KITTY_TRANSFER_SHM
+} KittyTransferMode;
 
 #define VIDEO_PLAYER_STATS_ROW 3
 
@@ -85,6 +92,7 @@ typedef struct {
     gboolean present_fps_valid;
     gboolean show_stats;
     ColorEnhanceMode color_enhance;
+    KittyTransferMode kitty_transfer;
 
     // FFmpeg state
     struct AVFormatContext *format_context;
@@ -114,7 +122,8 @@ typedef struct {
   } VideoPlayer;
 
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
-                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma);
+                              gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma,
+                              KittyTransferMode kitty_transfer);
 void video_player_destroy(VideoPlayer *player);
 void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
 void video_player_set_render_area(VideoPlayer *player,

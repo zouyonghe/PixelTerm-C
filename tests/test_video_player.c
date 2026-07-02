@@ -439,7 +439,7 @@ static void teardown_minimal_seek_context(VideoPlayer *player) {
 
 static void test_teardown_minimal_seek_context_frees_manual_format_context(void) {
     if (g_test_subprocess()) {
-        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
         g_assert_nonnull(player);
         g_assert_true(init_minimal_seek_context(player));
 
@@ -456,7 +456,7 @@ static void test_teardown_minimal_seek_context_frees_manual_format_context(void)
 }
 
 static void test_decode_queue_clear_removes_all_decoded_frames(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -513,7 +513,7 @@ static gpointer decode_queue_wait_thread_main(gpointer user_data) {
 }
 
 static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -579,7 +579,7 @@ static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void)
 }
 
 static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -641,7 +641,7 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
 }
 
 static void test_decode_queue_wait_and_take_blocks_until_item_arrives(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -673,7 +673,7 @@ static void test_decode_queue_wait_and_take_blocks_until_item_arrives(void) {
 }
 
 static void test_generation_counter_starts_initialized(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -685,7 +685,7 @@ static void test_generation_counter_starts_initialized(void) {
 }
 
 static void test_render_layout_generation_starts_initialized(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -697,7 +697,7 @@ static void test_render_layout_generation_starts_initialized(void) {
 }
 
 static void test_render_layout_generation_increments_only_on_layout_change(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -718,7 +718,7 @@ static void test_render_layout_generation_increments_only_on_layout_change(void)
 }
 
 static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -758,7 +758,7 @@ static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
 }
 
 static void test_set_fallback_pts_waits_on_state_mutex(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -793,7 +793,7 @@ static void test_set_fallback_pts_waits_on_state_mutex(void) {
 }
 
 static void test_resolve_and_advance_fallback_pts_waits_on_state_mutex(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -833,7 +833,7 @@ static void test_resolve_and_advance_fallback_pts_waits_on_state_mutex(void) {
 }
 
 static void test_current_position_prefers_last_presented_pts(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -852,7 +852,7 @@ static void test_current_position_prefers_last_presented_pts(void) {
 }
 
 static void test_current_position_uses_clock_when_no_presented_pts(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -878,7 +878,7 @@ static void test_current_position_uses_clock_when_no_presented_pts(void) {
 }
 
 static void test_current_position_uses_fallback_pts_when_clock_not_started(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -899,7 +899,7 @@ static void test_current_position_uses_fallback_pts_when_clock_not_started(void)
 }
 
 static void test_current_position_clamps_negative_fallback_pts_to_zero(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -920,7 +920,7 @@ static void test_current_position_clamps_negative_fallback_pts_to_zero(void) {
 }
 
 static void test_seek_target_clamps_to_zero_and_duration(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -937,7 +937,7 @@ static void test_seek_target_clamps_to_zero_and_duration(void) {
 }
 
 static void test_seek_relative_zero_delta_is_noop(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -971,7 +971,7 @@ static void test_seek_relative_zero_delta_is_noop(void) {
 }
 
 static void test_seek_relative_failed_seek_preserves_state(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1014,7 +1014,7 @@ static void test_seek_relative_failed_seek_preserves_state(void) {
 }
 
 static void test_seek_relative_paused_seek_refreshes_preview(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1057,7 +1057,7 @@ static void test_seek_relative_paused_seek_refreshes_preview(void) {
 }
 
 static void test_seek_relative_paused_repeated_seeks_preserve_latest_target(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1108,7 +1108,7 @@ static void test_seek_relative_paused_repeated_seeks_preserve_latest_target(void
 }
 
 static void test_seek_relative_preview_bails_after_decode_attempt_limit(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1152,7 +1152,7 @@ static void test_seek_preview_default_attempt_limit_is_bounded(void) {
 }
 
 static void test_render_seek_preview_uses_hook_before_decoder_setup(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1174,7 +1174,7 @@ static void test_render_seek_preview_uses_hook_before_decoder_setup(void) {
 }
 
 static void test_seek_relative_resets_visual_state_under_state_mutex(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1220,7 +1220,7 @@ static void test_seek_relative_resets_visual_state_under_state_mutex(void) {
 }
 
 static void test_play_after_eof_rewinds_explicitly_to_start(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1271,7 +1271,7 @@ static void test_play_after_eof_rewinds_explicitly_to_start(void) {
 }
 
 static void test_set_renderer_restarts_workers_when_replacing_during_playback(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1324,7 +1324,7 @@ static void test_set_renderer_restarts_workers_when_replacing_during_playback(vo
 }
 
 static void test_set_renderer_null_stops_playback_and_timer(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1348,7 +1348,7 @@ static void test_set_renderer_null_stops_playback_and_timer(void) {
 }
 
 static void test_schedule_tick_skips_when_eof_already_ended(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1369,7 +1369,7 @@ static void test_schedule_tick_skips_when_eof_already_ended(void) {
 }
 
 static void test_schedule_tick_skips_when_not_playing(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1390,7 +1390,7 @@ static void test_schedule_tick_skips_when_not_playing(void) {
 }
 
 static void test_schedule_tick_skips_without_renderer(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1412,7 +1412,7 @@ static void test_schedule_tick_skips_without_renderer(void) {
 }
 
 static void test_seek_relative_after_eof_stops_parked_workers_before_preview(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1476,7 +1476,7 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
 
 static void test_seek_relative_after_eof_real_preview_does_not_crash(void) {
     if (g_test_subprocess()) {
-        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+        VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
         if (!player) {
             g_test_skip("video player unavailable");
             return;
@@ -1518,7 +1518,7 @@ static void test_seek_relative_after_eof_real_preview_does_not_crash(void) {
 }
 
 static void test_render_queue_insert_sorted_orders_by_pts(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1536,7 +1536,7 @@ static void test_render_queue_insert_sorted_orders_by_pts(void) {
 }
 
 static void test_queue_clear_removes_all_rendered_frames(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1555,7 +1555,7 @@ static void test_queue_clear_removes_all_rendered_frames(void) {
 }
 
 static void test_should_not_drop_late_frame_when_backlog_is_shallow(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1587,7 +1587,7 @@ static void test_should_not_drop_late_frame_when_backlog_is_shallow(void) {
 }
 
 static void test_should_drop_late_frame_when_backlog_is_deep(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1616,7 +1616,7 @@ static void test_should_drop_late_frame_when_backlog_is_deep(void) {
 }
 
 static void test_queue_take_for_playback_waits_even_when_future_queue_is_full(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1634,7 +1634,7 @@ static void test_queue_take_for_playback_waits_even_when_future_queue_is_full(vo
 }
 
 static void test_queue_take_for_playback_waits_when_future_queue_is_not_full(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1650,7 +1650,7 @@ static void test_queue_take_for_playback_waits_when_future_queue_is_not_full(voi
 }
 
 static void test_calc_delay_uses_queue_head_even_with_high_io_avg(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1687,7 +1687,7 @@ static void test_calc_delay_uses_queue_head_even_with_high_io_avg(void) {
 }
 
 static void test_calc_delay_retries_quickly_when_playing_and_queue_is_empty(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1708,7 +1708,7 @@ static void test_calc_delay_retries_quickly_when_playing_and_queue_is_empty(void
 }
 
 static void test_should_not_drop_late_frame_when_backlog_is_medium(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1736,7 +1736,7 @@ static void test_should_not_drop_late_frame_when_backlog_is_medium(void) {
 }
 
 static void test_should_not_drop_late_frame_when_backlog_is_deep_and_silence_exceeded(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1772,7 +1772,7 @@ static gpointer queue_push_thread_main(gpointer user_data) {
 }
 
 static void test_update_queue_depth_uses_smaller_queue_for_large_render_geometry(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1786,7 +1786,7 @@ static void test_update_queue_depth_uses_smaller_queue_for_large_render_geometry
 }
 
 static void test_update_queue_depth_keeps_larger_queue_for_small_render_geometry(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1800,7 +1800,7 @@ static void test_update_queue_depth_keeps_larger_queue_for_small_render_geometry
 }
 
 static void test_update_queue_depth_uses_medium_queue_for_mid_render_geometry(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1814,7 +1814,7 @@ static void test_update_queue_depth_uses_medium_queue_for_mid_render_geometry(vo
 }
 
 static void test_update_queue_depth_uses_low_latency_queue_for_sixel_large_geometry(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1830,7 +1830,7 @@ static void test_update_queue_depth_uses_low_latency_queue_for_sixel_large_geome
 }
 
 static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(void) {
-    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1881,7 +1881,7 @@ static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(voi
 }
 
 static void test_rewind_reset_clears_timing_and_queue_state(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1916,7 +1916,7 @@ static void test_rewind_reset_clears_timing_and_queue_state(void) {
 }
 
 static void test_eof_handling_worker_eof_drains_tail_work_to_terminal_stop(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -1991,7 +1991,7 @@ static void test_eof_handling_worker_eof_drains_tail_work_to_terminal_stop(void)
 }
 
 static void test_queue_insert_sorted_rechecks_last_presented_after_full_queue_wait(void) {
-    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2056,7 +2056,7 @@ static void test_queue_insert_sorted_rechecks_last_presented_after_full_queue_wa
 }
 
 static void test_queue_insert_sorted_rejects_old_generation_after_eof_invalidation(void) {
-    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2117,7 +2117,7 @@ static void test_queue_insert_sorted_rejects_old_generation_after_eof_invalidati
 }
 
 static void test_queue_push_rejects_old_generation_after_eof_invalidation(void) {
-    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2184,7 +2184,7 @@ static void test_debug_logging_stale_drop_completes_after_eof_handling(void) {
         return;
     }
 
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2226,7 +2226,7 @@ static void test_debug_logging_stale_drop_completes_after_eof_handling(void) {
 }
 
 static void test_should_not_drop_late_frame_without_clock(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2245,7 +2245,7 @@ static void test_should_not_drop_late_frame_without_clock(void) {
 }
 
 static void test_should_not_drop_late_frame_before_rewind_resync(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2274,7 +2274,7 @@ static void test_should_not_drop_late_frame_before_rewind_resync(void) {
 }
 
 static void test_debug_logging_honors_environment_toggle(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2295,7 +2295,7 @@ static void test_debug_logging_honors_environment_toggle(void) {
 }
 
 static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2314,7 +2314,7 @@ static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void)
 }
 
 static void test_debug_logging_disabled_skips_metric_locks_before_queue_wait(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2365,7 +2365,7 @@ static void test_debug_logging_disabled_skips_metric_locks_before_queue_wait(voi
 }
 
 static void test_seek_frame_with_test_hook_uses_registered_callback(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;
@@ -2389,7 +2389,7 @@ static void test_seek_frame_with_test_hook_uses_registered_callback(void) {
 }
 
 static void test_render_worker_config_uses_player_color_enhance_without_renderer(void) {
-    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
         return;

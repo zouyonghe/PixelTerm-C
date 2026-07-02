@@ -29,6 +29,7 @@ static void print_usage(const char *program_name) {
            "Improve UI appearance on some terminals but may reduce performance (default: disabled)");
     printf("  %-29s %s\n", "--work-factor N", "Quality/speed tradeoff (1-9, default: 9)");
     printf("  %-29s %s\n", "--protocol MODE", "Output protocol: auto, text, sixel, kitty, iterm2");
+    printf("  %-29s %s\n", "--kitty-transfer MODE", "Kitty video transfer: auto, direct, shm");
     printf("  %-29s %s\n", "--text-symbols MODE", "Text symbol set: auto, half, quarter");
     printf("  %-29s %s\n", "--color-enhance MODE", "Color enhancement: off, vivid");
     printf("  %-29s %s\n", "--config PATH",
@@ -112,6 +113,25 @@ static gboolean parse_color_enhance_mode(const char *value, ColorEnhanceMode *ou
     }
     if (g_ascii_strcasecmp(value, "vivid") == 0) {
         *out_mode = COLOR_ENHANCE_VIVID;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean parse_kitty_transfer_mode(const char *value, KittyTransferMode *out_mode) {
+    if (!value || !out_mode) {
+        return FALSE;
+    }
+    if (g_ascii_strcasecmp(value, "auto") == 0) {
+        *out_mode = KITTY_TRANSFER_AUTO;
+        return TRUE;
+    }
+    if (g_ascii_strcasecmp(value, "direct") == 0) {
+        *out_mode = KITTY_TRANSFER_DIRECT;
+        return TRUE;
+    }
+    if (g_ascii_strcasecmp(value, "shm") == 0) {
+        *out_mode = KITTY_TRANSFER_SHM;
         return TRUE;
     }
     return FALSE;
@@ -324,6 +344,25 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
             return FALSE;
         }
         config->color_enhance = mode;
+        g_free(value);
+    }
+
+    if (g_key_file_has_key(key_file, group, "kitty_transfer", NULL)) {
+        GError *error = NULL;
+        gchar *value = g_key_file_get_string(key_file, group, "kitty_transfer", &error);
+        if (error) {
+            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", path, error->message);
+            g_error_free(error);
+            g_free(value);
+            return FALSE;
+        }
+        KittyTransferMode mode = KITTY_TRANSFER_AUTO;
+        if (!parse_kitty_transfer_mode(value, &mode)) {
+            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", path, value);
+            g_free(value);
+            return FALSE;
+        }
+        config->kitty_transfer = mode;
         g_free(value);
     }
 
@@ -664,6 +703,7 @@ void app_config_init(AppConfig *config) {
     config->force_iterm2 = FALSE;
     config->text_symbol_mode = TEXT_SYMBOL_MODE_AUTO;
     config->color_enhance = COLOR_ENHANCE_OFF;
+    config->kitty_transfer = KITTY_TRANSFER_AUTO;
 }
 
 ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *config) {
@@ -681,6 +721,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
         {"config", required_argument, 0, 1007},
         {"text-symbols", required_argument, 0, 1008},
         {"color-enhance", required_argument, 0, 1009},
+        {"kitty-transfer", required_argument, 0, 1010},
         {0, 0, 0, 0}
     };
 
@@ -797,6 +838,15 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
                     return ERROR_INVALID_ARGS;
                 }
                 config->color_enhance = mode;
+                break;
+            }
+            case 1010: { // --kitty-transfer
+                KittyTransferMode mode = KITTY_TRANSFER_AUTO;
+                if (!parse_kitty_transfer_mode(optarg, &mode)) {
+                    fprintf(stderr, "Unknown kitty transfer mode: %s\n", optarg ? optarg : "");
+                    return ERROR_INVALID_ARGS;
+                }
+                config->kitty_transfer = mode;
                 break;
             }
             case '?':
