@@ -1,5 +1,14 @@
 # Changelog
 
+- v1.7.30: Kitty video transfer controls, help-overlay polish, and build hardening.
+    - **Kitty Video Transfer**: Add `kitty_transfer = auto|direct|shm` and `--kitty-transfer auto|direct|shm` so kitty video playback can use a conservative shared-memory fast path locally while preserving direct inline rendering as the stable fallback.
+    - **Terminal Compatibility**: Keep shared-memory transfer disabled by default for SSH, tmux, screen, and Warp-oriented examples; document `direct` as the safer option when a kitty-compatible terminal becomes sluggish.
+    - **Help Overlay UX**: Make `?` help dismiss on the next key or mouse input without passing that input through to the active view, and clear help/info overlays on mode transitions so menus no longer leak between image, video, preview, and file-manager views.
+    - **Footer Hints**: Make bottom shortcut hints width-aware so narrow terminals keep the most important controls and hide secondary hints in the full help menu.
+    - **Input Stability**: Reset mouse click/scroll timing when a mouse event dismisses help, preventing the dismiss gesture from turning the next click into a double-click or suppressing the next scroll.
+    - **Build Hardening**: Enable configurable compiler/linker hardening defaults, including stack protector, fortified libc checks, Linux RELRO/NOW, and section garbage collection, while keeping downstream override hooks.
+    - **Testing**: Add regressions for kitty shared-memory validation, transfer-mode parsing, help dismissal, footer hint priority/order, input timing reset, and hardening flag behavior. The full C TAP suite now reports 290/290 tests passing.
+
 - v1.7.29: VideoPlayer lifecycle guard follow-up.
     - **Video Lifecycle Safety**: Stop playback immediately when detaching the video renderer, clear any active playback timer, and prevent tick scheduling when playback is inactive, EOF has ended, or no renderer is attached.
     - **Renderer Replacement Clarity**: Keep worker restart behavior for renderer swaps while documenting that a later renderer reattach after detach remains idle until playback is explicitly started again.

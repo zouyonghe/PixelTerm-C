@@ -8,7 +8,7 @@
 |-----|----------|
 | ESC | Exit application |
 | Ctrl+C | Force exit |
-| ? | Show/hide full shortcut help |
+| ? | Show full shortcut help; press any key or mouse button to close it |
 
 ### Mouse Controls
 
