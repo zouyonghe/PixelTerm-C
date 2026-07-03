@@ -45,7 +45,17 @@ ifeq ($(ARCH),aarch64)
 endif
 
 PKG_CONFIG ?= pkg-config
-PKG_CONFIG_CMD = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKG_CONFIG)
+PKG_CONFIG_LOCAL_PATHS ?= /usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/local/share/pkgconfig
+ifeq ($(ARCH),aarch64)
+  PKG_CONFIG_EFFECTIVE_PATH := $(PKG_CONFIG_PATH)
+else
+  ifneq ($(PKG_CONFIG_PATH),)
+    PKG_CONFIG_EFFECTIVE_PATH := $(PKG_CONFIG_PATH):$(PKG_CONFIG_LOCAL_PATHS)
+  else
+    PKG_CONFIG_EFFECTIVE_PATH := $(PKG_CONFIG_LOCAL_PATHS)
+  endif
+endif
+PKG_CONFIG_CMD = PKG_CONFIG_PATH="$(PKG_CONFIG_EFFECTIVE_PATH)" $(PKG_CONFIG)
 PKG_DEPS = chafa gdk-pixbuf-2.0 gio-2.0 libavformat libavcodec libswscale libavutil
 
 LIBS = $(shell $(PKG_CONFIG_CMD) --libs $(PKG_DEPS)) -lpthread -lm
