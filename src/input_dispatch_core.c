@@ -37,8 +37,6 @@ static void app_pause_video_for_resize(PixelTermApp *app) {
     if (video_player_is_playing(app->video_player)) {
         app->video_was_playing_before_resize = TRUE;
         video_player_pause(app->video_player);
-    } else {
-        app->video_was_playing_before_resize = FALSE;
     }
 }
 

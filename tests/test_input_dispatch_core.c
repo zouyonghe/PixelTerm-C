@@ -247,6 +247,7 @@ static void test_pause_video_for_resize_records_playing_state(void) {
 
     app.mode = APP_MODE_SINGLE;
     app.video_player = &player;
+    g_mutex_init(&player.state_mutex);
     player.has_video = TRUE;
     player.is_playing = TRUE;
 
@@ -257,6 +258,8 @@ static void test_pause_video_for_resize_records_playing_state(void) {
 
     g_assert_false(player.is_playing);
     g_assert_true(app.video_was_playing_before_resize);
+
+    g_mutex_clear(&player.state_mutex);
 }
 
 static void test_pause_video_for_resize_does_not_record_paused_video(void) {
@@ -265,6 +268,7 @@ static void test_pause_video_for_resize_does_not_record_paused_video(void) {
 
     app.mode = APP_MODE_SINGLE;
     app.video_player = &player;
+    g_mutex_init(&player.state_mutex);
     player.has_video = TRUE;
     player.is_playing = FALSE;
 
@@ -275,6 +279,30 @@ static void test_pause_video_for_resize_does_not_record_paused_video(void) {
 
     g_assert_false(player.is_playing);
     g_assert_false(app.video_was_playing_before_resize);
+
+    g_mutex_clear(&player.state_mutex);
+}
+
+static void test_pause_video_for_resize_keeps_playing_state_across_repeated_resize_events(void) {
+    PixelTermApp app = {0};
+    VideoPlayer player = {0};
+
+    app.mode = APP_MODE_SINGLE;
+    app.video_player = &player;
+    g_mutex_init(&player.state_mutex);
+    player.has_video = TRUE;
+    player.is_playing = TRUE;
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+
+    input_dispatch_core_pause_video_for_resize(&app);
+    input_dispatch_core_pause_video_for_resize(&app);
+
+    g_assert_false(player.is_playing);
+    g_assert_true(app.video_was_playing_before_resize);
+
+    g_mutex_clear(&player.state_mutex);
 }
 
 void register_input_dispatch_core_tests(void) {
@@ -302,4 +330,6 @@ void register_input_dispatch_core_tests(void) {
                     test_pause_video_for_resize_records_playing_state);
     g_test_add_func("/input_dispatch_core/resize/pause_video_does_not_record_paused_video",
                     test_pause_video_for_resize_does_not_record_paused_video);
+    g_test_add_func("/input_dispatch_core/resize/pause_video_keeps_playing_state_across_repeated_resize_events",
+                    test_pause_video_for_resize_keeps_playing_state_across_repeated_resize_events);
 }
