@@ -1,5 +1,14 @@
 # Changelog
 
+- v1.8.1: CLI/startup/input hardening and video resize stability.
+    - **CLI and Config UX**: Reject unexpected extra positional arguments, improve invalid boolean and enum diagnostics, and include allowed values in CLI/config-file error messages.
+    - **Startup Safety**: Reject unsupported regular files with a clear error instead of silently opening their parent directory, and preserve `stat()` failure details so missing or inaccessible paths report the real system error.
+    - **Video Stability**: Keep paused videos paused after scale changes, surface video load failures directly, and resume playback after resize bursts only when the video was playing before resize handling paused it.
+    - **File Manager Reliability**: Preserve the current directory state when refresh fails and prefer canonical full-path matching when loading files that share the same basename.
+    - **Input Hardening**: Read high-bit input bytes safely and make SGR mouse parsing stricter by rejecting malformed coordinates, missing terminators, and non-SGR mouse-like packets without the `<` prefix.
+    - **Installer and Docs Polish**: Improve install-script unknown-argument guidance, document checksum verification and dry-run usage, and refresh quick help/exit hints.
+    - **Testing**: Add regressions for the repaired CLI, startup, file-manager, video, resize, installer, fullwidth input, and SGR mouse parser edge cases. The full C TAP suite now reports 303/303 tests passing.
+
 - v1.8.0: Book-reader help overlay release follow-up.
     - **Book Reader Help**: Render book pages in text mode while help or info overlays are visible, preventing kitty/sixel/iTerm2 graphics placements from covering the centered help panel in Kitty, Warp, and other graphics-protocol terminals.
     - **Overlay Consistency**: Align book-reader overlay rendering with the existing single-image/video overlay behavior so help panels remain readable across media modes.
