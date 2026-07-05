@@ -151,9 +151,17 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     gint idx = 0;
     for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
         gchar *current_path = (gchar*)cur->data;
-        gchar *current_canonical = g_canonicalize_filename(current_path, NULL);
-        gboolean full_path_match = g_strcmp0(current_canonical, target_canonical) == 0;
-        g_free(current_canonical);
+        gboolean full_path_match = g_strcmp0(current_path, target_canonical) == 0;
+
+        if (!full_path_match) {
+            gchar *current_basename = g_path_get_basename(current_path);
+            if (g_strcmp0(current_basename, target_basename) == 0) {
+                gchar *current_canonical = g_canonicalize_filename(current_path, NULL);
+                full_path_match = g_strcmp0(current_canonical, target_canonical) == 0;
+                g_free(current_canonical);
+            }
+            g_free(current_basename);
+        }
 
         if (full_path_match) {
             app->current_index = idx;

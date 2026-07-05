@@ -711,7 +711,8 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     if (!dir) {
         if (previous_directory) {
             g_free(app->file_manager.directory);
-            app->file_manager.directory = g_strdup(previous_directory);
+            app->file_manager.directory = previous_directory;
+            previous_directory = NULL;
         }
         g_free(previous_directory);
         g_free(current_dir);

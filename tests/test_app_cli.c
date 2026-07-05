@@ -684,6 +684,62 @@ static void test_cli_text_symbols_argument_parses_supported_modes(AppCliFixture 
     }
 }
 
+static void test_cli_protocol_argument_rejects_unknown_mode(AppCliFixture *fixture,
+                                                            gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {"pixelterm", "--protocol", "foo", NULL};
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --protocol value: foo (expected auto, text, sixel, kitty, or iterm2)\n");
+
+    g_free(stderr_output);
+    g_free(path);
+}
+
+static void test_cli_text_symbols_argument_rejects_unknown_mode(AppCliFixture *fixture,
+                                                                gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {"pixelterm", "--text-symbols", "ascii", NULL};
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --text-symbols value: ascii (expected auto, half, or quarter)\n");
+
+    g_free(stderr_output);
+    g_free(path);
+}
+
 static void test_cli_help_mentions_xdg_and_home_config_defaults(AppCliFixture *fixture,
                                                                 gconstpointer user_data) {
     (void)fixture;
@@ -1434,8 +1490,12 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/help_mentions_xdg_and_home_config_defaults",
                      test_cli_help_mentions_xdg_and_home_config_defaults);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/protocol_rejects_unknown_mode",
+                     test_cli_protocol_argument_rejects_unknown_mode);
     add_app_cli_test("/app_cli/parse/text_symbols",
                      test_cli_text_symbols_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/text_symbols_rejects_unknown_mode",
+                     test_cli_text_symbols_argument_rejects_unknown_mode);
     add_app_cli_test("/app_cli/parse/color_enhance",
                       test_cli_color_enhance_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/parse/color_enhance_invalid",

@@ -12,6 +12,8 @@
 static gboolean input_discard_kitty_apc(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
 
+#define INPUT_SGR_MOUSE_BUTTON_MAX 255
+
 static gboolean input_parse_sgr_int(const gchar *text, gint min_value, gint max_value, gint *out_value) {
     if (!text || !out_value) {
         return FALSE;
@@ -348,11 +350,17 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                         // Skip '<' if present in first parameter (SGR format)
                         gchar *btn_str = params[0];
                         if (btn_str[0] == '<') btn_str++;
+                        if (params[2]) {
+                            gsize y_len = strlen(params[2]);
+                            if (y_len > 0 && (params[2][y_len - 1] == 'M' || params[2][y_len - 1] == 'm')) {
+                                params[2][y_len - 1] = '\0';
+                            }
+                        }
                         
                         gint button = 0;
                         gint x = 0;
                         gint y = 0;
-                        if (!input_parse_sgr_int(btn_str, 0, 255, &button) ||
+                        if (!input_parse_sgr_int(btn_str, 0, INPUT_SGR_MOUSE_BUTTON_MAX, &button) ||
                             !input_parse_sgr_int(params[1], 1, G_MAXINT, &x) ||
                             !input_parse_sgr_int(params[2], 1, G_MAXINT, &y)) {
                             event->type = INPUT_KEY_PRESS;
