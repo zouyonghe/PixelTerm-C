@@ -1,6 +1,9 @@
 #include "app.h"
 
 #include "app_media_session.h"
+#include "gif_player.h"
+#include "preload_control.h"
+#include "video_player.h"
 
 #define APP_MODE_COUNT (APP_MODE_BOOK_PREVIEW + 1)
 #define APP_MODE_ALL_MASK ((1u << APP_MODE_COUNT) - 1u)
@@ -95,6 +98,23 @@ static const AppModeDef k_modes[APP_MODE_COUNT] = {
         .on_exit = app_mode_on_exit_preview,
     },
 };
+
+void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+    if (!app) {
+        return;
+    }
+
+    if (app->gif_player) {
+        gif_player_stop(app->gif_player);
+    }
+    if (app->video_player) {
+        video_player_stop(app->video_player);
+    }
+    app->info_visible = FALSE;
+    if (clear_preloader_queue) {
+        app_preloader_clear_queue(app);
+    }
+}
 
 ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
     if (!app) {

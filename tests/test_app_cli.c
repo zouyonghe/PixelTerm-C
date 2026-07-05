@@ -611,11 +611,11 @@ static void test_cli_invalid_boolean_values_return_error(AppCliFixture *fixture,
         if (strcmp(cases[i].option, "--preload") == 0) {
             g_assert_cmpstr(stderr_output,
                             ==,
-                            "Invalid --preload value: maybe (expected true/false)\n");
+                            "Invalid --preload value: maybe (expected true/false, yes/no, on/off, or 1/0)\n");
         } else {
             g_assert_cmpstr(stderr_output,
                             ==,
-                            "Invalid --alt-screen value: 2 (expected true/false)\n");
+                            "Invalid --alt-screen value: 2 (expected true/false, yes/no, on/off, or 1/0)\n");
         }
         g_free(stderr_output);
         g_free(path);
@@ -682,6 +682,62 @@ static void test_cli_text_symbols_argument_parses_supported_modes(AppCliFixture 
         g_assert_cmpint(config.text_symbol_mode, ==, cases[i].expected_mode);
         g_free(path);
     }
+}
+
+static void test_cli_protocol_argument_rejects_unknown_mode(AppCliFixture *fixture,
+                                                            gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {"pixelterm", "--protocol", "foo", NULL};
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --protocol value: foo (expected auto, text, sixel, kitty, or iterm2)\n");
+
+    g_free(stderr_output);
+    g_free(path);
+}
+
+static void test_cli_text_symbols_argument_rejects_unknown_mode(AppCliFixture *fixture,
+                                                                gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {"pixelterm", "--text-symbols", "ascii", NULL};
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --text-symbols value: ascii (expected auto, half, or quarter)\n");
+
+    g_free(stderr_output);
+    g_free(path);
 }
 
 static void test_cli_help_mentions_xdg_and_home_config_defaults(AppCliFixture *fixture,
@@ -807,6 +863,45 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     g_assert_cmpfloat_with_epsilon(config.gamma, 1.25, 0.0001);
     g_free(path);
     g_free(default_config_path);
+}
+
+static void test_cli_config_invalid_enum_lists_expected_values(AppCliFixture *fixture,
+                                                              gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    gchar *config_path = write_temp_config_file(
+        "[default]\n"
+        "protocol=sixels\n");
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {
+        "pixelterm",
+        "--config",
+        config_path,
+        NULL,
+    };
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+    gchar *expected = g_strdup_printf(
+        "Invalid 'protocol' in config file '%s' group '[default]': sixels (expected auto, text, sixel, kitty, or iterm2)\n",
+        config_path);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output, ==, expected);
+
+    g_free(expected);
+    g_free(stderr_output);
+    g_free(path);
+    g_free(config_path);
 }
 
 static void test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime(void) {
@@ -986,12 +1081,23 @@ static void test_cli_kitty_transfer_argument_rejects_unknown_mode(AppCliFixture 
 
     AppConfig config;
     gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
     app_config_init(&config);
 
     char *argv[] = {"pixelterm", "--kitty-transfer", "pipe", NULL};
 
-    g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_INVALID_ARGS);
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
     g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --kitty-transfer value: pipe (expected auto, direct, or shm)\n");
+    g_free(stderr_output);
 }
 
 static void test_cli_color_enhance_argument_rejects_unknown_mode(AppCliFixture *fixture,
@@ -1001,12 +1107,23 @@ static void test_cli_color_enhance_argument_rejects_unknown_mode(AppCliFixture *
 
     AppConfig config;
     gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
     app_config_init(&config);
 
     char *argv[] = {"pixelterm", "--color-enhance", "neon", NULL};
 
-    g_assert_cmpint(parse_cli_args(argv, &path, &config), ==, ERROR_INVALID_ARGS);
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
     g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Invalid --color-enhance value: neon (expected off or vivid)\n");
+    g_free(stderr_output);
 }
 
 static void test_cli_double_dash_preserves_positional_config_like_path(AppCliFixture *fixture,
@@ -1030,6 +1147,39 @@ static void test_cli_double_dash_preserves_positional_config_like_path(AppCliFix
     g_assert_true(config.preload_enabled);
     g_assert_true(config.alt_screen_enabled);
     g_assert_cmpint(config.protocol_mode, ==, APP_PROTOCOL_AUTO);
+    g_free(path);
+}
+
+static void test_cli_rejects_extra_positional_arguments(AppCliFixture *fixture,
+                                                        gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    app_config_init(&config);
+
+    char *argv[] = {
+        "pixelterm",
+        "image1.png",
+        "image2.png",
+        NULL,
+    };
+
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_cmpstr(stderr_output,
+                    ==,
+                    "Unexpected argument: image2.png\nUse --help for usage information\n");
+
+    g_free(stderr_output);
     g_free(path);
 }
 
@@ -1335,11 +1485,17 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/parse/invalid_boolean_values", test_cli_invalid_boolean_values_return_error);
     add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
                      test_cli_double_dash_preserves_positional_config_like_path);
+    add_app_cli_test("/app_cli/parse/rejects_extra_positional_arguments",
+                     test_cli_rejects_extra_positional_arguments);
     add_app_cli_test("/app_cli/parse/help_mentions_xdg_and_home_config_defaults",
                      test_cli_help_mentions_xdg_and_home_config_defaults);
     add_app_cli_test("/app_cli/parse/protocol", test_cli_protocol_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/protocol_rejects_unknown_mode",
+                     test_cli_protocol_argument_rejects_unknown_mode);
     add_app_cli_test("/app_cli/parse/text_symbols",
                      test_cli_text_symbols_argument_parses_supported_modes);
+    add_app_cli_test("/app_cli/parse/text_symbols_rejects_unknown_mode",
+                     test_cli_text_symbols_argument_rejects_unknown_mode);
     add_app_cli_test("/app_cli/parse/color_enhance",
                       test_cli_color_enhance_argument_parses_supported_modes);
     add_app_cli_test("/app_cli/parse/color_enhance_invalid",
@@ -1367,5 +1523,7 @@ void register_app_cli_tests(void) {
     add_app_cli_test("/app_cli/config/apply_runtime_copies_app_fields",
                      test_cli_apply_runtime_copies_app_owned_config_fields);
     add_app_cli_test("/app_cli/config/default_file_terminal_precedence", test_cli_default_config_applies_terminal_specific_precedence);
+    add_app_cli_test("/app_cli/config/invalid_enum_lists_expected_values",
+                     test_cli_config_invalid_enum_lists_expected_values);
     add_app_cli_test("/app_cli/config/cli_overrides_loaded_values", test_cli_flags_override_loaded_config_values);
 }

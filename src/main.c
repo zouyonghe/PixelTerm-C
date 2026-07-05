@@ -120,9 +120,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
         if (resize_pending) {
             resize_pending = FALSE;
+            gboolean resume_video_after_resize = app->video_was_playing_before_resize;
+            app->video_was_playing_before_resize = FALSE;
             get_terminal_size(&app->term_width, &app->term_height);
             app->suppress_full_clear = FALSE;
             app_render_by_mode(app);
+            if (resume_video_after_resize && app->video_player) {
+                video_player_play(app->video_player);
+            }
             continue;
         }
         
@@ -216,7 +221,16 @@ int main(int argc, char *argv[]) {
     // Validate and classify startup path
     error = app_startup_classify_path(path, &startup);
     if (error != ERROR_NONE) {
-        fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", path);
+        const char *display_path = path ? path : "current directory";
+        if (startup.failure_errno != 0) {
+            fprintf(stderr, "Error: Cannot open '%s': %s\n",
+                    display_path,
+                    g_strerror(startup.failure_errno));
+        } else if (error == ERROR_INVALID_IMAGE) {
+            fprintf(stderr, "Unsupported file type: %s\n", display_path);
+        } else {
+            fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", display_path);
+        }
         app_destroy(g_app);
         g_free(path);
         return 1;
@@ -227,8 +241,7 @@ int main(int argc, char *argv[]) {
 
     gboolean is_directory = startup.kind == APP_STARTUP_PATH_DIRECTORY;
 
-    if (startup.kind == APP_STARTUP_PATH_DIRECTORY ||
-        startup.kind == APP_STARTUP_PATH_PARENT_DIRECTORY) {
+    if (startup.kind == APP_STARTUP_PATH_DIRECTORY) {
         error = app_load_directory(g_app, path);
         if (error == ERROR_NONE) {
             // Always start in file manager for directories

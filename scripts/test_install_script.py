@@ -156,6 +156,14 @@ class InstallScriptCLITest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), "/usr/local/bin/pixelterm")
 
+    def test_unknown_argument_points_to_help(self) -> None:
+        result = run_script("--prefix", "/tmp/pixelterm")
+
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout)
+        self.assertIn("Unknown argument: --prefix", result.stderr)
+        self.assertIn("Run: bash install.sh --help", result.stderr)
+        self.assertIn("Use --bin-dir to choose the install directory", result.stderr)
+
     def test_dry_run_reports_download_url_and_destination(self) -> None:
         result = run_script(
             "--dry-run",

@@ -175,11 +175,12 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
         return;
     }
     app->video_scale = next_scale;
+    gboolean was_playing = app->video_player && video_player_is_playing(app->video_player);
     if (app->video_player) {
         video_player_stop(app->video_player);
     }
     app_render_current_image(app);
-    if (app->video_player) {
+    if (was_playing && app->video_player) {
         video_player_play(app->video_player);
     }
 }

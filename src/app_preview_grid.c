@@ -588,13 +588,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    // Stop GIF playback if active
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
+    app_prepare_mode_entry(app, TRUE);
 
     (void)app_transition_mode(app, APP_MODE_PREVIEW);
     app_preview_set_selected_index(app, app->current_index >= 0 ? app->current_index : 0);
@@ -604,14 +598,12 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         app_preview_set_selected_index(app, 0);
     }
 
-    app->info_visible = FALSE;
     app->needs_redraw = TRUE;
 
     // Clear screen on mode entry to avoid ghosting
     ui_clear_screen_for_refresh(app);
     fflush(stdout);
 
-    app_preloader_clear_queue(app);
     return ERROR_NONE;
 }
 

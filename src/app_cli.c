@@ -301,7 +301,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         AppProtocolMode mode = APP_PROTOCOL_AUTO;
         if (!parse_protocol_mode(value, &mode)) {
-            fprintf(stderr, "Invalid 'protocol' in config file '%s': %s\n", path, value);
+            fprintf(stderr,
+                    "Invalid 'protocol' in config file '%s' group '[%s]': %s (expected auto, text, sixel, kitty, or iterm2)\n",
+                    path, group, value);
             g_free(value);
             return FALSE;
         }
@@ -320,7 +322,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
         if (!parse_text_symbol_mode(value, &mode)) {
-            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", path, value);
+            fprintf(stderr,
+                    "Invalid 'text_symbols' in config file '%s' group '[%s]': %s (expected auto, half, or quarter)\n",
+                    path, group, value);
             g_free(value);
             return FALSE;
         }
@@ -339,7 +343,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
         if (!parse_color_enhance_mode(value, &mode)) {
-            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", path, value);
+            fprintf(stderr,
+                    "Invalid 'color_enhance' in config file '%s' group '[%s]': %s (expected off or vivid)\n",
+                    path, group, value);
             g_free(value);
             return FALSE;
         }
@@ -358,7 +364,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         KittyTransferMode mode = KITTY_TRANSFER_AUTO;
         if (!parse_kitty_transfer_mode(value, &mode)) {
-            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", path, value);
+            fprintf(stderr,
+                    "Invalid 'kitty_transfer' in config file '%s' group '[%s]': %s (expected auto, direct, or shm)\n",
+                    path, group, value);
             g_free(value);
             return FALSE;
         }
@@ -757,7 +765,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1000: { // --preload
                 gboolean value = TRUE;
                 if (!app_parse_boolean(optarg, &value)) {
-                    fprintf(stderr, "Invalid --preload value: %s (expected true/false)\n",
+                    fprintf(stderr, "Invalid --preload value: %s (expected true/false, yes/no, on/off, or 1/0)\n",
                             optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
@@ -770,7 +778,7 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1002: { // --alt-screen
                 gboolean value = FALSE;
                 if (!app_parse_boolean(optarg, &value)) {
-                    fprintf(stderr, "Invalid --alt-screen value: %s (expected true/false)\n",
+                    fprintf(stderr, "Invalid --alt-screen value: %s (expected true/false, yes/no, on/off, or 1/0)\n",
                             optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
@@ -798,7 +806,8 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1005: { // --protocol
                 AppProtocolMode mode = APP_PROTOCOL_AUTO;
                 if (!parse_protocol_mode(optarg, &mode)) {
-                    fprintf(stderr, "Unknown protocol: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Invalid --protocol value: %s (expected auto, text, sixel, kitty, or iterm2)\n",
+                            optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
                 config->protocol_mode = mode;
@@ -825,7 +834,8 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1008: { // --text-symbols
                 TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
                 if (!parse_text_symbol_mode(optarg, &mode)) {
-                    fprintf(stderr, "Unknown text symbol mode: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Invalid --text-symbols value: %s (expected auto, half, or quarter)\n",
+                            optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
                 config->text_symbol_mode = mode;
@@ -834,7 +844,8 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1009: { // --color-enhance
                 ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
                 if (!parse_color_enhance_mode(optarg, &mode)) {
-                    fprintf(stderr, "Unknown color enhancement mode: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Invalid --color-enhance value: %s (expected off or vivid)\n",
+                            optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
                 config->color_enhance = mode;
@@ -843,7 +854,8 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1010: { // --kitty-transfer
                 KittyTransferMode mode = KITTY_TRANSFER_AUTO;
                 if (!parse_kitty_transfer_mode(optarg, &mode)) {
-                    fprintf(stderr, "Unknown kitty transfer mode: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Invalid --kitty-transfer value: %s (expected auto, direct, or shm)\n",
+                            optarg ? optarg : "");
                     return ERROR_INVALID_ARGS;
                 }
                 config->kitty_transfer = mode;
@@ -872,6 +884,13 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
     // Get path from remaining arguments
     if (optind < argc) {
         *path = g_strdup(argv[optind]);
+        if (optind + 1 < argc) {
+            fprintf(stderr, "Unexpected argument: %s\n", argv[optind + 1]);
+            fprintf(stderr, "Use --help for usage information\n");
+            g_free(*path);
+            *path = NULL;
+            return ERROR_INVALID_ARGS;
+        }
     }
 
     return ERROR_NONE;

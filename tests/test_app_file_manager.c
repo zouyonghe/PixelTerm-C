@@ -12,6 +12,7 @@
 static const guint8 k_png_data[] = {
     0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A
 };
+static GList *g_browser_test_files = NULL;
 
 typedef void (*RenderCaptureFunc)(gpointer user_data);
 
@@ -48,7 +49,7 @@ static void render_file_manager_capture(gpointer user_data) {
 }
 
 FileBrowser *browser_create(void) {
-    return NULL;
+    return (FileBrowser *)0x1;
 }
 
 void browser_destroy(FileBrowser *browser) {
@@ -63,12 +64,12 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
 
 GList *browser_get_all_files(const FileBrowser *browser) {
     (void)browser;
-    return NULL;
+    return g_browser_test_files;
 }
 
 gint browser_get_total_files(const FileBrowser *browser) {
     (void)browser;
-    return 0;
+    return g_list_length(g_browser_test_files);
 }
 
 BookDocument *book_open(const char *filepath, ErrorCode *out_error) {
@@ -177,6 +178,21 @@ static gchar *write_file_in_dir(const gchar *dir, const gchar *name, const guint
     return path;
 }
 
+static gchar *write_png_file_in_dir(const gchar *dir, const gchar *name) {
+    static const gchar k_png_base64[] =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNg"
+        "YAAAAAMAASsJTYQAAAAASUVORK5CYII=";
+    gsize len = 0;
+    guchar *data = g_base64_decode(k_png_base64, &len);
+    if (!data || len == 0) {
+        g_error("Failed to decode PNG data");
+    }
+
+    gchar *path = write_file_in_dir(dir, name, data, len);
+    g_free(data);
+    return path;
+}
+
 static gchar *create_dir_in_dir(const gchar *dir, const gchar *name) {
     gchar *path = g_build_filename(dir, name, NULL);
     g_assert_cmpint(g_mkdir(path, 0700), ==, 0);
@@ -202,6 +218,12 @@ static void cleanup_file_manager_app(PixelTermApp *app) {
         app->file_manager.entries = NULL;
     }
     g_clear_pointer(&app->file_manager.directory, g_free);
+}
+
+static void clear_browser_test_files(gpointer data) {
+    (void)data;
+    g_list_free_full(g_browser_test_files, g_free);
+    g_browser_test_files = NULL;
 }
 
 static const gchar *selected_path(const PixelTermApp *app) {
@@ -341,6 +363,39 @@ static void test_refresh_preserves_explicit_parent_selection(void) {
     g_assert_cmpstr(basename, ==, "..");
 
     g_free(basename);
+    cleanup_file_manager_app(&app);
+    g_free(a_png);
+    g_free(dir);
+}
+
+static void test_refresh_failure_preserves_previous_directory_and_entries(void) {
+    gchar *dir = create_temp_dir();
+    gchar *a_png = write_file_in_dir(dir, "a.png", k_png_data, sizeof(k_png_data));
+    gchar *missing_dir = g_build_filename(dir, "missing", NULL);
+    PixelTermApp app = {0};
+    gchar *old_directory = NULL;
+    GList *old_entries = NULL;
+    gint old_entries_count = 0;
+
+    init_file_manager_app(&app, dir, 24);
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app_file_manager_select_path(&app, a_png), ==, ERROR_NONE);
+    old_directory = g_strdup(app.file_manager.directory);
+    old_entries = app.file_manager.entries;
+    old_entries_count = app.file_manager.entries_count;
+
+    g_free(app.file_manager.directory);
+    app.file_manager.directory = g_strdup(missing_dir);
+
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_FILE_NOT_FOUND);
+    g_assert_cmpstr(app.file_manager.directory, ==, old_directory);
+    g_assert_true(app.file_manager.entries == old_entries);
+    g_assert_cmpint(app.file_manager.entries_count, ==, old_entries_count);
+    g_assert_cmpstr(selected_path(&app), ==, a_png);
+
+    g_free(old_directory);
+    g_free(missing_dir);
     cleanup_file_manager_app(&app);
     g_free(a_png);
     g_free(dir);
@@ -494,6 +549,32 @@ static void test_enter_parent_entry_selects_directory_just_left(void) {
     g_free(dir);
 }
 
+static void test_load_single_file_matches_full_canonical_path_before_basename(void) {
+    gchar *target_dir = create_temp_dir();
+    gchar *other_dir = create_temp_dir();
+    gchar *target_png = write_png_file_in_dir(target_dir, "same.png");
+    gchar *other_png = write_png_file_in_dir(other_dir, "same.png");
+    PixelTermApp app = {0};
+
+    clear_browser_test_files(NULL);
+    g_test_queue_destroy(clear_browser_test_files, NULL);
+    g_browser_test_files = g_list_append(g_browser_test_files, g_strdup(other_png));
+    g_browser_test_files = g_list_append(g_browser_test_files, g_strdup(target_png));
+
+    app.preload_enabled = FALSE;
+    app.preview.selected_link_index = -1;
+
+    g_assert_cmpint(app_load_single_file(&app, target_png), ==, ERROR_NONE);
+    g_assert_cmpstr((const gchar *)g_list_nth_data(app.image_files, app.current_index), ==, target_png);
+
+    g_list_free_full(app.image_files, g_free);
+    g_free(app.current_directory);
+    g_free(target_png);
+    g_free(other_png);
+    g_free(target_dir);
+    g_free(other_dir);
+}
+
 static void test_render_selected_row_uses_full_width_highlight_with_size(void) {
     gchar *dir = create_temp_dir();
     gchar *a_png = write_file_in_dir(dir, "a.png", k_png_data, sizeof(k_png_data));
@@ -555,6 +636,8 @@ int main(int argc, char **argv) {
                     test_refresh_adjusts_selection_after_selected_file_is_removed);
     g_test_add_func("/app_file_manager/refresh/preserves_explicit_parent_selection",
                     test_refresh_preserves_explicit_parent_selection);
+    g_test_add_func("/app_file_manager/refresh/failure_preserves_previous_directory_and_entries",
+                    test_refresh_failure_preserves_previous_directory_and_entries);
     g_test_add_func("/app_file_manager/toggle_hidden/preserves_visible_selection",
                     test_toggle_hidden_preserves_visible_selection);
     g_test_add_func("/app_file_manager/toggle_hidden/clamps_selection_when_hidden_entry_disappears_after_preview_return",
@@ -565,6 +648,8 @@ int main(int argc, char **argv) {
                     test_enter_child_directory_defaults_to_first_real_entry);
     g_test_add_func("/app_file_manager/enter/parent_entry_selects_directory_just_left",
                     test_enter_parent_entry_selects_directory_just_left);
+    g_test_add_func("/app_core/load_single_file/matches_full_canonical_path_before_basename",
+                    test_load_single_file_matches_full_canonical_path_before_basename);
     g_test_add_func("/app_file_manager/render/selected_row_uses_full_width_highlight_with_size",
                     test_render_selected_row_uses_full_width_highlight_with_size);
     g_test_add_func("/app_file_manager/render/marks_directory_containing_media",

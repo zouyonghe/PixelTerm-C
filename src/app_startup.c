@@ -1,12 +1,17 @@
 #include "app_startup.h"
 
-static ErrorCode validate_path(const char *path, gboolean *is_directory) {
+#include <errno.h>
+
+static ErrorCode validate_path(const char *path, gboolean *is_directory, gint *failure_errno) {
     if (!path) {
         return ERROR_FILE_NOT_FOUND;
     }
 
     struct stat st;
     if (stat(path, &st) != 0) {
+        if (failure_errno) {
+            *failure_errno = errno;
+        }
         return ERROR_FILE_NOT_FOUND;
     }
 
@@ -18,6 +23,7 @@ ErrorCode app_startup_classify_path(const char *requested_path,
                                     AppStartupPathDecision *decision) {
     g_autofree gchar *current_dir = NULL;
     gboolean is_directory = FALSE;
+    gint failure_errno = 0;
     const char *path = requested_path;
 
     if (!decision) {
@@ -26,14 +32,16 @@ ErrorCode app_startup_classify_path(const char *requested_path,
 
     decision->kind = APP_STARTUP_PATH_DIRECTORY;
     decision->path = NULL;
+    decision->failure_errno = 0;
 
     if (!path) {
         current_dir = g_get_current_dir();
         path = current_dir;
     }
 
-    ErrorCode error = validate_path(path, &is_directory);
+    ErrorCode error = validate_path(path, &is_directory, &failure_errno);
     if (error != ERROR_NONE) {
+        decision->failure_errno = failure_errno;
         return error;
     }
 
@@ -55,8 +63,5 @@ ErrorCode app_startup_classify_path(const char *requested_path,
         return ERROR_NONE;
     }
 
-    g_autofree gchar *parent_dir = g_path_get_dirname(path);
-    decision->kind = APP_STARTUP_PATH_PARENT_DIRECTORY;
-    decision->path = g_canonicalize_filename(parent_dir, NULL);
-    return ERROR_NONE;
+    return ERROR_INVALID_IMAGE;
 }

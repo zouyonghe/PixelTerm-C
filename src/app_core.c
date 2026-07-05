@@ -144,20 +144,46 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
         return error;
     }
 
-    // Find the specific file in the list (single pass)
+    // Find the specific file in the list by full canonical path first.
+    gchar *target_canonical = g_canonicalize_filename(filepath, NULL);
     gchar *target_basename = g_path_get_basename(filepath);
     gboolean found = FALSE;
     gint idx = 0;
     for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
-        gchar *current_basename = g_path_get_basename((gchar*)cur->data);
-        if (g_strcmp0(current_basename, target_basename) == 0) {
+        gchar *current_path = (gchar*)cur->data;
+        gboolean full_path_match = g_strcmp0(current_path, target_canonical) == 0;
+
+        if (!full_path_match) {
+            gchar *current_basename = g_path_get_basename(current_path);
+            if (g_strcmp0(current_basename, target_basename) == 0) {
+                gchar *current_canonical = g_canonicalize_filename(current_path, NULL);
+                full_path_match = g_strcmp0(current_canonical, target_canonical) == 0;
+                g_free(current_canonical);
+            }
+            g_free(current_basename);
+        }
+
+        if (full_path_match) {
             app->current_index = idx;
             found = TRUE;
-            g_free(current_basename);
             break;
         }
-        g_free(current_basename);
     }
+
+    if (!found) {
+        idx = 0;
+        for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
+            gchar *current_basename = g_path_get_basename((gchar*)cur->data);
+            if (g_strcmp0(current_basename, target_basename) == 0) {
+                app->current_index = idx;
+                found = TRUE;
+                g_free(current_basename);
+                break;
+            }
+            g_free(current_basename);
+        }
+    }
+    g_free(target_canonical);
     g_free(target_basename);
 
     // If file was found and loaded successfully, mark for redraw

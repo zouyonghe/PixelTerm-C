@@ -263,6 +263,30 @@ static void test_video_up_and_down_keep_media_switching(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_video_scale_keeps_paused_video_paused(void) {
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputEvent event = make_key_event((KeyCode)'-');
+
+    app.term_width = 120;
+    app.term_height = 40;
+    app.video_scale = 1.0;
+    player.filepath = g_strdup("clip.mp4");
+    player.is_playing = FALSE;
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+
+    g_assert_cmpfloat_with_epsilon(app.video_scale, 0.9, 0.0001);
+    g_assert_false(player.is_playing);
+
+    g_free(player.filepath);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
 static void test_navigation_failure_does_not_refresh_or_advance_queue(void) {
     PixelTermApp app = make_single_app(NULL);
     InputEvent event = make_key_event(KEY_RIGHT);
@@ -298,6 +322,56 @@ static void test_input_maps_fullwidth_question_to_help_key(void) {
     g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
     g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
     g_assert_cmpint(event.key_code, ==, (KeyCode)'?');
+}
+
+static void test_input_maps_fullwidth_tilde_to_zen_key(void) {
+    static const gchar fullwidth_tilde[] = "\xEF\xBD\x9E";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(fullwidth_tilde, sizeof(fullwidth_tilde) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, (KeyCode)'~');
+}
+
+static void test_input_rejects_malformed_sgr_mouse_parameters(void) {
+    static const gchar malformed_mouse[] = "\033[<9999999999;2;1M";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(malformed_mouse, sizeof(malformed_mouse) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
+static void test_input_rejects_mouse_sequence_without_sgr_prefix(void) {
+    static const gchar malformed_mouse[] = "\033[0;12;7M";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(malformed_mouse, sizeof(malformed_mouse) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
+static void test_input_parses_sgr_mouse_press_with_terminator(void) {
+    static const gchar mouse_press[] = "\033[<0;12;7M";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(mouse_press, sizeof(mouse_press) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_MOUSE_PRESS);
+    g_assert_cmpint(event.mouse_button, ==, MOUSE_BUTTON_LEFT);
+    g_assert_cmpint(event.mouse_x, ==, 12);
+    g_assert_cmpint(event.mouse_y, ==, 7);
 }
 
 typedef struct {
@@ -353,10 +427,20 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_seek_failure_preserves_queued_repeats_for_retry);
     g_test_add_func("/input_dispatch_key_single/video/up_and_down_keep_media_switching",
                     test_video_up_and_down_keep_media_switching);
+    g_test_add_func("/input_dispatch_key_single/video/scale_keeps_paused_video_paused",
+                    test_video_scale_keeps_paused_video_paused);
     g_test_add_func("/input_dispatch_key_single/video/fps_second_toggle_restores_stats_row",
                     test_video_fps_second_toggle_restores_stats_row);
     g_test_add_func("/input_dispatch_key_single/navigation/failure_does_not_refresh_or_advance_queue",
                     test_navigation_failure_does_not_refresh_or_advance_queue);
     g_test_add_func("/input/input_maps_fullwidth_question_to_help_key",
                     test_input_maps_fullwidth_question_to_help_key);
+    g_test_add_func("/input/input_maps_fullwidth_tilde_to_zen_key",
+                    test_input_maps_fullwidth_tilde_to_zen_key);
+    g_test_add_func("/input/rejects_malformed_sgr_mouse_parameters",
+                    test_input_rejects_malformed_sgr_mouse_parameters);
+    g_test_add_func("/input/rejects_mouse_sequence_without_sgr_prefix",
+                    test_input_rejects_mouse_sequence_without_sgr_prefix);
+    g_test_add_func("/input/parses_sgr_mouse_press_with_terminator",
+                    test_input_parses_sgr_mouse_press_with_terminator);
 }

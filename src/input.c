@@ -5,11 +5,33 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 
 static gboolean input_discard_kitty_apc(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
+
+#define INPUT_SGR_MOUSE_BUTTON_MAX 255
+
+static gboolean input_parse_sgr_int(const gchar *text, gint min_value, gint max_value, gint *out_value) {
+    if (!text || !out_value) {
+        return FALSE;
+    }
+
+    errno = 0;
+    char *end = NULL;
+    long value = strtol(text, &end, 10);
+    if (errno != 0 || end == text || (end && *end != '\0')) {
+        return FALSE;
+    }
+    if (value < min_value || value > max_value) {
+        return FALSE;
+    }
+
+    *out_value = (gint)value;
+    return TRUE;
+}
 static InputRawModeObserverForTest g_input_enable_raw_mode_observer_for_test = NULL;
 static InputRawModeObserverForTest g_input_disable_raw_mode_observer_for_test = NULL;
 static gpointer g_input_enable_raw_mode_observer_user_data = NULL;
@@ -297,9 +319,9 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
 
                 // Read the sequence until we hit a terminator
                 while (buf_idx < sizeof(buffer) - 1) {
-                    gchar ch = input_read_char_with_timeout(handler, 50);
+                    gint ch = input_read_char_with_timeout(handler, 50);
                     if (ch != 0) {
-                        buffer[buf_idx++] = ch;
+                        buffer[buf_idx++] = (gchar)ch;
                         // Stop reading if we hit a terminator (letter, ~, M, m)
                         if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~' || ch == 'M' || ch == 'm') {
                             terminator = ch;
@@ -325,13 +347,30 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                     }
 
                     if (param_count >= 3) {
-                        // Skip '<' if present in first parameter (SGR format)
                         gchar *btn_str = params[0];
-                        if (btn_str[0] == '<') btn_str++;
+                        if (btn_str[0] != '<') {
+                            event->type = INPUT_KEY_PRESS;
+                            event->key_code = KEY_UNKNOWN;
+                            goto finish_event;
+                        }
+                        btn_str++;
+                        if (params[2]) {
+                            gsize y_len = strlen(params[2]);
+                            if (y_len > 0 && (params[2][y_len - 1] == 'M' || params[2][y_len - 1] == 'm')) {
+                                params[2][y_len - 1] = '\0';
+                            }
+                        }
                         
-                        gint button = atoi(btn_str);
-                        gint x = atoi(params[1]);
-                        gint y = atoi(params[2]);
+                        gint button = 0;
+                        gint x = 0;
+                        gint y = 0;
+                        if (!input_parse_sgr_int(btn_str, 0, INPUT_SGR_MOUSE_BUTTON_MAX, &button) ||
+                            !input_parse_sgr_int(params[1], 1, G_MAXINT, &x) ||
+                            !input_parse_sgr_int(params[2], 1, G_MAXINT, &y)) {
+                            event->type = INPUT_KEY_PRESS;
+                            event->key_code = KEY_UNKNOWN;
+                            goto finish_event;
+                        }
 
                         event->mouse_button = (MouseButton)button;
                         event->mouse_x = x;
@@ -566,18 +605,18 @@ gint input_read_key(InputHandler *handler) {
 
 
 // Read a single character
-gchar input_read_char(InputHandler *handler) {
+gint input_read_char(InputHandler *handler) {
     if (!handler) {
         return 0;
     }
 
-    gchar c;
+    unsigned char c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
     return (n == 1) ? c : 0;
 }
 
 // Read a single character with timeout (in milliseconds)
-gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
+gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     if (!handler) {
         return 0;
     }
@@ -596,7 +635,7 @@ gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     }
     
     if (FD_ISSET(STDIN_FILENO, &fds)) {
-        gchar c;
+        unsigned char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
         return (n == 1) ? c : 0;
     }
@@ -611,7 +650,7 @@ static gboolean input_discard_kitty_apc(InputHandler *handler) {
 
     const gint64 deadline = g_get_monotonic_time() + 100000;
     while (g_get_monotonic_time() < deadline) {
-        gchar ch = input_read_char_with_timeout(handler, 0);
+        gint ch = input_read_char_with_timeout(handler, 0);
         if (ch == 0) {
             return FALSE;
         }
