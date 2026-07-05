@@ -347,9 +347,13 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                     }
 
                     if (param_count >= 3) {
-                        // Skip '<' if present in first parameter (SGR format)
                         gchar *btn_str = params[0];
-                        if (btn_str[0] == '<') btn_str++;
+                        if (btn_str[0] != '<') {
+                            event->type = INPUT_KEY_PRESS;
+                            event->key_code = KEY_UNKNOWN;
+                            goto finish_event;
+                        }
+                        btn_str++;
                         if (params[2]) {
                             gsize y_len = strlen(params[2]);
                             if (y_len > 0 && (params[2][y_len - 1] == 'M' || params[2][y_len - 1] == 'm')) {

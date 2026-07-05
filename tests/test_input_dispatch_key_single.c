@@ -348,6 +348,18 @@ static void test_input_rejects_malformed_sgr_mouse_parameters(void) {
     g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
 }
 
+static void test_input_rejects_mouse_sequence_without_sgr_prefix(void) {
+    static const gchar malformed_mouse[] = "\033[0;12;7M";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(malformed_mouse, sizeof(malformed_mouse) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
 static void test_input_parses_sgr_mouse_press_with_terminator(void) {
     static const gchar mouse_press[] = "\033[<0;12;7M";
     InputHandler input_handler = {0};
@@ -427,6 +439,8 @@ void register_input_dispatch_key_single_tests(void) {
                     test_input_maps_fullwidth_tilde_to_zen_key);
     g_test_add_func("/input/rejects_malformed_sgr_mouse_parameters",
                     test_input_rejects_malformed_sgr_mouse_parameters);
+    g_test_add_func("/input/rejects_mouse_sequence_without_sgr_prefix",
+                    test_input_rejects_mouse_sequence_without_sgr_prefix);
     g_test_add_func("/input/parses_sgr_mouse_press_with_terminator",
                     test_input_parses_sgr_mouse_press_with_terminator);
 }
