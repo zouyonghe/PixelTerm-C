@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "app_startup.h"
@@ -112,6 +113,7 @@ static void test_classify_path_rejects_missing_path(void) {
 
     g_assert_cmpint(error, ==, ERROR_FILE_NOT_FOUND);
     g_assert_null(decision.path);
+    g_assert_cmpint(decision.failure_errno, ==, ENOENT);
 
     g_free(missing_path);
 }
@@ -166,7 +168,7 @@ static void test_classify_path_media_returns_media_target(void) {
     g_free(temp_dir);
 }
 
-static void test_classify_path_non_media_file_falls_back_to_parent_directory(void) {
+static void test_classify_path_rejects_non_media_file(void) {
     static const guint8 k_text[] = {'n', 'o', 't', 'e'};
     AppStartupPathDecision decision = {0};
     gchar *temp_dir = make_temp_dir();
@@ -174,16 +176,15 @@ static void test_classify_path_non_media_file_falls_back_to_parent_directory(voi
 
     ErrorCode error = app_startup_classify_path(text_path, &decision);
 
-    g_assert_cmpint(error, ==, ERROR_NONE);
-    g_assert_cmpint(decision.kind, ==, APP_STARTUP_PATH_PARENT_DIRECTORY);
-    g_assert_cmpstr(decision.path, ==, temp_dir);
+    g_assert_cmpint(error, ==, ERROR_INVALID_IMAGE);
+    g_assert_null(decision.path);
 
     g_free(decision.path);
     g_free(text_path);
     g_free(temp_dir);
 }
 
-static void test_classify_relative_non_media_file_returns_canonical_parent_directory(void) {
+static void test_classify_relative_non_media_file_is_rejected(void) {
     static const guint8 k_text[] = {'n', 'o', 't', 'e'};
     AppStartupPathDecision decision = {0};
     gchar *original_dir = g_get_current_dir();
@@ -199,19 +200,16 @@ static void test_classify_relative_non_media_file_returns_canonical_parent_direc
 
     g_assert_cmpint(g_chdir(temp_dir), ==, 0);
     current_dir = g_get_current_dir();
-    expected_dir = g_build_filename(current_dir, "nested", NULL);
     text_path = write_temp_file(nested_dir, "note.txt", k_text, sizeof(k_text));
     (void)text_path;
 
     ErrorCode error = app_startup_classify_path("nested/note.txt", &decision);
 
-    g_assert_cmpint(error, ==, ERROR_NONE);
-    g_assert_cmpint(decision.kind, ==, APP_STARTUP_PATH_PARENT_DIRECTORY);
-    g_assert_cmpstr(decision.path, ==, expected_dir);
+    g_assert_cmpint(error, ==, ERROR_INVALID_IMAGE);
+    g_assert_null(decision.path);
 
     g_assert_cmpint(g_chdir(original_dir), ==, 0);
     g_free(current_dir);
-    g_free(expected_dir);
     g_free(nested_dir);
     g_free(original_dir);
     g_free(decision.path);
@@ -230,8 +228,8 @@ void register_app_startup_tests(void) {
                     test_classify_path_book_returns_book_target);
     g_test_add_func("/app_startup/classify/media",
                     test_classify_path_media_returns_media_target);
-    g_test_add_func("/app_startup/classify/non_media_parent_directory",
-                    test_classify_path_non_media_file_falls_back_to_parent_directory);
-    g_test_add_func("/app_startup/classify/relative_non_media_parent_directory",
-                    test_classify_relative_non_media_file_returns_canonical_parent_directory);
+    g_test_add_func("/app_startup/classify/non_media_rejected",
+                    test_classify_path_rejects_non_media_file);
+    g_test_add_func("/app_startup/classify/relative_non_media_rejected",
+                    test_classify_relative_non_media_file_is_rejected);
 }

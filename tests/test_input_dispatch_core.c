@@ -241,6 +241,42 @@ static void test_mouse_closing_help_resets_input_timing_state(void) {
     g_assert_cmpint(input_handler.ignore_input_until_us, ==, 0);
 }
 
+static void test_pause_video_for_resize_records_playing_state(void) {
+    PixelTermApp app = {0};
+    VideoPlayer player = {0};
+
+    app.mode = APP_MODE_SINGLE;
+    app.video_player = &player;
+    player.has_video = TRUE;
+    player.is_playing = TRUE;
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+
+    input_dispatch_core_pause_video_for_resize(&app);
+
+    g_assert_false(player.is_playing);
+    g_assert_true(app.video_was_playing_before_resize);
+}
+
+static void test_pause_video_for_resize_does_not_record_paused_video(void) {
+    PixelTermApp app = {0};
+    VideoPlayer player = {0};
+
+    app.mode = APP_MODE_SINGLE;
+    app.video_player = &player;
+    player.has_video = TRUE;
+    player.is_playing = FALSE;
+
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+
+    input_dispatch_core_pause_video_for_resize(&app);
+
+    g_assert_false(player.is_playing);
+    g_assert_false(app.video_was_playing_before_resize);
+}
+
 void register_input_dispatch_core_tests(void) {
     g_test_add_func("/input_dispatch_core/process_animations/only_runs_one_iteration_per_call",
                     test_process_animations_only_runs_one_iteration_per_call);
@@ -262,4 +298,8 @@ void register_input_dispatch_core_tests(void) {
                     test_any_key_closes_help_overlay_without_mode_action);
     g_test_add_func("/input_dispatch_core/help_key/mouse_closing_help_resets_input_timing_state",
                     test_mouse_closing_help_resets_input_timing_state);
+    g_test_add_func("/input_dispatch_core/resize/pause_video_records_playing_state",
+                    test_pause_video_for_resize_records_playing_state);
+    g_test_add_func("/input_dispatch_core/resize/pause_video_does_not_record_paused_video",
+                    test_pause_video_for_resize_does_not_record_paused_video);
 }

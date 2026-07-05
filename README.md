@@ -33,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/
 ```
 
 The installer auto-detects `macOS/Linux + amd64/arm64`, downloads the latest GitHub Release binary, and installs `pixelterm` to `/usr/local/bin/pixelterm`. It only uses `sudo` when that directory is not writable.
+The installer downloads `SHA256SUMS` from the release and verifies the binary before installing it. Use `--dry-run` to inspect the resolved asset and destination without changing your system.
 
 Need a custom install directory instead of `/usr/local/bin`?
 
@@ -43,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/
 Need a reproducible install? Pin a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.7.26
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.8.0
 ```
 
 If you prefer a package manager or manual install, use one of these paths:
@@ -56,6 +57,8 @@ yay -S pixelterm-c
 
 # Linux amd64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/SHA256SUMS
+grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c -
 chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
 # Linux arm64
@@ -98,10 +101,12 @@ pixelterm /path/to/directory
 pixelterm --help
 ```
 
+Press `?` for in-app help, `Esc` to exit, or `Ctrl+C` to force quit.
+
 Notes:
 
 - If the path you want to open starts with `-`, use `--` first so PixelTerm-C treats it as a path: `pixelterm -- --config=gallery.txt`
-- If you point PixelTerm-C at an unsupported regular file, it falls back to that file's canonical parent directory in file manager mode.
+- If you point PixelTerm-C at an unsupported regular file, it exits with an unsupported file type error.
 
 For more usage examples and options, see [USAGE.md](docs/guides/USAGE.md).
 

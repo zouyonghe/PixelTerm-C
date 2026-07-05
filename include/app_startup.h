@@ -9,12 +9,12 @@ typedef enum {
     APP_STARTUP_PATH_DIRECTORY,
     APP_STARTUP_PATH_BOOK,
     APP_STARTUP_PATH_MEDIA,
-    APP_STARTUP_PATH_PARENT_DIRECTORY,
 } AppStartupPathKind;
 
 typedef struct {
     AppStartupPathKind kind;
     gchar *path;
+    gint failure_errno;
 } AppStartupPathDecision;
 
 ErrorCode app_startup_classify_path(const char *requested_path,

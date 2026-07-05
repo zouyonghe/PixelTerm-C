@@ -256,9 +256,9 @@ gint input_read_key(InputHandler *handler);
  * It's generally used when a character is expected immediately.
  * 
  * @param handler A pointer to the `InputHandler` instance.
- * @return The character read, or 0 if an error occurs.
+ * @return The byte read as 0..255, or 0 if an error occurs.
  */
-gchar input_read_char(InputHandler *handler);
+gint input_read_char(InputHandler *handler);
 /**
  * @brief Reads a single character from terminal input with a specified timeout.
  * 
@@ -268,10 +268,10 @@ gchar input_read_char(InputHandler *handler);
  * 
  * @param handler A pointer to the `InputHandler` instance.
  * @param timeout_ms The maximum time (in milliseconds) to wait for input.
- * @return The character read, or 0 if no input is available within the timeout
+ * @return The byte read as 0..255, or 0 if no input is available within the timeout
  *         or an error occurs.
  */
-gchar input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
+gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms);
 gboolean input_probe_sixel_support(InputHandler *handler, gint timeout_ms);
 gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms);
 gboolean input_probe_iterm2_support(InputHandler *handler, gint timeout_ms);

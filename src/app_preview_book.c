@@ -734,12 +734,7 @@ ErrorCode app_enter_book_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
+    app_prepare_mode_entry(app, TRUE);
 
     (void)app_transition_mode(app, APP_MODE_BOOK_PREVIEW);
     app->book.preview_selected = app->book.page >= 0 ? app->book.page : 0;
@@ -747,10 +742,7 @@ ErrorCode app_enter_book_preview(PixelTermApp *app) {
         app->book.preview_selected = MAX(0, app->book.page_count - 1);
     }
     app->book.preview_scroll = 0;
-    app->info_visible = FALSE;
     app->needs_screen_clear = TRUE;
-
-    app_preloader_clear_queue(app);
     return ERROR_NONE;
 }
 
@@ -764,19 +756,11 @@ ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
         page_index = MAX(0, app->book.page_count - 1);
     }
 
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
+    app_prepare_mode_entry(app, TRUE);
 
     app->book.page = page_index;
     (void)app_transition_mode(app, APP_MODE_BOOK);
-    app->info_visible = FALSE;
     app->needs_redraw = TRUE;
-
-    app_preloader_clear_queue(app);
     return ERROR_NONE;
 }
 

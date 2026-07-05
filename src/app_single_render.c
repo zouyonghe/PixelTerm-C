@@ -332,7 +332,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                                            app->video_player,
                                                            filepath);
             if (load_result != ERROR_NONE) {
-                is_video = FALSE;
+                return load_result;
             }
         }
     }

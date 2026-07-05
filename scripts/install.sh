@@ -263,7 +263,12 @@ parse_args() {
         exit 0
         ;;
       *)
-        die "Unknown argument: $1"
+        printf 'Error: Unknown argument: %s\n' "$1" >&2
+        if [ "$1" = "--prefix" ]; then
+          printf 'Use --bin-dir to choose the install directory.\n' >&2
+        fi
+        printf 'Run: bash install.sh --help\n' >&2
+        exit 1
         ;;
     esac
   done

@@ -352,13 +352,7 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    // Stop GIF playback if active
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
+    app_prepare_mode_entry(app, FALSE);
 
     (void)app_transition_mode(app, APP_MODE_FILE_MANAGER);
     app->file_manager.selected_entry = 0;
@@ -688,14 +682,6 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
         }
     }
 
-    // Clear existing entries
-    if (app->file_manager.entries) {
-        g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
-        app->file_manager.entries = NULL;
-    }
-    app->file_manager.entries_count = 0;
-    app_file_manager_invalidate_selection_cache(app);
-
     // Resolve directory to display: prefer file manager dir, then viewer dir, then cwd
     gchar *base_dir_dup = NULL;
     if (app->file_manager.directory) {
@@ -719,18 +705,32 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
     gboolean preserve_selection = same_directory &&
                                   app->return_to_mode == RETURN_MODE_NONE &&
                                   had_entries;
-    g_free(previous_directory);
-
-    // Persist canonical directory for consistent rendering/navigation
-    g_free(app->file_manager.directory);
-    app->file_manager.directory = current_dir;
 
     // Open directory
     GDir *dir = g_dir_open(current_dir, 0, NULL);
     if (!dir) {
+        if (previous_directory) {
+            g_free(app->file_manager.directory);
+            app->file_manager.directory = g_strdup(previous_directory);
+        }
+        g_free(previous_directory);
+        g_free(current_dir);
         g_free(previous_selection);
         return ERROR_FILE_NOT_FOUND;
     }
+    g_free(previous_directory);
+
+    // Clear existing entries only after the replacement directory is readable.
+    if (app->file_manager.entries) {
+        g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
+        app->file_manager.entries = NULL;
+    }
+    app->file_manager.entries_count = 0;
+    app_file_manager_invalidate_selection_cache(app);
+
+    // Persist canonical directory for consistent rendering/navigation
+    g_free(app->file_manager.directory);
+    app->file_manager.directory = current_dir;
 
     // Collect all entries
     GList *entries = NULL;
