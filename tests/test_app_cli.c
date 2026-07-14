@@ -865,6 +865,56 @@ static void test_cli_default_config_applies_terminal_specific_precedence(AppCliF
     g_free(default_config_path);
 }
 
+static void test_cli_rejects_non_finite_gamma(AppCliFixture *fixture,
+                                               gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    const gchar *values[] = {"nan", "inf", "-inf"};
+    for (guint i = 0; i < G_N_ELEMENTS(values); i++) {
+        AppConfig config;
+        gchar *path = NULL;
+        AppCliParseInvocation invocation = {0};
+        gchar *argv[] = {"pixelterm", "--gamma", (gchar *)values[i], NULL};
+        app_config_init(&config);
+        invocation.argv = argv;
+        invocation.path_out = &path;
+        invocation.config = &config;
+
+        gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+        g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+        g_assert_null(path);
+        g_assert_nonnull(g_strstr_len(stderr_output, -1, "Invalid --gamma value"));
+        g_free(stderr_output);
+    }
+}
+
+static void test_cli_sanitizes_config_path_in_errors(AppCliFixture *fixture,
+                                                     gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    gchar *config_path = g_strdup_printf("%s/pixelterm-config-\033[31m-invalid.ini",
+                                         g_get_tmp_dir());
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    gchar *argv[] = {"pixelterm", "--config", config_path, NULL};
+    app_config_init(&config);
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_null(strchr(stderr_output, '\033'));
+    g_assert_nonnull(strstr(stderr_output, "?"));
+
+    g_free(stderr_output);
+    g_free(config_path);
+}
+
 static void test_cli_config_invalid_enum_lists_expected_values(AppCliFixture *fixture,
                                                               gconstpointer user_data) {
     (void)fixture;
@@ -1483,6 +1533,10 @@ void register_app_cli_tests(void) {
                     test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime);
     add_app_cli_test("/app_cli/parse/boolean_aliases", test_cli_boolean_aliases_parse_for_preload_and_alt_screen);
     add_app_cli_test("/app_cli/parse/invalid_boolean_values", test_cli_invalid_boolean_values_return_error);
+    add_app_cli_test("/app_cli/parse/rejects_non_finite_gamma",
+                     test_cli_rejects_non_finite_gamma);
+    add_app_cli_test("/app_cli/errors/sanitizes_config_path",
+                     test_cli_sanitizes_config_path_in_errors);
     add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
                      test_cli_double_dash_preserves_positional_config_like_path);
     add_app_cli_test("/app_cli/parse/rejects_extra_positional_arguments",

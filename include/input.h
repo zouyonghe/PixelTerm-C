@@ -97,6 +97,9 @@ typedef struct {
     gboolean has_pending_event;
     InputEvent pending_event;
 
+    gboolean has_pending_byte;
+    unsigned char pending_byte;
+
     gboolean apc_discarding;
     gboolean apc_saw_esc;
 } InputHandler;
