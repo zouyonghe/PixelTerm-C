@@ -851,6 +851,10 @@ gpointer preloader_worker_thread(gpointer data) {
                 g_string_free(rendered, TRUE);
             }
 
+            // The outer preloader cache owns bounded entries; do not retain a
+            // second unbounded copy in the worker renderer.
+            renderer_cache_clear(renderer);
+
             // Cleanup task
             g_free(task->filepath);
             g_free(task);

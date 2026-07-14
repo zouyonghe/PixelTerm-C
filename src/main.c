@@ -17,6 +17,7 @@
 #include "input_dispatch.h"
 #include "common.h"
 #include "ui_render_utils.h"
+#include "text_utils.h"
 
 // Global application instance
 static PixelTermApp *g_app = NULL;
@@ -32,6 +33,21 @@ static void signal_handler(int sig) {
     g_terminate_requested = 1;
     g_last_signal = sig;
 }
+
+static void run_application_cleanup(InputHandler *input_handler) {
+    if (!input_handler) {
+        return;
+    }
+
+    printf("\033[2J\033[H\033[0m");
+    printf("\033[?25h");
+    fflush(stdout);
+
+    input_disable_mouse(input_handler);
+    input_disable_raw_mode(input_handler);
+    input_handler_destroy(input_handler);
+}
+
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
@@ -73,8 +89,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         app->suppress_full_clear = FALSE;
     }
     if (error != ERROR_NONE) {
-        input_disable_raw_mode(input_handler);
-        input_handler_destroy(input_handler);
+        run_application_cleanup(input_handler);
         return error;
     }
 
@@ -165,14 +180,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
-    // Cleanup - Reset terminal state before exiting
-    printf("\033[2J\033[H\033[0m"); // Clear screen and reset attributes
-    printf("\033[?25h"); // Show cursor
-    fflush(stdout);
-
-    input_disable_mouse(input_handler);
-    input_disable_raw_mode(input_handler);
-    input_handler_destroy(input_handler);
+    run_application_cleanup(input_handler);
 
     return error;
 }
@@ -222,15 +230,17 @@ int main(int argc, char *argv[]) {
     error = app_startup_classify_path(path, &startup);
     if (error != ERROR_NONE) {
         const char *display_path = path ? path : "current directory";
+        gchar *safe_display_path = sanitize_for_terminal(display_path);
         if (startup.failure_errno != 0) {
             fprintf(stderr, "Error: Cannot open '%s': %s\n",
-                    display_path,
+                    safe_display_path,
                     g_strerror(startup.failure_errno));
         } else if (error == ERROR_INVALID_IMAGE) {
-            fprintf(stderr, "Unsupported file type: %s\n", display_path);
+            fprintf(stderr, "Unsupported file type: %s\n", safe_display_path);
         } else {
-            fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", display_path);
+            fprintf(stderr, "Error: Path '%s' not found or inaccessible\n", safe_display_path);
         }
+        g_free(safe_display_path);
         app_destroy(g_app);
         g_free(path);
         return 1;
@@ -260,7 +270,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (error != ERROR_NONE) {
-        fprintf(stderr, "Error: Failed to load images from '%s'\n", path);
+        gchar *safe_path = sanitize_for_terminal(path);
+        fprintf(stderr, "Error: Failed to load images from '%s'\n", safe_path);
+        g_free(safe_path);
         app_destroy(g_app);
         g_free(path);
         return 1;

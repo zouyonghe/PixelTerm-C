@@ -88,6 +88,15 @@ static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
     close(pipe_fds[1]);
 }
 
+static void test_input_eof_requests_exit(void) {
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    redirect_stdin_bytes(NULL, 0);
+
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_INPUT_EOF);
+    g_assert_true(handler.should_exit);
+}
+
 static void assert_previous_navigation(KeyCode key_code) {
     PixelTermApp app = make_single_app(NULL);
     InputEvent event = make_key_event(key_code);
@@ -413,6 +422,7 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 }
 
 void register_input_dispatch_key_single_tests(void) {
+    g_test_add_func("/input/eof/requests_exit", test_input_eof_requests_exit);
     g_test_add_func("/input_dispatch_key_single/navigation/left_matches_h",
                     test_left_matches_h_navigation);
     g_test_add_func("/input_dispatch_key_single/navigation/right_matches_l",

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "app_cli.h"
+#include "text_utils.h"
 #include "input.h"
 #include "process_env.h"
 #include "terminal_protocol_resolver.h"
@@ -10,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 static void print_usage(const char *program_name) {
     printf("PixelTerm-C: A high-performance terminal image/video/book browser written in C.\n");
@@ -210,7 +212,9 @@ static gboolean app_config_read_boolean(GKeyFile *key_file,
     GError *error = NULL;
     gboolean value = g_key_file_get_boolean(key_file, group, key, &error);
     if (error) {
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, path, error->message);
+        gchar *safe_path = sanitize_for_terminal(path);
+        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
+        g_free(safe_path);
         g_error_free(error);
         return FALSE;
     }
@@ -231,13 +235,17 @@ static gboolean app_config_read_integer(GKeyFile *key_file,
     GError *error = NULL;
     gint value = g_key_file_get_integer(key_file, group, key, &error);
     if (error) {
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, path, error->message);
+        gchar *safe_path = sanitize_for_terminal(path);
+        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
+        g_free(safe_path);
         g_error_free(error);
         return FALSE;
     }
     if (value < min_value || value > max_value) {
+        gchar *safe_path = sanitize_for_terminal(path);
         fprintf(stderr, "Invalid '%s' in config file '%s' (expected %d-%d)\n",
-                key, path, min_value, max_value);
+                key, safe_path, min_value, max_value);
+        g_free(safe_path);
         return FALSE;
     }
     *out_value = value;
@@ -257,13 +265,17 @@ static gboolean app_config_read_double(GKeyFile *key_file,
     GError *error = NULL;
     gdouble value = g_key_file_get_double(key_file, group, key, &error);
     if (error) {
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, path, error->message);
+        gchar *safe_path = sanitize_for_terminal(path);
+        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
+        g_free(safe_path);
         g_error_free(error);
         return FALSE;
     }
-    if (value <= min_value || value > max_value) {
+    if (!isfinite(value) || value <= min_value || value > max_value) {
+        gchar *safe_path = sanitize_for_terminal(path);
         fprintf(stderr, "Invalid '%s' in config file '%s' (expected >%.2f and <=%.2f)\n",
-                key, path, min_value, max_value);
+                key, safe_path, min_value, max_value);
+        g_free(safe_path);
         return FALSE;
     }
     *out_value = value;
@@ -280,6 +292,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
     if (!g_key_file_has_group(key_file, group)) {
         return TRUE;
     }
+    gchar *safe_path = sanitize_for_terminal(path);
 
     if (!app_config_read_boolean(key_file, group, "preload", path, &config->preload_enabled) ||
         !app_config_read_boolean(key_file, group, "dither", path, &config->dither_enabled) ||
@@ -287,6 +300,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         !app_config_read_boolean(key_file, group, "clear_workaround", path,
                                  &config->clear_workaround_enabled) ||
         !app_config_read_integer(key_file, group, "work_factor", path, 1, 9, &config->work_factor)) {
+        g_free(safe_path);
         return FALSE;
     }
 
@@ -294,17 +308,19 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "protocol", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'protocol' in config file '%s': %s\n", path, error->message);
+            fprintf(stderr, "Invalid 'protocol' in config file '%s': %s\n", safe_path, error->message);
             g_error_free(error);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         AppProtocolMode mode = APP_PROTOCOL_AUTO;
         if (!parse_protocol_mode(value, &mode)) {
             fprintf(stderr,
                     "Invalid 'protocol' in config file '%s' group '[%s]': %s (expected auto, text, sixel, kitty, or iterm2)\n",
-                    path, group, value);
+                    safe_path, group, value);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         config->protocol_mode = mode;
@@ -315,17 +331,19 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "text_symbols", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", path, error->message);
+            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", safe_path, error->message);
             g_error_free(error);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
         if (!parse_text_symbol_mode(value, &mode)) {
             fprintf(stderr,
                     "Invalid 'text_symbols' in config file '%s' group '[%s]': %s (expected auto, half, or quarter)\n",
-                    path, group, value);
+                    safe_path, group, value);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         config->text_symbol_mode = mode;
@@ -336,17 +354,19 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "color_enhance", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", path, error->message);
+            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", safe_path, error->message);
             g_error_free(error);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
         if (!parse_color_enhance_mode(value, &mode)) {
             fprintf(stderr,
                     "Invalid 'color_enhance' in config file '%s' group '[%s]': %s (expected off or vivid)\n",
-                    path, group, value);
+                    safe_path, group, value);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         config->color_enhance = mode;
@@ -357,17 +377,19 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "kitty_transfer", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", path, error->message);
+            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", safe_path, error->message);
             g_error_free(error);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         KittyTransferMode mode = KITTY_TRANSFER_AUTO;
         if (!parse_kitty_transfer_mode(value, &mode)) {
             fprintf(stderr,
                     "Invalid 'kitty_transfer' in config file '%s' group '[%s]': %s (expected auto, direct, or shm)\n",
-                    path, group, value);
+                    safe_path, group, value);
             g_free(value);
+            g_free(safe_path);
             return FALSE;
         }
         config->kitty_transfer = mode;
@@ -377,12 +399,14 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
     if (g_key_file_has_key(key_file, group, "gamma", NULL)) {
         gdouble gamma = config->gamma;
         if (!app_config_read_double(key_file, group, "gamma", path, 0.0, 5.0, &gamma)) {
+            g_free(safe_path);
             return FALSE;
         }
         config->gamma = gamma;
         config->gamma_set = TRUE;
     }
 
+    g_free(safe_path);
     return TRUE;
 }
 
@@ -401,8 +425,10 @@ static ErrorCode app_config_load_file(AppConfig *config,
             g_key_file_free(key_file);
             return ERROR_NONE;
         }
-        fprintf(stderr, "Failed to load config file '%s': %s\n", path,
+        gchar *safe_path = sanitize_for_terminal(path);
+        fprintf(stderr, "Failed to load config file '%s': %s\n", safe_path,
                 error ? error->message : "unknown error");
+        g_free(safe_path);
         if (error) {
             g_error_free(error);
         }
@@ -765,8 +791,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1000: { // --preload
                 gboolean value = TRUE;
                 if (!app_parse_boolean(optarg, &value)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --preload value: %s (expected true/false, yes/no, on/off, or 1/0)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->preload_enabled = value;
@@ -778,8 +806,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1002: { // --alt-screen
                 gboolean value = FALSE;
                 if (!app_parse_boolean(optarg, &value)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --alt-screen value: %s (expected true/false, yes/no, on/off, or 1/0)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->alt_screen_enabled = value;
@@ -792,8 +822,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
                 char *end = NULL;
                 long value = strtol(optarg, &end, 10);
                 if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --work-factor value: %s (expected 1-9)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 if (value < 1 || value > 9) {
@@ -806,8 +838,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1005: { // --protocol
                 AppProtocolMode mode = APP_PROTOCOL_AUTO;
                 if (!parse_protocol_mode(optarg, &mode)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --protocol value: %s (expected auto, text, sixel, kitty, or iterm2)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->protocol_mode = mode;
@@ -817,11 +851,13 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
                 char *end = NULL;
                 double value = strtod(optarg, &end);
                 if (!optarg || optarg[0] == '\0' || (end && *end != '\0')) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --gamma value: %s (expected float)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
-                if (value <= 0.0 || value > 5.0) {
+                if (!isfinite(value) || value <= 0.0 || value > 5.0) {
                     fprintf(stderr, "Invalid --gamma value: %.2f (expected >0 and <=5)\n", value);
                     return ERROR_INVALID_ARGS;
                 }
@@ -834,8 +870,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1008: { // --text-symbols
                 TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
                 if (!parse_text_symbol_mode(optarg, &mode)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --text-symbols value: %s (expected auto, half, or quarter)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->text_symbol_mode = mode;
@@ -844,8 +882,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1009: { // --color-enhance
                 ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
                 if (!parse_color_enhance_mode(optarg, &mode)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --color-enhance value: %s (expected off or vivid)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->color_enhance = mode;
@@ -854,8 +894,10 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case 1010: { // --kitty-transfer
                 KittyTransferMode mode = KITTY_TRANSFER_AUTO;
                 if (!parse_kitty_transfer_mode(optarg, &mode)) {
+                    gchar *safe_value = sanitize_for_terminal(optarg);
                     fprintf(stderr, "Invalid --kitty-transfer value: %s (expected auto, direct, or shm)\n",
-                            optarg ? optarg : "");
+                            safe_value);
+                    g_free(safe_value);
                     return ERROR_INVALID_ARGS;
                 }
                 config->kitty_transfer = mode;
@@ -864,11 +906,15 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
             case '?':
                 // Check if it's a long option (starts with --)
                 if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "--", 2) == 0) {
-                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
+                    gchar *safe_option = sanitize_for_terminal(argv[optind - 1]);
+                    fprintf(stderr, "Invalid option: %s\n", safe_option);
+                    g_free(safe_option);
                 }
                 // Check if it's a short option (starts with - but not --)
                 else if (optind > 0 && argv[optind - 1] && strncmp(argv[optind - 1], "-", 1) == 0) {
-                    fprintf(stderr, "Invalid option: %s\n", argv[optind - 1]);
+                    gchar *safe_option = sanitize_for_terminal(argv[optind - 1]);
+                    fprintf(stderr, "Invalid option: %s\n", safe_option);
+                    g_free(safe_option);
                 }
                 // Fallback for unknown cases
                 else {
@@ -885,7 +931,9 @@ ErrorCode app_parse_arguments(int argc, char *argv[], char **path, AppConfig *co
     if (optind < argc) {
         *path = g_strdup(argv[optind]);
         if (optind + 1 < argc) {
-            fprintf(stderr, "Unexpected argument: %s\n", argv[optind + 1]);
+            gchar *safe_argument = sanitize_for_terminal(argv[optind + 1]);
+            fprintf(stderr, "Unexpected argument: %s\n", safe_argument);
+            g_free(safe_argument);
             fprintf(stderr, "Use --help for usage information\n");
             g_free(*path);
             *path = NULL;

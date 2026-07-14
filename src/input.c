@@ -82,6 +82,7 @@ InputHandler* input_handler_create(void) {
     handler->last_scroll_y = 0;
     handler->ignore_input_until_us = 0;
     handler->has_pending_event = FALSE;
+    handler->has_pending_byte = FALSE;
     handler->apc_discarding = FALSE;
     handler->apc_saw_esc = FALSE;
 
@@ -289,6 +290,9 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
 
     // Read first character (treat as unsigned byte to avoid sign-extension issues)
     gint c = input_read_key(handler);
+    if (handler->should_exit) {
+        return ERROR_INPUT_EOF;
+    }
     if (c < 0) {
         c = (unsigned char)c;
     }
@@ -560,13 +564,31 @@ gboolean input_has_pending_input(InputHandler *handler) {
     if (handler->has_pending_event) {
         return TRUE;
     }
+    if (handler->has_pending_byte) {
+        return TRUE;
+    }
 
     struct timeval tv = {0, 0};
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
 
-    return select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0;
+    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) <= 0) {
+        return FALSE;
+    }
+
+    unsigned char byte;
+    ssize_t n = read(STDIN_FILENO, &byte, 1);
+    if (n == 0) {
+        handler->should_exit = TRUE;
+        return FALSE;
+    }
+    if (n < 0) {
+        return FALSE;
+    }
+    handler->pending_byte = byte;
+    handler->has_pending_byte = TRUE;
+    return TRUE;
 }
 
 // Flush input buffer
@@ -576,6 +598,7 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
     }
 
     handler->has_pending_event = FALSE;
+    handler->has_pending_byte = FALSE;
     tcflush(STDIN_FILENO, TCIFLUSH);
     return ERROR_NONE;
 }
@@ -610,15 +633,31 @@ gint input_read_char(InputHandler *handler) {
         return 0;
     }
 
+    if (handler->has_pending_byte) {
+        handler->has_pending_byte = FALSE;
+        return handler->pending_byte;
+    }
+
     unsigned char c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
-    return (n == 1) ? c : 0;
+    if (n == 1) {
+        return c;
+    }
+    if (n == 0) {
+        handler->should_exit = TRUE;
+    }
+    return 0;
 }
 
 // Read a single character with timeout (in milliseconds)
 gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     if (!handler) {
         return 0;
+    }
+
+    if (handler->has_pending_byte) {
+        handler->has_pending_byte = FALSE;
+        return handler->pending_byte;
     }
 
     struct timeval tv;
@@ -635,9 +674,19 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     }
     
     if (FD_ISSET(STDIN_FILENO, &fds)) {
+        if (handler->has_pending_byte) {
+            handler->has_pending_byte = FALSE;
+            return handler->pending_byte;
+        }
         unsigned char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
-        return (n == 1) ? c : 0;
+        if (n == 1) {
+            return c;
+        }
+        if (n == 0) {
+            handler->should_exit = TRUE;
+        }
+        return 0;
     }
     
     return 0;
