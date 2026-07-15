@@ -14,6 +14,10 @@ static gboolean g_scroll_coalesce_active = FALSE;
 
 #define INPUT_SGR_MOUSE_BUTTON_MAX 255
 
+static gboolean input_read_error_is_transient(void) {
+    return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
 static gboolean input_parse_sgr_int(const gchar *text, gint min_value, gint max_value, gint *out_value) {
     if (!text || !out_value) {
         return FALSE;
@@ -573,7 +577,11 @@ gboolean input_has_pending_input(InputHandler *handler) {
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
 
-    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) <= 0) {
+    int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+    if (result < 0 && !input_read_error_is_transient()) {
+        handler->should_exit = TRUE;
+    }
+    if (result <= 0) {
         return FALSE;
     }
 
@@ -584,6 +592,9 @@ gboolean input_has_pending_input(InputHandler *handler) {
         return FALSE;
     }
     if (n < 0) {
+        if (!input_read_error_is_transient()) {
+            handler->should_exit = TRUE;
+        }
         return FALSE;
     }
     handler->pending_byte = byte;
@@ -645,6 +656,8 @@ gint input_read_char(InputHandler *handler) {
     }
     if (n == 0) {
         handler->should_exit = TRUE;
+    } else if (n < 0 && !input_read_error_is_transient()) {
+        handler->should_exit = TRUE;
     }
     return 0;
 }
@@ -669,21 +682,22 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     FD_SET(STDIN_FILENO, &fds);
     
     int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+    if (result < 0 && !input_read_error_is_transient()) {
+        handler->should_exit = TRUE;
+    }
     if (result <= 0) {
         return 0; // Timeout or error
     }
     
     if (FD_ISSET(STDIN_FILENO, &fds)) {
-        if (handler->has_pending_byte) {
-            handler->has_pending_byte = FALSE;
-            return handler->pending_byte;
-        }
         unsigned char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
         if (n == 1) {
             return c;
         }
         if (n == 0) {
+            handler->should_exit = TRUE;
+        } else if (n < 0 && !input_read_error_is_transient()) {
             handler->should_exit = TRUE;
         }
         return 0;

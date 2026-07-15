@@ -915,6 +915,53 @@ static void test_cli_sanitizes_config_path_in_errors(AppCliFixture *fixture,
     g_free(config_path);
 }
 
+static void test_cli_sanitizes_config_group_and_value_in_errors(AppCliFixture *fixture,
+                                                                gconstpointer user_data) {
+    (void)fixture;
+    (void)user_data;
+
+    gchar *config_path = write_temp_config_file(
+        "[bad\033[31mgroup]\n"
+        "protocol=bad\033[32mvalue\n");
+    pixelterm_env_set_for_test("TERM_PROGRAM", "bad\033[31mgroup");
+    AppConfig config;
+    gchar *path = NULL;
+    AppCliParseInvocation invocation = {0};
+    gchar *argv[] = {"pixelterm", "--config", config_path, NULL};
+    app_config_init(&config);
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+
+    gchar *stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_null(strchr(stderr_output, '\033'));
+
+    g_free(stderr_output);
+    g_free(path);
+    g_free(config_path);
+
+    config_path = write_temp_config_file(
+        "[default]\n"
+        "protocol=bad\033[32mvalue\n");
+    app_config_init(&config);
+    path = NULL;
+    invocation.argv = argv;
+    invocation.path_out = &path;
+    invocation.config = &config;
+    argv[2] = config_path;
+
+    stderr_output = capture_stderr(invoke_parse_cli_args, &invocation);
+    g_assert_cmpint(invocation.error, ==, ERROR_INVALID_ARGS);
+    g_assert_null(path);
+    g_assert_null(strchr(stderr_output, '\033'));
+
+    g_free(stderr_output);
+    g_free(path);
+    g_free(config_path);
+}
+
 static void test_cli_config_invalid_enum_lists_expected_values(AppCliFixture *fixture,
                                                               gconstpointer user_data) {
     (void)fixture;
@@ -1537,6 +1584,8 @@ void register_app_cli_tests(void) {
                      test_cli_rejects_non_finite_gamma);
     add_app_cli_test("/app_cli/errors/sanitizes_config_path",
                      test_cli_sanitizes_config_path_in_errors);
+    add_app_cli_test("/app_cli/errors/sanitizes_config_group_and_value",
+                     test_cli_sanitizes_config_group_and_value_in_errors);
     add_app_cli_test("/app_cli/parse/double_dash_preserves_positional_config_like_path",
                      test_cli_double_dash_preserves_positional_config_like_path);
     add_app_cli_test("/app_cli/parse/rejects_extra_positional_arguments",
