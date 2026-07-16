@@ -18,6 +18,21 @@ static gboolean input_read_error_is_transient(void) {
     return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
 }
 
+static void input_handle_select_result(InputHandler *handler, int result) {
+    if (handler && result < 0 && !input_read_error_is_transient()) {
+        handler->should_exit = TRUE;
+    }
+}
+
+static void input_handle_read_result(InputHandler *handler, ssize_t result) {
+    if (!handler) {
+        return;
+    }
+    if (result == 0 || (result < 0 && !input_read_error_is_transient())) {
+        handler->should_exit = TRUE;
+    }
+}
+
 static gboolean input_parse_sgr_int(const gchar *text, gint min_value, gint max_value, gint *out_value) {
     if (!text || !out_value) {
         return FALSE;
@@ -578,9 +593,7 @@ gboolean input_has_pending_input(InputHandler *handler) {
     FD_SET(STDIN_FILENO, &fds);
 
     int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    if (result < 0 && !input_read_error_is_transient()) {
-        handler->should_exit = TRUE;
-    }
+    input_handle_select_result(handler, result);
     if (result <= 0) {
         return FALSE;
     }
@@ -588,13 +601,11 @@ gboolean input_has_pending_input(InputHandler *handler) {
     unsigned char byte;
     ssize_t n = read(STDIN_FILENO, &byte, 1);
     if (n == 0) {
-        handler->should_exit = TRUE;
+        input_handle_read_result(handler, n);
         return FALSE;
     }
     if (n < 0) {
-        if (!input_read_error_is_transient()) {
-            handler->should_exit = TRUE;
-        }
+        input_handle_read_result(handler, n);
         return FALSE;
     }
     handler->pending_byte = byte;
@@ -654,11 +665,7 @@ gint input_read_char(InputHandler *handler) {
     if (n == 1) {
         return c;
     }
-    if (n == 0) {
-        handler->should_exit = TRUE;
-    } else if (n < 0 && !input_read_error_is_transient()) {
-        handler->should_exit = TRUE;
-    }
+    input_handle_read_result(handler, n);
     return 0;
 }
 
@@ -682,9 +689,7 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     FD_SET(STDIN_FILENO, &fds);
     
     int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    if (result < 0 && !input_read_error_is_transient()) {
-        handler->should_exit = TRUE;
-    }
+    input_handle_select_result(handler, result);
     if (result <= 0) {
         return 0; // Timeout or error
     }
@@ -695,11 +700,7 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
         if (n == 1) {
             return c;
         }
-        if (n == 0) {
-            handler->should_exit = TRUE;
-        } else if (n < 0 && !input_read_error_is_transient()) {
-            handler->should_exit = TRUE;
-        }
+        input_handle_read_result(handler, n);
         return 0;
     }
     
