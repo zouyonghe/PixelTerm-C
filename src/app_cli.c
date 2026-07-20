@@ -201,6 +201,29 @@ static gboolean app_parse_boolean(const char *value, gboolean *out_value) {
     return FALSE;
 }
 
+static void app_print_config_error(const char *key,
+                                   const char *path,
+                                   const GError *error) {
+    gchar *safe_path = sanitize_for_terminal(path);
+    gchar *safe_message = sanitize_for_terminal(error ? error->message : "unknown error");
+    fprintf(stderr, "Invalid '%s' in config file '%s': %s\n",
+            key, safe_path, safe_message);
+    g_free(safe_path);
+    g_free(safe_message);
+}
+
+static void app_print_config_enum_error(const char *key,
+                                        const char *safe_path,
+                                        const char *safe_group,
+                                        const char *value,
+                                        const char *expected) {
+    gchar *safe_value = sanitize_for_terminal(value);
+    fprintf(stderr,
+            "Invalid '%s' in config file '%s' group '[%s]': %s (expected %s)\n",
+            key, safe_path, safe_group, safe_value, expected);
+    g_free(safe_value);
+}
+
 static gboolean app_config_read_boolean(GKeyFile *key_file,
                                         const char *group,
                                         const char *key,
@@ -212,9 +235,7 @@ static gboolean app_config_read_boolean(GKeyFile *key_file,
     GError *error = NULL;
     gboolean value = g_key_file_get_boolean(key_file, group, key, &error);
     if (error) {
-        gchar *safe_path = sanitize_for_terminal(path);
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
-        g_free(safe_path);
+        app_print_config_error(key, path, error);
         g_error_free(error);
         return FALSE;
     }
@@ -235,9 +256,7 @@ static gboolean app_config_read_integer(GKeyFile *key_file,
     GError *error = NULL;
     gint value = g_key_file_get_integer(key_file, group, key, &error);
     if (error) {
-        gchar *safe_path = sanitize_for_terminal(path);
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
-        g_free(safe_path);
+        app_print_config_error(key, path, error);
         g_error_free(error);
         return FALSE;
     }
@@ -265,9 +284,7 @@ static gboolean app_config_read_double(GKeyFile *key_file,
     GError *error = NULL;
     gdouble value = g_key_file_get_double(key_file, group, key, &error);
     if (error) {
-        gchar *safe_path = sanitize_for_terminal(path);
-        fprintf(stderr, "Invalid '%s' in config file '%s': %s\n", key, safe_path, error->message);
-        g_free(safe_path);
+        app_print_config_error(key, path, error);
         g_error_free(error);
         return FALSE;
     }
@@ -293,6 +310,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         return TRUE;
     }
     gchar *safe_path = sanitize_for_terminal(path);
+    gchar *safe_group = sanitize_for_terminal(group);
 
     if (!app_config_read_boolean(key_file, group, "preload", path, &config->preload_enabled) ||
         !app_config_read_boolean(key_file, group, "dither", path, &config->dither_enabled) ||
@@ -301,6 +319,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
                                  &config->clear_workaround_enabled) ||
         !app_config_read_integer(key_file, group, "work_factor", path, 1, 9, &config->work_factor)) {
         g_free(safe_path);
+        g_free(safe_group);
         return FALSE;
     }
 
@@ -308,19 +327,20 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "protocol", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'protocol' in config file '%s': %s\n", safe_path, error->message);
+            app_print_config_error("protocol", path, error);
             g_error_free(error);
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         AppProtocolMode mode = APP_PROTOCOL_AUTO;
         if (!parse_protocol_mode(value, &mode)) {
-            fprintf(stderr,
-                    "Invalid 'protocol' in config file '%s' group '[%s]': %s (expected auto, text, sixel, kitty, or iterm2)\n",
-                    safe_path, group, value);
+            app_print_config_enum_error("protocol", safe_path, safe_group, value,
+                                        "auto, text, sixel, kitty, or iterm2");
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         config->protocol_mode = mode;
@@ -331,19 +351,20 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "text_symbols", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'text_symbols' in config file '%s': %s\n", safe_path, error->message);
+            app_print_config_error("text_symbols", path, error);
             g_error_free(error);
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
         if (!parse_text_symbol_mode(value, &mode)) {
-            fprintf(stderr,
-                    "Invalid 'text_symbols' in config file '%s' group '[%s]': %s (expected auto, half, or quarter)\n",
-                    safe_path, group, value);
+            app_print_config_enum_error("text_symbols", safe_path, safe_group, value,
+                                        "auto, half, or quarter");
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         config->text_symbol_mode = mode;
@@ -354,19 +375,20 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "color_enhance", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'color_enhance' in config file '%s': %s\n", safe_path, error->message);
+            app_print_config_error("color_enhance", path, error);
             g_error_free(error);
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
         if (!parse_color_enhance_mode(value, &mode)) {
-            fprintf(stderr,
-                    "Invalid 'color_enhance' in config file '%s' group '[%s]': %s (expected off or vivid)\n",
-                    safe_path, group, value);
+            app_print_config_enum_error("color_enhance", safe_path, safe_group, value,
+                                        "off or vivid");
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         config->color_enhance = mode;
@@ -377,19 +399,20 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         GError *error = NULL;
         gchar *value = g_key_file_get_string(key_file, group, "kitty_transfer", &error);
         if (error) {
-            fprintf(stderr, "Invalid 'kitty_transfer' in config file '%s': %s\n", safe_path, error->message);
+            app_print_config_error("kitty_transfer", path, error);
             g_error_free(error);
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         KittyTransferMode mode = KITTY_TRANSFER_AUTO;
         if (!parse_kitty_transfer_mode(value, &mode)) {
-            fprintf(stderr,
-                    "Invalid 'kitty_transfer' in config file '%s' group '[%s]': %s (expected auto, direct, or shm)\n",
-                    safe_path, group, value);
+            app_print_config_enum_error("kitty_transfer", safe_path, safe_group, value,
+                                        "auto, direct, or shm");
             g_free(value);
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         config->kitty_transfer = mode;
@@ -400,6 +423,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         gdouble gamma = config->gamma;
         if (!app_config_read_double(key_file, group, "gamma", path, 0.0, 5.0, &gamma)) {
             g_free(safe_path);
+            g_free(safe_group);
             return FALSE;
         }
         config->gamma = gamma;
@@ -407,6 +431,7 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
     }
 
     g_free(safe_path);
+    g_free(safe_group);
     return TRUE;
 }
 
@@ -426,9 +451,11 @@ static ErrorCode app_config_load_file(AppConfig *config,
             return ERROR_NONE;
         }
         gchar *safe_path = sanitize_for_terminal(path);
+        gchar *safe_message = sanitize_for_terminal(error ? error->message : "unknown error");
         fprintf(stderr, "Failed to load config file '%s': %s\n", safe_path,
-                error ? error->message : "unknown error");
+                safe_message);
         g_free(safe_path);
+        g_free(safe_message);
         if (error) {
             g_error_free(error);
         }
