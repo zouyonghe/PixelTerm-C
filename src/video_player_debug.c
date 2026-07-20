@@ -62,9 +62,11 @@ static void video_player_debug_config_init_unlocked(void) {
 
     const gchar *path_env = pixelterm_getenv("PIXELTERM_DEBUG_VIDEO_LOG");
     if (!path_env || !*path_env) {
-        path_env = "/tmp/pixelterm-video.log";
+        video_player_debug_config.path =
+            g_build_filename(g_get_tmp_dir(), "pixelterm-video.log", NULL);
+    } else {
+        video_player_debug_config.path = g_strdup(path_env);
     }
-    video_player_debug_config.path = g_strdup(path_env);
     video_player_debug_config.initialized = TRUE;
 }
 
