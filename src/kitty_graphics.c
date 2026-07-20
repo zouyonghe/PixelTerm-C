@@ -7,6 +7,35 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef __ANDROID__
+/* Android (bionic) lacks POSIX shm_open/shm_unlink. Emulate them with
+ * regular files in the process temp directory; behavior within this
+ * process is equivalent (named file, ftruncate + MAP_SHARED mmap). */
+static gchar *pixelterm_shm_path(const char *name) {
+    /* shm names start with '/'; use a flat, uniquely prefixed file name
+     * directly inside the temp directory so no subdirectory is needed. */
+    const char *name_ptr = (name && name[0] == '/') ? name + 1 : name;
+    gchar *filename = g_strdup_printf("pixelterm-shm-%s", name_ptr ? name_ptr : "");
+    gchar *path = g_build_filename(g_get_tmp_dir(), filename, NULL);
+    g_free(filename);
+    return path;
+}
+
+static int shm_open(const char *name, int oflag, mode_t mode) {
+    gchar *path = pixelterm_shm_path(name);
+    int fd = open(path, oflag, mode);
+    g_free(path);
+    return fd;
+}
+
+static int shm_unlink(const char *name) {
+    gchar *path = pixelterm_shm_path(name);
+    int result = unlink(path);
+    g_free(path);
+    return result;
+}
+#endif
+
 /* Keep shared-memory transfers bounded; larger frames fall back to direct kitty output. */
 #define KITTY_GRAPHICS_SHM_MAX_PAYLOAD_BYTES (8 * 1024 * 1024)
 
