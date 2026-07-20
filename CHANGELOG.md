@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.8.2: Build path defaults plus input and diagnostics hardening follow-up.
+    - **Build Configuration**: Include local pkg-config search paths by default and refine local path handling so common Homebrew-style dependency layouts resolve without extra setup.
+    - **Input Error Handling**: Treat persistent select/read failures and stdin EOF as shutdown conditions, while preserving transient EINTR/EAGAIN/EWOULDBLOCK behavior and capturing errno immediately after system calls.
+    - **Config Diagnostics**: Sanitize config paths, groups, enum values, and parser error messages before printing to stderr, and centralize repeated config error formatting.
+    - **Testing**: Add regressions for persistent stdin read errors and sanitized config diagnostics, with the full C TAP suite reporting 308/308 tests passing.
+
 - v1.8.1: CLI/startup/input hardening and video resize stability.
     - **CLI and Config UX**: Reject unexpected extra positional arguments, improve invalid boolean and enum diagnostics, and include allowed values in CLI/config-file error messages.
     - **Startup Safety**: Reject unsupported regular files with a clear error instead of silently opening their parent directory, and preserve `stat()` failure details so missing or inaccessible paths report the real system error.
