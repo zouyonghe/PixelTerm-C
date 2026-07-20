@@ -10,12 +10,18 @@
 #ifdef __ANDROID__
 /* Android (bionic) lacks POSIX shm_open/shm_unlink. Emulate them with
  * regular files in the process temp directory; behavior within this
- * process is equivalent (named file, ftruncate + MAP_SHARED mmap). */
+ * process is equivalent (named file, ftruncate + MAP_SHARED mmap).
+ *
+ * oflag is passed through to open() on a regular file, which preserves
+ * POSIX shm semantics: O_CREAT|O_EXCL still fails with EEXIST when the
+ * file already exists, and O_TRUNC/O_APPEND behave as specified. */
 static gchar *pixelterm_shm_path(const char *name) {
-    /* shm names start with '/'; use a flat, uniquely prefixed file name
-     * directly inside the temp directory so no subdirectory is needed. */
+    /* shm names start with '/'; strip it and normalize any remaining
+     * '/' to '_' so the file is always flat inside the temp directory
+     * and no (possibly missing) subdirectory is ever referenced. */
     const char *name_ptr = (name && name[0] == '/') ? name + 1 : name;
     gchar *filename = g_strdup_printf("pixelterm-shm-%s", name_ptr ? name_ptr : "");
+    g_strdelimit(filename, "/", '_');
     gchar *path = g_build_filename(g_get_tmp_dir(), filename, NULL);
     g_free(filename);
     return path;
