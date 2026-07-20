@@ -212,6 +212,18 @@ static void app_print_config_error(const char *key,
     g_free(safe_message);
 }
 
+static void app_print_config_enum_error(const char *key,
+                                        const char *safe_path,
+                                        const char *safe_group,
+                                        const char *value,
+                                        const char *expected) {
+    gchar *safe_value = sanitize_for_terminal(value);
+    fprintf(stderr,
+            "Invalid '%s' in config file '%s' group '[%s]': %s (expected %s)\n",
+            key, safe_path, safe_group, safe_value, expected);
+    g_free(safe_value);
+}
+
 static gboolean app_config_read_boolean(GKeyFile *key_file,
                                         const char *group,
                                         const char *key,
@@ -324,12 +336,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         AppProtocolMode mode = APP_PROTOCOL_AUTO;
         if (!parse_protocol_mode(value, &mode)) {
-            gchar *safe_value = sanitize_for_terminal(value);
-            fprintf(stderr,
-                    "Invalid 'protocol' in config file '%s' group '[%s]': %s (expected auto, text, sixel, kitty, or iterm2)\n",
-                    safe_path, safe_group, safe_value);
+            app_print_config_enum_error("protocol", safe_path, safe_group, value,
+                                        "auto, text, sixel, kitty, or iterm2");
             g_free(value);
-            g_free(safe_value);
             g_free(safe_path);
             g_free(safe_group);
             return FALSE;
@@ -351,12 +360,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         TextSymbolMode mode = TEXT_SYMBOL_MODE_AUTO;
         if (!parse_text_symbol_mode(value, &mode)) {
-            gchar *safe_value = sanitize_for_terminal(value);
-            fprintf(stderr,
-                    "Invalid 'text_symbols' in config file '%s' group '[%s]': %s (expected auto, half, or quarter)\n",
-                    safe_path, safe_group, safe_value);
+            app_print_config_enum_error("text_symbols", safe_path, safe_group, value,
+                                        "auto, half, or quarter");
             g_free(value);
-            g_free(safe_value);
             g_free(safe_path);
             g_free(safe_group);
             return FALSE;
@@ -378,12 +384,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         ColorEnhanceMode mode = COLOR_ENHANCE_OFF;
         if (!parse_color_enhance_mode(value, &mode)) {
-            gchar *safe_value = sanitize_for_terminal(value);
-            fprintf(stderr,
-                    "Invalid 'color_enhance' in config file '%s' group '[%s]': %s (expected off or vivid)\n",
-                    safe_path, safe_group, safe_value);
+            app_print_config_enum_error("color_enhance", safe_path, safe_group, value,
+                                        "off or vivid");
             g_free(value);
-            g_free(safe_value);
             g_free(safe_path);
             g_free(safe_group);
             return FALSE;
@@ -405,12 +408,9 @@ static gboolean app_config_apply_group(GKeyFile *key_file,
         }
         KittyTransferMode mode = KITTY_TRANSFER_AUTO;
         if (!parse_kitty_transfer_mode(value, &mode)) {
-            gchar *safe_value = sanitize_for_terminal(value);
-            fprintf(stderr,
-                    "Invalid 'kitty_transfer' in config file '%s' group '[%s]': %s (expected auto, direct, or shm)\n",
-                    safe_path, safe_group, safe_value);
+            app_print_config_enum_error("kitty_transfer", safe_path, safe_group, value,
+                                        "auto, direct, or shm");
             g_free(value);
-            g_free(safe_value);
             g_free(safe_path);
             g_free(safe_group);
             return FALSE;

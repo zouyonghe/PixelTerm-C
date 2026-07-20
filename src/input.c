@@ -14,21 +14,21 @@ static gboolean g_scroll_coalesce_active = FALSE;
 
 #define INPUT_SGR_MOUSE_BUTTON_MAX 255
 
-static gboolean input_read_error_is_transient(void) {
-    return errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
+static gboolean input_read_error_is_transient(int error_number) {
+    return error_number == EINTR || error_number == EAGAIN || error_number == EWOULDBLOCK;
 }
 
-static void input_handle_select_result(InputHandler *handler, int result) {
-    if (handler && result < 0 && !input_read_error_is_transient()) {
+static void input_handle_select_result(InputHandler *handler, int result, int error_number) {
+    if (handler && result < 0 && !input_read_error_is_transient(error_number)) {
         handler->should_exit = TRUE;
     }
 }
 
-static void input_handle_read_result(InputHandler *handler, ssize_t result) {
+static void input_handle_read_result(InputHandler *handler, ssize_t result, int error_number) {
     if (!handler) {
         return;
     }
-    if (result == 0 || (result < 0 && !input_read_error_is_transient())) {
+    if (result == 0 || (result < 0 && !input_read_error_is_transient(error_number))) {
         handler->should_exit = TRUE;
     }
 }
@@ -593,7 +593,8 @@ gboolean input_has_pending_input(InputHandler *handler) {
     FD_SET(STDIN_FILENO, &fds);
 
     int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    input_handle_select_result(handler, result);
+    int select_errno = result < 0 ? errno : 0;
+    input_handle_select_result(handler, result, select_errno);
     if (result <= 0) {
         return FALSE;
     }
@@ -601,11 +602,12 @@ gboolean input_has_pending_input(InputHandler *handler) {
     unsigned char byte;
     ssize_t n = read(STDIN_FILENO, &byte, 1);
     if (n == 0) {
-        input_handle_read_result(handler, n);
+        input_handle_read_result(handler, n, 0);
         return FALSE;
     }
     if (n < 0) {
-        input_handle_read_result(handler, n);
+        int read_errno = errno;
+        input_handle_read_result(handler, n, read_errno);
         return FALSE;
     }
     handler->pending_byte = byte;
@@ -665,7 +667,8 @@ gint input_read_char(InputHandler *handler) {
     if (n == 1) {
         return c;
     }
-    input_handle_read_result(handler, n);
+    int read_errno = n < 0 ? errno : 0;
+    input_handle_read_result(handler, n, read_errno);
     return 0;
 }
 
@@ -689,7 +692,8 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     FD_SET(STDIN_FILENO, &fds);
     
     int result = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    input_handle_select_result(handler, result);
+    int select_errno = result < 0 ? errno : 0;
+    input_handle_select_result(handler, result, select_errno);
     if (result <= 0) {
         return 0; // Timeout or error
     }
@@ -700,7 +704,8 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
         if (n == 1) {
             return c;
         }
-        input_handle_read_result(handler, n);
+        int read_errno = n < 0 ? errno : 0;
+        input_handle_read_result(handler, n, read_errno);
         return 0;
     }
     
