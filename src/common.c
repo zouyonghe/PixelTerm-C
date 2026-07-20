@@ -502,7 +502,15 @@ const char* get_file_extension(const char *filename) {
     }
 
     const char *dot = strrchr(filename, '.');
-    if (!dot || dot == filename) {
+    const char *slash = strrchr(filename, '/');
+    const char *backslash = strrchr(filename, '\\');
+    const char *separator = slash;
+    if (backslash && (!separator || backslash > separator)) {
+        separator = backslash;
+    }
+    /* No dot, dot at the start of the basename (hidden file), or dot inside
+     * a directory component: no usable extension. */
+    if (!dot || dot == filename || (separator && dot <= separator + 1)) {
         return NULL;
     }
 
