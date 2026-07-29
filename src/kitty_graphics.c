@@ -27,24 +27,33 @@ static gchar *pixelterm_shm_path(const char *name) {
     return path;
 }
 
-static int shm_open(const char *name, int oflag, mode_t mode) {
+static int pixelterm_shm_open(const char *name, int oflag, mode_t mode) {
     gchar *path = pixelterm_shm_path(name);
     int fd = open(path, oflag, mode);
     g_free(path);
     return fd;
 }
 
-static int shm_unlink(const char *name) {
+static int pixelterm_shm_unlink(const char *name) {
     gchar *path = pixelterm_shm_path(name);
     int result = unlink(path);
     g_free(path);
     return result;
+}
+#else
+static int pixelterm_shm_open(const char *name, int oflag, mode_t mode) {
+    return shm_open(name, oflag, mode);
+}
+
+static int pixelterm_shm_unlink(const char *name) {
+    return shm_unlink(name);
 }
 #endif
 
 /* Keep shared-memory transfers bounded; larger frames fall back to direct kitty output. */
 #define KITTY_GRAPHICS_SHM_MAX_PAYLOAD_BYTES (8 * 1024 * 1024)
 
+#ifndef __ANDROID__
 static gboolean kitty_graphics_env_truthy(const gchar *value) {
     if (!value || value[0] == '\0') {
         return FALSE;
@@ -54,8 +63,12 @@ static gboolean kitty_graphics_env_truthy(const gchar *value) {
            g_ascii_strcasecmp(value, "no") != 0 &&
            g_ascii_strcasecmp(value, "off") != 0;
 }
+#endif
 
 gboolean kitty_graphics_shm_auto_enabled(void) {
+#ifdef __ANDROID__
+    return FALSE;
+#else
     if (kitty_graphics_env_truthy(pixelterm_getenv("PIXELTERM_KITTY_SHM"))) {
         return TRUE;
     }
@@ -69,16 +82,21 @@ gboolean kitty_graphics_shm_auto_enabled(void) {
     const gchar *term_program = pixelterm_getenv("TERM_PROGRAM");
     return (term && g_strcmp0(term, "xterm-kitty") == 0) ||
            (term_program && g_ascii_strcasecmp(term_program, "kitty") == 0);
+#endif
 }
 
 gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
     if (mode == KITTY_TRANSFER_DIRECT) {
         return FALSE;
     }
+#ifdef __ANDROID__
+    return FALSE;
+#else
     if (mode == KITTY_TRANSFER_SHM) {
         return TRUE;
     }
     return kitty_graphics_shm_auto_enabled();
+#endif
 }
 
 GString *kitty_graphics_build_shm_command(const gchar *shm_name,
@@ -171,7 +189,7 @@ static void kitty_graphics_copy_scaled_rgba(guint8 *dest,
 
 void kitty_graphics_shm_unlink(const gchar *shm_name) {
     if (shm_name && shm_name[0] != '\0') {
-        shm_unlink(shm_name);
+        pixelterm_shm_unlink(shm_name);
     }
 }
 
@@ -217,7 +235,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
     flags |= O_CLOEXEC;
 #endif
 
-    int fd = shm_open(shm_name, flags, S_IRUSR | S_IWUSR);
+    int fd = pixelterm_shm_open(shm_name, flags, S_IRUSR | S_IWUSR);
     if (fd < 0) {
         g_free(shm_name);
         return NULL;
@@ -225,7 +243,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
 
 #ifndef O_CLOEXEC
     if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) {
-        shm_unlink(shm_name);
+        pixelterm_shm_unlink(shm_name);
         close(fd);
         g_free(shm_name);
         return NULL;
@@ -233,7 +251,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
 #endif
 
     if (ftruncate(fd, (off_t)payload_size) != 0) {
-        shm_unlink(shm_name);
+        pixelterm_shm_unlink(shm_name);
         close(fd);
         g_free(shm_name);
         return NULL;
@@ -241,7 +259,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
 
     void *mapped = mmap(NULL, payload_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (mapped == MAP_FAILED) {
-        shm_unlink(shm_name);
+        pixelterm_shm_unlink(shm_name);
         close(fd);
         g_free(shm_name);
         return NULL;

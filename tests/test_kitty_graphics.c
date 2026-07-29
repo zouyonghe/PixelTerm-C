@@ -44,9 +44,26 @@ static void test_kitty_graphics_shm_auto_enabled_allows_explicit_override(void) 
     pixelterm_env_set_for_test("SSH_CONNECTION", "host 1 host 2");
     pixelterm_env_set_for_test("TERM", "xterm-256color");
 
+#ifdef __ANDROID__
+    g_assert_false(kitty_graphics_shm_auto_enabled());
+#else
     g_assert_true(kitty_graphics_shm_auto_enabled());
+#endif
 
     pixelterm_env_reset_for_test();
+}
+
+static void test_kitty_graphics_shm_is_disabled_on_android(void) {
+#ifdef __ANDROID__
+    pixelterm_env_set_for_test("PIXELTERM_KITTY_SHM", "1");
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+
+    g_assert_false(kitty_graphics_shm_auto_enabled());
+    g_assert_false(kitty_graphics_should_use_shm(KITTY_TRANSFER_SHM));
+    g_assert_false(kitty_graphics_should_use_shm(KITTY_TRANSFER_AUTO));
+
+    pixelterm_env_reset_for_test();
+#endif
 }
 
 static void test_kitty_graphics_frame_rejects_rowstride_overflow(void) {
@@ -76,6 +93,7 @@ void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/shm_command/rejects_invalid_input", test_kitty_graphics_shm_command_rejects_invalid_input);
     g_test_add_func("/kitty_graphics/shm_auto/rejects_remote_context", test_kitty_graphics_shm_auto_enabled_rejects_remote_context);
     g_test_add_func("/kitty_graphics/shm_auto/allows_explicit_override", test_kitty_graphics_shm_auto_enabled_allows_explicit_override);
+    g_test_add_func("/kitty_graphics/shm_auto/disabled_on_android", test_kitty_graphics_shm_is_disabled_on_android);
     g_test_add_func("/kitty_graphics/frame/rejects_rowstride_overflow", test_kitty_graphics_frame_rejects_rowstride_overflow);
     g_test_add_func("/kitty_graphics/frame/rejects_large_payload", test_kitty_graphics_frame_rejects_large_payload);
 }
