@@ -63,13 +63,37 @@ static void terminal_protocol_env_fixture_tear_down(TerminalProtocolEnvFixture *
     pixelterm_env_reset_for_test();
 }
 
+static void terminal_protocol_resolver_fixture_set_up(TerminalProtocolEnvFixture *fixture,
+                                                       gconstpointer user_data) {
+    terminal_protocol_env_fixture_set_up(fixture, user_data);
+    /* Resolver tests must not inherit runner SSH variables. */
+    clear_terminal_protocol_env();
+}
+
+static void add_terminal_protocol_test_with_setup(
+    const gchar *path,
+    void (*set_up)(TerminalProtocolEnvFixture *fixture, gconstpointer user_data),
+    void (*test_func)(TerminalProtocolEnvFixture *fixture, gconstpointer user_data)) {
+    g_test_add(path, TerminalProtocolEnvFixture, NULL,
+               set_up,
+               test_func,
+               terminal_protocol_env_fixture_tear_down);
+}
+
 static void add_terminal_protocol_test(
     const gchar *path,
     void (*test_func)(TerminalProtocolEnvFixture *fixture, gconstpointer user_data)) {
-    g_test_add(path, TerminalProtocolEnvFixture, NULL,
-               terminal_protocol_env_fixture_set_up,
-               test_func,
-               terminal_protocol_env_fixture_tear_down);
+    add_terminal_protocol_test_with_setup(path,
+                                          terminal_protocol_env_fixture_set_up,
+                                          test_func);
+}
+
+static void add_terminal_protocol_resolver_test(
+    const gchar *path,
+    void (*test_func)(TerminalProtocolEnvFixture *fixture, gconstpointer user_data)) {
+    add_terminal_protocol_test_with_setup(path,
+                                          terminal_protocol_resolver_fixture_set_up,
+                                          test_func);
 }
 
 static void assert_weak_candidate_name(const gchar *expected_name) {
@@ -309,7 +333,9 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
     g_array_free(fixture.read_timeouts_ms, TRUE);
 }
 
-static void test_terminal_protocol_resolver_override_beats_signal_and_probe(void) {
+static void test_terminal_protocol_resolver_override_beats_signal_and_probe(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_override = TRUE,
         .override_protocol = TERMINAL_RESOLVED_PROTOCOL_ITERM2,
@@ -327,7 +353,9 @@ static void test_terminal_protocol_resolver_override_beats_signal_and_probe(void
                              "override");
 }
 
-static void test_terminal_protocol_resolver_signal_beats_probe(void) {
+static void test_terminal_protocol_resolver_signal_beats_probe(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_signal = TRUE,
         .signal_protocol = TERMINAL_RESOLVED_PROTOCOL_KITTY,
@@ -343,7 +371,9 @@ static void test_terminal_protocol_resolver_signal_beats_probe(void) {
                              "signal");
 }
 
-static void test_terminal_protocol_resolver_signal_used_without_override(void) {
+static void test_terminal_protocol_resolver_signal_used_without_override(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_signal = TRUE,
         .signal_protocol = TERMINAL_RESOLVED_PROTOCOL_SIXEL,
@@ -357,7 +387,9 @@ static void test_terminal_protocol_resolver_signal_used_without_override(void) {
                              "signal");
 }
 
-static void test_terminal_protocol_resolver_probe_used_without_override_or_signal(void) {
+static void test_terminal_protocol_resolver_probe_used_without_override_or_signal(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_probe = TRUE,
         .probe_protocol = TERMINAL_RESOLVED_PROTOCOL_ITERM2,
@@ -371,7 +403,9 @@ static void test_terminal_protocol_resolver_probe_used_without_override_or_signa
                              "probe");
 }
 
-static void test_terminal_protocol_resolver_falls_back_to_text(void) {
+static void test_terminal_protocol_resolver_falls_back_to_text(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {0};
 
     TerminalProtocolDecision decision = terminal_protocol_resolve(&input);
@@ -534,16 +568,21 @@ void register_terminal_protocols_tests(void) {
     g_terminal_protocol_baseline_term = g_strdup(g_getenv("TERM"));
     g_terminal_protocol_baseline_term_program = g_strdup(g_getenv("TERM_PROGRAM"));
 
-    g_test_add_func("/terminal_protocols/resolver/override_beats_signal_and_probe",
-                    test_terminal_protocol_resolver_override_beats_signal_and_probe);
-    g_test_add_func("/terminal_protocols/resolver/signal_beats_probe",
-                    test_terminal_protocol_resolver_signal_beats_probe);
-    g_test_add_func("/terminal_protocols/resolver/signal_used_without_override",
-                    test_terminal_protocol_resolver_signal_used_without_override);
-    g_test_add_func("/terminal_protocols/resolver/probe_used_without_override_or_signal",
-                    test_terminal_protocol_resolver_probe_used_without_override_or_signal);
-    g_test_add_func("/terminal_protocols/resolver/falls_back_to_text",
-                    test_terminal_protocol_resolver_falls_back_to_text);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/override_beats_signal_and_probe",
+        test_terminal_protocol_resolver_override_beats_signal_and_probe);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/signal_beats_probe",
+        test_terminal_protocol_resolver_signal_beats_probe);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/signal_used_without_override",
+        test_terminal_protocol_resolver_signal_used_without_override);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/probe_used_without_override_or_signal",
+        test_terminal_protocol_resolver_probe_used_without_override_or_signal);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/falls_back_to_text",
+        test_terminal_protocol_resolver_falls_back_to_text);
     add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_requires_affirmative_signal",
                                test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal);
 
