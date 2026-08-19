@@ -118,11 +118,37 @@ typedef struct {
     gboolean render_workers_started;
   } VideoPlayer;
 
+/**
+ * @brief Creates a video player and its default renderer.
+ *
+ * @return A caller-owned player, or NULL when allocation fails. Destroy the
+ * player with video_player_destroy().
+ * @note Create and control the player from its owning GLib main context.
+ */
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
                               gboolean force_iterm2, TextSymbolMode text_symbol_mode, gdouble gamma,
                               KittyTransferMode kitty_transfer);
+
+/**
+ * @brief Stops workers and releases all player resources.
+ *
+ * @note No callback or other thread may use the player after this call begins.
+ */
 void video_player_destroy(VideoPlayer *player);
+
+/**
+ * @brief Replaces the renderer used by the player.
+ *
+ * Active workers are stopped before replacement and restarted when playback
+ * was active. The player borrows @p renderer and never destroys it.
+ */
 void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
+
+/**
+ * @brief Sets the terminal layout available to video rendering.
+ *
+ * Layout state is synchronized internally. Terminal coordinates are one-based.
+ */
 void video_player_set_render_area(VideoPlayer *player,
                                   gint term_width,
                                   gint term_height,
@@ -130,6 +156,12 @@ void video_player_set_render_area(VideoPlayer *player,
                                   gint area_height,
                                   gint max_width,
                                   gint max_height);
+
+/**
+ * @brief Clears the most recently rendered video area from the terminal.
+ *
+ * @note Call from the player-owning main context because this writes stdout.
+ */
 void video_player_clear_render_area(VideoPlayer *player);
 
 /**
@@ -166,18 +198,66 @@ gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
  */
 gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_row);
 
+/**
+ * @brief Loads a video and initializes its FFmpeg decode state.
+ *
+ * @param filepath Borrowed path valid for the duration of the call.
+ * @return ERROR_NONE on success, otherwise an ErrorCode describing failure.
+ * @note Call from the player-owning main context while no competing control
+ * operation is in progress.
+ */
 ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath);
+
+/** @brief Starts or resumes playback from the owning main context. */
 ErrorCode video_player_play(VideoPlayer *player);
+
+/** @brief Pauses playback and its GLib timer from the owning main context. */
 ErrorCode video_player_pause(VideoPlayer *player);
+
+/** @brief Stops playback, joins workers, and clears queued frames. */
 ErrorCode video_player_stop(VideoPlayer *player);
+
+/**
+ * @brief Seeks relative to the current playback position.
+ * @param delta_ms Signed seek offset in milliseconds.
+ * @note Call from the player-owning main context.
+ */
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms);
 
-/* Thread-safe state accessors. These acquire the player's internal state mutex
- * and may block; do not call them while already holding that mutex. */
+/**
+ * @brief Returns whether playback is active.
+ * @note Thread-safe; do not call while already holding state_mutex.
+ */
 gboolean video_player_is_playing(const VideoPlayer *player);
+
+/**
+ * @brief Returns whether a valid video stream is loaded.
+ * @note Thread-safe; do not call while already holding state_mutex.
+ */
 gboolean video_player_has_video(const VideoPlayer *player);
+
+/**
+ * @brief Refreshes the attached renderer's terminal size.
+ * @note Serialized with renderer replacement; call from the owning main
+ * context because renderer terminal probing may perform terminal I/O.
+ */
 ErrorCode video_player_update_terminal_size(VideoPlayer *player);
+
+/**
+ * @brief Reads video dimensions without creating a persistent player.
+ * @param filepath Borrowed input path.
+ * @param width Output width in pixels.
+ * @param height Output height in pixels.
+ */
 ErrorCode video_player_get_dimensions(const gchar *filepath, gint *width, gint *height);
+
+/**
+ * @brief Decodes the first video frame as caller-owned RGBA pixels.
+ * @param pixels Receives memory that must be freed with g_free().
+ * @param width Receives frame width in pixels.
+ * @param height Receives frame height in pixels.
+ * @param rowstride Receives the byte distance between rows.
+ */
 ErrorCode video_player_get_first_frame(const gchar *filepath,
                                        guint8 **pixels,
                                        gint *width,

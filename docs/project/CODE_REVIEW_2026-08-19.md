@@ -170,6 +170,8 @@ blocks.
 
 - [ ] Distinguish public and internal headers.
 - [ ] Document all supported public APIs and thread/ownership semantics.
+      VideoPlayer public APIs are now documented; remaining app/terminal/UI
+      headers still require coverage.
 - [ ] Add a Doxygen warning check, or relax the written policy to match the
       intended scope.
 
@@ -232,6 +234,8 @@ video FPS, making a repeatable benchmark particularly useful.
   statistics, color enhancement, and cached frame layout; app/input modules no
   longer access those fields directly. The worker stop flag is now atomic, and
   the VideoPlayer lock-order/ownership contract is documented.
+- 2026-08-19: Static Analysis run `32203379170` passed warning-clean build and
+  tests, ASan, cppcheck, the focused project concurrency TSan suite, and UBSan.
 - 2026-08-19: Configured GitHub build provenance attestation for checksums and
   all formal release assets; consumer/installer verification remains open.
 - 2026-08-19: Remaining unchecked items are intentionally not marked complete;
