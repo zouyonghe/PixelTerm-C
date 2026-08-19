@@ -396,6 +396,43 @@ static void test_input_parses_sgr_mouse_press_with_terminator(void) {
     g_assert_cmpint(event.mouse_y, ==, 7);
 }
 
+static void test_input_rejects_truncated_sgr_sequence(void) {
+    static const gchar truncated_mouse[] = "\033[<0;12";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(truncated_mouse, sizeof(truncated_mouse) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
+static void test_input_rejects_oversized_unterminated_escape(void) {
+    static const gchar oversized_escape[] =
+        "\033[1234567890123456789012345678901234567890";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(oversized_escape, sizeof(oversized_escape) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
+static void test_input_rejects_negative_sgr_coordinates(void) {
+    static const gchar negative_mouse[] = "\033[<0;-1;7M";
+    InputHandler input_handler = {0};
+    InputEvent event = {0};
+
+    redirect_stdin_bytes(negative_mouse, sizeof(negative_mouse) - 1);
+
+    g_assert_cmpint(input_get_event(&input_handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+}
+
 typedef struct {
     PixelTermApp *app;
 } ToggleVideoFpsCall;
@@ -468,4 +505,10 @@ void register_input_dispatch_key_single_tests(void) {
                     test_input_rejects_mouse_sequence_without_sgr_prefix);
     g_test_add_func("/input/parses_sgr_mouse_press_with_terminator",
                     test_input_parses_sgr_mouse_press_with_terminator);
+    g_test_add_func("/input/rejects_truncated_sgr_sequence",
+                    test_input_rejects_truncated_sgr_sequence);
+    g_test_add_func("/input/rejects_oversized_unterminated_escape",
+                    test_input_rejects_oversized_unterminated_escape);
+    g_test_add_func("/input/rejects_negative_sgr_coordinates",
+                    test_input_rejects_negative_sgr_coordinates);
 }

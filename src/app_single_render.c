@@ -326,7 +326,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     gboolean gif_is_animated = FALSE;
 
     if (is_video && app->video_player) {
-        if (!app->video_player->filepath || g_strcmp0(app->video_player->filepath, filepath) != 0) {
+        if (!video_player_is_loaded_file(app->video_player, filepath)) {
             ErrorCode load_result = APP_SINGLE_RENDER_CALL(video_player_load,
                                                            video_player_load,
                                                            app->video_player,
@@ -339,7 +339,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     if (is_animated_image && app->gif_player && !is_video) {
         // First, check if we need to load the animated image
-        if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
+        if (!gif_player_is_loaded_file(app->gif_player, filepath)) {
             ErrorCode load_result = APP_SINGLE_RENDER_CALL(gif_player_load,
                                                            gif_player_load,
                                                            app->gif_player,
@@ -482,7 +482,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                      target_height,
                                      target_width,
                                      target_height);
-        app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
+        video_player_set_show_stats(app->video_player,
+                                    app->show_fps && !app->ui_text_hidden);
     }
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = is_video ? "Video View" : "Image View";

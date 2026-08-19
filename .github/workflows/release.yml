@@ -17,6 +17,7 @@ jobs:
     container:
       image: ${{ matrix.container }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: amd64
@@ -26,38 +27,60 @@ jobs:
             runs-on: ubuntu-24.04-arm
             container: menci/archlinuxarm:base-devel
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-
-    - name: Build on Linux (Arch)
+    - name: Bootstrap Arch Linux checkout tools
       run: |
-        mkdir -p release-${{ matrix.arch }}
-        
-        # Native build for Linux (amd64/arm64)
-        echo "Native build for ${{ matrix.arch }}"
-        
-        # Install dependencies
+        set -euo pipefail
         pacman-key --init
         if pacman -Si archlinuxarm-keyring >/dev/null 2>&1; then
           pacman-key --populate archlinuxarm
           pacman -Syu --noconfirm --needed archlinuxarm-keyring
         else
           pacman-key --populate archlinux
-        pacman -Syu --noconfirm --needed --disable-sandbox archlinux-keyring
+          pacman -Syu --noconfirm --needed --disable-sandbox archlinux-keyring
         fi
-        deps=(base-devel pkgconf git glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
+        pacman -Syu --noconfirm --needed --disable-sandbox git python
+
+    - name: Checkout code
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+    - name: Install Arch Linux build dependencies
+      run: |
+        set -euo pipefail
+        deps=(base-devel pkgconf glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
         if pacman -Si libmupdf >/dev/null 2>&1; then
           deps+=(libmupdf)
         fi
-        pacman -Syu --noconfirm --needed --disable-sandbox "${deps[@]}"
-        
-        # Build PixelTerm-C
-        make clean && make
+        pacman -S --noconfirm --needed --disable-sandbox "${deps[@]}"
+
+    - name: Validate release version metadata
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        python3 scripts/sync_version_refs.py "${GITHUB_REF_NAME}" --check
+
+    - name: Build and test on Arch Linux
+      run: |
+        set -euo pipefail
+        mkdir -p release-${{ matrix.arch }}
+
+        make clean
+        make EXTRA_CFLAGS=-Werror
         make EXTRA_CFLAGS=-Werror test
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux
+
+    - name: Smoke-test Linux release binary
+      run: |
+        set -euo pipefail
+        binary="release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-linux"
+        missing="$(ldd "${binary}" | awk '/not found/ { print }')"
+        if [ -n "${missing}" ]; then
+          printf '%s\n' "${missing}" >&2
+          exit 1
+        fi
+        "${binary}" --version
+        "${binary}" --help >/dev/null
 
     - name: Create release package
       run: |
@@ -66,13 +89,13 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-linux.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-linux.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-linux
         path: release/pixelterm-${{ matrix.arch }}-linux
@@ -88,7 +111,12 @@ jobs:
             runs-on: macos-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+    - name: Validate release version metadata
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        python3 scripts/sync_version_refs.py "${GITHUB_REF_NAME}" --check
 
     - name: Build on macOS
       run: |
@@ -123,31 +151,80 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-macos.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-macos.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-macos
         path: release/pixelterm-${{ matrix.arch }}-macos
 
+  verify-linux-artifacts:
+    needs: build-linux
+    runs-on: ${{ matrix.runs-on }}
+    container:
+      image: ${{ matrix.container }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runs-on: ubuntu-latest
+            container: archlinux:latest
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+            container: menci/archlinuxarm:base-devel
+    steps:
+    - name: Download Linux binary artifact
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      with:
+        name: pixelterm-${{ matrix.arch }}-linux
+        path: release
+
+    - name: Install Arch Linux runtime dependencies
+      run: |
+        set -euo pipefail
+        pacman-key --init
+        if pacman -Si archlinuxarm-keyring >/dev/null 2>&1; then
+          pacman-key --populate archlinuxarm
+          pacman -Syu --noconfirm --needed archlinuxarm-keyring
+        else
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm --needed --disable-sandbox archlinux-keyring
+        fi
+        deps=(glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
+        if pacman -Si libmupdf >/dev/null 2>&1; then
+          deps+=(libmupdf)
+        fi
+        pacman -Syu --noconfirm --needed --disable-sandbox "${deps[@]}"
+
+    - name: Verify uploaded Linux artifact
+      run: |
+        set -euo pipefail
+        binary="release/pixelterm-${{ matrix.arch }}-linux"
+        chmod +x "${binary}"
+        test -z "$(ldd "${binary}" | awk '/not found/ { print }')"
+        "${binary}" --version
+        "${binary}" --help >/dev/null
+
   create-release:
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos, verify-linux-artifacts]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: read
+      id-token: write
+      attestations: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
       with:
         fetch-depth: 0
 
     - name: Download artifacts
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
       with:
         pattern: pixelterm*
         merge-multiple: true
@@ -204,9 +281,17 @@ jobs:
 
         python3 scripts/generate_release_notes.py "${args[@]}"
 
+    - name: Attest release assets
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: |
+          SHA256SUMS
+          pixelterm-*
+
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.5.0
       with:
         body_path: ${{ steps.release_notes_inputs.outputs.output_file }}
         files: |
@@ -228,7 +313,7 @@ jobs:
       contents: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
       with:
         fetch-depth: 0
 

@@ -93,6 +93,31 @@ static void test_gif_player_default_state(void) {
     gif_player_destroy(player);
 }
 
+static void test_gif_player_public_accessors(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    if (!player) {
+        g_test_skip("gif player unavailable");
+        return;
+    }
+
+    if (!player->renderer) {
+        g_test_skip("gif player renderer unavailable");
+        gif_player_destroy(player);
+        return;
+    }
+
+    g_assert_false(gif_player_is_loaded_file(player, "image.gif"));
+    gif_player_set_color_enhance(player, COLOR_ENHANCE_VIVID);
+    g_assert_cmpint(player->renderer->config.color_enhance, ==, COLOR_ENHANCE_VIVID);
+    player->filepath = g_strdup("image.gif");
+    g_assert_true(gif_player_is_loaded_file(player, "image.gif"));
+    g_assert_false(gif_player_is_loaded_file(player, "other.gif"));
+    g_assert_false(gif_player_is_loaded_file(NULL, "image.gif"));
+    g_assert_false(gif_player_is_loaded_file(player, NULL));
+
+    gif_player_destroy(player);
+}
+
 static void test_gif_player_play_without_load(void) {
     GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
@@ -185,6 +210,7 @@ void register_gif_player_tests(void) {
     g_test_add_func("/gif_player/new_renderer_state", test_gif_player_new_renderer_state);
     g_test_add_func("/gif_player/set_renderer_ownership", test_gif_player_set_renderer_ownership);
     g_test_add_func("/gif_player/default_state", test_gif_player_default_state);
+    g_test_add_func("/gif_player/public_api/accessors", test_gif_player_public_accessors);
     g_test_add_func("/gif_player/play_without_load", test_gif_player_play_without_load);
     g_test_add_func("/gif_player/pause_stop_without_play", test_gif_player_pause_stop_without_play);
     g_test_add_func("/gif_player/load_invalid_path", test_gif_player_load_invalid_path);

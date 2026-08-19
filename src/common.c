@@ -192,8 +192,8 @@ static gboolean webp_has_animation(const char *filepath) {
         }
 
         guint32 chunk_size = read_le32(chunk_hdr + 4);
-        guint32 skip = chunk_size + (chunk_size & 1);
-        if (skip > (guint32)LONG_MAX) {
+        guint64 skip = (guint64)chunk_size + (guint64)(chunk_size & 1U);
+        if (skip > (guint64)LONG_MAX) {
             break;
         }
         if (fseek(file, (long)skip, SEEK_CUR) != 0) {
@@ -249,12 +249,12 @@ static gboolean tiff_has_multiple_pages(const char *filepath) {
         return FALSE;
     }
     guint16 count = little_endian ? read_le16(count_buf) : read_be16(count_buf);
-    long next_offset_pos = (long)ifd_offset + 2L + (long)count * 12L;
-    if (next_offset_pos < 0 || next_offset_pos > LONG_MAX - 4) {
+    guint64 next_offset_pos = (guint64)ifd_offset + 2U + (guint64)count * 12U;
+    if (next_offset_pos > (guint64)LONG_MAX - 4U) {
         fclose(file);
         return FALSE;
     }
-    if (fseek(file, next_offset_pos, SEEK_SET) != 0) {
+    if (fseek(file, (long)next_offset_pos, SEEK_SET) != 0) {
         fclose(file);
         return FALSE;
     }

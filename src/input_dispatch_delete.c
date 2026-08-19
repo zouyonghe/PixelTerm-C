@@ -18,8 +18,13 @@ static gint delete_prompt_row(const PixelTermApp *app) {
     gint row = term_height - 1;
 
     if (app_is_single_mode(app)) {
-        if (input_dispatch_current_is_video(app) && app->video_player && app->video_player->last_frame_height > 0) {
-            row = app->video_player->last_frame_top_row + app->video_player->last_frame_height;
+        gint video_top_row = 0;
+        gint video_height = 0;
+        if (input_dispatch_current_is_video(app) &&
+            video_player_get_last_frame_bounds(app->video_player,
+                                               &video_top_row,
+                                               &video_height)) {
+            row = video_top_row + video_height;
         } else if (app->last_render_height > 0 && app->last_render_top_row > 0) {
             row = app->last_render_top_row + app->last_render_height;
         }

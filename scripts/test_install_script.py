@@ -77,6 +77,19 @@ def create_fake_curl(fake_bin_dir: Path) -> None:
     )
     fake_curl.chmod(0o755)
 
+    fake_ldd = fake_bin_dir / "ldd"
+    fake_ldd.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -eu\n"
+        'if [ "${LDD_MISSING_DEPENDENCY:-0}" = "1" ]; then\n'
+        "  printf 'libchafa.so.0 => not found\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "printf 'libc.so => /system/lib64/libc.so\\n'\n",
+        encoding="utf-8",
+    )
+    fake_ldd.chmod(0o755)
+
 
 def fake_install_env(fake_bin_dir: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
     env = {
@@ -238,6 +251,27 @@ class InstallScriptCLITest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertTrue((install_dir / "pixelterm").exists())
+
+    def test_install_aborts_on_missing_linux_runtime_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_bin_dir = temp_path / "fake-bin"
+            install_dir = temp_path / "install-bin"
+            fake_bin_dir.mkdir()
+            create_fake_curl(fake_bin_dir)
+
+            result = run_script(
+                "--bin-dir",
+                str(install_dir),
+                "--version",
+                "v1.7.26",
+                env=fake_install_env(fake_bin_dir, {"LDD_MISSING_DEPENDENCY": "1"}),
+            )
+
+            self.assertNotEqual(result.returncode, 0, msg=result.stdout)
+            self.assertIn("libchafa.so.0 => not found", result.stderr)
+            self.assertIn("Missing Linux runtime dependencies", result.stderr)
+            self.assertFalse((install_dir / "pixelterm").exists())
 
     def test_install_aborts_on_mismatched_sha256(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

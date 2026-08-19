@@ -150,6 +150,26 @@ gboolean gif_player_is_playing(const GifPlayer *player);
  */
 gboolean gif_player_is_animated(const GifPlayer *player);
 /**
+ * @brief Returns whether the requested path is currently loaded.
+ *
+ * The returned value does not expose the player's internal path storage.
+ * Call from the player-owning main context.
+ *
+ * @param player A pointer to the GIF player.
+ * @param filepath A borrowed path to compare.
+ * @return TRUE when the loaded path matches, otherwise FALSE.
+ */
+gboolean gif_player_is_loaded_file(const GifPlayer *player, const gchar *filepath);
+/**
+ * @brief Updates the color enhancement setting of the GIF renderer.
+ *
+ * Call from the player-owning main context before playback starts.
+ *
+ * @param player A pointer to the GIF player.
+ * @param color_enhance The renderer color enhancement mode.
+ */
+void gif_player_set_color_enhance(GifPlayer *player, ColorEnhanceMode color_enhance);
+/**
  * @brief Updates the GIF player's internal terminal size information.
  * 
  * This function should be called when the terminal dimensions change to ensure

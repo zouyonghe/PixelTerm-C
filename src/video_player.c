@@ -302,7 +302,7 @@ void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
 
     gboolean logged_full = FALSE;
     g_mutex_lock(&player->queue_mutex);
-    while (!player->worker_stop &&
+    while (!g_atomic_int_get(&player->worker_stop) &&
            player->max_queue_size > 0 &&
            g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size) {
         if (!logged_full) {
@@ -316,7 +316,7 @@ void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
         video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_RENDER);
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
-    if (player->worker_stop) {
+    if (g_atomic_int_get(&player->worker_stop)) {
         g_mutex_unlock(&player->queue_mutex);
         video_frame_destroy(frame);
         return;
@@ -390,7 +390,7 @@ void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *frame) {
 
     gboolean logged_full = FALSE;
     g_mutex_lock(&player->queue_mutex);
-    while (!player->worker_stop &&
+    while (!g_atomic_int_get(&player->worker_stop) &&
            player->max_queue_size > 0 &&
            g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size) {
         if (!logged_full) {
@@ -404,7 +404,7 @@ void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *frame) {
         video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_RENDER);
         g_cond_wait(&player->frame_queue_has_space, &player->queue_mutex);
     }
-    if (player->worker_stop) {
+    if (g_atomic_int_get(&player->worker_stop)) {
         g_mutex_unlock(&player->queue_mutex);
         video_frame_destroy(frame);
         return;
@@ -507,11 +507,12 @@ void video_player_decode_queue_push(VideoPlayer *player, DecodedFrame *frame) {
 
 
     g_mutex_lock(&player->queue_mutex);
-    while (!player->worker_stop && g_queue_get_length(player->decode_queue) >= 4) {
+    while (!g_atomic_int_get(&player->worker_stop) &&
+           g_queue_get_length(player->decode_queue) >= 4) {
         video_player_notify_queue_wait_hook(player, VIDEO_PLAYER_TEST_QUEUE_DECODE);
         g_cond_wait(&player->decode_queue_has_space, &player->queue_mutex);
     }
-    if (player->worker_stop) {
+    if (g_atomic_int_get(&player->worker_stop)) {
         g_mutex_unlock(&player->queue_mutex);
         decoded_frame_destroy(frame);
         return;
@@ -544,7 +545,8 @@ DecodedFrame *video_player_decode_queue_wait_and_take(VideoPlayer *player) {
     }
 
     g_mutex_lock(&player->queue_mutex);
-    while (!player->worker_stop && g_queue_is_empty(player->decode_queue)) {
+    while (!g_atomic_int_get(&player->worker_stop) &&
+           g_queue_is_empty(player->decode_queue)) {
         g_cond_wait(&player->decode_queue_has_items, &player->queue_mutex);
     }
     if (g_queue_is_empty(player->decode_queue)) {
@@ -563,10 +565,7 @@ static gboolean video_player_should_stop(VideoPlayer *player) {
     if (!player) {
         return TRUE;
     }
-    g_mutex_lock(&player->queue_mutex);
-    gboolean stop = player->worker_stop;
-    g_mutex_unlock(&player->queue_mutex);
-    return stop;
+    return g_atomic_int_get(&player->worker_stop);
 }
 
 /* Reset all decode + layout + timing state at once.
@@ -624,7 +623,7 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->worker_thread = NULL;
     player->render_workers[0] = NULL;
     player->render_workers[1] = NULL;
-    player->worker_stop = FALSE;
+    g_atomic_int_set(&player->worker_stop, FALSE);
     player->render_workers_started = FALSE;
 
     player->render_area_top_row = 0;
@@ -767,6 +766,121 @@ void video_player_set_render_area(VideoPlayer *player,
     g_mutex_unlock(&player->state_mutex);
 }
 
+void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats) {
+    if (!player) {
+        return;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    player->show_stats = show_stats;
+    g_mutex_unlock(&player->state_mutex);
+}
+
+void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance) {
+    if (!player) {
+        return;
+    }
+
+    g_mutex_lock(&player->render_mutex);
+    player->color_enhance = color_enhance;
+    if (player->renderer) {
+        player->renderer->config.color_enhance = color_enhance;
+    }
+    g_mutex_unlock(&player->render_mutex);
+
+    /* Notify render workers to refresh their private renderer configuration. */
+    g_mutex_lock(&player->state_mutex);
+    player->render_layout_generation++;
+    g_mutex_unlock(&player->state_mutex);
+}
+
+gboolean video_player_cycle_protocol(VideoPlayer *player) {
+    if (!player) {
+        return FALSE;
+    }
+
+    g_mutex_lock(&player->render_mutex);
+    ImageRenderer *renderer = player->renderer;
+    if (!renderer) {
+        g_mutex_unlock(&player->render_mutex);
+        return FALSE;
+    }
+
+    gboolean force_text = renderer->config.force_text;
+    gboolean force_kitty = renderer->config.force_kitty;
+    gboolean force_iterm2 = renderer->config.force_iterm2;
+    gboolean force_sixel = renderer->config.force_sixel;
+    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    if (renderer->canvas_config) {
+        current_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
+    }
+    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
+
+    renderer->config.force_text = force_kitty;
+    renderer->config.force_sixel = force_text ||
+                                   (!force_text && !force_sixel &&
+                                    !force_iterm2 && !force_kitty);
+    renderer->config.force_iterm2 = force_sixel;
+    renderer->config.force_kitty = force_iterm2;
+
+    gboolean next_graphics = renderer->config.force_kitty ||
+                             renderer->config.force_iterm2 ||
+                             renderer->config.force_sixel;
+    renderer_update_terminal_size(renderer);
+    g_mutex_unlock(&player->render_mutex);
+
+    /* Re-render when entering graphics mode or when leaving it so stale
+     * graphics placements do not remain behind the next text frame. */
+    return was_text || !next_graphics;
+}
+
+gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
+                                             gint *top_row,
+                                             gint *height) {
+    if (top_row) {
+        *top_row = 0;
+    }
+    if (height) {
+        *height = 0;
+    }
+    if (!player) {
+        return FALSE;
+    }
+
+    g_mutex_lock(&player->state_mutex);
+    gint snapshot_top = player->last_frame_top_row;
+    gint snapshot_height = player->last_frame_height;
+    g_mutex_unlock(&player->state_mutex);
+
+    if (snapshot_top <= 0 || snapshot_height <= 0) {
+        return FALSE;
+    }
+    if (top_row) {
+        *top_row = snapshot_top;
+    }
+    if (height) {
+        *height = snapshot_height;
+    }
+    return TRUE;
+}
+
+gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_row) {
+    if (!player || terminal_row < 1) {
+        return NULL;
+    }
+
+    gchar *line_copy = NULL;
+    g_mutex_lock(&player->state_mutex);
+    gint line_index = terminal_row - player->last_frame_top_row;
+    if (player->last_frame_lines && line_index >= 0 &&
+        line_index < (gint)player->last_frame_lines->len) {
+        const gchar *line = g_ptr_array_index(player->last_frame_lines, line_index);
+        line_copy = g_strdup(line);
+    }
+    g_mutex_unlock(&player->state_mutex);
+    return line_copy;
+}
+
 void video_player_clear_render_area(VideoPlayer *player) {
     if (!player) {
         return;
@@ -867,9 +981,7 @@ static void video_player_start_worker(VideoPlayer *player) {
     if (!player || player->worker_thread || !video_player_has_renderer(player)) {
         return;
     }
-    g_mutex_lock(&player->queue_mutex);
-    player->worker_stop = FALSE;
-    g_mutex_unlock(&player->queue_mutex);
+    g_atomic_int_set(&player->worker_stop, FALSE);
     video_player_set_draining(player, FALSE);
     player->worker_thread = g_thread_new("video-decode", video_player_worker_thread, player);
     if (!player->render_workers_started) {
@@ -893,7 +1005,7 @@ static RendererConfig video_player_render_worker_config(VideoPlayer *player) {
         .force_iterm2 = FALSE,
         .text_symbol_mode = TEXT_SYMBOL_MODE_AUTO,
         .gamma = 1.0,
-        .color_enhance = player ? player->color_enhance : COLOR_ENHANCE_OFF,
+        .color_enhance = COLOR_ENHANCE_OFF,
         .dither_mode = CHAFA_DITHER_MODE_NONE,
         .color_extractor = CHAFA_COLOR_EXTRACTOR_AVERAGE,
         .optimizations = CHAFA_OPTIMIZATION_REUSE_ATTRIBUTES
@@ -906,6 +1018,8 @@ static RendererConfig video_player_render_worker_config(VideoPlayer *player) {
     g_mutex_lock(&player->render_mutex);
     if (player->renderer) {
         config = player->renderer->config;
+    } else {
+        config.color_enhance = player->color_enhance;
     }
     g_mutex_unlock(&player->render_mutex);
     return config;
@@ -972,7 +1086,7 @@ static void video_player_stop_worker_internal(VideoPlayer *player, gboolean clea
         return;
     }
     g_mutex_lock(&player->queue_mutex);
-    player->worker_stop = TRUE;
+    g_atomic_int_set(&player->worker_stop, TRUE);
     g_cond_broadcast(&player->frame_queue_has_space);
     g_cond_broadcast(&player->decode_queue_has_space);
     g_cond_broadcast(&player->decode_queue_has_items);
@@ -992,9 +1106,7 @@ static void video_player_stop_worker_internal(VideoPlayer *player, gboolean clea
         }
         player->render_workers_started = FALSE;
     }
-    g_mutex_lock(&player->queue_mutex);
-    player->worker_stop = FALSE;
-    g_mutex_unlock(&player->queue_mutex);
+    g_atomic_int_set(&player->worker_stop, FALSE);
     if (clear_queues) {
         video_player_queue_clear(player);
         video_player_decode_queue_clear(player);
@@ -1617,8 +1729,9 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     video_player_stop(player);
     video_player_reset_media_state(player);
 
-    g_free(player->filepath);
-    player->filepath = NULL;
+    g_mutex_lock(&player->state_mutex);
+    g_clear_pointer(&player->filepath, g_free);
+    g_mutex_unlock(&player->state_mutex);
 
     if (!file_exists(filepath)) {
         return ERROR_FILE_NOT_FOUND;
@@ -1744,8 +1857,9 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
         player->time_base_den = 1000;
     }
     video_player_set_fallback_pts_ms(player, 0);
-    player->filepath = g_strdup(filepath);
+    gchar *loaded_filepath = g_strdup(filepath);
     g_mutex_lock(&player->state_mutex);
+    player->filepath = loaded_filepath;
     player->has_video = TRUE;
     player->draining = FALSE;
     g_mutex_unlock(&player->state_mutex);
@@ -1926,6 +2040,20 @@ gboolean video_player_has_video(const VideoPlayer *player) {
     gboolean has_video = mutable_player->has_video;
     g_mutex_unlock(&mutable_player->state_mutex);
     return has_video;
+}
+
+gboolean video_player_is_loaded_file(const VideoPlayer *player,
+                                     const gchar *filepath) {
+    if (!player || !filepath) {
+        return FALSE;
+    }
+
+    VideoPlayer *mutable_player = (VideoPlayer*)player;
+    g_mutex_lock(&mutable_player->state_mutex);
+    gboolean matches = mutable_player->filepath &&
+                       g_strcmp0(mutable_player->filepath, filepath) == 0;
+    g_mutex_unlock(&mutable_player->state_mutex);
+    return matches;
 }
 
 ErrorCode video_player_update_terminal_size(VideoPlayer *player) {

@@ -1,7 +1,7 @@
 # PixelTerm-C Project Status
 
 ## Overview
-- **Current Version**: v1.8.1
+- **Current Version**: v1.8.3
 - **Status**: Production ready
 - **Core Dependencies**: chafa, glib-2.0, gdk-pixbuf-2.0, gio-2.0, FFmpeg libs, pthread; MuPDF optional for book support
 
@@ -37,7 +37,7 @@ PixelTerm-C/
 - Dithering toggle and work-factor quality control
 
 ## Testing
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to verify the installer/docs path
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs the installer, release-note, and version-sync Python test suites
 - `bin/pixelterm-tests` covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and video playback/seek regressions, including the paused-seek target-restore path
 - `bin/pixelterm-file-manager-tests` isolates file-manager navigation and selection-state regressions
 - `bin/pixelterm-preview-grid-tests` isolates preview-grid zoom, pagination, and short-last-page selection normalization regressions
@@ -46,7 +46,8 @@ PixelTerm-C/
 - Debug build targets remain part of the verification baseline
 
 ## CI Baseline
-- Linux CI validates MuPDF `pkg-config` metadata, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
+- Linux CI validates MuPDF `pkg-config` metadata, runs warning-clean build/tests and AddressSanitizer, and has separate ThreadSanitizer, UndefinedBehaviorSanitizer, and gcovr coverage jobs
+- Linux release assets retain the existing native Arch Linux/Arch Linux ARM environments and are downloaded into matching environments after upload for `ldd`, `--version`, and `--help` smoke tests
 - Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path without the Linux-specific MuPDF metadata check
 
 ## Notes

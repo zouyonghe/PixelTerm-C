@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.8.1-blue)
+![Version](https://img.shields.io/badge/Version-v1.8.3-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *English | [中文](docs/i18n/README_zh.md) | [日本語](docs/i18n/README_ja.md)*
@@ -55,23 +55,28 @@ paru -S pixelterm-c
 # or
 yay -S pixelterm-c
 
+# Download this once alongside the platform-specific binary below
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/SHA256SUMS
+
 # Linux amd64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
-wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/SHA256SUMS
-grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c -
-chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
 # Linux arm64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-linux
-chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
 
 # macOS amd64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
-chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
 
 # macOS arm64 (Apple Silicon)
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
-chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
 ```
 
 If macOS blocks the installed binary, remove quarantine and try again:
@@ -182,10 +187,11 @@ If MuPDF is available, book support is built in automatically. Cross-compilation
 
 ## Verification Baseline
 
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to keep the installer/docs path in sync.
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs the installer, release-note, and version-sync Python test suites.
 - The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and the paused video-seek target-restore path.
 - File-manager, preview-grid, and book-preview flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
-- Linux CI validates MuPDF `pkg-config` metadata, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`.
+- Linux CI validates MuPDF `pkg-config` metadata, then runs warning-clean build/tests, AddressSanitizer tests, separate ThreadSanitizer and UndefinedBehaviorSanitizer jobs, and publishes a gcovr source coverage report.
+- Linux release binaries retain the existing native Arch Linux/Arch Linux ARM build environments for compatibility with the current release and AUR packaging flow. Uploaded artifacts are downloaded again into matching Arch environments and smoke-tested with `ldd`, `--version`, and `--help` before a release can be created.
 - Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path.
 - The current shipped baseline includes the layered auto-protocol resolver, non-overlapping preview/book last-page paging, and paused video seek target restoration after seek-preview redraw; broader terminal presets and remote-session heuristics remain roadmap work.
 

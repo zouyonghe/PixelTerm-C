@@ -160,6 +160,12 @@ OBJDIR = obj
 BINDIR = bin
 DEBUG_OBJDIR ?= obj-debug
 DEBUG_BINDIR ?= bin-debug
+TSAN_OBJDIR ?= obj-tsan
+TSAN_BINDIR ?= bin-tsan
+UBSAN_OBJDIR ?= obj-ubsan
+UBSAN_BINDIR ?= bin-ubsan
+COVERAGE_OBJDIR ?= obj-coverage
+COVERAGE_BINDIR ?= bin-coverage
 BUILD_FLAGS_FILE = $(OBJDIR)/.build-flags
 
 # Source files
@@ -172,7 +178,11 @@ TEST_TARGET = $(BINDIR)/pixelterm-tests
 FILE_MANAGER_TEST_TARGET = $(BINDIR)/pixelterm-file-manager-tests
 PREVIEW_GRID_TEST_TARGET = $(BINDIR)/pixelterm-preview-grid-tests
 BOOK_PREVIEW_TEST_TARGET = $(BINDIR)/pixelterm-book-preview-tests
-INSTALL_SCRIPT_TEST = PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_install_script.py
+PYTHON_TEST_ENV = PYTHONDONTWRITEBYTECODE=1
+MAINTENANCE_SCRIPT_TESTS = \
+	$(PYTHON_TEST_ENV) python3 scripts/test_install_script.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_generate_release_notes.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py
 TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 FILE_MANAGER_TEST_SOURCE = tests/test_app_file_manager.c
@@ -262,9 +272,52 @@ debug:
 debug-test:
 	$(MAKE) OBJDIR="$(DEBUG_OBJDIR)" BINDIR="$(DEBUG_BINDIR)" DEBUG=1 EXTRA_CFLAGS="$(EXTRA_CFLAGS)" test
 
+# Run project-owned concurrency paths under ThreadSanitizer. Chafa's
+# distribution library uses an uninstrumented persistent worker pool, so the
+# TSan suite deliberately avoids pixel-rendering tests while ASan/UBSan/normal
+# targets continue to run the complete suite.
+tsan-test:
+	$(MAKE) OBJDIR="$(TSAN_OBJDIR)" BINDIR="$(TSAN_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer -DPIXELTERM_TSAN" \
+		tsan-suite
+
+tsan-suite: $(TEST_TARGET)
+	@set -e; for path in \
+		/video_player/fallback_pts/set_waits_on_state_mutex \
+		/video_player/fallback_pts/resolve_and_advance_waits_on_state_mutex \
+		/video_player/set_renderer/restarts_workers_when_replacing_during_playback \
+		/video_player/set_renderer/null_stops_playback_and_timer \
+		/video_player/render_queue/rechecks_last_presented_after_full_queue_wait \
+		/video_player/decode_queue/sixel_mode_waits_instead_of_replacing_oldest \
+		/video_player/decode_queue/text_mode_waits_instead_of_replacing_oldest \
+		/video_player/decode_queue/wait_and_take_blocks_until_item_arrives \
+		/video_player/queue_push/waits_for_capacity_instead_of_dropping_new_frame \
+		/video_player/seek_relative/after_eof_stops_parked_workers_before_preview \
+		/video_player/public_api/layout_accessors_return_consistent_snapshots \
+		/video_player/public_api/state_setters_update_player_configuration \
+		/video_player/public_api/protocol_cycle_preserves_existing_order \
+		/preloader/stop/concurrent_callers \
+		/preloader/stop/wakes_paused_worker \
+		/preloader/start_stop/repeated_cycles \
+		/preloader/add_task/rejects_while_stopping; do \
+			$(TEST_TARGET) -p "$$path"; \
+	done
+
+ubsan-test:
+	$(MAKE) OBJDIR="$(UBSAN_OBJDIR)" BINDIR="$(UBSAN_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" \
+		test
+
+coverage-test:
+	$(MAKE) OBJDIR="$(COVERAGE_OBJDIR)" BINDIR="$(COVERAGE_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O0 -g --coverage" \
+		test
+
 # Clean build artifacts
 clean:
-	rm -rf $(OBJDIR) $(BINDIR) $(DEBUG_OBJDIR) $(DEBUG_BINDIR)
+	rm -rf $(OBJDIR) $(BINDIR) $(DEBUG_OBJDIR) $(DEBUG_BINDIR) \
+		$(TSAN_OBJDIR) $(TSAN_BINDIR) $(UBSAN_OBJDIR) $(UBSAN_BINDIR) \
+		$(COVERAGE_OBJDIR) $(COVERAGE_BINDIR)
 
 # Install
 install: $(TARGET)
@@ -278,7 +331,7 @@ test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(B
 	@$(FILE_MANAGER_TEST_TARGET)
 	@$(PREVIEW_GRID_TEST_TARGET)
 	@$(BOOK_PREVIEW_TEST_TARGET)
-	@$(INSTALL_SCRIPT_TEST)
+	@$(MAINTENANCE_SCRIPT_TESTS)
 
 # Run with sample image
 run: $(TARGET)
@@ -301,6 +354,9 @@ help:
 	@echo "  all       - Build the application (default)"
 	@echo "  debug     - Build with debug flags"
 	@echo "  debug-test - Run tests with debug AddressSanitizer flags"
+	@echo "  tsan-test - Run tests with ThreadSanitizer flags"
+	@echo "  ubsan-test - Run tests with UndefinedBehaviorSanitizer flags"
+	@echo "  coverage-test - Run instrumented tests for gcov/gcovr reporting"
 	@echo "  clean     - Remove build artifacts"
 	@echo "  install   - Install to system"
 	@echo "  test      - Run tests"
@@ -318,7 +374,7 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
-.PHONY: FORCE all debug debug-test clean install test run check-deps help
+.PHONY: FORCE all debug debug-test tsan-test tsan-suite ubsan-test coverage-test clean install test run check-deps help
 
 FORCE:
 

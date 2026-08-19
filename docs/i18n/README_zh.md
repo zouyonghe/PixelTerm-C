@@ -1,6 +1,6 @@
 # PixelTerm-C
 
-![Version](https://img.shields.io/badge/Version-v1.8.1-blue)
+![Version](https://img.shields.io/badge/Version-v1.8.3-blue)
 ![License](https://img.shields.io/badge/License-LGPL--3.0-orange)
 
 *[English](../../README.md) | 中文 | [日本語](README_ja.md)*
@@ -53,21 +53,28 @@ paru -S pixelterm-c
 # 或
 yay -S pixelterm-c
 
+# 校验文件只需下载一次，然后按下面的平台选择对应二进制
+wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/SHA256SUMS
+
 # Linux amd64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
-chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
 # Linux arm64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-linux
-chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
 
 # macOS amd64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
-chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
 
 # macOS arm64 (Apple Silicon)
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
-chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
 ```
 
 如果 macOS 阻止运行已安装的二进制，可以先移除 quarantine 属性：
