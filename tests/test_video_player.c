@@ -14,14 +14,14 @@ static gsize test_video_player_sync_once = 0;
 
 static GMutex decode_queue_push_mutex;
 static GCond decode_queue_push_cond;
-static gboolean decode_queue_push_blocking = FALSE;
+static gint decode_queue_push_blocking = FALSE;
 
 static GMutex queue_push_mutex;
 static GCond queue_push_cond;
-static gboolean queue_push_blocking = FALSE;
+static gint queue_push_blocking = FALSE;
 static GMutex decode_queue_item_mutex;
 static GCond decode_queue_item_cond;
-static gboolean decode_queue_item_received = FALSE;
+static gint decode_queue_item_received = FALSE;
 static gint seek_hook_call_count = 0;
 static gint seek_hook_result = 0;
 static gint64 seek_hook_last_timestamp = G_MININT64;
@@ -66,7 +66,7 @@ static const gchar *k_seek_preview_video_fixture_base64 =
 typedef struct {
     GMutex *mutex;
     GCond *cond;
-    gboolean *flag;
+    gint *flag;
 } QueueWaitSignal;
 
 typedef struct {
@@ -75,7 +75,7 @@ typedef struct {
     guint generation;
     GMutex mutex;
     GCond cond;
-    gboolean completed;
+    gint completed;
 } QueueInsertCall;
 
 typedef struct {
@@ -83,7 +83,7 @@ typedef struct {
     gint64 pts_ms;
     GMutex mutex;
     GCond cond;
-    gboolean started;
+    gint started;
 } FallbackSetCall;
 
 typedef struct {
@@ -94,15 +94,15 @@ typedef struct {
     gint64 next_fallback_pts_ms;
     GMutex mutex;
     GCond cond;
-    gboolean started;
+    gint started;
 } FallbackAdvanceCall;
 
 typedef struct {
     VideoPlayer *player;
     GMutex mutex;
     GCond cond;
-    gboolean started;
-    gboolean finished;
+    gint started;
+    gint finished;
 } ParkedWorkerCall;
 
 static VideoFrame *make_test_frame(gint64 pts_ms);
@@ -134,11 +134,11 @@ static gchar *write_seek_preview_video_fixture(void) {
     return path;
 }
 
-static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gboolean *flag, const gchar *message) {
+static void wait_for_flag_or_fail(GMutex *mutex, GCond *cond, gint *flag, const gchar *message) {
     gint64 deadline = g_get_monotonic_time() + G_TIME_SPAN_MILLISECOND * 500;
 
     g_mutex_lock(mutex);
-    while (!*flag) {
+    while (!g_atomic_int_get(flag)) {
         if (!g_cond_wait_until(cond, mutex, deadline)) {
             g_mutex_unlock(mutex);
             g_error("%s", message);
@@ -191,7 +191,7 @@ static void queue_wait_hook_signal(void *user_data) {
     }
 
     g_mutex_lock(signal->mutex);
-    *(signal->flag) = TRUE;
+    g_atomic_int_set(signal->flag, TRUE);
     g_cond_broadcast(signal->cond);
     g_mutex_unlock(signal->mutex);
 }
@@ -218,7 +218,7 @@ static gpointer queue_insert_thread_main(gpointer user_data) {
     video_player_queue_insert_sorted(call->player, make_test_frame_with_generation(call->pts_ms, generation));
 
     g_mutex_lock(&call->mutex);
-    call->completed = TRUE;
+    g_atomic_int_set(&call->completed, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
     return NULL;
@@ -241,7 +241,7 @@ static gpointer queue_push_call_thread_main(gpointer user_data) {
     video_player_queue_push(call->player, make_test_frame_with_generation(call->pts_ms, generation));
 
     g_mutex_lock(&call->mutex);
-    call->completed = TRUE;
+    g_atomic_int_set(&call->completed, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
     return NULL;
@@ -254,7 +254,7 @@ static gpointer fallback_set_thread_main(gpointer user_data) {
     }
 
     g_mutex_lock(&call->mutex);
-    call->started = TRUE;
+    g_atomic_int_set(&call->started, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
 
@@ -269,7 +269,7 @@ static gpointer fallback_advance_thread_main(gpointer user_data) {
     }
 
     g_mutex_lock(&call->mutex);
-    call->started = TRUE;
+    g_atomic_int_set(&call->started, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
 
@@ -287,18 +287,18 @@ static gpointer parked_worker_thread_main(gpointer user_data) {
     }
 
     g_mutex_lock(&call->mutex);
-    call->started = TRUE;
+    g_atomic_int_set(&call->started, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
 
     g_mutex_lock(&call->player->queue_mutex);
-    while (!call->player->worker_stop) {
+    while (!g_atomic_int_get(&call->player->worker_stop)) {
         g_cond_wait(&call->player->frame_queue_has_space, &call->player->queue_mutex);
     }
     g_mutex_unlock(&call->player->queue_mutex);
 
     g_mutex_lock(&call->mutex);
-    call->finished = TRUE;
+    g_atomic_int_set(&call->finished, TRUE);
     g_cond_broadcast(&call->cond);
     g_mutex_unlock(&call->mutex);
     return NULL;
@@ -310,8 +310,8 @@ static GThread *start_parked_worker_for_test(const gchar *name, ParkedWorkerCall
     }
 
     call->player = player;
-    call->started = FALSE;
-    call->finished = FALSE;
+    g_atomic_int_set(&call->started, FALSE);
+    g_atomic_int_set(&call->finished, FALSE);
     g_mutex_init(&call->mutex);
     g_cond_init(&call->cond);
 
@@ -506,7 +506,7 @@ static gpointer decode_queue_wait_thread_main(gpointer user_data) {
     }
 
     g_mutex_lock(&decode_queue_item_mutex);
-    decode_queue_item_received = TRUE;
+    g_atomic_int_set(&decode_queue_item_received, TRUE);
     g_cond_broadcast(&decode_queue_item_cond);
     g_mutex_unlock(&decode_queue_item_mutex);
     return NULL;
@@ -545,7 +545,7 @@ static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void)
         .flag = &decode_queue_push_blocking,
     };
     g_mutex_lock(&decode_queue_push_mutex);
-    decode_queue_push_blocking = FALSE;
+    g_atomic_int_set(&decode_queue_push_blocking, FALSE);
     g_mutex_unlock(&decode_queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_DECODE,
@@ -607,7 +607,7 @@ static void test_decode_queue_text_mode_waits_instead_of_replacing_oldest(void) 
         .flag = &decode_queue_push_blocking,
     };
     g_mutex_lock(&decode_queue_push_mutex);
-    decode_queue_push_blocking = FALSE;
+    g_atomic_int_set(&decode_queue_push_blocking, FALSE);
     g_mutex_unlock(&decode_queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_DECODE,
@@ -649,14 +649,14 @@ static void test_decode_queue_wait_and_take_blocks_until_item_arrives(void) {
 
     init_test_sync_primitives();
     g_mutex_lock(&decode_queue_item_mutex);
-    decode_queue_item_received = FALSE;
+    g_atomic_int_set(&decode_queue_item_received, FALSE);
     g_mutex_unlock(&decode_queue_item_mutex);
 
     GThread *thread = g_thread_new("decode-queue-wait-test", decode_queue_wait_thread_main, player);
     g_usleep(10 * 1000);
 
     g_mutex_lock(&decode_queue_item_mutex);
-    g_assert_false(decode_queue_item_received);
+    g_assert_false(g_atomic_int_get(&decode_queue_item_received));
     g_mutex_unlock(&decode_queue_item_mutex);
 
     DecodedFrame *frame = g_new0(DecodedFrame, 1);
@@ -758,6 +758,10 @@ static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
 }
 
 static void test_set_fallback_pts_waits_on_state_mutex(void) {
+#ifdef PIXELTERM_TSAN
+    g_test_skip("system GLib mutexes are not instrumented for ThreadSanitizer");
+    return;
+#endif
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
@@ -793,6 +797,10 @@ static void test_set_fallback_pts_waits_on_state_mutex(void) {
 }
 
 static void test_resolve_and_advance_fallback_pts_waits_on_state_mutex(void) {
+#ifdef PIXELTERM_TSAN
+    g_test_skip("system GLib mutexes are not instrumented for ThreadSanitizer");
+    return;
+#endif
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
@@ -1475,6 +1483,10 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
 }
 
 static void test_seek_relative_after_eof_real_preview_does_not_crash(void) {
+#ifdef PIXELTERM_TSAN
+    g_test_skip("system Chafa/GLib worker pools are not ThreadSanitizer-instrumented");
+    return;
+#endif
     if (g_test_subprocess()) {
         VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
         if (!player) {
@@ -1848,7 +1860,7 @@ static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(voi
         .flag = &queue_push_blocking,
     };
     g_mutex_lock(&queue_push_mutex);
-    queue_push_blocking = FALSE;
+    g_atomic_int_set(&queue_push_blocking, FALSE);
     g_mutex_unlock(&queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_RENDER,
@@ -2019,10 +2031,10 @@ static void test_queue_insert_sorted_rechecks_last_presented_after_full_queue_wa
     };
     g_mutex_init(&call.mutex);
     g_cond_init(&call.cond);
-    call.completed = FALSE;
+    g_atomic_int_set(&call.completed, FALSE);
 
     g_mutex_lock(&queue_push_mutex);
-    queue_push_blocking = FALSE;
+    g_atomic_int_set(&queue_push_blocking, FALSE);
     g_mutex_unlock(&queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_RENDER,
@@ -2084,10 +2096,10 @@ static void test_queue_insert_sorted_rejects_old_generation_after_eof_invalidati
     };
     g_mutex_init(&call.mutex);
     g_cond_init(&call.cond);
-    call.completed = FALSE;
+    g_atomic_int_set(&call.completed, FALSE);
 
     g_mutex_lock(&queue_push_mutex);
-    queue_push_blocking = FALSE;
+    g_atomic_int_set(&queue_push_blocking, FALSE);
     g_mutex_unlock(&queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_RENDER,
@@ -2145,10 +2157,10 @@ static void test_queue_push_rejects_old_generation_after_eof_invalidation(void) 
     };
     g_mutex_init(&call.mutex);
     g_cond_init(&call.cond);
-    call.completed = FALSE;
+    g_atomic_int_set(&call.completed, FALSE);
 
     g_mutex_lock(&queue_push_mutex);
-    queue_push_blocking = FALSE;
+    g_atomic_int_set(&queue_push_blocking, FALSE);
     g_mutex_unlock(&queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_RENDER,
@@ -2206,7 +2218,7 @@ static void test_debug_logging_stale_drop_completes_after_eof_handling(void) {
     };
     g_mutex_init(&call.mutex);
     g_cond_init(&call.cond);
-    call.completed = FALSE;
+    g_atomic_int_set(&call.completed, FALSE);
 
     GThread *thread = g_thread_new("queue-insert-debug-stale-test", queue_insert_thread_main, &call);
     wait_for_flag_or_fail(&call.mutex,
@@ -2334,7 +2346,7 @@ static void test_debug_logging_disabled_skips_metric_locks_before_queue_wait(voi
         .flag = &queue_push_blocking,
     };
     g_mutex_lock(&queue_push_mutex);
-    queue_push_blocking = FALSE;
+    g_atomic_int_set(&queue_push_blocking, FALSE);
     g_mutex_unlock(&queue_push_mutex);
     video_player_set_queue_wait_hook_for_test(player,
                                               VIDEO_PLAYER_TEST_QUEUE_RENDER,
@@ -2350,7 +2362,7 @@ static void test_debug_logging_disabled_skips_metric_locks_before_queue_wait(voi
     g_mutex_unlock(&player->state_mutex);
 
     g_mutex_lock(&player->queue_mutex);
-    player->worker_stop = TRUE;
+    g_atomic_int_set(&player->worker_stop, TRUE);
     g_cond_broadcast(&player->frame_queue_has_space);
     g_mutex_unlock(&player->queue_mutex);
 
@@ -2400,11 +2412,83 @@ static void test_render_worker_config_uses_player_color_enhance_without_renderer
     }
     player->renderer = NULL;
     player->owns_renderer = FALSE;
-    player->color_enhance = COLOR_ENHANCE_VIVID;
+    video_player_set_color_enhance(player, COLOR_ENHANCE_VIVID);
 
     RendererConfig config = video_player_render_worker_config_for_test(player);
 
     g_assert_cmpint(config.color_enhance, ==, COLOR_ENHANCE_VIVID);
+    video_player_destroy(player);
+}
+
+static void test_public_layout_accessors_return_consistent_snapshots(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    gint top_row = -1;
+    gint height = -1;
+    g_assert_false(video_player_get_last_frame_bounds(player, &top_row, &height));
+    g_assert_cmpint(top_row, ==, 0);
+    g_assert_cmpint(height, ==, 0);
+
+    g_mutex_lock(&player->state_mutex);
+    player->last_frame_top_row = 4;
+    player->last_frame_height = 2;
+    player->last_frame_lines = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(player->last_frame_lines, g_strdup("first"));
+    g_ptr_array_add(player->last_frame_lines, g_strdup("second"));
+    g_mutex_unlock(&player->state_mutex);
+
+    g_assert_true(video_player_get_last_frame_bounds(player, &top_row, &height));
+    g_assert_cmpint(top_row, ==, 4);
+    g_assert_cmpint(height, ==, 2);
+
+    gchar *line = video_player_dup_cached_line_at_row(player, 5);
+    g_assert_cmpstr(line, ==, "second");
+    line[0] = 'S';
+    g_free(line);
+
+    line = video_player_dup_cached_line_at_row(player, 5);
+    g_assert_cmpstr(line, ==, "second");
+    g_free(line);
+    g_assert_null(video_player_dup_cached_line_at_row(player, 3));
+
+    video_player_destroy(player);
+}
+
+static void test_public_state_setters_update_player_configuration(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    video_player_set_show_stats(player, TRUE);
+    g_mutex_lock(&player->state_mutex);
+    g_assert_true(player->show_stats);
+    g_mutex_unlock(&player->state_mutex);
+
+    video_player_set_color_enhance(player, COLOR_ENHANCE_VIVID);
+    g_mutex_lock(&player->render_mutex);
+    g_assert_cmpint(player->color_enhance, ==, COLOR_ENHANCE_VIVID);
+    if (player->renderer) {
+        g_assert_cmpint(player->renderer->config.color_enhance,
+                        ==,
+                        COLOR_ENHANCE_VIVID);
+    }
+    g_mutex_unlock(&player->render_mutex);
+
+    video_player_set_show_stats(NULL, TRUE);
+    video_player_set_color_enhance(NULL, COLOR_ENHANCE_VIVID);
+    g_assert_false(video_player_get_last_frame_bounds(NULL, NULL, NULL));
+    g_assert_null(video_player_dup_cached_line_at_row(NULL, 1));
+
     video_player_destroy(player);
 }
 
@@ -2532,6 +2616,10 @@ void register_video_player_tests(void) {
                     test_render_layout_generation_increments_only_on_layout_change);
     g_test_add_func("/video_player/render_worker_config/uses_player_color_enhance_without_renderer",
                     test_render_worker_config_uses_player_color_enhance_without_renderer);
+    g_test_add_func("/video_player/public_api/layout_accessors_return_consistent_snapshots",
+                    test_public_layout_accessors_return_consistent_snapshots);
+    g_test_add_func("/video_player/public_api/state_setters_update_player_configuration",
+                    test_public_state_setters_update_player_configuration);
     g_test_add_func("/video_player/frame_buffer_size/rejects_overflow",
                     test_frame_buffer_size_rejects_overflow);
     g_test_add_func("/video_player/frame_buffer_size/rejects_non_positive_metadata",

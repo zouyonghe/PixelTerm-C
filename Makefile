@@ -274,7 +274,7 @@ debug-test:
 # from the AddressSanitizer debug target because the sanitizers are incompatible.
 tsan-test:
 	$(MAKE) OBJDIR="$(TSAN_OBJDIR)" BINDIR="$(TSAN_BINDIR)" \
-		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer -DPIXELTERM_TSAN" \
 		test
 
 ubsan-test:

@@ -113,7 +113,8 @@ typedef struct {
     GQueue *frame_queue;
     GQueue *decode_queue;
     gint render_in_flight;
-    gboolean worker_stop;
+    /* Atomic stop flag read by decode/render workers. */
+    gint worker_stop;
     gboolean render_workers_started;
   } VideoPlayer;
 
@@ -130,6 +131,41 @@ void video_player_set_render_area(VideoPlayer *player,
                                   gint max_width,
                                   gint max_height);
 void video_player_clear_render_area(VideoPlayer *player);
+
+/**
+ * @brief Enables or disables the playback statistics overlay.
+ *
+ * This function is thread-safe and snapshots the value under the player state
+ * mutex. Callers do not need to stop playback first.
+ */
+void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats);
+
+/**
+ * @brief Updates color enhancement for the player and its renderer.
+ *
+ * This function is thread-safe and serializes renderer configuration changes
+ * with render workers.
+ */
+void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance);
+
+/**
+ * @brief Returns a consistent snapshot of the last rendered frame bounds.
+ *
+ * Either output pointer may be NULL. Returns FALSE when no rendered frame has
+ * positive bounds.
+ */
+gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
+                                             gint *top_row,
+                                             gint *height);
+
+/**
+ * @brief Copies the cached text corresponding to a terminal row.
+ *
+ * The returned string is owned by the caller and must be freed with g_free().
+ * Returns NULL when the row is outside the cached text frame.
+ */
+gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_row);
+
 ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath);
 ErrorCode video_player_play(VideoPlayer *player);
 ErrorCode video_player_pause(VideoPlayer *player);

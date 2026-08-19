@@ -482,7 +482,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                      target_height,
                                      target_width,
                                      target_height);
-        app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
+        video_player_set_show_stats(app->video_player,
+                                    app->show_fps && !app->ui_text_hidden);
     }
     if (!app->ui_text_hidden && app->term_height > 0) {
         const char *title = is_video ? "Video View" : "Image View";

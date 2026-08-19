@@ -119,26 +119,18 @@ void input_dispatch_key_modes_toggle_video_fps(PixelTermApp *app) {
         return;
     }
     app->show_fps = !app->show_fps;
-    app->video_player->show_stats = app->show_fps && !app->ui_text_hidden;
+    video_player_set_show_stats(app->video_player,
+                                app->show_fps && !app->ui_text_hidden);
     if (!app->show_fps && !app->ui_text_hidden) {
         gint stats_row = VIDEO_PLAYER_STATS_ROW;
         if (stats_row >= 1 && stats_row <= app->term_height) {
-            gboolean restored_line = FALSE;
-            VideoPlayer *player = app->video_player;
-            if (player->last_frame_lines && player->last_frame_height > 0) {
-                gint line_index = stats_row - player->last_frame_top_row;
-                if (line_index >= 0 && line_index < (gint)player->last_frame_lines->len) {
-                    const gchar *line = g_ptr_array_index(player->last_frame_lines, line_index);
-                    printf("\033[%d;1H\033[2K", stats_row);
-                    if (line) {
-                        fwrite(line, 1, strlen(line), stdout);
-                    }
-                    restored_line = TRUE;
-                }
+            gchar *line = video_player_dup_cached_line_at_row(app->video_player,
+                                                              stats_row);
+            printf("\033[%d;1H\033[2K", stats_row);
+            if (line) {
+                fwrite(line, 1, strlen(line), stdout);
             }
-            if (!restored_line) {
-                printf("\033[%d;1H\033[2K", stats_row);
-            }
+            g_free(line);
             fflush(stdout);
         }
     }

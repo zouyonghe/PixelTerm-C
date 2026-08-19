@@ -104,6 +104,10 @@ These seams are intentionally incremental: broader `PixelTermApp` state-structur
 
 ## Threading Architecture
 
+The detailed VideoPlayer execution-context, field ownership, atomic access, and
+lock-order contract is documented in
+[`VIDEO_PLAYER_THREADING.md`](VIDEO_PLAYER_THREADING.md).
+
 ### Main Thread Responsibilities
 - User input handling
 - UI updates and display

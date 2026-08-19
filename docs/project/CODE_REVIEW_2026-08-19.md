@@ -92,7 +92,8 @@ UBSan. ASan does not detect ordinary C data races.
 - [ ] Add more explicit concurrent play/pause/stop/seek/resize/EOF and preloader
       queue/stop stress tests beyond the current worker/locking regression suite.
 - [x] Add a separate UndefinedBehaviorSanitizer target/job.
-- [ ] Document field ownership and lock ordering for video playback.
+- [x] Document field ownership and lock ordering for video playback in
+      `docs/development/VIDEO_PLAYER_THREADING.md`.
 
 ### F-03 — Medium — Release/document version synchronization failed
 
@@ -225,7 +226,11 @@ video FPS, making a repeatable benchmark particularly useful.
   suite also passed locally on Termux/Android with Clang: 309 main tests, 14
   file-manager tests, 13 preview-grid tests, 8 book-preview/page tests, and 49
   Python maintenance tests.
+- 2026-08-19: Added thread-safe VideoPlayer setters/snapshot accessors for
+  statistics, color enhancement, and cached frame layout; app/input modules no
+  longer access those fields directly. The worker stop flag is now atomic, and
+  the VideoPlayer lock-order/ownership contract is documented.
 - 2026-08-19: Remaining unchecked items are intentionally not marked complete;
-  sanitizer stress expansion, provenance/signing, VideoPlayer encapsulation,
+  sanitizer stress expansion, provenance/signing, full VideoPlayer opacity,
   API documentation, coverage, fuzzing, and performance baselines remain in
   progress.
