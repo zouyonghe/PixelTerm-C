@@ -181,6 +181,18 @@ void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats);
 void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance);
 
 /**
+ * @brief Advances the renderer protocol override to the next display mode.
+ *
+ * The cycle order is text, sixel, iTerm2, kitty, then text. Renderer state is
+ * synchronized internally and its terminal size is refreshed before return.
+ *
+ * @return TRUE when the caller should clear stale text output before drawing
+ * the newly selected graphics protocol; FALSE otherwise or without a renderer.
+ * @note Call from the player-owning main context while playback is stopped.
+ */
+gboolean video_player_cycle_protocol(VideoPlayer *player);
+
+/**
  * @brief Returns a consistent snapshot of the last rendered frame bounds.
  *
  * Either output pointer may be NULL. Returns FALSE when no rendered frame has

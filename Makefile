@@ -295,6 +295,7 @@ tsan-suite: $(TEST_TARGET)
 		/video_player/seek_relative/after_eof_stops_parked_workers_before_preview \
 		/video_player/public_api/layout_accessors_return_consistent_snapshots \
 		/video_player/public_api/state_setters_update_player_configuration \
+		/video_player/public_api/protocol_cycle_preserves_existing_order \
 		/preloader/stop/concurrent_callers \
 		/preloader/stop/wakes_paused_worker \
 		/preloader/start_stop/repeated_cycles \

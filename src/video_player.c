@@ -789,6 +789,44 @@ void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_
     g_mutex_unlock(&player->render_mutex);
 }
 
+gboolean video_player_cycle_protocol(VideoPlayer *player) {
+    if (!player) {
+        return FALSE;
+    }
+
+    g_mutex_lock(&player->render_mutex);
+    ImageRenderer *renderer = player->renderer;
+    if (!renderer) {
+        g_mutex_unlock(&player->render_mutex);
+        return FALSE;
+    }
+
+    gboolean force_text = renderer->config.force_text;
+    gboolean force_kitty = renderer->config.force_kitty;
+    gboolean force_iterm2 = renderer->config.force_iterm2;
+    gboolean force_sixel = renderer->config.force_sixel;
+    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+    if (renderer->canvas_config) {
+        current_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
+    }
+    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
+
+    renderer->config.force_text = force_kitty;
+    renderer->config.force_sixel = force_text ||
+                                   (!force_text && !force_sixel &&
+                                    !force_iterm2 && !force_kitty);
+    renderer->config.force_iterm2 = force_sixel;
+    renderer->config.force_kitty = force_iterm2;
+
+    gboolean next_graphics = renderer->config.force_kitty ||
+                             renderer->config.force_iterm2 ||
+                             renderer->config.force_sixel;
+    renderer_update_terminal_size(renderer);
+    g_mutex_unlock(&player->render_mutex);
+
+    return was_text && next_graphics;
+}
+
 gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
                                              gint *top_row,
                                              gint *height) {

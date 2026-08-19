@@ -2484,6 +2484,41 @@ static void test_public_state_setters_update_player_configuration(void) {
     video_player_destroy(player);
 }
 
+static void assert_renderer_protocol(VideoPlayer *player,
+                                     gboolean force_text,
+                                     gboolean force_sixel,
+                                     gboolean force_iterm2,
+                                     gboolean force_kitty) {
+    g_mutex_lock(&player->render_mutex);
+    g_assert_cmpint(player->renderer->config.force_text, ==, force_text);
+    g_assert_cmpint(player->renderer->config.force_sixel, ==, force_sixel);
+    g_assert_cmpint(player->renderer->config.force_iterm2, ==, force_iterm2);
+    g_assert_cmpint(player->renderer->config.force_kitty, ==, force_kitty);
+    g_mutex_unlock(&player->render_mutex);
+}
+
+static void test_public_protocol_cycle_preserves_existing_order(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    if (!player) {
+        g_test_skip("video player unavailable");
+        return;
+    }
+
+    g_assert_true(video_player_cycle_protocol(player));
+    assert_renderer_protocol(player, FALSE, TRUE, FALSE, FALSE);
+    video_player_cycle_protocol(player);
+    assert_renderer_protocol(player, FALSE, FALSE, TRUE, FALSE);
+    video_player_cycle_protocol(player);
+    assert_renderer_protocol(player, FALSE, FALSE, FALSE, TRUE);
+    video_player_cycle_protocol(player);
+    assert_renderer_protocol(player, TRUE, FALSE, FALSE, FALSE);
+    g_assert_false(video_player_cycle_protocol(NULL));
+
+    video_player_destroy(player);
+}
+
 static void test_frame_buffer_size_rejects_overflow(void) {
     gsize buffer_size = 0;
 
@@ -2612,6 +2647,8 @@ void register_video_player_tests(void) {
                     test_public_layout_accessors_return_consistent_snapshots);
     g_test_add_func("/video_player/public_api/state_setters_update_player_configuration",
                     test_public_state_setters_update_player_configuration);
+    g_test_add_func("/video_player/public_api/protocol_cycle_preserves_existing_order",
+                    test_public_protocol_cycle_preserves_existing_order);
     g_test_add_func("/video_player/frame_buffer_size/rejects_overflow",
                     test_frame_buffer_size_rejects_overflow);
     g_test_add_func("/video_player/frame_buffer_size/rejects_non_positive_metadata",

@@ -163,9 +163,10 @@ implicit.
 
 - [ ] Make `VideoPlayer` opaque to ordinary consumers.
 - [ ] Move its definition to an internal header.
-- [ ] Add accessors for stats, color enhancement, frame bounds, protocol
-      changes, and current file state.
+- [ ] Add accessors for current file state. Stats, color enhancement, frame
+      bounds/cache, and protocol cycling are now behind synchronized APIs.
 - [ ] Document thread context, locking, and ownership for each public API.
+      The added VideoPlayer APIs are documented; remaining headers are pending.
 
 ### F-07 — Low — Public API documentation does not meet project policy
 
@@ -234,6 +235,10 @@ video FPS, making a repeatable benchmark particularly useful.
   Uploaded artifacts still gate release creation on runtime dependency,
   version, and help smoke tests in matching Arch environments, and the installer
   rejects missing Linux runtime libraries before installation.
+- 2026-08-19: Moved video protocol cycling and its renderer locking into a
+  documented `video_player_cycle_protocol()` API, preserving the existing
+  text/sixel/iTerm2/kitty order and removing the remaining production-code
+  access to `VideoPlayer::renderer` and `render_mutex`.
 - 2026-08-19: Serialized preloader start/stop lifecycle publication, fixed
   paused-worker stop wakeup and concurrent double-join risk, rejected new work
   during shutdown, and added four focused lifecycle regressions to the TSan

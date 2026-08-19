@@ -178,7 +178,7 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
 }
 
 static void handle_video_protocol_toggle(PixelTermApp *app) {
-    if (!app || !input_dispatch_current_is_video(app) || !app->video_player || !app->video_player->renderer) {
+    if (!app || !input_dispatch_current_is_video(app) || !app->video_player) {
         return;
     }
 
@@ -187,43 +187,7 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
         video_player_stop(app->video_player);
     }
 
-    g_mutex_lock(&app->video_player->render_mutex);
-    gboolean force_text = app->video_player->renderer->config.force_text;
-    gboolean force_kitty = app->video_player->renderer->config.force_kitty;
-    gboolean force_iterm2 = app->video_player->renderer->config.force_iterm2;
-    gboolean force_sixel = app->video_player->renderer->config.force_sixel;
-    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-    if (app->video_player->renderer->canvas_config) {
-        current_mode = chafa_canvas_config_get_pixel_mode(app->video_player->renderer->canvas_config);
-    }
-    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
-    gboolean next_text = FALSE;
-    gboolean next_kitty = FALSE;
-    gboolean next_iterm2 = FALSE;
-    gboolean next_sixel = FALSE;
-
-    if (force_text) {
-        next_sixel = TRUE;
-    } else if (force_sixel) {
-        next_iterm2 = TRUE;
-    } else if (force_iterm2) {
-        next_kitty = TRUE;
-    } else if (force_kitty) {
-        next_text = TRUE;
-    } else {
-        next_sixel = TRUE;
-    }
-
-    app->video_player->renderer->config.force_text = next_text;
-    app->video_player->renderer->config.force_kitty = next_kitty;
-    app->video_player->renderer->config.force_iterm2 = next_iterm2;
-    app->video_player->renderer->config.force_sixel = next_sixel;
-    gboolean next_graphics = next_kitty || next_iterm2 || next_sixel;
-    gboolean should_clear = was_text && next_graphics;
-    renderer_update_terminal_size(app->video_player->renderer);
-    g_mutex_unlock(&app->video_player->render_mutex);
-
-    if (should_clear) {
+    if (video_player_cycle_protocol(app->video_player)) {
         video_player_clear_render_area(app->video_player);
     }
 
