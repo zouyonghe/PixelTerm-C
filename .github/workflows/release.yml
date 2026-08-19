@@ -17,6 +17,7 @@ jobs:
     container:
       image: ${{ matrix.container }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: amd64
@@ -56,9 +57,13 @@ jobs:
         set -euo pipefail
         mkdir -p release-${{ matrix.arch }}
 
+        test -f docs/i18n/README_zh.md
+        test -f docs/i18n/README_ja.md
         make clean
         make EXTRA_CFLAGS=-Werror
         make EXTRA_CFLAGS=-Werror test
+        test -f docs/i18n/README_zh.md
+        test -f docs/i18n/README_ja.md
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
