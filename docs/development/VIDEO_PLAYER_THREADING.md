@@ -110,11 +110,12 @@ be exposed as general public APIs.
 ## Sanitizer Notes
 
 `make tsan-test` instruments project code. Distribution-provided GLib and Chafa
-libraries are not necessarily built with ThreadSanitizer, so tests whose sole
-purpose is proving blocking on a system `GMutex`, or which enter Chafa's
-internal worker pool, are skipped only under `PIXELTERM_TSAN`. They remain
-covered by normal, ASan, and UBSan runs. Project-owned synchronization flags and
-worker stop state use GLib atomics so TSan can observe those relationships.
+libraries are not necessarily built with ThreadSanitizer. Under
+`PIXELTERM_TSAN`, `include/common.h` annotates project uses of `GMutex` and
+`GCond` with TSan acquire/release edges, while project-owned synchronization
+flags and worker stop state use GLib atomics. The one test that intentionally
+enters Chafa's uninstrumented internal worker pool is skipped only in the TSan
+build; it remains covered by normal, ASan, and UBSan runs.
 
 ## Review Checklist for Concurrency Changes
 

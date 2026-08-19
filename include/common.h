@@ -13,6 +13,46 @@
 
 #include <stdbool.h>
 
+#ifdef PIXELTERM_TSAN
+/* Distribution GLib is not built with ThreadSanitizer instrumentation, so its
+ * futex-backed GMutex operations do not establish happens-before edges for
+ * project code. Add annotations only in TSan builds; normal builds continue to
+ * call GLib directly with no wrapper overhead. */
+void __tsan_acquire(void *addr);
+void __tsan_release(void *addr);
+
+static inline void pixelterm_tsan_mutex_lock(GMutex *mutex) {
+    g_mutex_lock(mutex);
+    __tsan_acquire(mutex);
+}
+
+static inline void pixelterm_tsan_mutex_unlock(GMutex *mutex) {
+    __tsan_release(mutex);
+    g_mutex_unlock(mutex);
+}
+
+static inline void pixelterm_tsan_cond_wait(GCond *cond, GMutex *mutex) {
+    __tsan_release(mutex);
+    g_cond_wait(cond, mutex);
+    __tsan_acquire(mutex);
+}
+
+static inline gboolean pixelterm_tsan_cond_wait_until(GCond *cond,
+                                                       GMutex *mutex,
+                                                       gint64 end_time) {
+    __tsan_release(mutex);
+    gboolean signaled = g_cond_wait_until(cond, mutex, end_time);
+    __tsan_acquire(mutex);
+    return signaled;
+}
+
+#define g_mutex_lock(mutex) pixelterm_tsan_mutex_lock(mutex)
+#define g_mutex_unlock(mutex) pixelterm_tsan_mutex_unlock(mutex)
+#define g_cond_wait(cond, mutex) pixelterm_tsan_cond_wait(cond, mutex)
+#define g_cond_wait_until(cond, mutex, end_time) \
+    pixelterm_tsan_cond_wait_until(cond, mutex, end_time)
+#endif
+
 // Application constants
 #define APP_NAME "PixelTerm-C"
 #ifndef APP_VERSION

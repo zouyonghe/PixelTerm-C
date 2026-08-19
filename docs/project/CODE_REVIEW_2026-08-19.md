@@ -136,7 +136,9 @@ Release; compromise of release credentials could replace both.
 
 **Remediation / acceptance criteria**
 
-- [ ] Publish and verify signed assets or artifact attestations.
+- [ ] Publish and verify signed assets or artifact attestations. GitHub build
+      provenance generation is now configured for formal release assets;
+      installer-side verification remains outstanding.
 - [ ] Sign formal Git tags.
 - [x] Keep write permission isolated to release creation/document-sync jobs;
       build and artifact verification jobs use default read-only permissions.
@@ -230,7 +232,10 @@ video FPS, making a repeatable benchmark particularly useful.
   statistics, color enhancement, and cached frame layout; app/input modules no
   longer access those fields directly. The worker stop flag is now atomic, and
   the VideoPlayer lock-order/ownership contract is documented.
+- 2026-08-19: Configured GitHub build provenance attestation for checksums and
+  all formal release assets; consumer/installer verification remains open.
 - 2026-08-19: Remaining unchecked items are intentionally not marked complete;
-  sanitizer stress expansion, provenance/signing, full VideoPlayer opacity,
+  sanitizer stress expansion, provenance verification/signing, full
+  VideoPlayer opacity,
   API documentation, coverage, fuzzing, and performance baselines remain in
   progress.

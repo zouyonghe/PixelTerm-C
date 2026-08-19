@@ -758,10 +758,6 @@ static void test_reset_timing_state_clears_loop_sensitive_fields(void) {
 }
 
 static void test_set_fallback_pts_waits_on_state_mutex(void) {
-#ifdef PIXELTERM_TSAN
-    g_test_skip("system GLib mutexes are not instrumented for ThreadSanitizer");
-    return;
-#endif
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");
@@ -797,10 +793,6 @@ static void test_set_fallback_pts_waits_on_state_mutex(void) {
 }
 
 static void test_resolve_and_advance_fallback_pts_waits_on_state_mutex(void) {
-#ifdef PIXELTERM_TSAN
-    g_test_skip("system GLib mutexes are not instrumented for ThreadSanitizer");
-    return;
-#endif
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
         g_test_skip("video player unavailable");

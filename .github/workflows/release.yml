@@ -194,6 +194,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: read
+      id-token: write
+      attestations: write
     steps:
     - name: Checkout code
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
@@ -257,6 +259,14 @@ jobs:
         fi
 
         python3 scripts/generate_release_notes.py "${args[@]}"
+
+    - name: Attest release assets
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: |
+          SHA256SUMS
+          pixelterm-*
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
