@@ -89,7 +89,7 @@ jobs:
             pkg-config \
             libchafa-dev \
             libglib2.0-dev \
-            libgdk-pixbuf2.0-dev \
+            libgdk-pixbuf-2.0-dev \
             libavformat-dev \
             libavcodec-dev \
             libswscale-dev \
@@ -97,7 +97,12 @@ jobs:
             libmupdf-dev
 
       - name: Run ${{ matrix.target }}
-        run: make EXTRA_CFLAGS=-Werror "${{ matrix.target }}"
+        run: |
+          if [ "${{ matrix.target }}" = "tsan-test" ]; then
+            setarch "$(uname -m)" -R make EXTRA_CFLAGS=-Werror tsan-test
+          else
+            make EXTRA_CFLAGS=-Werror "${{ matrix.target }}"
+          fi
 
   coverage:
     runs-on: ubuntu-latest
@@ -114,7 +119,7 @@ jobs:
             gcovr \
             libchafa-dev \
             libglib2.0-dev \
-            libgdk-pixbuf2.0-dev \
+            libgdk-pixbuf-2.0-dev \
             libavformat-dev \
             libavcodec-dev \
             libswscale-dev \

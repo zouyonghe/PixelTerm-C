@@ -221,7 +221,7 @@ verify_linux_runtime_dependencies() {
     die "Unable to inspect Linux runtime dependencies for the downloaded binary"
   fi
 
-  if printf '%s\n' "${ldd_output}" | grep -q 'not found'; then
+  if [[ "${ldd_output}" == *'not found'* ]]; then
     printf '%s\n' "${ldd_output}" >&2
     die "Missing Linux runtime dependencies; install the listed libraries or build PixelTerm-C from source"
   fi

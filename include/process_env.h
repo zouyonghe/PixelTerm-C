@@ -1,7 +1,7 @@
 #ifndef PROCESS_ENV_H
 #define PROCESS_ENV_H
 
-#include <glib.h>
+#include "common.h"
 
 const gchar *pixelterm_getenv(const gchar *name);
 

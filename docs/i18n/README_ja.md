@@ -64,23 +64,23 @@ wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/SHA256SUM
 
 # Linux AMD64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-linux
-grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c -
-chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-amd64-linux && sudo mv pixelterm-amd64-linux /usr/local/bin/pixelterm
 
 # Linux ARM64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-linux
-grep ' pixelterm-arm64-linux$' SHA256SUMS | sha256sum -c -
-chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-linux$' SHA256SUMS | sha256sum -c - && \
+  chmod +x pixelterm-arm64-linux && sudo mv pixelterm-arm64-linux /usr/local/bin/pixelterm
 
 # macOS AMD64
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-amd64-macos
-grep ' pixelterm-amd64-macos$' SHA256SUMS | shasum -a 256 -c -
-chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-amd64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-amd64-macos && sudo mv pixelterm-amd64-macos /usr/local/bin/pixelterm
 
 # macOS ARM64 (Apple Silicon)
 wget https://github.com/zouyonghe/PixelTerm-C/releases/latest/download/pixelterm-arm64-macos
-grep ' pixelterm-arm64-macos$' SHA256SUMS | shasum -a 256 -c -
-chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
+grep ' pixelterm-arm64-macos$' SHA256SUMS | shasum -a 256 -c - && \
+  chmod +x pixelterm-arm64-macos && sudo mv pixelterm-arm64-macos /usr/local/bin/pixelterm
 ```
 
 macOS でセキュリティ制限により起動できない場合は、必要に応じて次を実行してください。

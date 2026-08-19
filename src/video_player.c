@@ -787,6 +787,11 @@ void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_
         player->renderer->config.color_enhance = color_enhance;
     }
     g_mutex_unlock(&player->render_mutex);
+
+    /* Notify render workers to refresh their private renderer configuration. */
+    g_mutex_lock(&player->state_mutex);
+    player->render_layout_generation++;
+    g_mutex_unlock(&player->state_mutex);
 }
 
 gboolean video_player_cycle_protocol(VideoPlayer *player) {
@@ -824,7 +829,9 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     renderer_update_terminal_size(renderer);
     g_mutex_unlock(&player->render_mutex);
 
-    return was_text && next_graphics;
+    /* Re-render when entering graphics mode or when leaving it so stale
+     * graphics placements do not remain behind the next text frame. */
+    return was_text || !next_graphics;
 }
 
 gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
@@ -845,13 +852,16 @@ gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
     gint snapshot_height = player->last_frame_height;
     g_mutex_unlock(&player->state_mutex);
 
+    if (snapshot_top <= 0 || snapshot_height <= 0) {
+        return FALSE;
+    }
     if (top_row) {
         *top_row = snapshot_top;
     }
     if (height) {
         *height = snapshot_height;
     }
-    return snapshot_top > 0 && snapshot_height > 0;
+    return TRUE;
 }
 
 gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_row) {

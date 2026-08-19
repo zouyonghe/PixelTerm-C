@@ -121,8 +121,8 @@ typedef struct {
 /**
  * @brief Creates a video player and its default renderer.
  *
- * @return A caller-owned player, or NULL when allocation fails. Destroy the
- * player with video_player_destroy().
+ * @return A caller-owned player. Destroy the player with
+ * video_player_destroy().
  * @note Create and control the player from its owning GLib main context.
  */
 VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean force_sixel, gboolean force_kitty,
@@ -277,7 +277,7 @@ ErrorCode video_player_get_dimensions(const gchar *filepath, gint *width, gint *
 
 /**
  * @brief Decodes the first video frame as caller-owned RGBA pixels.
- * @param pixels Receives memory that must be freed with g_free().
+ * @param pixels Receives memory that must be freed with av_free().
  * @param width Receives frame width in pixels.
  * @param height Receives frame height in pixels.
  * @param rowstride Receives the byte distance between rows.

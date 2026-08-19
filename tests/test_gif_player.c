@@ -100,6 +100,12 @@ static void test_gif_player_public_accessors(void) {
         return;
     }
 
+    if (!player->renderer) {
+        g_test_skip("gif player renderer unavailable");
+        gif_player_destroy(player);
+        return;
+    }
+
     g_assert_false(gif_player_is_loaded_file(player, "image.gif"));
     gif_player_set_color_enhance(player, COLOR_ENHANCE_VIVID);
     g_assert_cmpint(player->renderer->config.color_enhance, ==, COLOR_ENHANCE_VIVID);

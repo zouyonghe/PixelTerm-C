@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "input_dispatch_media_internal.h"
+#include "ui_render_utils.h"
 
 static const gint64 k_protocol_toggle_debounce_us = 150000;
 static gint64 g_last_protocol_toggle_us = 0;
@@ -187,6 +188,9 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
         video_player_stop(app->video_player);
     }
 
+    if (app->force_kitty) {
+        ui_clear_kitty_images(app);
+    }
     if (video_player_cycle_protocol(app->video_player)) {
         video_player_clear_render_area(app->video_player);
     }
