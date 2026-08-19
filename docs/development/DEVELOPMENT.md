@@ -309,8 +309,8 @@ make ARCH=aarch64
 
 ### Distribution
 - GitHub release binaries for supported platform/architecture combinations
-- Linux release binaries are built natively on Ubuntu 24.04 amd64/arm64, which is the documented minimum binary baseline
-- Uploaded Linux artifacts are downloaded and smoke-tested for runtime dependencies, version output, and help output before release creation
+- Linux release binaries retain the existing native Arch Linux/Arch Linux ARM build environments so the release ABI and AUR packaging flow are not changed by this remediation work
+- Uploaded Linux artifacts are downloaded into matching Arch environments and smoke-tested for runtime dependencies, version output, and help output before release creation
 - Source builds that produce `bin/pixelterm`
 - `make install` support for installing `$(PREFIX)/bin/pixelterm`
 

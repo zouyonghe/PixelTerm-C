@@ -47,7 +47,7 @@ PixelTerm-C/
 
 ## CI Baseline
 - Linux CI validates MuPDF `pkg-config` metadata, runs warning-clean build/tests and AddressSanitizer, and has separate ThreadSanitizer, UndefinedBehaviorSanitizer, and gcovr coverage jobs
-- Linux release assets use native Ubuntu 24.04 amd64/arm64 as the minimum binary baseline and are downloaded after upload for `ldd`, `--version`, and `--help` smoke tests
+- Linux release assets retain the existing native Arch Linux/Arch Linux ARM environments and are downloaded into matching environments after upload for `ldd`, `--version`, and `--help` smoke tests
 - Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path without the Linux-specific MuPDF metadata check
 
 ## Notes

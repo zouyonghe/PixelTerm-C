@@ -70,11 +70,15 @@ systems because of GLIBC, FFmpeg soname, Chafa, MuPDF, or other ABI differences.
 
 **Remediation / acceptance criteria**
 
-- [x] Define and document Ubuntu 24.04 as the minimum Linux binary baseline.
-- [x] Build natively on Ubuntu 24.04 amd64/arm64 instead of rolling Arch
-      containers.
-- [x] Download uploaded amd64/arm64 artifacts and test them with `ldd`,
-      `pixelterm --version`, and `pixelterm --help` before release creation.
+- [ ] Define and document a broader minimum Linux binary baseline. This is
+      deferred because changing the existing Arch ABI would affect the current
+      `pixelterm-c-bin` AUR packaging flow and requires a separately approved
+      distribution design.
+- [x] Retain the existing Arch Linux/Arch Linux ARM build environments rather
+      than changing the release ABI as part of this remediation batch.
+- [x] Download uploaded amd64/arm64 artifacts into matching Arch environments
+      and test them with `ldd`, `pixelterm --version`, and `pixelterm --help`
+      before release creation.
 - [x] Make the installer report missing Linux runtime dependencies clearly.
 
 ### F-02 — Medium/High — No ThreadSanitizer concurrency baseline
@@ -123,8 +127,9 @@ including `archlinux:latest`.
 **Remediation / acceptance criteria**
 
 - [x] Pin third-party actions to full commit SHAs, retaining version comments.
-- [x] Remove mutable release containers in favor of GitHub-hosted versioned
-      Ubuntu runners.
+- [ ] Pin release container images by digest. The existing Arch build
+      environments are intentionally retained to avoid changing the shipped ABI;
+      digest pinning remains a build-hardening follow-up.
 - [x] Add Dependabot configuration for controlled GitHub Actions updates.
 - [ ] Record dependency versions and generate release provenance/SBOM.
 
@@ -221,10 +226,12 @@ video FPS, making a repeatable benchmark particularly useful.
   checked against tracked docs before build, manual checksum examples cover all
   four platform assets, GitHub Actions are pinned to commit SHAs, and a
   Dependabot GitHub Actions update configuration was added.
-- 2026-08-19: Linux release builds moved from rolling Arch containers to native
-  Ubuntu 24.04 amd64/arm64 runners. Uploaded artifacts now gate release creation
-  on runtime dependency/version/help smoke tests, and the installer rejects
-  missing Linux runtime libraries before installation.
+- 2026-08-19: After checking the existing `pixelterm-c` and `pixelterm-c-bin`
+  AUR flows, the proposed Ubuntu 24.04 release ABI migration was reverted. Linux
+  release builds retain their prior Arch Linux/Arch Linux ARM environments.
+  Uploaded artifacts still gate release creation on runtime dependency,
+  version, and help smoke tests in matching Arch environments, and the installer
+  rejects missing Linux runtime libraries before installation.
 - 2026-08-19: Added separate ThreadSanitizer and UndefinedBehaviorSanitizer
   Makefile targets and Linux CI matrix jobs. The existing warning-clean full
   suite also passed locally on Termux/Android with Clang: 309 main tests, 14
@@ -238,9 +245,10 @@ video FPS, making a repeatable benchmark particularly useful.
   tests, ASan, cppcheck, focused TSan, UBSan, and coverage generation. The
   initial gcovr source baseline is 54.32% lines (5719/10528) and 39.78%
   branches (3134/7879); reports are uploaded as Cobertura XML and HTML details.
-- 2026-08-19: Release workflow dispatch run `32203502794` passed Ubuntu 24.04
-  amd64/arm64 builds, macOS amd64/arm64 builds, uploaded-artifact smoke tests,
-  checksum generation, and the non-tag release preparation path.
+- 2026-08-19: Release workflow dispatch run `32203502794` validated the proposed
+  Ubuntu 24.04 build path, but that ABI migration was subsequently reverted to
+  preserve the established Arch/AUR release flow. A replacement Arch workflow
+  dispatch is required before this remediation is considered release-verified.
 - 2026-08-19: Static Analysis run `32203379170` passed warning-clean build and
   tests, ASan, cppcheck, the focused project concurrency TSan suite, and UBSan.
 - 2026-08-19: Configured GitHub build provenance attestation for checksums and
