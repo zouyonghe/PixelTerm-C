@@ -64,8 +64,9 @@ static void terminal_protocol_env_fixture_tear_down(TerminalProtocolEnvFixture *
 }
 
 static void terminal_protocol_resolver_fixture_set_up(TerminalProtocolEnvFixture *fixture,
-                                                      gconstpointer user_data) {
+                                                       gconstpointer user_data) {
     terminal_protocol_env_fixture_set_up(fixture, user_data);
+    /* Resolver tests must not inherit runner SSH variables. */
     clear_terminal_protocol_env();
 }
 
@@ -570,15 +571,18 @@ void register_terminal_protocols_tests(void) {
     add_terminal_protocol_resolver_test(
         "/terminal_protocols/resolver/override_beats_signal_and_probe",
         test_terminal_protocol_resolver_override_beats_signal_and_probe);
-    add_terminal_protocol_resolver_test("/terminal_protocols/resolver/signal_beats_probe",
-                                          test_terminal_protocol_resolver_signal_beats_probe);
-    add_terminal_protocol_resolver_test("/terminal_protocols/resolver/signal_used_without_override",
-                                          test_terminal_protocol_resolver_signal_used_without_override);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/signal_beats_probe",
+        test_terminal_protocol_resolver_signal_beats_probe);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/signal_used_without_override",
+        test_terminal_protocol_resolver_signal_used_without_override);
     add_terminal_protocol_resolver_test(
         "/terminal_protocols/resolver/probe_used_without_override_or_signal",
         test_terminal_protocol_resolver_probe_used_without_override_or_signal);
-    add_terminal_protocol_resolver_test("/terminal_protocols/resolver/falls_back_to_text",
-                                          test_terminal_protocol_resolver_falls_back_to_text);
+    add_terminal_protocol_resolver_test(
+        "/terminal_protocols/resolver/falls_back_to_text",
+        test_terminal_protocol_resolver_falls_back_to_text);
     add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_requires_affirmative_signal",
                                test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal);
 
