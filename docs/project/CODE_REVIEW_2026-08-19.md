@@ -245,10 +245,12 @@ video FPS, making a repeatable benchmark particularly useful.
   tests, ASan, cppcheck, focused TSan, UBSan, and coverage generation. The
   initial gcovr source baseline is 54.32% lines (5719/10528) and 39.78%
   branches (3134/7879); reports are uploaded as Cobertura XML and HTML details.
-- 2026-08-19: Release workflow dispatch run `32203502794` validated the proposed
-  Ubuntu 24.04 build path, but that ABI migration was subsequently reverted to
-  preserve the established Arch/AUR release flow. A replacement Arch workflow
-  dispatch is required before this remediation is considered release-verified.
+- 2026-08-19: Release workflow dispatch run `32206565028` passed the retained
+  Arch Linux amd64 and Arch Linux ARM arm64 builds, macOS amd64/arm64 builds,
+  uploaded-artifact smoke tests in matching Arch environments, checksum
+  generation, and the non-tag release preparation path. The workflow now
+  bootstraps Git before checkout because `docs/ export-ignore` makes the REST
+  archive fallback unsuitable for version-reference validation.
 - 2026-08-19: Static Analysis run `32203379170` passed warning-clean build and
   tests, ASan, cppcheck, the focused project concurrency TSan suite, and UBSan.
 - 2026-08-19: Configured GitHub build provenance attestation for checksums and
