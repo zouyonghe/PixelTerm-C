@@ -270,12 +270,31 @@ debug:
 debug-test:
 	$(MAKE) OBJDIR="$(DEBUG_OBJDIR)" BINDIR="$(DEBUG_BINDIR)" DEBUG=1 EXTRA_CFLAGS="$(EXTRA_CFLAGS)" test
 
-# Run the test suite under ThreadSanitizer. This is intentionally separate
-# from the AddressSanitizer debug target because the sanitizers are incompatible.
+# Run project-owned concurrency paths under ThreadSanitizer. Chafa's
+# distribution library uses an uninstrumented persistent worker pool, so the
+# TSan suite deliberately avoids pixel-rendering tests while ASan/UBSan/normal
+# targets continue to run the complete suite.
 tsan-test:
 	$(MAKE) OBJDIR="$(TSAN_OBJDIR)" BINDIR="$(TSAN_BINDIR)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer -DPIXELTERM_TSAN" \
-		test
+		tsan-suite
+
+tsan-suite: $(TEST_TARGET)
+	@set -e; for path in \
+		/video_player/fallback_pts/set_waits_on_state_mutex \
+		/video_player/fallback_pts/resolve_and_advance_waits_on_state_mutex \
+		/video_player/set_renderer/restarts_workers_when_replacing_during_playback \
+		/video_player/set_renderer/null_stops_playback_and_timer \
+		/video_player/render_queue/rechecks_last_presented_after_full_queue_wait \
+		/video_player/decode_queue/sixel_mode_waits_instead_of_replacing_oldest \
+		/video_player/decode_queue/text_mode_waits_instead_of_replacing_oldest \
+		/video_player/decode_queue/wait_and_take_blocks_until_item_arrives \
+		/video_player/queue_push/waits_for_capacity_instead_of_dropping_new_frame \
+		/video_player/seek_relative/after_eof_stops_parked_workers_before_preview \
+		/video_player/public_api/layout_accessors_return_consistent_snapshots \
+		/video_player/public_api/state_setters_update_player_configuration; do \
+			$(TEST_TARGET) -p "$$path"; \
+	done
 
 ubsan-test:
 	$(MAKE) OBJDIR="$(UBSAN_OBJDIR)" BINDIR="$(UBSAN_BINDIR)" \
@@ -341,7 +360,7 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
-.PHONY: FORCE all debug debug-test tsan-test ubsan-test clean install test run check-deps help
+.PHONY: FORCE all debug debug-test tsan-test tsan-suite ubsan-test clean install test run check-deps help
 
 FORCE:
 

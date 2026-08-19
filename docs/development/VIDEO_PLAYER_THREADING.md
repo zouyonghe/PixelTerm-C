@@ -113,9 +113,11 @@ be exposed as general public APIs.
 libraries are not necessarily built with ThreadSanitizer. Under
 `PIXELTERM_TSAN`, `include/common.h` annotates project uses of `GMutex` and
 `GCond` with TSan acquire/release edges, while project-owned synchronization
-flags and worker stop state use GLib atomics. The one test that intentionally
-enters Chafa's uninstrumented internal worker pool is skipped only in the TSan
-build; it remains covered by normal, ASan, and UBSan runs.
+flags and worker stop state use GLib atomics. The TSan target runs a focused
+suite of project-owned queue, worker-stop, renderer-replacement, and state API
+concurrency tests. It deliberately does not enter Chafa's uninstrumented
+persistent pixel-render worker pool; the complete rendering suite remains
+covered by normal, ASan, and UBSan runs.
 
 ## Review Checklist for Concurrency Changes
 
