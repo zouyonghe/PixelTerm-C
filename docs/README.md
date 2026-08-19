@@ -43,4 +43,5 @@ The repository root keeps only the core project documents. Everything else is gr
 - [Project Status](project/PROJECT_STATUS.md)
 - [Roadmap](project/ROADMAP.md)
 - [Refactoring Plan](project/REFACTORING_PLAN.md)
+- [Multidimensional Code Review (2026-08-19)](project/CODE_REVIEW_2026-08-19.md)
 - [Archived Refactor Notes](project/archive/refactor-plan.md)

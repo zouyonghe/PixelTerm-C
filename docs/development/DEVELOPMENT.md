@@ -4,7 +4,7 @@
 
 PixelTerm-C is a C implementation of the Python-based PixelTerm terminal image, video, and book browser. This document outlines the development approach, architecture decisions, and implementation roadmap.
 
-**Current Status**: ✅ **PRODUCTION READY** - v1.8.1 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid/book-preview suites, the paused video-seek target-restore fix, stable EOF drain/replay handling in the video player, the newer video-player/app-config maintainability seams, and the layered auto-protocol resolver path.
+**Current Status**: ✅ **PRODUCTION READY** - v1.8.2 with a warning-clean verification baseline that now covers terminal protocol helpers, CLI/startup paths, book core helpers, isolated file-manager/preview-grid/book-preview suites, the paused video-seek target-restore fix, stable EOF drain/replay handling in the video player, the newer video-player/app-config maintainability seams, and the layered auto-protocol resolver path.
 
 ## Technical Architecture
 
@@ -236,13 +236,16 @@ sudo make install
 # Installs: /usr/local/bin/pixelterm by default
 
 make debug
+make debug-test
+make tsan-test
+make ubsan-test
 make ARCH=aarch64
 ```
 
 ## Testing Strategy
 
 ### Unit Tests
-- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs `scripts/test_install_script.py` to verify the installer/docs integration
+- `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs the installer, release-note, and version-sync Python test suites
 - `bin/pixelterm-tests` directly covers common utilities plus browser, renderer, GIF player, terminal probe/protocol resolver helpers, CLI/startup paths, app-mode transitions, book core helpers, and the paused video-seek target-restore path
 - `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests` keep those mode-specific suites isolated from the main test linker graph
 - Targeted automated coverage should still be added when refactors touch routing, rendering, or state helpers outside the current baseline
@@ -251,7 +254,7 @@ make ARCH=aarch64
 - Manual end-to-end testing in supported terminals is still required for real protocol/render behavior
 
 ### CI Baseline
-- Linux CI installs MuPDF, validates `pkg-config --modversion mupdf` and `pkg-config --libs mupdf`, then runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
+- Linux CI installs MuPDF, validates `pkg-config --modversion mupdf` and `pkg-config --libs mupdf`, then runs warning-clean build/tests, AddressSanitizer tests, and separate `make tsan-test` / `make ubsan-test` jobs
 - Pull request macOS CI runs `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug`
 
 ### Performance Tests
@@ -264,6 +267,8 @@ make ARCH=aarch64
 - `make EXTRA_CFLAGS=-Werror`
 - `make EXTRA_CFLAGS=-Werror test`
 - `make EXTRA_CFLAGS=-Werror debug`
+- `make EXTRA_CFLAGS=-Werror tsan-test`
+- `make EXTRA_CFLAGS=-Werror ubsan-test`
 
 ## Code Style Guidelines
 
@@ -302,6 +307,8 @@ make ARCH=aarch64
 
 ### Distribution
 - GitHub release binaries for supported platform/architecture combinations
+- Linux release binaries are built natively on Ubuntu 24.04 amd64/arm64, which is the documented minimum binary baseline
+- Uploaded Linux artifacts are downloaded and smoke-tested for runtime dependencies, version output, and help output before release creation
 - Source builds that produce `bin/pixelterm`
 - `make install` support for installing `$(PREFIX)/bin/pixelterm`
 

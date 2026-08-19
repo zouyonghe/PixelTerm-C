@@ -160,6 +160,10 @@ OBJDIR = obj
 BINDIR = bin
 DEBUG_OBJDIR ?= obj-debug
 DEBUG_BINDIR ?= bin-debug
+TSAN_OBJDIR ?= obj-tsan
+TSAN_BINDIR ?= bin-tsan
+UBSAN_OBJDIR ?= obj-ubsan
+UBSAN_BINDIR ?= bin-ubsan
 BUILD_FLAGS_FILE = $(OBJDIR)/.build-flags
 
 # Source files
@@ -172,7 +176,11 @@ TEST_TARGET = $(BINDIR)/pixelterm-tests
 FILE_MANAGER_TEST_TARGET = $(BINDIR)/pixelterm-file-manager-tests
 PREVIEW_GRID_TEST_TARGET = $(BINDIR)/pixelterm-preview-grid-tests
 BOOK_PREVIEW_TEST_TARGET = $(BINDIR)/pixelterm-book-preview-tests
-INSTALL_SCRIPT_TEST = PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_install_script.py
+PYTHON_TEST_ENV = PYTHONDONTWRITEBYTECODE=1
+MAINTENANCE_SCRIPT_TESTS = \
+	$(PYTHON_TEST_ENV) python3 scripts/test_install_script.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_generate_release_notes.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py
 TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 FILE_MANAGER_TEST_SOURCE = tests/test_app_file_manager.c
@@ -262,9 +270,22 @@ debug:
 debug-test:
 	$(MAKE) OBJDIR="$(DEBUG_OBJDIR)" BINDIR="$(DEBUG_BINDIR)" DEBUG=1 EXTRA_CFLAGS="$(EXTRA_CFLAGS)" test
 
+# Run the test suite under ThreadSanitizer. This is intentionally separate
+# from the AddressSanitizer debug target because the sanitizers are incompatible.
+tsan-test:
+	$(MAKE) OBJDIR="$(TSAN_OBJDIR)" BINDIR="$(TSAN_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=thread -fno-omit-frame-pointer" \
+		test
+
+ubsan-test:
+	$(MAKE) OBJDIR="$(UBSAN_OBJDIR)" BINDIR="$(UBSAN_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" \
+		test
+
 # Clean build artifacts
 clean:
-	rm -rf $(OBJDIR) $(BINDIR) $(DEBUG_OBJDIR) $(DEBUG_BINDIR)
+	rm -rf $(OBJDIR) $(BINDIR) $(DEBUG_OBJDIR) $(DEBUG_BINDIR) \
+		$(TSAN_OBJDIR) $(TSAN_BINDIR) $(UBSAN_OBJDIR) $(UBSAN_BINDIR)
 
 # Install
 install: $(TARGET)
@@ -278,7 +299,7 @@ test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(B
 	@$(FILE_MANAGER_TEST_TARGET)
 	@$(PREVIEW_GRID_TEST_TARGET)
 	@$(BOOK_PREVIEW_TEST_TARGET)
-	@$(INSTALL_SCRIPT_TEST)
+	@$(MAINTENANCE_SCRIPT_TESTS)
 
 # Run with sample image
 run: $(TARGET)
@@ -301,6 +322,8 @@ help:
 	@echo "  all       - Build the application (default)"
 	@echo "  debug     - Build with debug flags"
 	@echo "  debug-test - Run tests with debug AddressSanitizer flags"
+	@echo "  tsan-test - Run tests with ThreadSanitizer flags"
+	@echo "  ubsan-test - Run tests with UndefinedBehaviorSanitizer flags"
 	@echo "  clean     - Remove build artifacts"
 	@echo "  install   - Install to system"
 	@echo "  test      - Run tests"
@@ -318,7 +341,7 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
-.PHONY: FORCE all debug debug-test clean install test run check-deps help
+.PHONY: FORCE all debug debug-test tsan-test ubsan-test clean install test run check-deps help
 
 FORCE:
 

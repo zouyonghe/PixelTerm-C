@@ -207,6 +207,26 @@ verify_checksum() {
   [ "${actual}" = "${expected}" ] || die "Checksum verification failed for ${asset_name}"
 }
 
+verify_linux_runtime_dependencies() {
+  local downloaded_file
+  local ldd_output
+
+  downloaded_file="$1"
+  if [ "$(detect_os_name)" != "linux" ] || ! command -v ldd >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! ldd_output="$(ldd "${downloaded_file}" 2>&1)"; then
+    printf '%s\n' "${ldd_output}" >&2
+    die "Unable to inspect Linux runtime dependencies for the downloaded binary"
+  fi
+
+  if printf '%s\n' "${ldd_output}" | grep -q 'not found'; then
+    printf '%s\n' "${ldd_output}" >&2
+    die "Missing Linux runtime dependencies; install the listed libraries or build PixelTerm-C from source"
+  fi
+}
+
 prepare_install_dir() {
   local parent_dir
 
@@ -326,6 +346,11 @@ main() {
 
   log "Verifying checksum..."
   verify_checksum "${checksum_file}" "${tmp_file}" "${asset_name}"
+
+  if [ "${os_name}" = "linux" ]; then
+    log "Checking Linux runtime dependencies..."
+    verify_linux_runtime_dependencies "${tmp_file}"
+  fi
 
   log "Installing to ${destination}..."
   install_binary "${tmp_file}"
