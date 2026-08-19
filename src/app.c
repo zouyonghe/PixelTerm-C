@@ -269,9 +269,7 @@ ErrorCode app_initialize(PixelTermApp *app, gboolean dither_enabled) {
         app->gif_player = NULL;
         return ERROR_MEMORY_ALLOC;
     }
-    if (app->gif_player->renderer) {
-        app->gif_player->renderer->config.color_enhance = app->color_enhance;
-    }
+    gif_player_set_color_enhance(app->gif_player, app->color_enhance);
     video_player_set_color_enhance(app->video_player, app->color_enhance);
 
     return ERROR_NONE;

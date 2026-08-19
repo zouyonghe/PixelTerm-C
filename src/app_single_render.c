@@ -339,7 +339,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     if (is_animated_image && app->gif_player && !is_video) {
         // First, check if we need to load the animated image
-        if (!app->gif_player->filepath || g_strcmp0(app->gif_player->filepath, filepath) != 0) {
+        if (!gif_player_is_loaded_file(app->gif_player, filepath)) {
             ErrorCode load_result = APP_SINGLE_RENDER_CALL(gif_player_load,
                                                            gif_player_load,
                                                            app->gif_player,

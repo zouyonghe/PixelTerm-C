@@ -28,8 +28,7 @@ gboolean input_dispatch_current_is_animated_image(const PixelTermApp *app) {
     if (!media_is_animated_image(media_kind)) {
         return FALSE;
     }
-    if (app->gif_player && app->gif_player->filepath &&
-        g_strcmp0(app->gif_player->filepath, filepath) == 0) {
+    if (app->gif_player && gif_player_is_loaded_file(app->gif_player, filepath)) {
         return gif_player_is_animated(app->gif_player);
     }
     return FALSE;

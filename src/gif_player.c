@@ -539,6 +539,18 @@ gboolean gif_player_is_animated(const GifPlayer *player) {
     return player && player->is_animated;
 }
 
+gboolean gif_player_is_loaded_file(const GifPlayer *player, const gchar *filepath) {
+    return player && filepath && player->filepath &&
+           g_strcmp0(player->filepath, filepath) == 0;
+}
+
+void gif_player_set_color_enhance(GifPlayer *player, ColorEnhanceMode color_enhance) {
+    if (!player || !player->renderer) {
+        return;
+    }
+    player->renderer->config.color_enhance = color_enhance;
+}
+
 // Update terminal size for the internal renderer
 ErrorCode gif_player_update_terminal_size(GifPlayer *player) {
     if (!player || !player->renderer) {
