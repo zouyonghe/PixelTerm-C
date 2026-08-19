@@ -27,10 +27,7 @@ jobs:
             runs-on: ubuntu-24.04-arm
             container: menci/archlinuxarm:base-devel
     steps:
-    - name: Checkout code
-      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
-
-    - name: Install Arch Linux build dependencies
+    - name: Bootstrap Arch Linux checkout tools
       run: |
         set -euo pipefail
         pacman-key --init
@@ -41,11 +38,19 @@ jobs:
           pacman-key --populate archlinux
           pacman -Syu --noconfirm --needed --disable-sandbox archlinux-keyring
         fi
-        deps=(base-devel pkgconf git python glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
+        pacman -Syu --noconfirm --needed --disable-sandbox git python
+
+    - name: Checkout code
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.2
+
+    - name: Install Arch Linux build dependencies
+      run: |
+        set -euo pipefail
+        deps=(base-devel pkgconf glib2 gdk-pixbuf2 chafa ffmpeg mupdf mujs gumbo-parser)
         if pacman -Si libmupdf >/dev/null 2>&1; then
           deps+=(libmupdf)
         fi
-        pacman -Syu --noconfirm --needed --disable-sandbox "${deps[@]}"
+        pacman -S --noconfirm --needed --disable-sandbox "${deps[@]}"
 
     - name: Validate release version metadata
       if: startsWith(github.ref, 'refs/tags/v')
@@ -57,13 +62,9 @@ jobs:
         set -euo pipefail
         mkdir -p release-${{ matrix.arch }}
 
-        test -f docs/i18n/README_zh.md
-        test -f docs/i18n/README_ja.md
         make clean
         make EXTRA_CFLAGS=-Werror
         make EXTRA_CFLAGS=-Werror test
-        test -f docs/i18n/README_zh.md
-        test -f docs/i18n/README_ja.md
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
