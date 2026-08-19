@@ -227,6 +227,13 @@ static void test_is_animated_image_candidate(void) {
         'V', 'P', '8', ' ',
         0x00, 0x00, 0x00, 0x00
     };
+    static const guint8 k_webp_oversized_chunk[] = {
+        'R', 'I', 'F', 'F',
+        0x00, 0x00, 0x00, 0x00,
+        'W', 'E', 'B', 'P',
+        'V', 'P', '8', ' ',
+        0xFF, 0xFF, 0xFF, 0xFF
+    };
     static const guint8 k_tiff_multi[] = {
         'I', 'I', '*', '\0',
         0x08, 0x00, 0x00, 0x00,
@@ -244,6 +251,7 @@ static void test_is_animated_image_candidate(void) {
     gchar *png_static = write_temp_file(".png", k_png_static, sizeof(k_png_static));
     gchar *webp_anim = write_temp_file(".webp", k_webp_anim, sizeof(k_webp_anim));
     gchar *webp_static = write_temp_file(".webp", k_webp_static, sizeof(k_webp_static));
+    gchar *webp_oversized = write_temp_file(".webp", k_webp_oversized_chunk, sizeof(k_webp_oversized_chunk));
     gchar *tiff_multi = write_temp_file(".tiff", k_tiff_multi, sizeof(k_tiff_multi));
     gchar *tiff_single = write_temp_file(".tiff", k_tiff_single, sizeof(k_tiff_single));
 
@@ -251,6 +259,7 @@ static void test_is_animated_image_candidate(void) {
     g_assert_false(is_animated_image_candidate(png_static));
     g_assert_true(is_animated_image_candidate(webp_anim));
     g_assert_false(is_animated_image_candidate(webp_static));
+    g_assert_false(is_animated_image_candidate(webp_oversized));
     g_assert_true(is_animated_image_candidate(tiff_multi));
     g_assert_false(is_animated_image_candidate(tiff_single));
 }
