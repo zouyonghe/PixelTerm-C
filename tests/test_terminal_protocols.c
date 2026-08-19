@@ -325,11 +325,8 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
 }
 
 static void test_terminal_protocol_resolver_override_beats_signal_and_probe(
-    TerminalProtocolEnvFixture *fixture,
-    gconstpointer user_data) {
-    (void)fixture;
-    (void)user_data;
-
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_override = TRUE,
         .override_protocol = TERMINAL_RESOLVED_PROTOCOL_ITERM2,
@@ -347,11 +344,9 @@ static void test_terminal_protocol_resolver_override_beats_signal_and_probe(
                              "override");
 }
 
-static void test_terminal_protocol_resolver_signal_beats_probe(TerminalProtocolEnvFixture *fixture,
-                                                               gconstpointer user_data) {
-    (void)fixture;
-    (void)user_data;
-
+static void test_terminal_protocol_resolver_signal_beats_probe(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_signal = TRUE,
         .signal_protocol = TERMINAL_RESOLVED_PROTOCOL_KITTY,
@@ -367,11 +362,9 @@ static void test_terminal_protocol_resolver_signal_beats_probe(TerminalProtocolE
                              "signal");
 }
 
-static void test_terminal_protocol_resolver_signal_used_without_override(TerminalProtocolEnvFixture *fixture,
-                                                                         gconstpointer user_data) {
-    (void)fixture;
-    (void)user_data;
-
+static void test_terminal_protocol_resolver_signal_used_without_override(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_signal = TRUE,
         .signal_protocol = TERMINAL_RESOLVED_PROTOCOL_SIXEL,
@@ -386,11 +379,8 @@ static void test_terminal_protocol_resolver_signal_used_without_override(Termina
 }
 
 static void test_terminal_protocol_resolver_probe_used_without_override_or_signal(
-    TerminalProtocolEnvFixture *fixture,
-    gconstpointer user_data) {
-    (void)fixture;
-    (void)user_data;
-
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {
         .has_probe = TRUE,
         .probe_protocol = TERMINAL_RESOLVED_PROTOCOL_ITERM2,
@@ -404,11 +394,9 @@ static void test_terminal_protocol_resolver_probe_used_without_override_or_signa
                              "probe");
 }
 
-static void test_terminal_protocol_resolver_falls_back_to_text(TerminalProtocolEnvFixture *fixture,
-                                                               gconstpointer user_data) {
-    (void)fixture;
-    (void)user_data;
-
+static void test_terminal_protocol_resolver_falls_back_to_text(
+    TerminalProtocolEnvFixture *fixture G_GNUC_UNUSED,
+    gconstpointer user_data G_GNUC_UNUSED) {
     TerminalProtocolResolverInput input = {0};
 
     TerminalProtocolDecision decision = terminal_protocol_resolve(&input);
