@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "media_utils.h"
 
 void register_browser_tests(void);
 void register_gif_player_tests(void);
@@ -264,6 +265,36 @@ static void test_is_animated_image_candidate(void) {
     g_assert_false(is_animated_image_candidate(tiff_single));
 }
 
+static void test_media_classify_handles_content_and_extensions(void) {
+    static const guint8 k_png[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    static const guint8 k_gif[] = {'G', 'I', 'F', '8', '9', 'a'};
+    static const guint8 k_mp4[] = {0x00, 0x00, 0x00, 0x00, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+    static const guint8 k_unknown[] = {0x01, 0x02, 0x03, 0x04};
+    static const guint8 k_gif_named_mp4[] = {'G', 'I', 'F', '8', '9', 'a'};
+    static const guint8 k_video_named_png[] = {0x00, 0x00, 0x00, 0x00, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+
+    gchar *png_path = write_temp_file(".png", k_png, sizeof(k_png));
+    gchar *gif_path = write_temp_file(".gif", k_gif, sizeof(k_gif));
+    gchar *video_path = write_temp_file("", k_mp4, sizeof(k_mp4));
+    gchar *unknown_path = write_temp_file(".txt", k_unknown, sizeof(k_unknown));
+    gchar *gif_named_mp4 = write_temp_file(".mp4", k_gif_named_mp4, sizeof(k_gif_named_mp4));
+    gchar *video_named_png = write_temp_file(".png", k_video_named_png, sizeof(k_video_named_png));
+
+    g_assert_cmpint(media_classify(png_path), ==, MEDIA_KIND_IMAGE);
+    g_assert_cmpint(media_classify(gif_path), ==, MEDIA_KIND_ANIMATED_IMAGE);
+    g_assert_cmpint(media_classify(video_path), ==, MEDIA_KIND_VIDEO);
+    g_assert_cmpint(media_classify(unknown_path), ==, MEDIA_KIND_UNKNOWN);
+    g_assert_cmpint(media_classify(gif_named_mp4), ==, MEDIA_KIND_VIDEO);
+    g_assert_cmpint(media_classify(video_named_png), ==, MEDIA_KIND_IMAGE);
+    g_assert_cmpint(media_classify(NULL), ==, MEDIA_KIND_UNKNOWN);
+    g_assert_true(media_is_image(MEDIA_KIND_ANIMATED_IMAGE));
+    g_assert_false(media_is_image(MEDIA_KIND_VIDEO));
+    g_assert_true(media_is_animated_image(MEDIA_KIND_ANIMATED_IMAGE));
+    g_assert_false(media_is_animated_image(MEDIA_KIND_IMAGE));
+    g_assert_true(media_is_video(MEDIA_KIND_VIDEO));
+    g_assert_false(media_is_video(MEDIA_KIND_UNKNOWN));
+}
+
 static void test_file_helpers(void) {
     static const guint8 k_data[] = {'a', 'b', 'c'};
     gchar *path = write_temp_file("", k_data, sizeof(k_data));
@@ -305,6 +336,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_book_file_and_valid", test_is_book_file_and_valid);
     g_test_add_func("/common/is_valid_video_file_by_content", test_is_valid_video_file_by_content);
     g_test_add_func("/common/is_animated_image_candidate", test_is_animated_image_candidate);
+    g_test_add_func("/common/media_classify", test_media_classify_handles_content_and_extensions);
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
     g_test_add_func("/common/error_code_to_string", test_error_code_to_string);
