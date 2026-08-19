@@ -278,6 +278,73 @@ static void test_preloader_add_task_rejects_work_while_stopping(void) {
     preloader_destroy(preloader);
 }
 
+static void test_preloader_add_task_rejects_duplicate_target(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+
+    g_assert_cmpint(preloader_add_task(preloader, "duplicate.png", 1, 20, 10), ==, ERROR_NONE);
+    g_assert_cmpint(preloader_add_task(preloader, "duplicate.png", 2, 20, 10), ==, ERROR_NONE);
+    g_assert_cmpuint(g_queue_get_length(preloader->task_queue), ==, 1);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_add_task_reports_queue_capacity(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    preloader->max_queue_size = 2;
+
+    g_assert_cmpint(preloader_add_task(preloader, "first.png", 1, 20, 10), ==, ERROR_NONE);
+    g_assert_cmpint(preloader_add_task(preloader, "second.png", 2, 20, 10), ==, ERROR_NONE);
+    g_assert_cmpint(preloader_add_task(preloader, "third.png", 3, 20, 10), ==, ERROR_MEMORY_ALLOC);
+    g_assert_cmpuint(g_queue_get_length(preloader->task_queue), ==, 2);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_pause_resume_and_enable_disable_publish_state(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    g_assert_cmpint(preloader_start(preloader), ==, ERROR_NONE);
+
+    preloader_pause(preloader);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_cmpint(preloader->status, ==, PRELOADER_PAUSED);
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_resume(preloader);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_cmpint(preloader->status, ==, PRELOADER_ACTIVE);
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_disable(preloader);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_false(preloader->enabled);
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_enable(preloader);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_true(preloader->enabled);
+    g_mutex_unlock(&preloader->mutex);
+
+    g_assert_cmpint(preloader_stop(preloader), ==, ERROR_NONE);
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_terminal_size_normalizes_task_dimensions(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    preloader_update_terminal_size(preloader, 132, 43);
+
+    g_assert_cmpint(preloader_add_task(preloader, "sized.png", 1, 0, 0), ==, ERROR_NONE);
+    PreloadTask *task = g_queue_peek_head(preloader->task_queue);
+    g_assert_nonnull(task);
+    g_assert_cmpint(task->target_width, ==, 132);
+    g_assert_cmpint(task->target_height, ==, 43);
+
+    preloader_destroy(preloader);
+}
+
 static void test_preloader_cache_cleanup_public_wrapper_enforces_limit(void) {
     ImagePreloader *preloader = preloader_create();
     g_assert_nonnull(preloader);
@@ -349,6 +416,14 @@ void register_preloader_tests(void) {
                     test_preloader_start_stop_cycles_publish_consistent_state);
     g_test_add_func("/preloader/add_task/rejects_while_stopping",
                     test_preloader_add_task_rejects_work_while_stopping);
+    g_test_add_func("/preloader/add_task/rejects_duplicate_target",
+                    test_preloader_add_task_rejects_duplicate_target);
+    g_test_add_func("/preloader/add_task/reports_queue_capacity",
+                    test_preloader_add_task_reports_queue_capacity);
+    g_test_add_func("/preloader/control/pause_resume_enable_disable",
+                    test_preloader_pause_resume_and_enable_disable_publish_state);
+    g_test_add_func("/preloader/terminal_size/normalizes_task_dimensions",
+                    test_preloader_terminal_size_normalizes_task_dimensions);
     g_test_add_func("/preloader/cache_cleanup/public_wrapper_enforces_limit",
                     test_preloader_cache_cleanup_public_wrapper_enforces_limit);
     g_test_add_func("/preloader/cache_add/enforces_limit_after_insert",

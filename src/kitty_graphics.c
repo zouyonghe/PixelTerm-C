@@ -117,6 +117,7 @@ GString *kitty_graphics_build_shm_command(const gchar *shm_name,
 
     GString *command = g_string_new(NULL);
     g_string_printf(command,
+                    // cppcheck-suppress unknownMacro
                     "\033_Ga=T,f=32,s=%d,v=%d,t=s,S=%" G_GSIZE_FORMAT ",c=%d,r=%d,C=1,q=2;%s\033\\",
                     width,
                     height,
