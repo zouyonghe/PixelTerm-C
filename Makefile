@@ -164,6 +164,8 @@ TSAN_OBJDIR ?= obj-tsan
 TSAN_BINDIR ?= bin-tsan
 UBSAN_OBJDIR ?= obj-ubsan
 UBSAN_BINDIR ?= bin-ubsan
+COVERAGE_OBJDIR ?= obj-coverage
+COVERAGE_BINDIR ?= bin-coverage
 BUILD_FLAGS_FILE = $(OBJDIR)/.build-flags
 
 # Source files
@@ -301,10 +303,16 @@ ubsan-test:
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O1 -g -fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer" \
 		test
 
+coverage-test:
+	$(MAKE) OBJDIR="$(COVERAGE_OBJDIR)" BINDIR="$(COVERAGE_BINDIR)" \
+		EXTRA_CFLAGS="$(EXTRA_CFLAGS) -O0 -g --coverage" \
+		test
+
 # Clean build artifacts
 clean:
 	rm -rf $(OBJDIR) $(BINDIR) $(DEBUG_OBJDIR) $(DEBUG_BINDIR) \
-		$(TSAN_OBJDIR) $(TSAN_BINDIR) $(UBSAN_OBJDIR) $(UBSAN_BINDIR)
+		$(TSAN_OBJDIR) $(TSAN_BINDIR) $(UBSAN_OBJDIR) $(UBSAN_BINDIR) \
+		$(COVERAGE_OBJDIR) $(COVERAGE_BINDIR)
 
 # Install
 install: $(TARGET)
@@ -343,6 +351,7 @@ help:
 	@echo "  debug-test - Run tests with debug AddressSanitizer flags"
 	@echo "  tsan-test - Run tests with ThreadSanitizer flags"
 	@echo "  ubsan-test - Run tests with UndefinedBehaviorSanitizer flags"
+	@echo "  coverage-test - Run instrumented tests for gcov/gcovr reporting"
 	@echo "  clean     - Remove build artifacts"
 	@echo "  install   - Install to system"
 	@echo "  test      - Run tests"
@@ -360,7 +369,7 @@ help:
 	@echo "  make CC=aarch64-linux-gnu-gcc ARCH=aarch64  # Full cross-compilation"
 	@echo "  make run ARGS=\"/path/to/image.jpg\"  # Run with args"
 
-.PHONY: FORCE all debug debug-test tsan-test tsan-suite ubsan-test clean install test run check-deps help
+.PHONY: FORCE all debug debug-test tsan-test tsan-suite ubsan-test coverage-test clean install test run check-deps help
 
 FORCE:
 

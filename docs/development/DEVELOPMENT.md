@@ -239,6 +239,7 @@ make debug
 make debug-test
 make tsan-test
 make ubsan-test
+make coverage-test
 make ARCH=aarch64
 ```
 
@@ -269,6 +270,7 @@ make ARCH=aarch64
 - `make EXTRA_CFLAGS=-Werror debug`
 - `make EXTRA_CFLAGS=-Werror tsan-test`
 - `make EXTRA_CFLAGS=-Werror ubsan-test`
+- `make EXTRA_CFLAGS=-Werror coverage-test` followed by `gcovr` for source coverage reports
 
 ## Code Style Guidelines
 

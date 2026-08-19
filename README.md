@@ -190,7 +190,7 @@ If MuPDF is available, book support is built in automatically. Cross-compilation
 - `make test` builds and runs `bin/pixelterm-tests`, `bin/pixelterm-file-manager-tests`, `bin/pixelterm-preview-grid-tests`, and `bin/pixelterm-book-preview-tests`, then runs the installer, release-note, and version-sync Python test suites.
 - The main test binary directly covers browser, renderer, GIF/text/common utilities, terminal probe/protocol resolver helpers, CLI/startup behavior, book core helpers, and the paused video-seek target-restore path.
 - File-manager, preview-grid, and book-preview flows still use dedicated binaries so those mode-specific suites can link only the code they exercise.
-- Linux CI validates MuPDF `pkg-config` metadata, then runs warning-clean build/tests, AddressSanitizer tests, and separate ThreadSanitizer and UndefinedBehaviorSanitizer test jobs.
+- Linux CI validates MuPDF `pkg-config` metadata, then runs warning-clean build/tests, AddressSanitizer tests, separate ThreadSanitizer and UndefinedBehaviorSanitizer jobs, and publishes a gcovr source coverage report.
 - Linux release binaries use native Ubuntu 24.04 amd64/arm64 runners as the minimum binary baseline; uploaded artifacts are downloaded again and smoke-tested with `ldd`, `--version`, and `--help` before a release can be created.
 - Pull request macOS CI runs the same `make EXTRA_CFLAGS=-Werror`, `make EXTRA_CFLAGS=-Werror test`, and `make EXTRA_CFLAGS=-Werror debug` path.
 - The current shipped baseline includes the layered auto-protocol resolver, non-overlapping preview/book last-page paging, and paused video seek target restoration after seek-preview redraw; broader terminal presets and remote-session heuristics remain roadmap work.
