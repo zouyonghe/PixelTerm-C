@@ -249,6 +249,18 @@ gboolean video_player_is_playing(const VideoPlayer *player);
 gboolean video_player_has_video(const VideoPlayer *player);
 
 /**
+ * @brief Returns whether the player currently owns the requested media path.
+ *
+ * The path is compared while holding the player state mutex; no internal
+ * string is returned to the caller.
+ *
+ * @param filepath Borrowed path valid for the duration of the call.
+ * @return TRUE only when a successfully loaded path matches @p filepath.
+ */
+gboolean video_player_is_loaded_file(const VideoPlayer *player,
+                                     const gchar *filepath);
+
+/**
  * @brief Refreshes the attached renderer's terminal size.
  * @note Serialized with renderer replacement; call from the owning main
  * context because renderer terminal probing may perform terminal I/O.

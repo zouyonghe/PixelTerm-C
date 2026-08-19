@@ -1719,8 +1719,9 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     video_player_stop(player);
     video_player_reset_media_state(player);
 
-    g_free(player->filepath);
-    player->filepath = NULL;
+    g_mutex_lock(&player->state_mutex);
+    g_clear_pointer(&player->filepath, g_free);
+    g_mutex_unlock(&player->state_mutex);
 
     if (!file_exists(filepath)) {
         return ERROR_FILE_NOT_FOUND;
@@ -1846,8 +1847,9 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
         player->time_base_den = 1000;
     }
     video_player_set_fallback_pts_ms(player, 0);
-    player->filepath = g_strdup(filepath);
+    gchar *loaded_filepath = g_strdup(filepath);
     g_mutex_lock(&player->state_mutex);
+    player->filepath = loaded_filepath;
     player->has_video = TRUE;
     player->draining = FALSE;
     g_mutex_unlock(&player->state_mutex);
@@ -2028,6 +2030,20 @@ gboolean video_player_has_video(const VideoPlayer *player) {
     gboolean has_video = mutable_player->has_video;
     g_mutex_unlock(&mutable_player->state_mutex);
     return has_video;
+}
+
+gboolean video_player_is_loaded_file(const VideoPlayer *player,
+                                     const gchar *filepath) {
+    if (!player || !filepath) {
+        return FALSE;
+    }
+
+    VideoPlayer *mutable_player = (VideoPlayer*)player;
+    g_mutex_lock(&mutable_player->state_mutex);
+    gboolean matches = mutable_player->filepath &&
+                       g_strcmp0(mutable_player->filepath, filepath) == 0;
+    g_mutex_unlock(&mutable_player->state_mutex);
+    return matches;
 }
 
 ErrorCode video_player_update_terminal_size(VideoPlayer *player) {

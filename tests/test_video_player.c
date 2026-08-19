@@ -2476,8 +2476,17 @@ static void test_public_state_setters_update_player_configuration(void) {
     }
     g_mutex_unlock(&player->render_mutex);
 
+    g_assert_false(video_player_is_loaded_file(player, "movie.mp4"));
+    g_mutex_lock(&player->state_mutex);
+    player->filepath = g_strdup("movie.mp4");
+    g_mutex_unlock(&player->state_mutex);
+    g_assert_true(video_player_is_loaded_file(player, "movie.mp4"));
+    g_assert_false(video_player_is_loaded_file(player, "other.mp4"));
+
     video_player_set_show_stats(NULL, TRUE);
     video_player_set_color_enhance(NULL, COLOR_ENHANCE_VIVID);
+    g_assert_false(video_player_is_loaded_file(NULL, "movie.mp4"));
+    g_assert_false(video_player_is_loaded_file(player, NULL));
     g_assert_false(video_player_get_last_frame_bounds(NULL, NULL, NULL));
     g_assert_null(video_player_dup_cached_line_at_row(NULL, 1));
 
