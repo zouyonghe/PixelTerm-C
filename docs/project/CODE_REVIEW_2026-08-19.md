@@ -93,8 +93,10 @@ UBSan. ASan does not detect ordinary C data races.
 **Remediation / acceptance criteria**
 
 - [x] Add a dedicated `-fsanitize=thread` target and Linux CI job.
-- [ ] Add more explicit concurrent play/pause/stop/seek/resize/EOF and preloader
-      queue/stop stress tests beyond the current worker/locking regression suite.
+- [ ] Add more explicit concurrent play/pause/stop/seek/resize/EOF stress tests
+      beyond the current worker/locking regression suite. Preloader concurrent
+      stop, paused-stop, repeated start/stop, and stop-time enqueue coverage is
+      now included in the focused TSan suite.
 - [x] Add a separate UndefinedBehaviorSanitizer target/job.
 - [x] Document field ownership and lock ordering for video playback in
       `docs/development/VIDEO_PLAYER_THREADING.md`.
@@ -232,6 +234,11 @@ video FPS, making a repeatable benchmark particularly useful.
   Uploaded artifacts still gate release creation on runtime dependency,
   version, and help smoke tests in matching Arch environments, and the installer
   rejects missing Linux runtime libraries before installation.
+- 2026-08-19: Serialized preloader start/stop lifecycle publication, fixed
+  paused-worker stop wakeup and concurrent double-join risk, rejected new work
+  during shutdown, and added four focused lifecycle regressions to the TSan
+  suite. Local Clang `-Werror` tests increased to 315 main tests and passed; the
+  focused preloader lifecycle set also passed 100 repeated local runs.
 - 2026-08-19: Added separate ThreadSanitizer and UndefinedBehaviorSanitizer
   Makefile targets and Linux CI matrix jobs. The existing warning-clean full
   suite also passed locally on Termux/Android with Clang: 309 main tests, 14

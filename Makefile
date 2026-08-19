@@ -294,7 +294,11 @@ tsan-suite: $(TEST_TARGET)
 		/video_player/queue_push/waits_for_capacity_instead_of_dropping_new_frame \
 		/video_player/seek_relative/after_eof_stops_parked_workers_before_preview \
 		/video_player/public_api/layout_accessors_return_consistent_snapshots \
-		/video_player/public_api/state_setters_update_player_configuration; do \
+		/video_player/public_api/state_setters_update_player_configuration \
+		/preloader/stop/concurrent_callers \
+		/preloader/stop/wakes_paused_worker \
+		/preloader/start_stop/repeated_cycles \
+		/preloader/add_task/rejects_while_stopping; do \
 			$(TEST_TARGET) -p "$$path"; \
 	done
 

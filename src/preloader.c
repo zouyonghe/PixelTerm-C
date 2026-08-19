@@ -267,23 +267,24 @@ ErrorCode preloader_initialize(ImagePreloader *preloader, gboolean dither_enable
 
 // Start preloader thread
 ErrorCode preloader_start(ImagePreloader *preloader) {
-    if (!preloader || preloader->thread) {
-        return ERROR_NONE;
+    if (!preloader) {
+        return ERROR_MEMORY_ALLOC;
     }
 
     g_mutex_lock(&preloader->mutex);
+    if (preloader->thread || preloader->status != PRELOADER_IDLE) {
+        g_mutex_unlock(&preloader->mutex);
+        return ERROR_NONE;
+    }
+
     preloader->status = PRELOADER_ACTIVE;
-    g_mutex_unlock(&preloader->mutex);
-
     preloader->thread = g_thread_new("preloader", preloader_worker_thread, preloader);
-
     if (!preloader->thread) {
-        g_mutex_lock(&preloader->mutex);
         preloader->status = PRELOADER_IDLE;
         g_mutex_unlock(&preloader->mutex);
-
         return ERROR_THREAD_CREATE;
     }
+    g_mutex_unlock(&preloader->mutex);
 
     return ERROR_NONE;
 }
@@ -296,30 +297,45 @@ ErrorCode preloader_stop(ImagePreloader *preloader) {
 
     g_mutex_lock(&preloader->mutex);
 
-    if (preloader->status == PRELOADER_ACTIVE) {
+    /*
+     * Transfer the thread handle to exactly one stopping caller. Other callers
+     * wait for that owner to finish joining and publishing the IDLE state.
+     */
+    if (!preloader->thread && preloader->status == PRELOADER_STOPPING) {
+        while (preloader->status == PRELOADER_STOPPING) {
+            g_cond_wait(&preloader->condition, &preloader->mutex);
+        }
+        g_mutex_unlock(&preloader->mutex);
+        return ERROR_NONE;
+    }
+
+    GThread *thread = preloader->thread;
+    preloader->thread = NULL;
+    if (thread) {
         preloader->status = PRELOADER_STOPPING;
-        g_cond_signal(&preloader->condition);
+        g_cond_broadcast(&preloader->condition);
+    } else {
+        preloader->status = PRELOADER_IDLE;
+        preloader_clear_queue_locked(preloader);
     }
-
     g_mutex_unlock(&preloader->mutex);
 
-    // Wait for thread to finish
-    if (preloader->thread) {
-        g_thread_join(preloader->thread);
-        preloader->thread = NULL;
-    }
+    if (thread) {
+        g_thread_join(thread);
 
-    g_mutex_lock(&preloader->mutex);
-    preloader->status = PRELOADER_IDLE;
-    preloader_clear_queue_locked(preloader);
-    g_mutex_unlock(&preloader->mutex);
+        g_mutex_lock(&preloader->mutex);
+        preloader->status = PRELOADER_IDLE;
+        preloader_clear_queue_locked(preloader);
+        g_cond_broadcast(&preloader->condition);
+        g_mutex_unlock(&preloader->mutex);
+    }
 
     return ERROR_NONE;
 }
 
 // Add a preload task
 ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gint priority, gint target_width, gint target_height) {
-    if (!preloader || !filepath || !preloader->enabled) {
+    if (!preloader || !filepath) {
         return ERROR_MEMORY_ALLOC;
     }
 
@@ -328,6 +344,10 @@ ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gi
     }
 
     g_mutex_lock(&preloader->mutex);
+    if (!preloader->enabled || preloader->status == PRELOADER_STOPPING) {
+        g_mutex_unlock(&preloader->mutex);
+        return ERROR_NONE;
+    }
 
     gint task_width = target_width;
     gint task_height = target_height;
@@ -399,7 +419,7 @@ ErrorCode preloader_add_task(ImagePreloader *preloader, const char *filepath, gi
 
 // Add tasks for adjacent images
 ErrorCode preloader_add_tasks_for_directory(ImagePreloader *preloader, GList *files, gint current_index, gint target_width, gint target_height) {
-    if (!preloader || !files || !preloader->enabled) {
+    if (!preloader || !files) {
         return ERROR_MEMORY_ALLOC;
     }
 

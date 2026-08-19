@@ -192,6 +192,92 @@ static void test_preloader_stop_clears_pending_tasks(void) {
     preloader_destroy(preloader);
 }
 
+typedef struct {
+    ImagePreloader *preloader;
+    ErrorCode result;
+} PreloaderStopCall;
+
+static gpointer stop_preloader_thread(gpointer data) {
+    PreloaderStopCall *call = data;
+    call->result = preloader_stop(call->preloader);
+    return NULL;
+}
+
+static void test_preloader_stop_is_safe_for_concurrent_callers(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    g_assert_cmpint(preloader_start(preloader), ==, ERROR_NONE);
+
+    PreloaderStopCall first = {.preloader = preloader, .result = ERROR_THREAD_CREATE};
+    PreloaderStopCall second = {.preloader = preloader, .result = ERROR_THREAD_CREATE};
+    GThread *first_thread = g_thread_new("preloader-stop-first", stop_preloader_thread, &first);
+    GThread *second_thread = g_thread_new("preloader-stop-second", stop_preloader_thread, &second);
+    g_assert_nonnull(first_thread);
+    g_assert_nonnull(second_thread);
+
+    g_thread_join(first_thread);
+    g_thread_join(second_thread);
+
+    g_assert_cmpint(first.result, ==, ERROR_NONE);
+    g_assert_cmpint(second.result, ==, ERROR_NONE);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_null(preloader->thread);
+    g_assert_cmpint(preloader->status, ==, PRELOADER_IDLE);
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_stop_wakes_a_paused_worker(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+    g_assert_cmpint(preloader_start(preloader), ==, ERROR_NONE);
+    preloader_pause(preloader);
+
+    g_assert_cmpint(preloader_stop(preloader), ==, ERROR_NONE);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_null(preloader->thread);
+    g_assert_cmpint(preloader->status, ==, PRELOADER_IDLE);
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_start_stop_cycles_publish_consistent_state(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+
+    for (gint i = 0; i < 20; i++) {
+        g_assert_cmpint(preloader_start(preloader), ==, ERROR_NONE);
+        g_assert_cmpint(preloader_start(preloader), ==, ERROR_NONE);
+        g_assert_cmpint(preloader_stop(preloader), ==, ERROR_NONE);
+
+        g_mutex_lock(&preloader->mutex);
+        g_assert_null(preloader->thread);
+        g_assert_cmpint(preloader->status, ==, PRELOADER_IDLE);
+        g_mutex_unlock(&preloader->mutex);
+    }
+
+    preloader_destroy(preloader);
+}
+
+static void test_preloader_add_task_rejects_work_while_stopping(void) {
+    ImagePreloader *preloader = preloader_create();
+    g_assert_nonnull(preloader);
+
+    g_mutex_lock(&preloader->mutex);
+    preloader->status = PRELOADER_STOPPING;
+    g_mutex_unlock(&preloader->mutex);
+
+    g_assert_cmpint(preloader_add_task(preloader, "late.png", 1, 10, 5), ==, ERROR_NONE);
+    g_mutex_lock(&preloader->mutex);
+    g_assert_cmpuint(g_queue_get_length(preloader->task_queue), ==, 0);
+    preloader->status = PRELOADER_IDLE;
+    g_mutex_unlock(&preloader->mutex);
+
+    preloader_destroy(preloader);
+}
+
 static void test_preloader_cache_cleanup_public_wrapper_enforces_limit(void) {
     ImagePreloader *preloader = preloader_create();
     g_assert_nonnull(preloader);
@@ -255,6 +341,14 @@ void register_preloader_tests(void) {
                     test_preloader_get_cached_render_info_miss_resets_dimensions);
     g_test_add_func("/preloader/stop/clears_pending_tasks",
                     test_preloader_stop_clears_pending_tasks);
+    g_test_add_func("/preloader/stop/concurrent_callers",
+                    test_preloader_stop_is_safe_for_concurrent_callers);
+    g_test_add_func("/preloader/stop/wakes_paused_worker",
+                    test_preloader_stop_wakes_a_paused_worker);
+    g_test_add_func("/preloader/start_stop/repeated_cycles",
+                    test_preloader_start_stop_cycles_publish_consistent_state);
+    g_test_add_func("/preloader/add_task/rejects_while_stopping",
+                    test_preloader_add_task_rejects_work_while_stopping);
     g_test_add_func("/preloader/cache_cleanup/public_wrapper_enforces_limit",
                     test_preloader_cache_cleanup_public_wrapper_enforces_limit);
     g_test_add_func("/preloader/cache_add/enforces_limit_after_insert",
