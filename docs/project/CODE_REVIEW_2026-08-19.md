@@ -234,6 +234,10 @@ video FPS, making a repeatable benchmark particularly useful.
   statistics, color enhancement, and cached frame layout; app/input modules no
   longer access those fields directly. The worker stop flag is now atomic, and
   the VideoPlayer lock-order/ownership contract is documented.
+- 2026-08-19: Static Analysis run `32203958031` passed warning-clean build and
+  tests, ASan, cppcheck, focused TSan, UBSan, and coverage generation. The
+  initial gcovr source baseline is 54.32% lines (5719/10528) and 39.78%
+  branches (3134/7879); reports are uploaded as Cobertura XML and HTML details.
 - 2026-08-19: Release workflow dispatch run `32203502794` passed Ubuntu 24.04
   amd64/arm64 builds, macOS amd64/arm64 builds, uploaded-artifact smoke tests,
   checksum generation, and the non-tag release preparation path.
