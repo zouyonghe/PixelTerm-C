@@ -220,7 +220,7 @@ int main(int argc, char *argv[]) {
     app_config_apply_runtime(g_app, &config);
     error = app_initialize(g_app, g_app->dither_enabled);
     if (error != ERROR_NONE) {
-        fprintf(stderr, "Failed to initialize application: %d\n", error);
+        fprintf(stderr, "Failed to initialize application: %s\n", error_code_to_string(error));
         app_destroy(g_app);
         g_free(path);
         return 1;
@@ -248,8 +248,6 @@ int main(int argc, char *argv[]) {
 
     g_free(path);
     path = startup.path;
-
-    gboolean is_directory = startup.kind == APP_STARTUP_PATH_DIRECTORY;
 
     if (startup.kind == APP_STARTUP_PATH_DIRECTORY) {
         error = app_load_directory(g_app, path);
@@ -279,53 +277,30 @@ int main(int argc, char *argv[]) {
     }
 
     if (!app_has_images(g_app) && !app_is_book_mode(g_app) && !app_is_book_preview_mode(g_app)) {
-        if (is_directory) {
-            // Directory provided but no images: go to file manager in that directory
-            error = app_enter_file_manager(g_app);
-            if (error != ERROR_NONE) {
-                fprintf(stderr, "Failed to start file manager: %d\n", error);
-                app_destroy(g_app);
-                g_free(path);
-                return 1;
-            }
-            error = run_application(g_app, config.alt_screen_enabled);
+        // No displayable content: start in file manager mode for browsing
+        error = app_enter_file_manager(g_app);
+        if (error != ERROR_NONE) {
+            fprintf(stderr, "Failed to start file manager: %s\n", error_code_to_string(error));
             app_destroy(g_app);
             g_free(path);
-            g_app = NULL;
-            if (g_terminate_requested) {
-                if (g_last_signal == SIGINT) return 130;
-                if (g_last_signal == SIGTERM) return 143;
-                return 1;
-            }
-            return error == ERROR_NONE ? 0 : 1;
-        } else {
-            // No path provided and no images: start in file manager mode for browsing
-            error = app_enter_file_manager(g_app);
-            if (error != ERROR_NONE) {
-                fprintf(stderr, "Failed to start file manager: %d\n", error);
-                app_destroy(g_app);
-                g_free(path);
-                return 1;
-            }
-            // Continue into main loop with file manager active
-            error = run_application(g_app, config.alt_screen_enabled);
-            app_destroy(g_app);
-            g_free(path);
-            g_app = NULL;
-            if (g_terminate_requested) {
-                if (g_last_signal == SIGINT) return 130;
-                if (g_last_signal == SIGTERM) return 143;
-                return 1;
-            }
-            return error == ERROR_NONE ? 0 : 1;
+            return 1;
         }
+        error = run_application(g_app, config.alt_screen_enabled);
+        app_destroy(g_app);
+        g_free(path);
+        g_app = NULL;
+        if (g_terminate_requested) {
+            if (g_last_signal == SIGINT) return 130;
+            if (g_last_signal == SIGTERM) return 143;
+            return 1;
+        }
+        return error == ERROR_NONE ? 0 : 1;
     }
 
     // Run main application loop
     error = run_application(g_app, config.alt_screen_enabled);
     if (error != ERROR_NONE) {
-        fprintf(stderr, "Application error: %d (%s)\n", error, 
-                error_code_to_string(error));
+        fprintf(stderr, "Application error: %s\n", error_code_to_string(error));
     }
 
     // Cleanup
