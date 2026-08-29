@@ -2623,7 +2623,9 @@ static void test_frame_layout_detects_dynamic_stream_changes(void) {
 }
 
 static gpointer finished_worker_thread_for_test(gpointer user_data) {
-    (void)user_data;
+    gint *finished = (gint *)user_data;
+    g_assert_nonnull(finished);
+    g_atomic_int_set(finished, TRUE);
     return NULL;
 }
 
@@ -2633,9 +2635,10 @@ static void test_worker_restart_reclaims_stale_thread_handle(void) {
                                           KITTY_TRANSFER_AUTO);
     g_assert_nonnull(player);
 
+    gint old_worker_finished = FALSE;
     player->worker_thread = g_thread_new("finished-worker-test",
                                          finished_worker_thread_for_test,
-                                         NULL);
+                                         &old_worker_finished);
     g_assert_nonnull(player->worker_thread);
     g_atomic_int_set(&player->worker_stop, TRUE);
 
@@ -2643,6 +2646,7 @@ static void test_worker_restart_reclaims_stale_thread_handle(void) {
 
     g_assert_nonnull(player->worker_thread);
     g_assert_false(g_atomic_int_get(&player->worker_stop));
+    g_assert_true(g_atomic_int_get(&old_worker_finished));
 
     video_player_stop(player);
     video_player_destroy(player);
