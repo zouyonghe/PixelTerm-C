@@ -2581,6 +2581,47 @@ static void test_create_sws_context_rejects_invalid_dimensions(void) {
     g_assert_null(video_player_create_sws_context(&codec_context, 10, -1));
 }
 
+static void test_io_interrupt_follows_worker_stop_flag(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+
+    g_atomic_int_set(&player->worker_stop, FALSE);
+    g_assert_false(video_player_io_should_interrupt(player));
+    g_atomic_int_set(&player->worker_stop, TRUE);
+    g_assert_true(video_player_io_should_interrupt(player));
+
+    g_atomic_int_set(&player->worker_stop, FALSE);
+    video_player_destroy(player);
+}
+
+static void test_frame_layout_detects_dynamic_stream_changes(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->video_width = 320;
+    player->video_height = 240;
+    player->source_pixel_format = AV_PIX_FMT_YUV420P;
+
+    AVFrame *frame = av_frame_alloc();
+    g_assert_nonnull(frame);
+    frame->width = 320;
+    frame->height = 240;
+    frame->format = AV_PIX_FMT_YUV420P;
+    g_assert_true(video_player_frame_layout_matches(player, frame));
+
+    frame->width = 640;
+    g_assert_false(video_player_frame_layout_matches(player, frame));
+    frame->width = 320;
+    frame->format = AV_PIX_FMT_YUV444P;
+    g_assert_false(video_player_frame_layout_matches(player, frame));
+
+    av_frame_free(&frame);
+    video_player_destroy(player);
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -2674,6 +2715,10 @@ void register_video_player_tests(void) {
                     test_dimensions_within_limits_rejects_non_positive_metadata);
     g_test_add_func("/video_player/create_sws_context/rejects_invalid_dimensions",
                     test_create_sws_context_rejects_invalid_dimensions);
+    g_test_add_func("/video_player/io_interrupt/follows_worker_stop_flag",
+                    test_io_interrupt_follows_worker_stop_flag);
+    g_test_add_func("/video_player/frame_layout/detects_dynamic_stream_changes",
+                    test_frame_layout_detects_dynamic_stream_changes);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_shallow",
                     test_should_not_drop_late_frame_when_backlog_is_shallow);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_medium",

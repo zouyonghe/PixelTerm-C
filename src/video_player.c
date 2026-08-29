@@ -27,6 +27,10 @@
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
+static int video_player_interrupt_callback(void *opaque) {
+    return video_player_io_should_interrupt((VideoPlayer *)opaque) ? 1 : 0;
+}
+
 static gboolean video_player_should_reject_rendered_frame_locked(VideoPlayer *player,
                                                                  VideoFrame *frame,
                                                                  gboolean check_stale_pts);
@@ -1239,6 +1243,24 @@ static gpointer video_player_worker_thread(gpointer user_data) {
 
             int receive_result = avcodec_receive_frame(player->codec_context, player->decode_frame);
             if (receive_result == 0) {
+                if (!video_player_frame_layout_matches(player, player->decode_frame)) {
+                    video_player_debug_log(player,
+                                           "worker-drop-dynamic-layout",
+                                           player->decode_frame->width,
+                                           player->decode_frame->height,
+                                           player->decode_frame->format,
+                                           player->source_pixel_format);
+                    g_atomic_int_set(&player->worker_stop, TRUE);
+                    g_mutex_lock(&player->state_mutex);
+                    player->is_playing = FALSE;
+                    g_mutex_unlock(&player->state_mutex);
+                    g_mutex_lock(&player->queue_mutex);
+                    g_cond_broadcast(&player->decode_queue_has_items);
+                    g_cond_broadcast(&player->decode_queue_has_space);
+                    g_cond_broadcast(&player->frame_queue_has_space);
+                    g_mutex_unlock(&player->queue_mutex);
+                    break;
+                }
                 sws_scale(player->sws_context,
                           (const uint8_t * const *)player->decode_frame->data,
                           player->decode_frame->linesize,
@@ -1737,7 +1759,12 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    AVFormatContext *format_context = NULL;
+    AVFormatContext *format_context = avformat_alloc_context();
+    if (!format_context) {
+        return ERROR_MEMORY_ALLOC;
+    }
+    format_context->interrupt_callback.callback = video_player_interrupt_callback;
+    format_context->interrupt_callback.opaque = player;
     if (avformat_open_input(&format_context, filepath, NULL, NULL) != 0) {
         return ERROR_INVALID_IMAGE;
     }
@@ -1849,6 +1876,7 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     player->video_stream_index = video_stream_index;
     player->video_width = width;
     player->video_height = height;
+    player->source_pixel_format = codec_context->pix_fmt;
     player->frame_delay_ms = frame_delay;
     player->time_base_num = video_stream->time_base.num;
     player->time_base_den = video_stream->time_base.den;
@@ -1952,9 +1980,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 }
 
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
-    if (!player || !video_player_has_video(player) || !player->format_context || !player->codec_context ||
-        player->video_stream_index < 0 || !player->format_context->streams ||
-        !player->format_context->streams[player->video_stream_index]) {
+    if (!player || !video_player_has_video(player)) {
         return ERROR_INVALID_ARGS;
     }
 
@@ -1962,16 +1988,6 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         return ERROR_NONE;
     }
 
-    gint64 duration_ms = 0;
-    if (player->format_context->duration != AV_NOPTS_VALUE && player->format_context->duration > 0) {
-        duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
-    }
-
-    gint64 current_ms = video_player_current_position_ms(player);
-    gint64 target_ms = video_player_seek_target_ms(player, delta_ms, duration_ms);
-    if (target_ms == current_ms) {
-        return ERROR_NONE;
-    }
     gboolean was_playing = video_player_is_playing(player);
     gboolean restart_from_eof = !was_playing && video_player_is_eof_ended(player);
 
@@ -1984,6 +2000,28 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
             g_source_remove(timer_id);
         }
         video_player_stop_worker_internal(player, FALSE);
+    }
+
+    if (!player->format_context || !player->codec_context || player->video_stream_index < 0 ||
+        !player->format_context->streams || !player->format_context->streams[player->video_stream_index]) {
+        if (was_playing) {
+            video_player_resume_playback_loop(player);
+        }
+        return ERROR_INVALID_ARGS;
+    }
+
+    gint64 duration_ms = 0;
+    if (player->format_context->duration != AV_NOPTS_VALUE && player->format_context->duration > 0) {
+        duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
+    }
+
+    gint64 current_ms = video_player_current_position_ms(player);
+    gint64 target_ms = video_player_seek_target_ms(player, delta_ms, duration_ms);
+    if (target_ms == current_ms) {
+        if (was_playing) {
+            video_player_resume_playback_loop(player);
+        }
+        return ERROR_NONE;
     }
 
     ErrorCode seek_result = video_player_seek_to_ms(player, current_ms, target_ms);
@@ -2215,6 +2253,11 @@ ErrorCode video_player_get_first_frame(const gchar *filepath,
         for (;;) {
             int receive_result = avcodec_receive_frame(codec_context, decode_frame);
             if (receive_result == 0) {
+                if (decode_frame->width != video_w ||
+                    decode_frame->height != video_h ||
+                    decode_frame->format != codec_context->pix_fmt) {
+                    break;
+                }
                 sws_scale(sws_context,
                           (const uint8_t * const *)decode_frame->data,
                           decode_frame->linesize,

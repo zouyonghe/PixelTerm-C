@@ -100,6 +100,7 @@ typedef struct {
     gint video_stream_index;
     gint video_width;
     gint video_height;
+    gint source_pixel_format;
     guint8 *rgba_buffer;
     gint rgba_buffer_size;
 

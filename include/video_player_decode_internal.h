@@ -42,6 +42,9 @@ void video_player_clear_decode(VideoPlayer *player);
 gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsize *buffer_size_out);
 gboolean video_player_rgba_layout_within_limits(gint width, gint height, gint rowstride, gsize *buffer_size_out);
 gboolean video_player_dimensions_within_limits(gint width, gint height);
+gboolean video_player_io_should_interrupt(VideoPlayer *player);
+gboolean video_player_frame_layout_matches(const VideoPlayer *player,
+                                           const struct AVFrame *frame);
 
 /* Decode PTS rescaling (needs player->time_base from playback module) */
 gint64 video_player_rescale_pts_ms(VideoPlayer *player, int64_t pts);
