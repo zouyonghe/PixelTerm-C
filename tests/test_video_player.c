@@ -2622,6 +2622,32 @@ static void test_frame_layout_detects_dynamic_stream_changes(void) {
     video_player_destroy(player);
 }
 
+static gpointer finished_worker_thread_for_test(gpointer user_data) {
+    (void)user_data;
+    return NULL;
+}
+
+static void test_worker_restart_reclaims_stale_thread_handle(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                          TEXT_SYMBOL_MODE_AUTO, 1.0,
+                                          KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+
+    player->worker_thread = g_thread_new("finished-worker-test",
+                                         finished_worker_thread_for_test,
+                                         NULL);
+    g_assert_nonnull(player->worker_thread);
+    g_atomic_int_set(&player->worker_stop, TRUE);
+
+    video_player_start_worker_for_test(player);
+
+    g_assert_nonnull(player->worker_thread);
+    g_assert_false(g_atomic_int_get(&player->worker_stop));
+
+    video_player_stop(player);
+    video_player_destroy(player);
+}
+
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
@@ -2719,6 +2745,8 @@ void register_video_player_tests(void) {
                     test_io_interrupt_follows_worker_stop_flag);
     g_test_add_func("/video_player/frame_layout/detects_dynamic_stream_changes",
                     test_frame_layout_detects_dynamic_stream_changes);
+    g_test_add_func("/video_player/worker_restart/reclaims_stale_thread_handle",
+                    test_worker_restart_reclaims_stale_thread_handle);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_shallow",
                     test_should_not_drop_late_frame_when_backlog_is_shallow);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_backlog_is_medium",

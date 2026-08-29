@@ -42,8 +42,10 @@ static void video_player_render_work_finished(VideoPlayer *player);
 static void video_player_handle_terminal_eof(VideoPlayer *player);
 static void video_player_handle_worker_eof(VideoPlayer *player);
 static void video_player_stop_worker(VideoPlayer *player);
+static void video_player_stop_worker_internal(VideoPlayer *player, gboolean clear_queues);
 static void video_player_resume_playback_loop(VideoPlayer *player);
 static gboolean video_player_tick(gpointer user_data);
+static void video_player_start_worker(VideoPlayer *player);
 static void video_player_debug_log(VideoPlayer *player,
                                    const gchar *event,
                                    gint64 a,
@@ -172,6 +174,10 @@ static void video_player_schedule_tick(VideoPlayer *player) {
 
 G_GNUC_INTERNAL void video_player_schedule_tick_for_test(VideoPlayer *player) {
     video_player_schedule_tick(player);
+}
+
+G_GNUC_INTERNAL void video_player_start_worker_for_test(VideoPlayer *player) {
+    video_player_start_worker(player);
 }
 
 void decoded_frame_destroy(DecodedFrame *frame) {
@@ -982,9 +988,17 @@ static gboolean video_player_has_renderer(VideoPlayer *player) {
 }
 
 static void video_player_start_worker(VideoPlayer *player) {
-    if (!player || player->worker_thread || !video_player_has_renderer(player)) {
+    if (!player || !video_player_has_renderer(player)) {
         return;
     }
+
+    if (player->worker_thread || player->render_workers_started) {
+        if (!g_atomic_int_get(&player->worker_stop)) {
+            return;
+        }
+        video_player_stop_worker_internal(player, TRUE);
+    }
+
     g_atomic_int_set(&player->worker_stop, FALSE);
     video_player_set_draining(player, FALSE);
     player->worker_thread = g_thread_new("video-decode", video_player_worker_thread, player);
