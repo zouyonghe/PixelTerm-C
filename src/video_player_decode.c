@@ -125,6 +125,20 @@ gboolean video_player_dimensions_within_limits(gint width, gint height) {
     return media_buffer_dimensions_within_limits(width, height);
 }
 
+gboolean video_player_io_should_interrupt(VideoPlayer *player) {
+    return player && g_atomic_int_get(&player->worker_stop) != 0;
+}
+
+gboolean video_player_frame_layout_matches(const VideoPlayer *player,
+                                           const AVFrame *frame) {
+    if (!player || !frame || frame->width <= 0 || frame->height <= 0) {
+        return FALSE;
+    }
+    return frame->width == player->video_width &&
+           frame->height == player->video_height &&
+           frame->format == player->source_pixel_format;
+}
+
 gboolean video_player_frame_buffer_size(gint height, gint rowstride, gsize *buffer_size_out) {
     return media_buffer_size_within_limits(height, rowstride, buffer_size_out);
 }
@@ -168,6 +182,7 @@ void video_player_clear_decode(VideoPlayer *player) {
     player->video_stream_index = -1;
     player->video_width = 0;
     player->video_height = 0;
+    player->source_pixel_format = AV_PIX_FMT_NONE;
     player->time_base_num = 0;
     player->time_base_den = 0;
     player->has_video = FALSE;

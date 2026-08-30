@@ -38,6 +38,7 @@ gboolean video_player_should_drop_late_frame(VideoPlayer *player, gint64 pts_ms)
 gint video_player_calc_delay_ms(VideoPlayer *player);
 void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h);
 G_GNUC_INTERNAL void video_player_schedule_tick_for_test(VideoPlayer *player);
+G_GNUC_INTERNAL void video_player_start_worker_for_test(VideoPlayer *player);
 gint64 video_player_current_position_ms_for_test(VideoPlayer *player);
 gint64 video_player_seek_target_ms_for_test(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms);
 RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player);
