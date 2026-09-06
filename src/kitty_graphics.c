@@ -129,6 +129,120 @@ GString *kitty_graphics_build_shm_command(const gchar *shm_name,
     return command;
 }
 
+GString *kitty_graphics_build_animation_root_shm_command(const gchar *shm_name,
+                                                         gint width,
+                                                         gint height,
+                                                         gint display_width_cells,
+                                                         gint display_height_cells,
+                                                         gsize payload_size,
+                                                         guint32 image_id) {
+    if (!shm_name || shm_name[0] == '\0' || width <= 0 || height <= 0 ||
+        display_width_cells <= 0 || display_height_cells <= 0 ||
+        payload_size == 0 || image_id == 0) {
+        return NULL;
+    }
+
+    gchar *encoded_name = g_base64_encode((const guchar *)shm_name, strlen(shm_name));
+    if (!encoded_name) {
+        return NULL;
+    }
+
+    GString *command = g_string_new(NULL);
+    g_string_printf(command,
+                    // cppcheck-suppress unknownMacro
+                    "\033_Ga=T,f=32,s=%d,v=%d,t=s,S=%" G_GSIZE_FORMAT ",c=%d,r=%d,C=1,i=%u,q=2;%s\033\\",
+                    width,
+                    height,
+                    payload_size,
+                    display_width_cells,
+                    display_height_cells,
+                    image_id,
+                    encoded_name);
+    g_free(encoded_name);
+    return command;
+}
+
+GString *kitty_graphics_build_animation_frame_shm_command(const gchar *shm_name,
+                                                          gint width,
+                                                          gint height,
+                                                          gsize payload_size,
+                                                          guint32 image_id,
+                                                          gint delay_ms) {
+    if (!shm_name || shm_name[0] == '\0' || width <= 0 || height <= 0 ||
+        payload_size == 0 || image_id == 0 || delay_ms <= 0) {
+        return NULL;
+    }
+
+    gchar *encoded_name = g_base64_encode((const guchar *)shm_name, strlen(shm_name));
+    if (!encoded_name) {
+        return NULL;
+    }
+
+    GString *command = g_string_new(NULL);
+    g_string_printf(command,
+                    // cppcheck-suppress unknownMacro
+                    "\033_Ga=f,f=32,s=%d,v=%d,t=s,S=%" G_GSIZE_FORMAT ",i=%u,z=%d,C=1,q=2;%s\033\\",
+                    width,
+                    height,
+                    payload_size,
+                    image_id,
+                    delay_ms,
+                    encoded_name);
+    g_free(encoded_name);
+    return command;
+}
+
+GString *kitty_graphics_build_animation_frame_delay_command(guint32 image_id,
+                                                            guint32 frame_number,
+                                                            gint delay_ms) {
+    if (image_id == 0 || frame_number == 0 || delay_ms <= 0) {
+        return NULL;
+    }
+    GString *command = g_string_new(NULL);
+    g_string_printf(command,
+                    "\033_Ga=a,i=%u,r=%u,z=%d,q=2\033\\",
+                    image_id,
+                    frame_number,
+                    delay_ms);
+    return command;
+}
+
+GString *kitty_graphics_build_animation_play_command(guint32 image_id) {
+    if (image_id == 0) {
+        return NULL;
+    }
+    GString *command = g_string_new(NULL);
+    g_string_printf(command, "\033_Ga=a,i=%u,s=3,v=1,q=2\033\\", image_id);
+    return command;
+}
+
+GString *kitty_graphics_build_animation_loading_command(guint32 image_id) {
+    if (image_id == 0) {
+        return NULL;
+    }
+    GString *command = g_string_new(NULL);
+    g_string_printf(command, "\033_Ga=a,i=%u,s=2,q=2\033\\", image_id);
+    return command;
+}
+
+GString *kitty_graphics_build_animation_stop_command(guint32 image_id) {
+    if (image_id == 0) {
+        return NULL;
+    }
+    GString *command = g_string_new(NULL);
+    g_string_printf(command, "\033_Ga=a,i=%u,s=1,q=2\033\\", image_id);
+    return command;
+}
+
+GString *kitty_graphics_build_delete_image_command(guint32 image_id) {
+    if (image_id == 0) {
+        return NULL;
+    }
+    GString *command = g_string_new(NULL);
+    g_string_printf(command, "\033_Ga=d,d=I,i=%u,q=2\033\\", image_id);
+    return command;
+}
+
 static gchar *kitty_graphics_make_shm_name(void) {
     static gint counter = 0;
     gint serial = g_atomic_int_add(&counter, 1);
@@ -194,12 +308,15 @@ void kitty_graphics_shm_unlink(const gchar *shm_name) {
     }
 }
 
-KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
-                                                       gint width,
-                                                       gint height,
-                                                       gint rowstride,
-                                                       gint display_width_cells,
-                                                       gint display_height_cells) {
+static KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba_internal(const guint8 *pixels,
+                                                                      gint width,
+                                                                      gint height,
+                                                                      gint rowstride,
+                                                                      gint display_width_cells,
+                                                                      gint display_height_cells,
+                                                                      guint32 image_id,
+                                                                      gint delay_ms,
+                                                                      gboolean animation_frame) {
     gsize required_rowstride = 0;
     if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
         !g_size_checked_mul(&required_rowstride, (gsize)width, (gsize)4) ||
@@ -232,7 +349,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
     }
 
     int flags = O_CREAT | O_EXCL | O_RDWR;
-#ifdef O_CLOEXEC
+#if defined(O_CLOEXEC) && !defined(__APPLE__)
     flags |= O_CLOEXEC;
 #endif
 
@@ -242,7 +359,7 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
         return NULL;
     }
 
-#ifndef O_CLOEXEC
+#if !defined(O_CLOEXEC) || defined(__APPLE__)
     if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) {
         pixelterm_shm_unlink(shm_name);
         close(fd);
@@ -283,12 +400,30 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
     munmap(mapped, payload_size);
     close(fd);
 
-    GString *command = kitty_graphics_build_shm_command(shm_name,
-                                                        transfer_width,
-                                                        transfer_height,
-                                                        display_width_cells,
-                                                        display_height_cells,
-                                                        payload_size);
+    GString *command = NULL;
+    if (animation_frame) {
+        command = kitty_graphics_build_animation_frame_shm_command(shm_name,
+                                                                   transfer_width,
+                                                                   transfer_height,
+                                                                   payload_size,
+                                                                   image_id,
+                                                                   delay_ms);
+    } else if (image_id != 0) {
+        command = kitty_graphics_build_animation_root_shm_command(shm_name,
+                                                                  transfer_width,
+                                                                  transfer_height,
+                                                                  display_width_cells,
+                                                                  display_height_cells,
+                                                                  payload_size,
+                                                                  image_id);
+    } else {
+        command = kitty_graphics_build_shm_command(shm_name,
+                                                   transfer_width,
+                                                   transfer_height,
+                                                   display_width_cells,
+                                                   display_height_cells,
+                                                   payload_size);
+    }
     if (!command) {
         kitty_graphics_shm_unlink(shm_name);
         g_free(shm_name);
@@ -307,6 +442,66 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
     frame->display_width_cells = display_width_cells;
     frame->display_height_cells = display_height_cells;
     return frame;
+}
+
+KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
+                                                       gint width,
+                                                       gint height,
+                                                       gint rowstride,
+                                                       gint display_width_cells,
+                                                       gint display_height_cells) {
+    return kitty_graphics_frame_new_shm_rgba_internal(pixels,
+                                                      width,
+                                                      height,
+                                                      rowstride,
+                                                      display_width_cells,
+                                                      display_height_cells,
+                                                      0,
+                                                      0,
+                                                      FALSE);
+}
+
+KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,
+                                                               gint width,
+                                                               gint height,
+                                                               gint rowstride,
+                                                               gint display_width_cells,
+                                                               gint display_height_cells,
+                                                               guint32 image_id) {
+    if (image_id == 0) {
+        return NULL;
+    }
+    return kitty_graphics_frame_new_shm_rgba_internal(pixels,
+                                                      width,
+                                                      height,
+                                                      rowstride,
+                                                      display_width_cells,
+                                                      display_height_cells,
+                                                      image_id,
+                                                      0,
+                                                      FALSE);
+}
+
+KittyGraphicsFrame *kitty_graphics_animation_frame_new_shm_rgba(const guint8 *pixels,
+                                                                gint width,
+                                                                gint height,
+                                                                gint rowstride,
+                                                                gint display_width_cells,
+                                                                gint display_height_cells,
+                                                                guint32 image_id,
+                                                                gint delay_ms) {
+    if (image_id == 0 || delay_ms <= 0) {
+        return NULL;
+    }
+    return kitty_graphics_frame_new_shm_rgba_internal(pixels,
+                                                      width,
+                                                      height,
+                                                      rowstride,
+                                                      display_width_cells,
+                                                      display_height_cells,
+                                                      image_id,
+                                                      delay_ms,
+                                                      TRUE);
 }
 
 void kitty_graphics_frame_free(KittyGraphicsFrame *frame) {
