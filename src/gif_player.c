@@ -1044,6 +1044,10 @@ ErrorCode gif_player_stop(GifPlayer *player) {
         player->timer_id = 0;
     }
 
+    if (player->iter) {
+        g_object_unref(player->iter);
+        player->iter = NULL;
+    }
 
     gif_player_reset_kitty_animation(player, TRUE);
     player->kitty_animation_disabled = FALSE;

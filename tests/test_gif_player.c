@@ -472,6 +472,37 @@ static void test_gif_player_pause_stop_without_play(void) {
     gif_player_destroy(player);
 }
 
+static void test_gif_player_stop_resets_iterator_for_replay(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                      TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+
+    GdkPixbuf *first = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, 1, 1);
+    GdkPixbuf *second = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, 1, 1);
+    gdk_pixbuf_fill(first, 0xff0000ff);
+    gdk_pixbuf_fill(second, 0x0000ffff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, first);
+    gdk_pixbuf_simple_anim_add_frame(animation, second);
+    g_object_unref(first);
+    g_object_unref(second);
+
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    gdk_pixbuf_animation_iter_advance(player->iter, NULL);
+    g_assert_true(gdk_pixbuf_animation_iter_get_pixbuf(player->iter) != NULL);
+
+    g_assert_cmpint(gif_player_stop(player), ==, ERROR_NONE);
+    g_assert_null(player->iter);
+    g_assert_cmpint(gif_player_play(player), ==, ERROR_NONE);
+    g_assert_nonnull(player->iter);
+
+    gif_player_stop(player);
+    gif_player_destroy(player);
+}
+
 static void test_gif_player_load_invalid_path(void) {
     GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
@@ -554,6 +585,7 @@ void register_gif_player_tests(void) {
     g_test_add_func("/gif_player/public_api/accessors", test_gif_player_public_accessors);
     g_test_add_func("/gif_player/play_without_load", test_gif_player_play_without_load);
     g_test_add_func("/gif_player/pause_stop_without_play", test_gif_player_pause_stop_without_play);
+    g_test_add_func("/gif_player/stop_resets_iterator_for_replay", test_gif_player_stop_resets_iterator_for_replay);
     g_test_add_func("/gif_player/load_invalid_path", test_gif_player_load_invalid_path);
     g_test_add_func("/gif_player/present_text_frame/skips_identical_lines",
                     test_gif_player_present_text_frame_skips_identical_lines);
