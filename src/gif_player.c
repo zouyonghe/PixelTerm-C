@@ -552,6 +552,9 @@ static gboolean gif_player_append_kitty_animation_frame(GifPlayer *player) {
     }
 
     GdkPixbuf *pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
+    if (!pixbuf) {
+        return FALSE;
+    }
     if (!gif_player_native_geometry_matches(player,
                                             gdk_pixbuf_get_width(pixbuf),
                                             gdk_pixbuf_get_height(pixbuf))) {

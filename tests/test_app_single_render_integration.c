@@ -13,6 +13,7 @@
 typedef struct {
     gint gif_load_calls;
     gint gif_play_calls;
+    ErrorCode gif_play_result;
     gint video_load_calls;
     gint video_play_calls;
     gint renderer_render_file_calls;
@@ -104,6 +105,7 @@ static const AppSingleRenderTestHooks k_app_single_render_test_hooks = {
 static void app_single_render_reset_stubs(void) {
     memset(&g_app_single_render_stub_state, 0, sizeof(g_app_single_render_stub_state));
     g_app_single_render_stub_state.video_load_result = ERROR_NONE;
+    g_app_single_render_stub_state.gif_play_result = ERROR_NONE;
 }
 
 static void destroy_render_test_app(PixelTermApp *app) {
@@ -224,6 +226,26 @@ static void test_single_view_video_load_failure_does_not_fallback_to_image_rende
     g_assert_cmpint(g_app_single_render_stub_state.video_load_calls, ==, 1);
     g_assert_cmpint(g_app_single_render_stub_state.video_play_calls, ==, 0);
     g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+
+    destroy_render_test_app(&app);
+}
+
+static void test_single_view_gif_play_failure_falls_back_to_image_render(void) {
+    PixelTermApp app = {0};
+    if (!init_render_test_app(&app)) {
+        g_test_skip("media players unavailable");
+        return;
+    }
+
+    app_single_render_reset_stubs();
+    g_app_single_render_stub_state.gif_play_result = ERROR_INVALID_IMAGE;
+    app.current_index = 1;
+
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_load_calls, ==, 1);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, 1);
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 1);
+    g_assert_false(app.gif_player->is_playing);
 
     destroy_render_test_app(&app);
 }
@@ -546,6 +568,8 @@ void register_app_single_render_integration_tests(void) {
                     test_single_view_render_switches_media_players);
     g_test_add_func("/app_single_render/single_view/video_load_failure_does_not_fallback_to_image_render",
                     test_single_view_video_load_failure_does_not_fallback_to_image_render);
+    g_test_add_func("/app_single_render/single_view/gif_play_failure_falls_back_to_image_render",
+                    test_single_view_gif_play_failure_falls_back_to_image_render);
     g_test_add_func("/app_single_render/single_view/visible_shell_preserves_current_layout_contract",
                     test_single_view_visible_shell_preserves_current_layout_contract);
     g_test_add_func("/app_single_render/info_overlay/preserves_visibility_on_redraw",
@@ -663,8 +687,11 @@ static ErrorCode test_gif_player_play(GifPlayer *player) {
         return ERROR_INVALID_IMAGE;
     }
 
-    player->is_playing = TRUE;
     g_app_single_render_stub_state.gif_play_calls++;
+    if (g_app_single_render_stub_state.gif_play_result != ERROR_NONE) {
+        return g_app_single_render_stub_state.gif_play_result;
+    }
+    player->is_playing = TRUE;
     return ERROR_NONE;
 }
 

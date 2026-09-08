@@ -579,8 +579,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     gint image_width = 0;
     gint image_height = 0;
     gboolean animation_started = FALSE;
+    gboolean animation_attempted = FALSE;
 
     if (gif_is_animated && app->gif_player && !overlay_visible) {
+        animation_attempted = TRUE;
         ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
                                                        gif_player_play,
                                                        app->gif_player);
@@ -949,7 +951,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // If it's an animated image and player is available, start playing if animated
-    if (gif_is_animated && app->gif_player && !overlay_visible && !animation_started) {
+    if (gif_is_animated && app->gif_player && !overlay_visible &&
+        !animation_started && !animation_attempted) {
         // For first render, just show the first frame, then start animation
         APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
         // Indicate that we are currently displaying an animated GIF

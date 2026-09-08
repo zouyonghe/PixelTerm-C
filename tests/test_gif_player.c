@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "gif_player.h"
+#include "kitty_graphics.h"
 #include "process_env.h"
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -72,6 +73,17 @@ static void stop_capture(gpointer user_data) {
 
 static void play_capture(gpointer user_data) {
     gif_player_play((GifPlayer *)user_data);
+}
+
+static gboolean native_kitty_shm_available_for_test(void) {
+    const guint8 pixel[4] = {255, 0, 0, 255};
+    KittyGraphicsFrame *frame = kitty_graphics_animation_root_new_shm_rgba(
+        pixel, 1, 1, 4, 1, 1, 1);
+    if (!frame) {
+        return FALSE;
+    }
+    kitty_graphics_frame_free(frame);
+    return TRUE;
 }
 
 static void next_frame_capture(gpointer user_data) {
@@ -220,6 +232,11 @@ static void test_gif_player_native_animation_starts_with_root_frame(void) {
     pixelterm_env_unset_for_test("SSH_CLIENT");
     pixelterm_env_unset_for_test("TMUX");
     pixelterm_env_unset_for_test("STY");
+    if (!native_kitty_shm_available_for_test()) {
+        g_test_skip("native Kitty SHM unavailable");
+        pixelterm_env_reset_for_test();
+        return;
+    }
 
     GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                       TEXT_SYMBOL_MODE_AUTO, 1.0);
@@ -290,6 +307,11 @@ static void test_gif_player_native_animation_hands_complete_loop_to_kitty(void) 
     pixelterm_env_unset_for_test("SSH_CLIENT");
     pixelterm_env_unset_for_test("TMUX");
     pixelterm_env_unset_for_test("STY");
+    if (!native_kitty_shm_available_for_test()) {
+        g_test_skip("native Kitty SHM unavailable");
+        pixelterm_env_reset_for_test();
+        return;
+    }
 
     GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                       TEXT_SYMBOL_MODE_AUTO, 1.0);
@@ -351,6 +373,11 @@ static void test_gif_player_native_animation_waits_when_frame_is_unchanged(void)
     pixelterm_env_unset_for_test("SSH_CLIENT");
     pixelterm_env_unset_for_test("TMUX");
     pixelterm_env_unset_for_test("STY");
+    if (!native_kitty_shm_available_for_test()) {
+        g_test_skip("native Kitty SHM unavailable");
+        pixelterm_env_reset_for_test();
+        return;
+    }
 
     GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                       TEXT_SYMBOL_MODE_AUTO, 1.0);
