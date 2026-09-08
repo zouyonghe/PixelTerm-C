@@ -181,7 +181,7 @@ GString *kitty_graphics_build_animation_frame_shm_command(const gchar *shm_name,
     GString *command = g_string_new(NULL);
     g_string_printf(command,
                     // cppcheck-suppress unknownMacro
-                    "\033_Ga=f,f=32,s=%d,v=%d,t=s,S=%" G_GSIZE_FORMAT ",i=%u,z=%d,C=1,q=2;%s\033\\",
+                    "\033_Ga=f,f=32,s=%d,v=%d,t=s,S=%" G_GSIZE_FORMAT ",i=%u,z=%d,X=1,q=2;%s\033\\",
                     width,
                     height,
                     payload_size,

@@ -187,6 +187,12 @@ static void test_single_view_render_switches_media_players(void) {
     g_assert_true(app.gif_player->is_playing);
     g_assert_false(app.video_player->is_playing);
     g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, 1);
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
+    g_assert_true(app.gif_player->is_playing);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, 2);
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
 
     app.current_index = 0;
     g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
@@ -198,7 +204,7 @@ static void test_single_view_render_switches_media_players(void) {
     g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
     g_assert_false(app.video_player->is_playing);
     g_assert_false(app.gif_player->is_playing);
-    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 2);
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 1);
 
     destroy_render_test_app(&app);
 }

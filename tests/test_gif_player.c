@@ -78,6 +78,13 @@ static void next_frame_capture(gpointer user_data) {
     gif_player_render_next_frame_for_test((GifPlayer *)user_data);
 }
 
+static gboolean unchanged_frame_advance(GdkPixbufAnimationIter *iter,
+                                        gconstpointer current_time) {
+    (void)iter;
+    (void)current_time;
+    return FALSE;
+}
+
 static void layout_capture(gpointer user_data) {
     GifPlayerLayoutCall *call = user_data;
     gif_player_set_render_area(call->player,
@@ -176,6 +183,33 @@ static void test_gif_player_counts_gif_image_blocks(void) {
     g_assert_cmpuint(gif_player_count_gif_frames_for_test(NULL, 0), ==, 0);
 }
 
+static void test_gif_player_counts_webp_animation_frames(void) {
+    static const guint8 webp[92] = {
+        [0] = 'R', [1] = 'I', [2] = 'F', [3] = 'F', [4] = 0x54,
+        [8] = 'W', [9] = 'E', [10] = 'B', [11] = 'P',
+        [12] = 'V', [13] = 'P', [14] = '8', [15] = 'X', [16] = 10,
+        [20] = 2,
+        [30] = 'A', [31] = 'N', [32] = 'I', [33] = 'M', [34] = 6,
+        [44] = 'A', [45] = 'N', [46] = 'M', [47] = 'F', [48] = 16,
+        [68] = 'A', [69] = 'N', [70] = 'M', [71] = 'F', [72] = 16
+    };
+    static const guint8 truncated[] = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
+    static const guint8 trailing[93] = {
+        [0] = 'R', [1] = 'I', [2] = 'F', [3] = 'F', [4] = 0x55,
+        [8] = 'W', [9] = 'E', [10] = 'B', [11] = 'P',
+        [12] = 'V', [13] = 'P', [14] = '8', [15] = 'X', [16] = 10,
+        [20] = 2,
+        [30] = 'A', [31] = 'N', [32] = 'I', [33] = 'M', [34] = 6,
+        [44] = 'A', [45] = 'N', [46] = 'M', [47] = 'F', [48] = 16,
+        [68] = 'A', [69] = 'N', [70] = 'M', [71] = 'F', [72] = 16
+    };
+
+    g_assert_cmpuint(gif_player_count_webp_frames_for_test(webp, sizeof(webp)), ==, 2);
+    g_assert_cmpuint(gif_player_count_webp_frames_for_test(truncated, sizeof(truncated)), ==, 0);
+    g_assert_cmpuint(gif_player_count_webp_frames_for_test(trailing, sizeof(trailing)), ==, 0);
+    g_assert_cmpuint(gif_player_count_webp_frames_for_test(NULL, 0), ==, 0);
+}
+
 static void test_gif_player_native_animation_starts_with_root_frame(void) {
 #ifdef __ANDROID__
     g_test_skip("POSIX shared memory unavailable on Android");
@@ -217,6 +251,10 @@ static void test_gif_player_native_animation_starts_with_root_frame(void) {
     g_assert_true(player->kitty_animation_prepared);
     g_assert_false(player->kitty_animation_complete);
     g_assert_cmpuint(player->kitty_animation_frame_count, ==, 1);
+    g_assert_cmpint(player->kitty_animation_source_width, ==, 1);
+    g_assert_cmpint(player->kitty_animation_source_height, ==, 1);
+    g_assert_cmpint(player->kitty_animation_display_width, >, 0);
+    g_assert_cmpint(player->kitty_animation_display_height, >, 0);
     g_assert_cmpuint(player->timer_id, !=, 0);
 
     g_free(capture_output(pause_capture, player));
@@ -225,6 +263,21 @@ static void test_gif_player_native_animation_starts_with_root_frame(void) {
     g_free(output);
     pixelterm_env_reset_for_test();
 #endif
+}
+
+static void test_gif_player_native_animation_rejects_geometry_changes(void) {
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                      TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    player->kitty_animation_source_width = 320;
+    player->kitty_animation_source_height = 240;
+
+    g_assert_true(gif_player_native_geometry_matches_for_test(player, 320, 240));
+    g_assert_false(gif_player_native_geometry_matches_for_test(player, 319, 240));
+    g_assert_false(gif_player_native_geometry_matches_for_test(player, 320, 239));
+    g_assert_false(gif_player_native_geometry_matches_for_test(NULL, 320, 240));
+
+    gif_player_destroy(player);
 }
 
 static void test_gif_player_native_animation_hands_complete_loop_to_kitty(void) {
@@ -284,6 +337,65 @@ static void test_gif_player_native_animation_hands_complete_loop_to_kitty(void) 
     gif_player_destroy(player);
     g_free(output);
     g_free(layout_output);
+    pixelterm_env_reset_for_test();
+#endif
+}
+
+static void test_gif_player_native_animation_waits_when_frame_is_unchanged(void) {
+#ifdef __ANDROID__
+    g_test_skip("POSIX shared memory unavailable on Android");
+#else
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("KITTY_WINDOW_ID", "1");
+    pixelterm_env_unset_for_test("SSH_CONNECTION");
+    pixelterm_env_unset_for_test("SSH_CLIENT");
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                      TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    GdkPixbuf *first = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    GdkPixbuf *second = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, first);
+    gdk_pixbuf_simple_anim_add_frame(animation, second);
+    g_object_unref(first);
+    g_object_unref(second);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    player->total_frames = 2;
+
+    g_free(capture_output(play_capture, player));
+    g_source_remove(player->timer_id);
+    player->timer_id = 0;
+    player->kitty_animation_current_delay_ms = 130;
+    player->kitty_animation_elapsed_ms = 0;
+    gif_player_set_advance_hook_for_test(unchanged_frame_advance);
+    gchar *output = capture_output(next_frame_capture, player);
+
+    g_assert_cmpstr(output, ==, "");
+    g_assert_true(player->kitty_animation_prepared);
+    g_assert_false(player->kitty_animation_disabled);
+    g_assert_cmpuint(player->kitty_animation_frame_count, ==, 1);
+    g_assert_cmpuint(player->kitty_animation_unchanged_ticks, ==, 1);
+
+    for (guint i = 0; i < 8; i++) {
+        if (player->timer_id != 0) {
+            g_source_remove(player->timer_id);
+            player->timer_id = 0;
+        }
+        g_free(capture_output(next_frame_capture, player));
+    }
+    gif_player_set_advance_hook_for_test(NULL);
+    g_assert_false(player->kitty_animation_prepared);
+    g_assert_true(player->kitty_animation_disabled);
+
+    g_free(output);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
     pixelterm_env_reset_for_test();
 #endif
 }
@@ -407,8 +519,11 @@ void register_gif_player_tests(void) {
     g_test_add_func("/gif_player/default_state", test_gif_player_default_state);
     g_test_add_func("/gif_player/native_animation/pause_and_stop", test_gif_player_native_animation_pause_and_stop);
     g_test_add_func("/gif_player/native_animation/count_gif_frames", test_gif_player_counts_gif_image_blocks);
+    g_test_add_func("/gif_player/native_animation/count_webp_frames", test_gif_player_counts_webp_animation_frames);
     g_test_add_func("/gif_player/native_animation/starts_with_root_frame", test_gif_player_native_animation_starts_with_root_frame);
+    g_test_add_func("/gif_player/native_animation/rejects_geometry_changes", test_gif_player_native_animation_rejects_geometry_changes);
     g_test_add_func("/gif_player/native_animation/hands_complete_loop_to_kitty", test_gif_player_native_animation_hands_complete_loop_to_kitty);
+    g_test_add_func("/gif_player/native_animation/waits_when_frame_is_unchanged", test_gif_player_native_animation_waits_when_frame_is_unchanged);
     g_test_add_func("/gif_player/public_api/accessors", test_gif_player_public_accessors);
     g_test_add_func("/gif_player/play_without_load", test_gif_player_play_without_load);
     g_test_add_func("/gif_player/pause_stop_without_play", test_gif_player_pause_stop_without_play);

@@ -30,6 +30,11 @@ typedef struct {
     guint kitty_animation_frame_count;
     gint64 kitty_animation_elapsed_ms;
     gint kitty_animation_current_delay_ms;
+    gint kitty_animation_source_width;
+    gint kitty_animation_source_height;
+    gint kitty_animation_display_width;
+    gint kitty_animation_display_height;
+    guint kitty_animation_unchanged_ticks;
     GPtrArray *kitty_animation_shm_names;
     
     // Renderer reference

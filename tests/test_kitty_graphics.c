@@ -43,7 +43,7 @@ static void test_kitty_graphics_animation_commands(void) {
     g_assert_cmpstr(root->str, ==,
                     "\033_Ga=T,f=32,s=16,v=8,t=s,S=512,c=4,r=2,C=1,i=42,q=2;L3BpeGVsdGVybS1yb290\033\\");
     g_assert_cmpstr(frame->str, ==,
-                    "\033_Ga=f,f=32,s=16,v=8,t=s,S=512,i=42,z=80,C=1,q=2;L3BpeGVsdGVybS1mcmFtZQ==\033\\");
+                    "\033_Ga=f,f=32,s=16,v=8,t=s,S=512,i=42,z=80,X=1,q=2;L3BpeGVsdGVybS1mcmFtZQ==\033\\");
     g_assert_cmpstr(root_delay->str, ==, "\033_Ga=a,i=42,r=1,z=120,q=2\033\\");
     g_assert_cmpstr(loading->str, ==, "\033_Ga=a,i=42,s=2,q=2\033\\");
     g_assert_cmpstr(play->str, ==, "\033_Ga=a,i=42,s=3,v=1,q=2\033\\");

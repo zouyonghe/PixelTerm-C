@@ -466,6 +466,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         APP_SINGLE_RENDER_CALL(ui_clear_screen_for_refresh, ui_clear_screen_for_refresh, app);
     }
     if (app->gif_player) {
+        if (gif_is_animated && !overlay_visible && gif_player_is_playing(app->gif_player)) {
+            gif_player_stop(app->gif_player);
+        }
         gif_player_set_render_area(app->gif_player,
                                    app->term_width,
                                    app->term_height,
@@ -575,8 +578,27 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     GString *rendered = NULL;
     gint image_width = 0;
     gint image_height = 0;
+    gboolean animation_started = FALSE;
 
-    if (use_zoom) {
+    if (gif_is_animated && app->gif_player && !overlay_visible) {
+        ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
+                                                       gif_player_play,
+                                                       app->gif_player);
+        if (play_result == ERROR_NONE) {
+            animation_started = TRUE;
+            app->needs_redraw = FALSE;
+            rendered = g_string_new(NULL);
+            if (app->gif_player->renderer) {
+                APP_SINGLE_RENDER_CALL(renderer_get_rendered_dimensions,
+                                       renderer_get_rendered_dimensions,
+                                       app->gif_player->renderer,
+                                       &image_width,
+                                       &image_height);
+            }
+        }
+    }
+
+    if (!rendered && use_zoom) {
         GError *load_error = NULL;
         GdkPixbuf *pixbuf = pixbuf_utils_load_from_stream(filepath, &load_error);
         if (!pixbuf) {
@@ -724,7 +746,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return ERROR_INVALID_IMAGE;
         }
-    } else {
+    } else if (!rendered) {
         if (app->preloader && app->preload_enabled && !app->info_visible && !app->help_visible) {
             rendered = preloader_get_cached_image(app->preloader, filepath, target_width, target_height);
         }
@@ -927,7 +949,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     // If it's an animated image and player is available, start playing if animated
-    if (gif_is_animated && app->gif_player && !app->info_visible && !app->help_visible) {
+    if (gif_is_animated && app->gif_player && !overlay_visible && !animation_started) {
         // For first render, just show the first frame, then start animation
         APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
         // Indicate that we are currently displaying an animated GIF

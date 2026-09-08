@@ -4,6 +4,7 @@
 #include "common.h"
 #include "kitty_graphics.h"
 #include "process_env.h"
+#include "gif_player_test_internal.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <glib/gstdio.h>
 #include <chafa.h>
@@ -16,6 +17,20 @@
 
 static gboolean render_next_frame(gpointer user_data);
 static void render_current_frame_internal(GifPlayer *player);
+static GifPlayerAdvanceHook gif_player_advance_hook = NULL;
+#define KITTY_ANIMATION_MAX_UNCHANGED_TICKS 8
+
+void gif_player_set_advance_hook_for_test(GifPlayerAdvanceHook hook) {
+    gif_player_advance_hook = hook;
+}
+
+static gboolean gif_player_advance_iter(GdkPixbufAnimationIter *iter,
+                                        const GTimeVal *current_time) {
+    if (gif_player_advance_hook) {
+        return gif_player_advance_hook(iter, current_time);
+    }
+    return gdk_pixbuf_animation_iter_advance(iter, current_time);
+}
 
 static void gif_player_clear_line_cache(GifPlayer *player) {
     if (!player || !player->last_frame_lines) {
@@ -56,6 +71,11 @@ static void gif_player_reset_kitty_animation(GifPlayer *player, gboolean delete_
     player->kitty_animation_frame_count = 0;
     player->kitty_animation_elapsed_ms = 0;
     player->kitty_animation_current_delay_ms = 0;
+    player->kitty_animation_source_width = 0;
+    player->kitty_animation_source_height = 0;
+    player->kitty_animation_display_width = 0;
+    player->kitty_animation_display_height = 0;
+    player->kitty_animation_unchanged_ticks = 0;
     if (player->kitty_animation_shm_names) {
         g_ptr_array_set_size(player->kitty_animation_shm_names, 0);
     }
@@ -134,8 +154,61 @@ static guint gif_player_count_gif_frames(const guint8 *data, gsize length) {
     return 0;
 }
 
+static guint32 gif_player_read_le32(const guint8 *data) {
+    return (guint32)data[0] |
+           ((guint32)data[1] << 8) |
+           ((guint32)data[2] << 16) |
+           ((guint32)data[3] << 24);
+}
+
+static guint gif_player_count_webp_frames(const guint8 *data, gsize length) {
+    if (!data || length < 20 || memcmp(data, "RIFF", 4) != 0 ||
+        memcmp(data + 8, "WEBP", 4) != 0) {
+        return 0;
+    }
+
+    guint64 riff_end = 8U + (guint64)gif_player_read_le32(data + 4);
+    if (riff_end > length || riff_end < 12U) {
+        return 0;
+    }
+
+    gsize offset = 12;
+    gboolean has_animation = FALSE;
+    guint frame_count = 0;
+    while ((guint64)offset + 8U <= riff_end) {
+        const guint8 *chunk = data + offset;
+        guint32 chunk_size = gif_player_read_le32(chunk + 4);
+        guint64 padded_size = (guint64)chunk_size + (guint64)(chunk_size & 1U);
+        if (padded_size > riff_end - offset - 8U) {
+            return 0;
+        }
+
+        if (memcmp(chunk, "ANIM", 4) == 0) {
+            if (chunk_size < 6) {
+                return 0;
+            }
+            has_animation = TRUE;
+        } else if (memcmp(chunk, "ANMF", 4) == 0) {
+            if (chunk_size < 16) {
+                return 0;
+            }
+            frame_count++;
+        }
+        offset += 8U + (gsize)padded_size;
+    }
+
+    if ((guint64)offset != riff_end) {
+        return 0;
+    }
+    return has_animation ? frame_count : 0;
+}
+
 guint gif_player_count_gif_frames_for_test(const guint8 *data, gsize length) {
     return gif_player_count_gif_frames(data, length);
+}
+
+guint gif_player_count_webp_frames_for_test(const guint8 *data, gsize length) {
+    return gif_player_count_webp_frames(data, length);
 }
 
 static void gif_player_present_rendered_frame(GifPlayer *player,
@@ -366,6 +439,20 @@ static gint gif_player_current_delay_ms(GifPlayer *player) {
     return gif_player_iter_delay_ms(player->iter);
 }
 
+static gboolean gif_player_native_geometry_matches(const GifPlayer *player,
+                                                   gint width,
+                                                   gint height) {
+    return player && width > 0 && height > 0 &&
+           width == player->kitty_animation_source_width &&
+           height == player->kitty_animation_source_height;
+}
+
+gboolean gif_player_native_geometry_matches_for_test(const GifPlayer *player,
+                                                     gint width,
+                                                     gint height) {
+    return gif_player_native_geometry_matches(player, width, height);
+}
+
 static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
     if (!gif_player_is_direct_kitty(player) || !player->iter) {
         return FALSE;
@@ -435,6 +522,11 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
     player->kitty_animation_prepared = TRUE;
     player->kitty_animation_complete = FALSE;
     player->kitty_animation_frame_count = 1;
+    player->kitty_animation_source_width = gdk_pixbuf_get_width(pixbuf);
+    player->kitty_animation_source_height = gdk_pixbuf_get_height(pixbuf);
+    player->kitty_animation_display_width = rendered_w;
+    player->kitty_animation_display_height = rendered_h;
+    player->kitty_animation_unchanged_ticks = 0;
 
     gint delay = gif_player_iter_delay_ms(native_iter);
     if (!gif_player_write_kitty_command(
@@ -460,27 +552,22 @@ static gboolean gif_player_append_kitty_animation_frame(GifPlayer *player) {
     }
 
     GdkPixbuf *pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
+    if (!gif_player_native_geometry_matches(player,
+                                            gdk_pixbuf_get_width(pixbuf),
+                                            gdk_pixbuf_get_height(pixbuf))) {
+        return FALSE;
+    }
     GdkPixbuf *rgba = gif_player_ensure_rgba(pixbuf);
     if (!rgba) {
         return FALSE;
     }
-    if (renderer_setup_canvas(player->renderer,
-                              gdk_pixbuf_get_width(rgba),
-                              gdk_pixbuf_get_height(rgba)) != ERROR_NONE) {
-        g_object_unref(rgba);
-        return FALSE;
-    }
-
-    gint rendered_w = 0;
-    gint rendered_h = 0;
-    renderer_get_rendered_dimensions(player->renderer, &rendered_w, &rendered_h);
     KittyGraphicsFrame *frame = kitty_graphics_animation_frame_new_shm_rgba(
         gdk_pixbuf_get_pixels(rgba),
         gdk_pixbuf_get_width(rgba),
         gdk_pixbuf_get_height(rgba),
         gdk_pixbuf_get_rowstride(rgba),
-        rendered_w,
-        rendered_h,
+        player->kitty_animation_display_width,
+        player->kitty_animation_display_height,
         player->kitty_animation_id,
         gif_player_current_delay_ms(player));
     g_object_unref(rgba);
@@ -527,6 +614,11 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
     player->kitty_animation_frame_count = 0;
     player->kitty_animation_elapsed_ms = 0;
     player->kitty_animation_current_delay_ms = 0;
+    player->kitty_animation_source_width = 0;
+    player->kitty_animation_source_height = 0;
+    player->kitty_animation_display_width = 0;
+    player->kitty_animation_display_height = 0;
+    player->kitty_animation_unchanged_ticks = 0;
     player->kitty_animation_shm_names = g_ptr_array_new_with_free_func(
         gif_player_release_kitty_shm_name);
     player->render_area_top_row = 0;
@@ -728,6 +820,9 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
         (guint64)file_stat.st_size <= (guint64)64 * 1024 * 1024 &&
         g_file_get_contents(filepath, &contents, &contents_length, NULL)) {
         guint frame_count = gif_player_count_gif_frames((const guint8 *)contents, contents_length);
+        if (frame_count == 0) {
+            frame_count = gif_player_count_webp_frames((const guint8 *)contents, contents_length);
+        }
         if (frame_count <= G_MAXINT) {
             player->total_frames = (gint)frame_count;
         }
@@ -818,8 +913,14 @@ static gboolean render_next_frame(gpointer user_data) {
             frame_time.tv_sec++;
             frame_time.tv_usec -= 1000000;
         }
-        gboolean advanced = gdk_pixbuf_animation_iter_advance(player->iter, &frame_time);
-        if (!advanced || !gif_player_append_kitty_animation_frame(player)) {
+        gboolean advanced = gif_player_advance_iter(player->iter, &frame_time);
+        if (!advanced) {
+            player->kitty_animation_unchanged_ticks++;
+        } else {
+            player->kitty_animation_unchanged_ticks = 0;
+        }
+        if ((advanced && !gif_player_append_kitty_animation_frame(player)) ||
+            player->kitty_animation_unchanged_ticks > KITTY_ANIMATION_MAX_UNCHANGED_TICKS) {
             gif_player_reset_kitty_animation(player, TRUE);
             player->kitty_animation_disabled = TRUE;
             g_object_unref(player->iter);
