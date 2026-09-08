@@ -578,16 +578,12 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     GString *rendered = NULL;
     gint image_width = 0;
     gint image_height = 0;
-    gboolean animation_started = FALSE;
-    gboolean animation_attempted = FALSE;
 
     if (gif_is_animated && app->gif_player && !overlay_visible) {
-        animation_attempted = TRUE;
         ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
                                                        gif_player_play,
                                                        app->gif_player);
         if (play_result == ERROR_NONE) {
-            animation_started = TRUE;
             app->needs_redraw = FALSE;
             rendered = g_string_new(NULL);
             if (app->gif_player->renderer) {
@@ -948,15 +944,6 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         };
         printf("\033[%d;1H\033[2K", app->term_height);
         ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
-    }
-
-    // If it's an animated image and player is available, start playing if animated
-    if (gif_is_animated && app->gif_player && !overlay_visible &&
-        !animation_started && !animation_attempted) {
-        // For first render, just show the first frame, then start animation
-        APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
-        // Indicate that we are currently displaying an animated GIF
-        app->needs_redraw = FALSE; // Don't immediately redraw since animation will handle updates
     }
 
     APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
