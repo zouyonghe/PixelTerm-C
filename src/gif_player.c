@@ -545,7 +545,9 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
 
     g_object_unref(player->iter);
     player->iter = native_iter;
-    player->kitty_animation_elapsed_ms = 0;
+    if (!player->resume_from_current_frame) {
+        player->kitty_animation_elapsed_ms = 0;
+    }
     player->kitty_animation_current_delay_ms = delay;
     player->resume_from_current_frame = FALSE;
     return TRUE;
@@ -723,7 +725,14 @@ void gif_player_set_render_area(GifPlayer *player,
     player->render_layout_valid = (area_top_row > 0 && area_height > 0 && max_width > 0 && max_height > 0);
     if (layout_changed) {
         gboolean restart_native = player->kitty_animation_prepared && player->is_playing;
+        gboolean preserve_native_timeline = player->resume_from_current_frame;
+        gint64 animation_elapsed_ms = player->kitty_animation_elapsed_ms;
+        gint animation_delay_ms = player->kitty_animation_current_delay_ms;
         gif_player_reset_kitty_animation(player, TRUE);
+        if (preserve_native_timeline) {
+            player->kitty_animation_elapsed_ms = animation_elapsed_ms;
+            player->kitty_animation_current_delay_ms = animation_delay_ms;
+        }
         player->fixed_frame_valid = FALSE;
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;

@@ -516,6 +516,9 @@ static void test_gif_player_prepare_for_redraw_preserves_iterator(void) {
     player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     player->is_animated = TRUE;
     player->is_playing = TRUE;
+    player->kitty_animation_prepared = TRUE;
+    player->kitty_animation_elapsed_ms = 900;
+    player->kitty_animation_current_delay_ms = 100;
     GdkPixbufAnimationIter *iter = player->iter;
 
     gif_player_prepare_for_redraw(player);
@@ -523,6 +526,12 @@ static void test_gif_player_prepare_for_redraw_preserves_iterator(void) {
     g_assert_false(player->is_playing);
     g_assert_true(player->iter == iter);
     g_assert_true(player->resume_from_current_frame);
+    g_assert_cmpint(player->kitty_animation_elapsed_ms, ==, 900);
+    g_assert_cmpint(player->kitty_animation_current_delay_ms, ==, 100);
+
+    gif_player_set_render_area(player, 80, 24, 2, 20, 80, 20);
+    g_assert_cmpint(player->kitty_animation_elapsed_ms, ==, 900);
+    g_assert_cmpint(player->kitty_animation_current_delay_ms, ==, 100);
 
     gif_player_destroy(player);
 }
