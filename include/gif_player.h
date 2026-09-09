@@ -21,6 +21,22 @@ typedef struct {
     // Animation state
     GdkPixbufAnimation *animation;
     GdkPixbufAnimationIter *iter;
+    gboolean resume_from_current_frame;
+
+    // Native Kitty animation state
+    guint32 kitty_animation_id;
+    gboolean kitty_animation_prepared;
+    gboolean kitty_animation_complete;
+    gboolean kitty_animation_disabled;
+    guint kitty_animation_frame_count;
+    gint64 kitty_animation_elapsed_ms;
+    gint kitty_animation_current_delay_ms;
+    gint kitty_animation_source_width;
+    gint kitty_animation_source_height;
+    gint kitty_animation_display_width;
+    gint kitty_animation_display_height;
+    guint kitty_animation_unchanged_ticks;
+    GPtrArray *kitty_animation_shm_names;
     
     // Renderer reference
     ImageRenderer *renderer;
@@ -115,6 +131,7 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath);
  *         GIF is loaded.
  */
 ErrorCode gif_player_play(GifPlayer *player);
+void gif_player_prepare_for_redraw(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 
