@@ -21,6 +21,7 @@ typedef struct {
     // Animation state
     GdkPixbufAnimation *animation;
     GdkPixbufAnimationIter *iter;
+    gboolean resume_from_current_frame;
 
     // Native Kitty animation state
     guint32 kitty_animation_id;
@@ -130,6 +131,7 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath);
  *         GIF is loaded.
  */
 ErrorCode gif_player_play(GifPlayer *player);
+void gif_player_prepare_for_redraw(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 

@@ -458,9 +458,13 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
         return FALSE;
     }
 
-    GTimeVal start_time = {0, 0};
-    GdkPixbufAnimationIter *native_iter =
-        gdk_pixbuf_animation_get_iter(player->animation, &start_time);
+    GdkPixbufAnimationIter *native_iter = NULL;
+    if (player->resume_from_current_frame && player->iter) {
+        native_iter = g_object_ref(player->iter);
+    } else {
+        GTimeVal start_time = {0, 0};
+        native_iter = gdk_pixbuf_animation_get_iter(player->animation, &start_time);
+    }
     if (!native_iter) {
         player->kitty_animation_disabled = TRUE;
         return FALSE;
@@ -543,6 +547,7 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
     player->iter = native_iter;
     player->kitty_animation_elapsed_ms = 0;
     player->kitty_animation_current_delay_ms = delay;
+    player->resume_from_current_frame = FALSE;
     return TRUE;
 }
 
@@ -610,6 +615,7 @@ GifPlayer* gif_player_new(gint work_factor, gboolean force_text, gboolean force_
     player->filepath = NULL;
     player->animation = NULL;
     player->iter = NULL;
+    player->resume_from_current_frame = FALSE;
     player->kitty_animation_id = 0;
     player->kitty_animation_prepared = FALSE;
     player->kitty_animation_complete = FALSE;
@@ -782,6 +788,7 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath) {
         g_object_unref(player->iter);
         player->iter = NULL;
     }
+    player->resume_from_current_frame = FALSE;
     if (player->animation) {
         g_object_unref(player->animation);
         player->animation = NULL;
@@ -1008,6 +1015,29 @@ ErrorCode gif_player_play(GifPlayer *player) {
     player->timer_id = g_timeout_add(delay, render_next_frame, player);
     
     return ERROR_NONE;
+}
+
+void gif_player_prepare_for_redraw(GifPlayer *player) {
+    if (!player || !player->is_playing) {
+        return;
+    }
+
+    gint64 animation_elapsed_ms = player->kitty_animation_elapsed_ms;
+    gint animation_delay_ms = player->kitty_animation_current_delay_ms;
+    gboolean had_native_animation = player->kitty_animation_prepared;
+
+    player->is_playing = FALSE;
+    if (player->timer_id != 0) {
+        g_source_remove(player->timer_id);
+        player->timer_id = 0;
+    }
+    gif_player_reset_kitty_animation(player, TRUE);
+    if (had_native_animation) {
+        player->kitty_animation_elapsed_ms = animation_elapsed_ms;
+        player->kitty_animation_current_delay_ms = animation_delay_ms;
+    }
+    player->resume_from_current_frame = player->iter != NULL;
+    gif_player_clear_line_cache(player);
 }
 
 // Pause playback

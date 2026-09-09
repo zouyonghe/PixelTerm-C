@@ -467,7 +467,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
     if (app->gif_player) {
         if (gif_is_animated && !overlay_visible && gif_player_is_playing(app->gif_player)) {
-            gif_player_stop(app->gif_player);
+            gif_player_prepare_for_redraw(app->gif_player);
         }
         gif_player_set_render_area(app->gif_player,
                                    app->term_width,
