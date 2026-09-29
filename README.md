@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/
 Need a reproducible install? Pin a release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.8.0
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.8.3
 ```
 
 If you prefer a package manager or manual install, use one of these paths:

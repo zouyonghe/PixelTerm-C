@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/
 再現性のあるインストールが必要な場合は、release tag を固定できます。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.7.26
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.8.3
 ```
 
 パッケージマネージャや手動インストールを使いたい場合は、以下の方法も利用できます。

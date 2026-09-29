@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/
 如果需要可复现安装，可以固定 release tag：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.7.26
+curl -fsSL https://raw.githubusercontent.com/zouyonghe/PixelTerm-C/main/scripts/install.sh | bash -s -- --version v1.8.3
 ```
 
 如果你更偏向包管理器或手动安装，也可以继续用下面这些方式：
