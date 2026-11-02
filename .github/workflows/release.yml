@@ -89,13 +89,13 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-linux.tar.gz -C release pixelterm-${{ matrix.arch }}-linux
 
     - name: Upload artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-linux.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-linux.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-linux
         path: release/pixelterm-${{ matrix.arch }}-linux
@@ -151,13 +151,13 @@ jobs:
         tar -czf release/pixelterm-${{ matrix.arch }}-macos.tar.gz -C release pixelterm-${{ matrix.arch }}-macos
 
     - name: Upload artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-macos.tar.gz
         path: release/pixelterm-${{ matrix.arch }}-macos.tar.gz
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-macos
         path: release/pixelterm-${{ matrix.arch }}-macos
@@ -178,7 +178,7 @@ jobs:
             container: menci/archlinuxarm:base-devel
     steps:
     - name: Download Linux binary artifact
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
       with:
         name: pixelterm-${{ matrix.arch }}-linux
         path: release
@@ -224,7 +224,7 @@ jobs:
         fetch-depth: 0
 
     - name: Download artifacts
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
       with:
         pattern: pixelterm*
         merge-multiple: true
