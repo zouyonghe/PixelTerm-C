@@ -11,11 +11,10 @@ on:
         required: true
         type: string
 
-env:
-  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
-
 jobs:
   build-linux:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
@@ -63,6 +62,7 @@ jobs:
     - name: Build and test on Arch Linux
       run: |
         set -euo pipefail
+        bash scripts/validate_release_version.sh "${RELEASE_VERSION}"
         mkdir -p release-${{ matrix.arch }}
 
         make clean
@@ -104,6 +104,8 @@ jobs:
         path: release/pixelterm-${{ matrix.arch }}-linux
 
   build-macos:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
@@ -124,6 +126,7 @@ jobs:
     - name: Build on macOS
       run: |
         set -euo pipefail
+        bash scripts/validate_release_version.sh "${RELEASE_VERSION}"
         mkdir -p release-${{ matrix.arch }}
         
         # Install dependencies using Homebrew only when a formula is missing.
@@ -169,6 +172,8 @@ jobs:
         path: release/pixelterm-${{ matrix.arch }}-macos
 
   verify-linux-artifacts:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     needs: build-linux
     runs-on: ${{ matrix.runs-on }}
     container:

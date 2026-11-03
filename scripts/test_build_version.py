@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -6,6 +7,7 @@ from pathlib import Path
 
 
 MAKEFILE = Path(__file__).resolve().parent.parent / 'Makefile'
+VALIDATOR = MAKEFILE.parent / 'scripts' / 'validate_release_version.sh'
 
 
 class BuildVersionTest(unittest.TestCase):
@@ -19,8 +21,11 @@ class BuildVersionTest(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
 
     def init_repo(self):
+        if shutil.which('git') is None:
+            self.skipTest('Git executable unavailable')
         self.git('init')
         self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                 '-c', 'commit.gpgsign=false',
                  'commit', '--allow-empty', '-m', 'Initial commit')
 
     def version(self, *args):
@@ -28,6 +33,7 @@ class BuildVersionTest(unittest.TestCase):
         env = os.environ.copy()
         for key in ('MAKEFLAGS', 'MFLAGS', 'MAKEOVERRIDES'):
             env.pop(key, None)
+        env['GIT_CEILING_DIRECTORIES'] = str(self.root.parent)
         result = subprocess.run(
             ['make', '--no-print-directory', '-s', '-f', str(MAKEFILE), '-f', '-',
              'print-version', 'PKG_CONFIG=true', 'MUPDF_PREFIX=', *args],
@@ -49,6 +55,24 @@ class BuildVersionTest(unittest.TestCase):
 
     def test_explicit_release_version_works_without_git_metadata(self):
         self.assertEqual(self.version('VERSION=v1.2.4'), 'v1.2.4')
+
+    def test_release_version_validation(self):
+        marker = self.root / 'executed'
+        for version in ('v1.2.3', 'v1.2.4-rc.1', 'v1.2.4+build.2'):
+            with self.subTest(version=version):
+                result = subprocess.run(['bash', str(VALIDATOR), version],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        for version in ('', 'main', 'v1.2', 'v1.2.3' + chr(10),
+                        f'$(shell touch {marker})',
+                        f'v1.2.3;touch {marker}',
+                        f'v1.2.3$(touch {marker})',
+                        f'v1.2.3`touch {marker}`', 'v1.2.3"'):
+            with self.subTest(version=version):
+                result = subprocess.run(['bash', str(VALIDATOR), version],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(marker.exists())
 
 
 if __name__ == '__main__':
