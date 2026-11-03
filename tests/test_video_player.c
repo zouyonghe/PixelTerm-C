@@ -2,6 +2,7 @@
 #include <glib/gstdio.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
 
 #include <unistd.h>
 
@@ -2581,6 +2582,40 @@ static void test_create_sws_context_rejects_invalid_dimensions(void) {
     g_assert_null(video_player_create_sws_context(&codec_context, 10, -1));
 }
 
+static void test_create_sws_context_rejects_invalid_pixel_formats(void) {
+    AVCodecContext codec_context = {0};
+    const enum AVPixelFormat formats[] = {
+        AV_PIX_FMT_NONE,
+        (enum AVPixelFormat)-2,
+        AV_PIX_FMT_NB,
+        AV_PIX_FMT_VAAPI,
+    };
+
+    for (gsize i = 0; i < G_N_ELEMENTS(formats); i++) {
+        codec_context.pix_fmt = formats[i];
+        g_assert_null(video_player_create_sws_context(&codec_context, 16, 16));
+    }
+}
+
+static void test_create_sws_context_accepts_supported_pixel_formats(void) {
+    AVCodecContext codec_context = {0};
+    const enum AVPixelFormat formats[] = {
+        AV_PIX_FMT_YUV420P,
+        AV_PIX_FMT_RGBA,
+        AV_PIX_FMT_YUVJ420P,
+        AV_PIX_FMT_YUVJ422P,
+        AV_PIX_FMT_YUVJ444P,
+        AV_PIX_FMT_YUVJ440P,
+    };
+
+    for (gsize i = 0; i < G_N_ELEMENTS(formats); i++) {
+        codec_context.pix_fmt = formats[i];
+        struct SwsContext *sws_context = video_player_create_sws_context(&codec_context, 16, 16);
+        g_assert_nonnull(sws_context);
+        sws_freeContext(sws_context);
+    }
+}
+
 static void test_io_interrupt_follows_worker_stop_flag(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
                                           TEXT_SYMBOL_MODE_AUTO, 1.0,
@@ -2745,6 +2780,10 @@ void register_video_player_tests(void) {
                     test_dimensions_within_limits_rejects_non_positive_metadata);
     g_test_add_func("/video_player/create_sws_context/rejects_invalid_dimensions",
                     test_create_sws_context_rejects_invalid_dimensions);
+    g_test_add_func("/video_player/create_sws_context/rejects_invalid_pixel_formats",
+                    test_create_sws_context_rejects_invalid_pixel_formats);
+    g_test_add_func("/video_player/create_sws_context/accepts_supported_pixel_formats",
+                    test_create_sws_context_accepts_supported_pixel_formats);
     g_test_add_func("/video_player/io_interrupt/follows_worker_stop_flag",
                     test_io_interrupt_follows_worker_stop_flag);
     g_test_add_func("/video_player/frame_layout/detects_dynamic_stream_changes",

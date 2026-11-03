@@ -68,6 +68,11 @@ struct SwsContext *video_player_create_sws_context(const AVCodecContext *codec_c
         break;
     }
 
+    /* Unknown decoder formats can trigger assertions inside sws_getContext(). */
+    if (!sws_isSupportedInput(src_pix_fmt)) {
+        return NULL;
+    }
+
     struct SwsContext *sws_context = sws_getContext(width, height, src_pix_fmt,
                                                      width, height, AV_PIX_FMT_RGBA,
                                                      SWS_BILINEAR, NULL, NULL, NULL);
