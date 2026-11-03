@@ -1,7 +1,9 @@
 # Changelog
 
-- Unreleased:
+- v1.8.6: Reliable release version metadata and stricter packaging checks.
     - **Build Metadata**: Preserve Git version identifiers and fall back to `unknown` when Git metadata is unavailable. Release builds explicitly embed the requested tag and verify the actual version output before publishing.
+    - **Release Safety**: Validate release inputs against the supported `vX.Y.Z` format before invoking Make. Reject empty, incorrect, or failed version-command output on Linux and macOS.
+    - **Testing**: Add version fallback, override, whitespace, hostile-input, and command-exit regressions. Isolate fixture repositories from inherited Git paths and signing configuration, and skip Git-dependent cases when Git is unavailable.
 
 - v1.8.5: Video pixel-format validation and regression coverage.
     - **Video Safety**: Reject unknown or unsupported decoder pixel formats before creating the scaler, avoiding a libswscale assertion abort for `AV_PIX_FMT_NONE` in playback and thumbnail loading.
