@@ -82,7 +82,8 @@ jobs:
           printf '%s\n' "${missing}" >&2
           exit 1
         fi
-        test "$("${binary}" --version)" = "${RELEASE_VERSION}"
+        actual_version="$("${binary}" --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
     - name: Create release package
@@ -151,7 +152,8 @@ jobs:
           strip bin/pixelterm || true
         fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
-        test "$(release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos --version)" = "${RELEASE_VERSION}"
+        actual_version="$(release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
 
     - name: Create release package
       run: |
@@ -217,7 +219,8 @@ jobs:
         binary="release/pixelterm-${{ matrix.arch }}-linux"
         chmod +x "${binary}"
         test -z "$(ldd "${binary}" | awk '/not found/ { print }')"
-        test "$("${binary}" --version)" = "${RELEASE_VERSION}"
+        actual_version="$("${binary}" --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
   create-release:

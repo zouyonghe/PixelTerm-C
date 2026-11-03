@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -18,6 +19,7 @@ class BuildVersionTest(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(['git', *args], cwd=self.root, check=True,
+                              env=self.subprocess_env(),
                               capture_output=True, text=True).stdout.strip()
 
     def init_repo(self):
@@ -28,18 +30,23 @@ class BuildVersionTest(unittest.TestCase):
                  '-c', 'commit.gpgsign=false',
                  'commit', '--allow-empty', '-m', 'Initial commit')
 
-    def version(self, *args):
-        recipe = 'print-version:' + chr(10) + chr(9) + '@echo "$(VERSION)"' + chr(10)
+    def subprocess_env(self):
         env = os.environ.copy()
-        for key in ('MAKEFLAGS', 'MFLAGS', 'MAKEOVERRIDES'):
+        for key in ('MAKEFLAGS', 'MFLAGS', 'MAKEOVERRIDES', 'GIT_DIR',
+                    'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
+                    'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES'):
             env.pop(key, None)
         env['GIT_CEILING_DIRECTORIES'] = str(self.root.parent)
+        return env
+
+    def version(self, *args):
+        recipe = 'print-version:' + chr(10) + chr(9) + '@echo "$(VERSION)"' + chr(10)
         result = subprocess.run(
             ['make', '--no-print-directory', '-s', '-f', str(MAKEFILE), '-f', '-',
              'print-version', 'PKG_CONFIG=true', 'MUPDF_PREFIX=', *args],
-            cwd=self.root, input=recipe, env=env,
+            cwd=self.root, input=recipe, env=self.subprocess_env(),
             capture_output=True, text=True, check=True)
-        return result.stdout.strip()
+        return result.stdout.removesuffix(chr(10))
 
     def test_source_archive_has_nonempty_fallback(self):
         self.assertEqual(self.version(), 'unknown')
@@ -56,14 +63,53 @@ class BuildVersionTest(unittest.TestCase):
     def test_explicit_release_version_works_without_git_metadata(self):
         self.assertEqual(self.version('VERSION=v1.2.4'), 'v1.2.4')
 
+    def test_version_preserves_whitespace(self):
+        self.assertEqual(self.version('VERSION=v1.2.4 '), 'v1.2.4 ')
+
+    def test_inherited_git_paths_do_not_override_fixture(self):
+        with patch.dict(os.environ, {
+            'GIT_DIR': str(self.root / 'missing.git'),
+            'GIT_WORK_TREE': str(self.root / 'missing-tree'),
+            'GIT_INDEX_FILE': str(self.root / 'missing-index'),
+        }):
+            self.assertEqual(self.version(), 'unknown')
+            self.init_repo()
+            self.git('tag', 'v1.2.3')
+            self.assertEqual(self.version(), 'v1.2.3')
+
+    def test_workflow_rejects_failed_version_commands(self):
+        workflow = (MAKEFILE.parent / '.github/workflows/release.yml').read_text()
+        lines = workflow.splitlines()
+        checks = [i for i, line in enumerate(lines) if '--version)' in line]
+        self.assertEqual(len(checks), 3)
+        for i in checks:
+            command = lines[i].strip()
+            if command.startswith('actual_version='):
+                command += chr(10) + lines[i + 1].strip()
+            command = command.replace(
+                'release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos',
+                '${binary}')
+            binary = self.root / 'version-probe'
+            for output, status, expected in [('v1.2.3', 0, True),
+                                              ('v1.2.3', 7, False),
+                                              ('wrong', 0, False),
+                                              ('', 0, False)]:
+                binary.write_text(chr(10).join([
+                    '#!/bin/sh', f'echo "{output}"', f'exit {status}', '']))
+                binary.chmod(0o700)
+                env = dict(os.environ, binary=str(binary), RELEASE_VERSION='v1.2.3')
+                result = subprocess.run(['bash', '-eu', '-c', command], env=env)
+                self.assertEqual(result.returncode == 0, expected, (i, status, output))
+
     def test_release_version_validation(self):
         marker = self.root / 'executed'
-        for version in ('v1.2.3', 'v1.2.4-rc.1', 'v1.2.4+build.2'):
+        for version in ('v1.2.3', 'v1.2.4'):
             with self.subTest(version=version):
                 result = subprocess.run(['bash', str(VALIDATOR), version],
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
-        for version in ('', 'main', 'v1.2', 'v1.2.3' + chr(10),
+        for version in ('', 'main', 'v1.2', 'v1.2.4-rc.1', 'v1.2.4+build.2',
+                        'v1.2.3' + chr(10),
                         f'$(shell touch {marker})',
                         f'v1.2.3;touch {marker}',
                         f'v1.2.3$(touch {marker})',
