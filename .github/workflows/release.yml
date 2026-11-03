@@ -13,6 +13,8 @@ on:
 
 jobs:
   build-linux:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
@@ -60,11 +62,12 @@ jobs:
     - name: Build and test on Arch Linux
       run: |
         set -euo pipefail
+        bash scripts/validate_release_version.sh "${RELEASE_VERSION}"
         mkdir -p release-${{ matrix.arch }}
 
         make clean
-        make EXTRA_CFLAGS=-Werror
-        make EXTRA_CFLAGS=-Werror test
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror test
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
@@ -79,7 +82,8 @@ jobs:
           printf '%s\n' "${missing}" >&2
           exit 1
         fi
-        "${binary}" --version
+        actual_version="$("${binary}" --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
     - name: Create release package
@@ -101,6 +105,8 @@ jobs:
         path: release/pixelterm-${{ matrix.arch }}-linux
 
   build-macos:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
@@ -120,6 +126,8 @@ jobs:
 
     - name: Build on macOS
       run: |
+        set -euo pipefail
+        bash scripts/validate_release_version.sh "${RELEASE_VERSION}"
         mkdir -p release-${{ matrix.arch }}
         
         # Install dependencies using Homebrew only when a formula is missing.
@@ -137,12 +145,15 @@ jobs:
         echo "Using Homebrew Chafa"
         
         # Build PixelTerm-C
-        make clean && make
-        make EXTRA_CFLAGS=-Werror test
+        make clean
+        make VERSION="${RELEASE_VERSION}"
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror test
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
+        actual_version="$(release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
 
     - name: Create release package
       run: |
@@ -163,6 +174,8 @@ jobs:
         path: release/pixelterm-${{ matrix.arch }}-macos
 
   verify-linux-artifacts:
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
     needs: build-linux
     runs-on: ${{ matrix.runs-on }}
     container:
@@ -206,7 +219,8 @@ jobs:
         binary="release/pixelterm-${{ matrix.arch }}-linux"
         chmod +x "${binary}"
         test -z "$(ldd "${binary}" | awk '/not found/ { print }')"
-        "${binary}" --version
+        actual_version="$("${binary}" --version)"
+        test "${actual_version}" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
   create-release:

@@ -2,7 +2,7 @@ CC ?= gcc
 ARCH ?= amd64
 PREFIX ?= /usr/local
 INSTALL ?= install
-VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null | cut -d'-' -f1 | cut -c2- || echo "unknown")
+VERSION = $(shell git describe --tags --exact-match 2>/dev/null || git describe --tags --always --dirty 2>/dev/null || echo "unknown")
 UNAME_S := $(shell uname -s)
 # GCC/Clang hardening defaults. Override these variables for toolchains that
 # do not support the flags or downstream builds that manage hardening elsewhere.
@@ -180,6 +180,7 @@ PREVIEW_GRID_TEST_TARGET = $(BINDIR)/pixelterm-preview-grid-tests
 BOOK_PREVIEW_TEST_TARGET = $(BINDIR)/pixelterm-book-preview-tests
 PYTHON_TEST_ENV = PYTHONDONTWRITEBYTECODE=1
 MAINTENANCE_SCRIPT_TESTS = \
+	$(PYTHON_TEST_ENV) python3 scripts/test_build_version.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_install_script.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_generate_release_notes.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py
