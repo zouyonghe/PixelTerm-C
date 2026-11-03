@@ -1,5 +1,8 @@
 # Changelog
 
+- Unreleased:
+    - **Video Safety**: Reject unknown or unsupported decoder pixel formats before creating the scaler, avoiding a libswscale assertion abort for `AV_PIX_FMT_NONE` in playback and thumbnail loading.
+
 - v1.8.2: Build path defaults plus input and diagnostics hardening follow-up.
     - **Build Configuration**: Include local pkg-config search paths by default and refine local path handling so common Homebrew-style dependency layouts resolve without extra setup.
     - **Input Error Handling**: Treat persistent select/read failures and stdin EOF as shutdown conditions, while preserving transient EINTR/EAGAIN/EWOULDBLOCK behavior and capturing errno immediately after system calls.
