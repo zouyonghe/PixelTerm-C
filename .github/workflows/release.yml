@@ -11,6 +11,9 @@ on:
         required: true
         type: string
 
+env:
+  RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+
 jobs:
   build-linux:
     runs-on: ${{ matrix.runs-on }}
@@ -63,8 +66,8 @@ jobs:
         mkdir -p release-${{ matrix.arch }}
 
         make clean
-        make EXTRA_CFLAGS=-Werror
-        make EXTRA_CFLAGS=-Werror test
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror test
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
@@ -79,7 +82,7 @@ jobs:
           printf '%s\n' "${missing}" >&2
           exit 1
         fi
-        "${binary}" --version
+        test "$("${binary}" --version)" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
     - name: Create release package
@@ -120,6 +123,7 @@ jobs:
 
     - name: Build on macOS
       run: |
+        set -euo pipefail
         mkdir -p release-${{ matrix.arch }}
         
         # Install dependencies using Homebrew only when a formula is missing.
@@ -137,12 +141,14 @@ jobs:
         echo "Using Homebrew Chafa"
         
         # Build PixelTerm-C
-        make clean && make
-        make EXTRA_CFLAGS=-Werror test
+        make clean
+        make VERSION="${RELEASE_VERSION}"
+        make VERSION="${RELEASE_VERSION}" EXTRA_CFLAGS=-Werror test
         if command -v strip >/dev/null; then
           strip bin/pixelterm || true
         fi
         cp bin/pixelterm release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos
+        test "$(release-${{ matrix.arch }}/pixelterm-${{ matrix.arch }}-macos --version)" = "${RELEASE_VERSION}"
 
     - name: Create release package
       run: |
@@ -206,7 +212,7 @@ jobs:
         binary="release/pixelterm-${{ matrix.arch }}-linux"
         chmod +x "${binary}"
         test -z "$(ldd "${binary}" | awk '/not found/ { print }')"
-        "${binary}" --version
+        test "$("${binary}" --version)" = "${RELEASE_VERSION}"
         "${binary}" --help >/dev/null
 
   create-release:

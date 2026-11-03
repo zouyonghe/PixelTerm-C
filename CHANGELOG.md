@@ -1,5 +1,8 @@
 # Changelog
 
+- Unreleased:
+    - **Build Metadata**: Preserve Git version identifiers and fall back to `unknown` when Git metadata is unavailable. Release builds explicitly embed the requested tag and verify the actual version output before publishing.
+
 - v1.8.5: Video pixel-format validation and regression coverage.
     - **Video Safety**: Reject unknown or unsupported decoder pixel formats before creating the scaler, avoiding a libswscale assertion abort for `AV_PIX_FMT_NONE` in playback and thumbnail loading.
     - **Testing**: Add regressions for invalid and unsupported pixel formats, supported software formats, and all existing YUVJ normalization cases.
