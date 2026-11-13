@@ -68,6 +68,7 @@ typedef struct {
 typedef struct {
     const gchar *response;
     gboolean query_aware;
+    gboolean query_written;
     const gchar *sixel_response;
     const gchar *version_response;
     const gchar *kitty_response;
@@ -179,6 +180,7 @@ static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer
 
     g_assert_nonnull(buf);
     g_string_append_len(fixture->writes, buf, len);
+    fixture->query_written = TRUE;
     if (fixture->query_aware) {
         gchar *query = g_strndup(buf, len);
         fixture->response = strcmp(query, KITTY_PROBE_QUERY) == 0 ? fixture->kitty_response :
@@ -194,6 +196,9 @@ static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer
 static gint app_cli_probe_fixture_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
     AppCliProbeFixture *fixture = user_data;
 
+    if (!fixture->query_written) {
+        return 0;
+    }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
         return 0;

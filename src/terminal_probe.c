@@ -169,14 +169,12 @@ gssize terminal_probe_query_response(const char *query,
     gssize length = -1;
     do {
         size_t query_len = strlen(query);
-        if (hooks->write_fn(query, query_len, user_data) != (ssize_t)query_len) {
-            break;
-        }
-
         gint64 deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
         gsize offset = 0;
         char sequence[512] = {0};
         gsize sequence_length = 0;
+        gboolean query_sent = FALSE;
+        gboolean sequence_before_query = FALSE;
 
         while (offset + 1 < buffer_size && sequence_length + 1 < sizeof(sequence) &&
                g_terminal_probe_pending_input.length + sequence_length < TERMINAL_PROBE_PENDING_LIMIT) {
@@ -187,9 +185,18 @@ gssize terminal_probe_query_response(const char *query,
             }
 
             gint remaining_ms = (gint)MAX((remaining_us + 999) / 1000, (gint64)1);
-            gint step_timeout_ms = MIN(poll_timeout_ms, remaining_ms);
+            gint step_timeout_ms = query_sent ? MIN(poll_timeout_ms, remaining_ms) : 0;
             gint ch = hooks->read_char_with_timeout_fn(step_timeout_ms, user_data);
             if (ch == 0) {
+                if (!query_sent) {
+                    /* Establish a non-flushing boundary; preserve queued keys but
+                     * never use replies that started before this query. */
+                    if (hooks->write_fn(query, query_len, user_data) != (ssize_t)query_len) {
+                        break;
+                    }
+                    query_sent = TRUE;
+                    deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
+                }
                 continue;
             }
 
@@ -200,7 +207,11 @@ gssize terminal_probe_query_response(const char *query,
             }
             if (sequence_length == 1 && ch == '\033') {
                 terminal_probe_keep_input(sequence, 1);
+                sequence_before_query = !query_sent;
                 continue;
+            }
+            if (sequence_length == 0) {
+                sequence_before_query = !query_sent;
             }
             sequence[sequence_length++] = (char)ch;
             sequence[sequence_length] = '\0';
@@ -211,19 +222,20 @@ gssize terminal_probe_query_response(const char *query,
             gboolean is_reply = terminal_probe_is_reply_prefix(sequence) ||
                                 strcmp(sequence, "\033[0n") == 0 ||
                                 strcmp(sequence, "\033[3n") == 0;
-            if (is_reply) {
+            gboolean current_reply = is_reply && query_sent && !sequence_before_query;
+            if (current_reply) {
                 if (sequence_length >= buffer_size - offset) {
                     sequence_length = 0;
                     break;
                 }
                 memcpy(buffer + offset, sequence, sequence_length);
                 offset += sequence_length;
-            } else {
+            } else if (!is_reply) {
                 terminal_probe_keep_input(sequence, sequence_length);
             }
             sequence_length = 0;
             sequence[0] = '\0';
-            if (is_reply && terminator != '\0' && ch == (guchar)terminator) {
+            if (current_reply && terminator != '\0' && ch == (guchar)terminator) {
                 break;
             }
         }
@@ -233,7 +245,7 @@ gssize terminal_probe_query_response(const char *query,
         }
 
         buffer[offset] = '\0';
-        length = (gssize)offset;
+        length = query_sent ? (gssize)offset : -1;
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {

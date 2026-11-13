@@ -138,6 +138,9 @@ typedef struct {
     const gchar *response;
     gsize response_length;
     gsize response_offset;
+    gboolean query_written;
+    const gchar *queued_input;
+    gsize queued_input_offset;
     gint64 now_us;
 } TerminalProbeFixture;
 
@@ -209,6 +212,7 @@ static ssize_t terminal_probe_fixture_write(const char *buf, size_t len, gpointe
 
     g_assert_nonnull(buf);
     g_string_append_len(fixture->writes, buf, len);
+    fixture->query_written = TRUE;
     return (ssize_t)len;
 }
 
@@ -217,6 +221,13 @@ static gint terminal_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoin
 
     g_array_append_val(fixture->read_timeouts_ms, timeout_ms);
 
+    if (fixture->queued_input && fixture->queued_input[fixture->queued_input_offset]) {
+        fixture->now_us += 1000;
+        return (guchar)fixture->queued_input[fixture->queued_input_offset++];
+    }
+    if (!fixture->query_written) {
+        return 0;
+    }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
         return 0;
@@ -278,10 +289,11 @@ static void test_terminal_probe_transport_reads_until_terminator_with_short_time
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
     g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
     g_assert_cmpint(fixture.tcflush_calls, ==, 0);
-    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, sizeof(k_expected_response) - 1);
+    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, sizeof(k_expected_response));
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 0);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[c", sizeof("\033[c") - 1);
 
-    for (guint i = 0; i < fixture.read_timeouts_ms->len; i++) {
+    for (guint i = 1; i < fixture.read_timeouts_ms->len; i++) {
         gint timeout_ms = g_array_index(fixture.read_timeouts_ms, gint, i);
         g_assert_cmpint(timeout_ms, ==, TERMINAL_PROBE_POLL_TIMEOUT_MS);
     }
@@ -327,8 +339,9 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
     g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
     g_assert_cmpint(fixture.tcflush_calls, ==, 0);
-    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, 1);
-    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 15);
+    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, 2);
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 0);
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 1), ==, 15);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[5n", sizeof("\033[5n") - 1);
 
     g_string_free(fixture.writes, TRUE);
@@ -404,6 +417,52 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
     g_string_free(fixture.writes, TRUE);
     g_array_free(fixture.read_timeouts_ms, TRUE);
     g_free(flood_input);
+}
+
+typedef struct {
+    const char *queued;
+    const char *tail;
+    const char *expected;
+} QueuedProbeReply;
+
+static void test_terminal_probe_rejects_prequery_reply(gconstpointer user_data) {
+    const QueuedProbeReply *test = user_data;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .queued_input = test->queued,
+        .response = test->tail,
+        .response_length = test->tail ? strlen(test->tail) : 0,
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    char buffer[128];
+    const char *expected = test->expected ? test->expected : "";
+    g_assert_cmpint(terminal_probe_query_response("\033[c", 120, 20, '\0', buffer, sizeof(buffer)), ==,
+                    (gssize)strlen(expected));
+    g_assert_cmpstr(buffer, ==, expected);
+    g_assert_true(fixture.query_written);
+    InputHandler *handler = input_handler_create();
+    g_assert_true(input_has_pending_input(handler));
+    g_assert_cmpint(input_read_char(handler), ==, 'h');
+    g_assert_true(input_has_pending_input(handler));
+    g_assert_cmpint(input_read_char(handler), ==, 'j');
+    g_assert_false(terminal_probe_has_pending_input());
+    input_handler_destroy(handler);
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
 }
 
 static void test_terminal_protocol_resolver_override_beats_signal_and_probe(
@@ -674,6 +733,18 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
+    static const QueuedProbeReply stale_sixel = {"h\033[?62;4cj", NULL, NULL};
+    static const QueuedProbeReply stale_kitty = {"h\033_Gi=31;OK\033\\j", NULL, NULL};
+    static const QueuedProbeReply stale_partial = {"h\033P>|iTerm2", " 3.5\033\\j", NULL};
+    static const QueuedProbeReply current_sixel = {"h\033[?62;4cj", "\033[?62;22c", "\033[?62;22c"};
+    g_test_add_data_func("/terminal_protocols/probe/rejects_queued_sixel_reply", &stale_sixel,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/rejects_queued_kitty_reply", &stale_kitty,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/rejects_cross_boundary_reply", &stale_partial,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/keeps_only_current_reply", &current_sixel,
+                         test_terminal_probe_rejects_prequery_reply);
     g_test_add_data_func("/terminal_protocols/probe/preserves_keys_between_replies", NULL,
                          test_terminal_probe_preserves_keys);
     g_test_add_data_func("/terminal_protocols/probe/stops_before_pending_input_overflows",

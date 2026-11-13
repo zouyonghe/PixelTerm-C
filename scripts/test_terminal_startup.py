@@ -38,7 +38,7 @@ ComSpec COMSPEC XTERM_VERSION
 
 
 class TerminalStartupTests(unittest.TestCase):
-    def run_terminal(self, mode, early_escape, fragmented=None):
+    def run_terminal(self, mode, early_escape, fragmented=None, queued_reply=None):
         with tempfile.TemporaryDirectory(prefix="pixelterm-terminal-") as directory:
             config = Path(directory) / "config.ini"
             config.write_text("[default]\nprotocol=auto\n", encoding="utf-8")
@@ -55,6 +55,8 @@ class TerminalStartupTests(unittest.TestCase):
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 800, 480))
             process = None
             try:
+                if queued_reply:
+                    os.write(master, queued_reply)
                 process = subprocess.Popen(
                     [str(BINARY), "--config", str(config),
                      "--preload", "false", str(image)],
@@ -67,7 +69,7 @@ class TerminalStartupTests(unittest.TestCase):
                 next_escape = 0.0
                 delayed = []
                 sent_fragmented = False
-                exit_after = 0.0
+                exit_after = time.monotonic() + 1 if queued_reply else 0.0
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
                     while delayed and delayed[0][0] <= time.monotonic():
@@ -98,7 +100,14 @@ class TerminalStartupTests(unittest.TestCase):
                                     exit_after = delayed[-1][0] + 0.1 if delayed else now + 0.5
                                     sent_fragmented = True
                             elif request == b"\x1b[5n":
-                                reply = b"" if sent_fragmented else b"\x1b[0n"
+                                if delayed:
+                                    delayed.append((delayed[-1][0] + 0.01, b"\x1b[0n"))
+                                    reply = b""
+                                elif fragmented in ("truncated_dcs", "truncated_csi"):
+                                    # Fault injection: the broken stream has neither a tail nor a sentinel.
+                                    reply = b""
+                                else:
+                                    reply = b"\x1b[0n"
                             else:
                                 reply = b"\x1b_Gi=31;OK\x1b\\" if mode == "kitty" else b""
                             if reply:
@@ -108,7 +117,7 @@ class TerminalStartupTests(unittest.TestCase):
                             rendered = rendered or re.search(IMAGE[mode], output) is not None
                     if process.poll() is not None:
                         break
-                    if not early_escape and rendered and time.monotonic() >= max(next_escape, exit_after):
+                    if not early_escape and (rendered or queued_reply) and time.monotonic() >= max(next_escape, exit_after):
                         os.write(master, b"\x1b")
                         next_escape = time.monotonic() + 0.3
                 self.assertIsNotNone(process.poll(), "pixelterm did not exit within the 10 s test deadline")
@@ -121,6 +130,9 @@ class TerminalStartupTests(unittest.TestCase):
                     self.assertTrue(sent_fragmented)
                     self.assertFalse(delayed)
                     self.assertFalse(b"File Info" in output, "Identity payload triggered a shortcut")
+                if queued_reply:
+                    for pattern in IMAGE.values():
+                        self.assertIsNone(re.search(pattern, output), "A stale reply selected graphics")
                 restored = termios.tcgetattr(slave)
                 # Kernels may mark buffered canonical input for reprocessing.
                 restored[3] &= ~getattr(termios, "PENDIN", 0)
@@ -152,6 +164,9 @@ class TerminalStartupTests(unittest.TestCase):
         for reply in ("truncated_dcs", "truncated_csi"):
             with self.subTest(reply=reply):
                 self.run_terminal("warp", early_escape=False, fragmented=reply)
+
+    def test_stale_reply_does_not_select_protocol(self):
+        self.run_terminal("unknown", early_escape=False, queued_reply=b"\x1b[?62;4;22c")
 
 
 if __name__ == "__main__":
