@@ -132,6 +132,7 @@ jobs:
           mkdir -p coverage
           gcovr \
             --root . \
+            --merge-mode-functions=separate \
             --filter 'src/' \
             --exclude 'tests/' \
             --print-summary \
@@ -139,6 +140,7 @@ jobs:
             --output coverage/coverage.xml
           gcovr \
             --root . \
+            --merge-mode-functions=separate \
             --filter 'src/' \
             --exclude 'tests/' \
             --html-details \

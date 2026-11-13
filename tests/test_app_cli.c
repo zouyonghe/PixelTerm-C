@@ -12,6 +12,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define KITTY_PROBE_QUERY "\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\\033[>q\033[5n"
+
 static const gchar * const k_app_cli_env_keys[] = {
     "TERM_PROGRAM",
     "LC_TERMINAL",
@@ -65,6 +67,11 @@ typedef struct {
 
 typedef struct {
     const gchar *response;
+    gboolean query_aware;
+    gboolean query_written;
+    const gchar *sixel_response;
+    const gchar *version_response;
+    const gchar *kitty_response;
     gsize response_length;
     gsize response_offset;
     gint64 now_us;
@@ -173,15 +180,28 @@ static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer
 
     g_assert_nonnull(buf);
     g_string_append_len(fixture->writes, buf, len);
+    fixture->query_written = TRUE;
+    if (fixture->query_aware) {
+        gchar *query = g_strndup(buf, len);
+        fixture->response = strcmp(query, KITTY_PROBE_QUERY) == 0 ? fixture->kitty_response :
+                            strcmp(query, "\033[>q\033[5n") == 0 ? fixture->version_response :
+                            strcmp(query, "\033[c") == 0 ? fixture->sixel_response : NULL;
+        fixture->response_length = fixture->response ? strlen(fixture->response) : 0;
+        fixture->response_offset = 0;
+        g_free(query);
+    }
     return (ssize_t)len;
 }
 
 static gint app_cli_probe_fixture_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
     AppCliProbeFixture *fixture = user_data;
 
+    if (!fixture->query_written) {
+        return TERMINAL_PROBE_READ_TIMEOUT;
+    }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     fixture->now_us += 1000;
@@ -289,7 +309,7 @@ static void assert_app_cli_probe_resolves_to_kitty(const gchar *response,
     g_assert_false(config.force_sixel);
     g_assert_true(config.force_kitty);
     g_assert_false(config.force_iterm2);
-    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpstr(probe_fixture.writes->str, ==, KITTY_PROBE_QUERY);
     g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
     g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
 
@@ -1285,7 +1305,7 @@ static void test_cli_protocol_resolution_auto_probe_avoids_raw_mode_transitions(
     (void)fixture;
     (void)user_data;
 
-    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const gchar k_sixel_response[] = "\033[?62;4;1;2c";
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
         .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
@@ -1331,7 +1351,7 @@ static void test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_
     (void)fixture;
     (void)user_data;
 
-    static const gchar k_kitty_response[] = "kitty";
+    static const gchar k_kitty_response[] = "\033P>|kitty 0.40.0\033\\";
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
         .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
@@ -1366,7 +1386,7 @@ static void test_cli_protocol_resolution_auto_prefers_affirmative_signal_before_
     g_assert_false(config.force_sixel);
     g_assert_true(config.force_kitty);
     g_assert_false(config.force_iterm2);
-    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpstr(probe_fixture.writes->str, ==, KITTY_PROBE_QUERY);
     g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
     g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
 
@@ -1397,7 +1417,7 @@ static void test_cli_protocol_resolution_auto_multi_protocol_hint_keeps_local_si
     (void)fixture;
     (void)user_data;
 
-    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const gchar k_sixel_response[] = "\033[?62;4;1;2c";
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
         .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
@@ -1477,7 +1497,7 @@ static void test_cli_protocol_resolution_auto_prefers_warp_hint_without_affirmat
     g_assert_false(config.force_sixel);
     g_assert_true(config.force_kitty);
     g_assert_false(config.force_iterm2);
-    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[>q\033[5n");
+    g_assert_cmpstr(probe_fixture.writes->str, ==, KITTY_PROBE_QUERY);
     g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
     g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
 
@@ -1527,13 +1547,13 @@ static void test_cli_protocol_resolution_auto_uses_text_when_probe_is_inconclusi
     g_string_free(probe_fixture.writes, TRUE);
 }
 
-static void test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_signal(
+static void test_cli_protocol_resolution_auto_direct_ssh_probes_without_hint(
     AppCliFixture *fixture,
     gconstpointer user_data) {
     (void)fixture;
     (void)user_data;
 
-    static const gchar k_sixel_response[] = "\033[?4;1;2c";
+    static const gchar k_sixel_response[] = "\033[?62;4;1;2c";
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
         .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
@@ -1564,18 +1584,125 @@ static void test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_si
     app_config_init(&config);
     app_config_resolve_protocol(&config);
 
-    g_assert_true(config.force_text);
-    g_assert_false(config.force_sixel);
+    g_assert_false(config.force_text);
+    g_assert_true(config.force_sixel);
     g_assert_false(config.force_kitty);
     g_assert_false(config.force_iterm2);
-    g_assert_cmpstr(probe_fixture.writes->str, ==, "");
+    g_assert_cmpstr(probe_fixture.writes->str, ==, "\033[c");
     g_assert_cmpint(probe_fixture.enable_raw_mode_calls, ==, 0);
     g_assert_cmpint(probe_fixture.disable_raw_mode_calls, ==, 0);
 
     g_string_free(probe_fixture.writes, TRUE);
 }
 
+typedef struct {
+    const gchar *name;
+    const gchar *term_program;
+    const gchar *sixel_response;
+    const gchar *version_response;
+    const gchar *kitty_response;
+    AppProtocolMode override;
+    AppProtocolMode expected;
+} SshProtocolCase;
+
+static void test_cli_probe_fixture_rejects_unrecognized_queries(void) {
+    static const char *queries[] = {"unrelated", "\033[garbage", "prefix\033[>q", "\033_Ggarbage"};
+    AppCliProbeFixture probe = {
+        .query_aware = TRUE,
+        .sixel_response = "\033[?62;4c",
+        .version_response = "\033P>|iTerm2\033\\",
+        .kitty_response = "\033_Gi=31;OK\033\\",
+        .writes = g_string_new(NULL),
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(queries); i++) {
+        app_cli_probe_fixture_write(queries[i], strlen(queries[i]), &probe);
+        g_assert_null(probe.response);
+        g_assert_cmpuint(probe.response_length, ==, 0);
+    }
+    g_string_free(probe.writes, TRUE);
+}
+
+static void test_cli_protocol_resolution_ssh(AppCliFixture *fixture G_GNUC_UNUSED,
+                                             gconstpointer user_data) {
+    const SshProtocolCase *test = user_data;
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe = {
+        .query_aware = TRUE,
+        .sixel_response = test->sixel_response,
+        .version_response = test->version_response,
+        .kitty_response = test->kitty_response,
+        .writes = g_string_new(NULL),
+    };
+    queue_terminal_protocol_env_restore_and_clear();
+    pixelterm_env_set_for_test("TERM", "xterm-256color");
+    pixelterm_env_set_for_test("SSH_TTY", "/dev/pts/1");
+    if (test->term_program) {
+        pixelterm_env_set_for_test("TERM_PROGRAM", test->term_program);
+    }
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+
+    AppConfig config;
+    app_config_init(&config);
+    config.protocol_mode = test->override;
+    app_config_resolve_protocol(&config);
+
+    g_assert_cmpint(config.force_text, ==, test->expected == APP_PROTOCOL_TEXT);
+    g_assert_cmpint(config.force_sixel, ==, test->expected == APP_PROTOCOL_SIXEL);
+    g_assert_cmpint(config.force_iterm2, ==, test->expected == APP_PROTOCOL_ITERM2);
+    g_assert_cmpint(config.force_kitty, ==, test->expected == APP_PROTOCOL_KITTY);
+    if (test->override != APP_PROTOCOL_AUTO) {
+        g_assert_cmpuint(probe.writes->len, ==, 0);
+    } else {
+        g_assert_cmpuint(probe.writes->len, >, 0);
+        if (test->kitty_response && test->expected == APP_PROTOCOL_KITTY) {
+            g_assert_nonnull(strstr(probe.writes->str,
+                                    "\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\"));
+        }
+    }
+    g_string_free(probe.writes, TRUE);
+}
+
 void register_app_cli_tests(void) {
+    g_test_add_func("/app_cli/protocol_resolution/fixture_rejects_unrecognized_queries",
+                     test_cli_probe_fixture_rejects_unrecognized_queries);
+    static const SshProtocolCase ssh_cases[] = {
+        {"sixel", NULL, "\033[?62;4;22c", NULL, NULL, APP_PROTOCOL_AUTO, APP_PROTOCOL_SIXEL},
+        {"kitty", NULL, "\033[?62;22c", "\033P>|unknown\033\\", "\033_Gi=31;OK\033\\",
+         APP_PROTOCOL_AUTO, APP_PROTOCOL_KITTY},
+        {"iterm2", NULL, "\033[?62;22c", "\033P>|iTerm2 3.5.0\033\\", NULL,
+         APP_PROTOCOL_AUTO, APP_PROTOCOL_ITERM2},
+        {"warp_fallback", "WarpTerminal", NULL, NULL, NULL, APP_PROTOCOL_AUTO, APP_PROTOCOL_KITTY},
+        {"warp_positive_query", "WarpTerminal", NULL, NULL, "\033_Gi=31;OK\033\\",
+         APP_PROTOCOL_AUTO, APP_PROTOCOL_KITTY},
+        {"unknown_timeout", NULL, NULL, NULL, NULL, APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"hint_without_response", "iTerm.app", NULL, NULL, NULL, APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"kitty_error", NULL, NULL, NULL, "\033_Gi=31;EINVAL:unsupported\033\\",
+         APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"kitty_wrong_id", NULL, NULL, NULL, "\033_Gi=32;OK\033\\", APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"kitty_incomplete", NULL, NULL, NULL, "\033_Gi=31;OK", APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"generic_status", NULL, "\033[?62;22c", "\033[0n", "\033[0n",
+         APP_PROTOCOL_AUTO, APP_PROTOCOL_TEXT},
+        {"override_text", "WarpTerminal", NULL, NULL, NULL, APP_PROTOCOL_TEXT, APP_PROTOCOL_TEXT},
+        {"override_sixel", NULL, NULL, NULL, NULL, APP_PROTOCOL_SIXEL, APP_PROTOCOL_SIXEL},
+        {"override_kitty", NULL, NULL, NULL, NULL, APP_PROTOCOL_KITTY, APP_PROTOCOL_KITTY},
+        {"override_iterm2", NULL, NULL, NULL, NULL, APP_PROTOCOL_ITERM2, APP_PROTOCOL_ITERM2},
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(ssh_cases); i++) {
+        gchar *path = g_strdup_printf("/app_cli/protocol_resolution/ssh/%s", ssh_cases[i].name);
+        g_test_add(path, AppCliFixture, &ssh_cases[i], app_cli_fixture_set_up,
+                   test_cli_protocol_resolution_ssh, app_cli_fixture_tear_down);
+        g_free(path);
+    }
     g_test_add_func("/app_cli/config/runtime_xdg_after_glib_cache_prime",
                     test_cli_default_config_respects_runtime_xdg_after_glib_cache_prime);
     add_app_cli_test("/app_cli/parse/boolean_aliases", test_cli_boolean_aliases_parse_for_preload_and_alt_screen);
@@ -1619,8 +1746,8 @@ void register_app_cli_tests(void) {
                      test_cli_protocol_resolution_auto_prefers_warp_hint_without_affirmative_probe);
     add_app_cli_test("/app_cli/protocol_resolution/auto_probe_avoids_raw_mode_transitions",
                      test_cli_protocol_resolution_auto_probe_avoids_raw_mode_transitions);
-    add_app_cli_test("/app_cli/protocol_resolution/auto_direct_ssh_requires_affirmative_signal",
-                     test_cli_protocol_resolution_auto_direct_ssh_requires_affirmative_signal);
+    add_app_cli_test("/app_cli/protocol_resolution/auto_direct_ssh_probes_without_hint",
+                     test_cli_protocol_resolution_auto_direct_ssh_probes_without_hint);
     add_app_cli_test("/app_cli/protocol_resolution/auto_uses_text_when_probe_is_inconclusive",
                      test_cli_protocol_resolution_auto_uses_text_when_probe_is_inconclusive);
     add_app_cli_test("/app_cli/config/apply_runtime_copies_app_fields",

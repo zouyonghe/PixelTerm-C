@@ -1,5 +1,6 @@
 #include "terminal_probe.h"
 
+#include <errno.h>
 #include <string.h>
 #include <sys/select.h>
 #include <unistd.h>
@@ -48,13 +49,22 @@ static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpoin
     FD_SET(STDIN_FILENO, &fds);
 
     int ready = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    if (ready <= 0 || !FD_ISSET(STDIN_FILENO, &fds)) {
-        return 0;
+    if (ready < 0) {
+        return -1;
+    }
+    if (ready == 0 || !FD_ISSET(STDIN_FILENO, &fds)) {
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     unsigned char ch = 0;
     ssize_t bytes_read = read(STDIN_FILENO, &ch, 1);
-    return (bytes_read == 1) ? (gint)ch : 0;
+    if (bytes_read == 1) {
+        return ch;
+    }
+    if (bytes_read == 0) {
+        errno = EIO;
+    }
+    return -1;
 }
 
 static gint64 terminal_probe_default_monotonic_time_us(gpointer user_data) {
@@ -75,6 +85,48 @@ static const TerminalProbeTransportHooks k_default_hooks = {
 
 static const TerminalProbeTransportHooks *g_terminal_probe_hooks = &k_default_hooks;
 static gpointer g_terminal_probe_user_data = NULL;
+
+/* Startup probes and event handling run on the main thread. Stop reading when
+ * this queue fills so unread keystrokes stay in the terminal's input buffer. */
+static GQueue g_terminal_probe_pending_input = G_QUEUE_INIT;
+#define TERMINAL_PROBE_PENDING_LIMIT 4096
+
+gboolean terminal_probe_has_pending_input(void) {
+    return !g_queue_is_empty(&g_terminal_probe_pending_input);
+}
+
+gint terminal_probe_take_pending_byte(void) {
+    if (!terminal_probe_has_pending_input()) {
+        return -1;
+    }
+    return GPOINTER_TO_INT(g_queue_pop_head(&g_terminal_probe_pending_input)) - 1;
+}
+
+static void terminal_probe_keep_input(const char *bytes, gsize length) {
+    for (gsize i = 0; i < length; i++) {
+        g_queue_push_tail(&g_terminal_probe_pending_input,
+                          GINT_TO_POINTER((guchar)bytes[i] + 1));
+    }
+}
+
+static gboolean terminal_probe_is_reply_prefix(const char *sequence) {
+    return g_str_has_prefix(sequence, "\033[?") ||
+           g_str_has_prefix(sequence, "\033P>|") ||
+           g_str_has_prefix(sequence, "\033_G");
+}
+
+static gboolean terminal_probe_sequence_complete(const char *sequence, gsize length) {
+    if (length < 2) {
+        return FALSE;
+    }
+    if (sequence[1] == '[') {
+        return length > 2 && sequence[length - 1] >= '@' && sequence[length - 1] <= '~';
+    }
+    if (sequence[1] == 'P' || sequence[1] == '_') {
+        return length >= 4 && sequence[length - 2] == '\033' && sequence[length - 1] == '\\';
+    }
+    return TRUE;
+}
 
 static gboolean terminal_probe_configure_raw_input(const TerminalProbeTransportHooks *hooks,
                                                    gpointer user_data,
@@ -126,19 +178,17 @@ gssize terminal_probe_query_response(const char *query,
 
     gssize length = -1;
     do {
-        if (hooks->tcflush_fn(TCIFLUSH, user_data) != 0) {
-            break;
-        }
-
         size_t query_len = strlen(query);
-        if (hooks->write_fn(query, query_len, user_data) != (ssize_t)query_len) {
-            break;
-        }
-
         gint64 deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
         gsize offset = 0;
+        char sequence[512] = {0};
+        gsize sequence_length = 0;
+        gboolean query_sent = FALSE;
+        gboolean sequence_before_query = FALSE;
+        gboolean read_failed = FALSE;
 
-        while (offset + 1 < buffer_size) {
+        while (offset + 1 < buffer_size && sequence_length + 1 < sizeof(sequence) &&
+               g_terminal_probe_pending_input.length + sequence_length < TERMINAL_PROBE_PENDING_LIMIT) {
             gint64 now_us = hooks->monotonic_time_us_fn(user_data);
             gint64 remaining_us = deadline_us - now_us;
             if (remaining_us <= 0) {
@@ -146,23 +196,83 @@ gssize terminal_probe_query_response(const char *query,
             }
 
             gint remaining_ms = (gint)MAX((remaining_us + 999) / 1000, (gint64)1);
-            gint step_timeout_ms = MIN(poll_timeout_ms, remaining_ms);
+            gint step_timeout_ms = query_sent ? MIN(poll_timeout_ms, remaining_ms) : 0;
+            errno = 0;
             gint ch = hooks->read_char_with_timeout_fn(step_timeout_ms, user_data);
-            if (ch == 0) {
+            if (ch <= 0 && errno == EINTR) {
+                continue;
+            }
+            if (ch < 0 && ch != TERMINAL_PROBE_READ_TIMEOUT) {
+                read_failed = TRUE;
+                break;
+            }
+            if (ch == TERMINAL_PROBE_READ_TIMEOUT) {
+                if (!query_sent) {
+                    /* Establish a non-flushing boundary; preserve queued keys but
+                     * never use replies that started before this query. */
+                    if (hooks->write_fn(query, query_len, user_data) != (ssize_t)query_len) {
+                        break;
+                    }
+                    query_sent = TRUE;
+                    deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
+                }
                 continue;
             }
 
-            buffer[offset++] = (char)ch;
-            if (terminator != '\0' && ch == (guchar)terminator) {
+            if (ch == 0) {
+                char byte = '\0';
+                terminal_probe_keep_input(&byte, 1);
+                continue;
+            }
+            if (sequence_length == 0 && ch != '\033') {
+                char byte = (char)ch;
+                terminal_probe_keep_input(&byte, 1);
+                continue;
+            }
+            if (sequence_length == 1 && ch == '\033') {
+                terminal_probe_keep_input(sequence, 1);
+                sequence_before_query = !query_sent;
+                continue;
+            }
+            if (sequence_length == 0) {
+                sequence_before_query = !query_sent;
+            }
+            sequence[sequence_length++] = (char)ch;
+            sequence[sequence_length] = '\0';
+            if (!terminal_probe_sequence_complete(sequence, sequence_length)) {
+                continue;
+            }
+
+            gboolean is_reply = terminal_probe_is_reply_prefix(sequence) ||
+                                strcmp(sequence, "\033[0n") == 0 ||
+                                strcmp(sequence, "\033[3n") == 0;
+            gboolean current_reply = is_reply && query_sent && !sequence_before_query;
+            if (current_reply) {
+                if (sequence_length >= buffer_size - offset) {
+                    sequence_length = 0;
+                    break;
+                }
+                memcpy(buffer + offset, sequence, sequence_length);
+                offset += sequence_length;
+            } else if (!is_reply) {
+                terminal_probe_keep_input(sequence, sequence_length);
+            }
+            sequence_length = 0;
+            sequence[0] = '\0';
+            if (current_reply && terminator != '\0' && ch == (guchar)terminator) {
                 break;
             }
         }
+        /* Preserve framing so the input parser can finish discarding late replies. */
+        if (sequence_length > 0) {
+            terminal_probe_keep_input(sequence, sequence_length);
+        }
 
         buffer[offset] = '\0';
-        length = (gssize)offset;
+        length = query_sent && !read_failed ? (gssize)offset : -1;
     } while (0);
 
-    if (hooks->tcsetattr_fn(TCSAFLUSH, &saved_termios, user_data) != 0) {
+    if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
         return -1;
     }
 
@@ -183,4 +293,5 @@ void terminal_probe_set_transport_hooks_for_test(const TerminalProbeTransportHoo
 void terminal_probe_reset_transport_hooks_for_test(void) {
     g_terminal_probe_hooks = &k_default_hooks;
     g_terminal_probe_user_data = NULL;
+    g_queue_clear(&g_terminal_probe_pending_input);
 }

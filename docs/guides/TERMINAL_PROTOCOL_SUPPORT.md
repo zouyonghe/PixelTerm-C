@@ -11,9 +11,9 @@ This page summarizes the terminal and graphics-protocol support notes currently 
 - `Recognized` means PixelTerm-C can identify the terminal family, but you should not assume graphics output there unless you have already verified a manual override locally.
 - Any explicit non-`auto` `--protocol` value, or a non-`auto` `protocol = ...` entry in `config.ini`, bypasses `auto` and uses that protocol directly.
 - In `auto`, PixelTerm-C first checks the matched terminal hint from `TERM`, `TERM_PROGRAM`, or terminal-specific env vars, and only tries plausible hinted protocols in `sixel` -> `iterm2` -> `kitty` priority.
-- If a hinted probe returns an affirmative result, `auto` uses it. Outside direct SSH, otherwise `auto` continues with a generic probe pass in the same `sixel` -> `iterm2` -> `kitty` order.
-- If no local probe confirms a graphics protocol, `auto` falls back to text.
-- In a direct SSH session (`SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY` set, without `TMUX` or `STY`), `auto` does not continue to the generic probe pass. Without an affirmative hinted signal it falls back to text.
+- If a hinted probe returns an affirmative result, `auto` uses it. Otherwise, except for the Warp fallback below, it continues with a generic probe pass in the same `sixel` -> `iterm2` -> `kitty` order, including over direct SSH with only `TERM=xterm-256color`.
+- Sixel requires a complete primary device-attributes response advertising capability `4`. Kitty sends a non-displaying inline graphics query and accepts its matching `OK` response, with complete kitty/Ghostty/libghostty identity replies retained for compatibility. iTerm2 uses a complete iTerm2 identity reply, not a generic status response; this is a compatibility signal, not a universal image-capability query.
+- If probing is inconclusive, `auto` falls back to text. The Warp-specific Kitty fallback is an exception: after the hinted probe stays inconclusive, `TERM_PROGRAM=WarpTerminal` selects Kitty before the generic pass, both locally and over direct SSH. Sixel and iTerm2 generic probes are skipped in this case. Other terminal hints alone do not enable graphics.
 - Use `--protocol` or a terminal-specific `config.ini` override when you already know the right protocol, or when remote/passthrough setup keeps `auto` in text.
 
 ## Terminals with protocol notes
@@ -77,6 +77,8 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 
 - Use this page as a practical guide, not as a complete certification matrix.
 - Rendering behavior can still vary by terminal version, local settings, remote session setup, and whether protocol probing succeeds at runtime.
-- Direct SSH fallback currently stays conservative on purpose. If a remote, tmux, or screen setup hides the affirmative probe response you expect, prefer an explicit override.
+- Probes have bounded timeouts. High SSH latency or hidden responses can still cause text fallback; use an explicit override for a known working protocol. tmux/screen passthrough wrapping is not supported.
+- Reply/key disambiguation is also bounded: Escape may wait up to 250 ms for an introducer; partial reply state expires after 250 ms idle or 2 seconds total. Replies and Alt-key sequences share bytes, so arbitrarily delayed replies cannot be distinguished perfectly from user input. After expiry, keyboard recovery takes priority; use an explicit protocol to bypass probing on slower links.
+- Each probe establishes a bounded, non-flushing input boundary before sending its query: already queued replies and frames begun before the query cannot confirm it, while ordinary keys are retained. DA/XTVERSION replies carry no request ID, so a reply that starts arriving only after a new query cannot be perfectly correlated to its originating request.
 - If your terminal works better with an explicit protocol than with `auto`, prefer a local config override for that terminal.
 - Shared-memory kitty transfer is local-only by design. Avoid forcing it through SSH, tmux, or screen unless you are deliberately testing a setup that supports it.

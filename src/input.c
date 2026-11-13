@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static gboolean input_discard_kitty_apc(InputHandler *handler);
+static gboolean input_discard_control_string(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
 
 #define INPUT_SGR_MOUSE_BUTTON_MAX 255
@@ -190,7 +190,7 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
     term.c_cc[VMIN] = 1;  // Minimum number of characters for non-canonical read
     term.c_cc[VTIME] = 0; // Timeout in deciseconds for non-canonical read
 
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) {
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &term) != 0) {
         return ERROR_TERMINAL_SIZE;
     }
 
@@ -281,6 +281,72 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
     return ERROR_NONE;
 }
 
+/* shortcut: ESC/Alt keys and replies share bytes; allow 250 ms idle gaps,
+ * and revisit this bound if supporting slower terminal transports. */
+#define INPUT_REPLY_IDLE_TIMEOUT_US 250000
+#define INPUT_REPLY_TOTAL_TIMEOUT_US 2000000
+
+enum {
+    INPUT_PREFIX_NONE,
+    INPUT_PREFIX_DCS_GT,
+    INPUT_PREFIX_DCS_PIPE,
+    INPUT_PREFIX_APC_G
+};
+
+static void input_reply_reset(InputHandler *handler) {
+    handler->apc_discarding = FALSE;
+    handler->apc_saw_esc = FALSE;
+    handler->csi_pending = FALSE;
+    handler->csi_discarding = FALSE;
+    handler->control_prefix_pending = INPUT_PREFIX_NONE;
+    handler->reply_idle_deadline_us = 0;
+    handler->reply_deadline_us = 0;
+}
+
+static void input_reply_start(InputHandler *handler) {
+    gint64 now = g_get_monotonic_time();
+    handler->reply_idle_deadline_us = now + INPUT_REPLY_IDLE_TIMEOUT_US;
+    handler->reply_deadline_us = now + INPUT_REPLY_TOTAL_TIMEOUT_US;
+}
+
+static gboolean input_reply_expired(const InputHandler *handler) {
+    gint64 now = g_get_monotonic_time();
+    return handler->reply_idle_deadline_us > 0 &&
+           (now >= handler->reply_idle_deadline_us || now >= handler->reply_deadline_us);
+}
+
+static void input_read_control_prefix(InputHandler *handler, InputEvent *event) {
+    while (handler->control_prefix_pending != INPUT_PREFIX_NONE) {
+        gint ch = input_read_char_with_timeout(handler, 0);
+        if (ch == 0) {
+            return;
+        }
+        guint8 prefix = handler->control_prefix_pending;
+        gint expected = prefix == INPUT_PREFIX_DCS_GT ? '>' :
+                        prefix == INPUT_PREFIX_DCS_PIPE ? '|' : 'G';
+        if (ch != expected || input_reply_expired(handler)) {
+            input_reply_reset(handler);
+            if (prefix == INPUT_PREFIX_DCS_PIPE) {
+                event->key_code = (KeyCode)'>';
+            }
+            handler->pending_byte = (guchar)ch;
+            handler->has_pending_byte = TRUE;
+            return;
+        }
+        handler->reply_idle_deadline_us = g_get_monotonic_time() + INPUT_REPLY_IDLE_TIMEOUT_US;
+        if (prefix == INPUT_PREFIX_DCS_GT) {
+            handler->control_prefix_pending = INPUT_PREFIX_DCS_PIPE;
+        } else {
+            handler->control_prefix_pending = INPUT_PREFIX_NONE;
+            handler->apc_discarding = TRUE;
+            if (input_discard_control_string(handler)) {
+                input_reply_reset(handler);
+            }
+            return;
+        }
+    }
+}
+
 // Read and parse input event
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (!handler || !event) {
@@ -298,17 +364,28 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->type = INPUT_KEY_PRESS;
     event->key_code = KEY_UNKNOWN;
 
-    if (handler->apc_discarding) {
-        if (!input_discard_kitty_apc(handler)) {
+    if (input_reply_expired(handler)) {
+        gboolean replay_gt = handler->control_prefix_pending == INPUT_PREFIX_DCS_PIPE;
+        input_reply_reset(handler);
+        if (replay_gt) {
+            event->key_code = (KeyCode)'>';
             goto finish_event;
         }
-        handler->apc_discarding = FALSE;
-        handler->apc_saw_esc = FALSE;
+    }
+    if (handler->control_prefix_pending != INPUT_PREFIX_NONE) {
+        input_read_control_prefix(handler, event);
+        goto finish_event;
+    }
+    if (handler->apc_discarding || handler->csi_discarding) {
+        if (!input_discard_control_string(handler)) {
+            goto finish_event;
+        }
+        input_reply_reset(handler);
         goto finish_event;
     }
 
     // Read first character (treat as unsigned byte to avoid sign-extension issues)
-    gint c = input_read_key(handler);
+    gint c = handler->csi_pending ? '\033' : input_read_key(handler);
     if (handler->should_exit) {
         return ERROR_INPUT_EOF;
     }
@@ -320,17 +397,14 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (c == '\033') {
         // Check if it's an escape sequence or just ESC key
         // We use a timeout to wait for potential following characters
-        gint next = input_read_char_with_timeout(handler, 50);
+        gint next = handler->csi_pending ? '[' :
+                    input_read_char_with_timeout(handler, INPUT_REPLY_IDLE_TIMEOUT_US / 1000);
 
         if (next != 0) {
-            if (next == '_') {
-                handler->apc_discarding = TRUE;
-                handler->apc_saw_esc = FALSE;
-                if (!input_discard_kitty_apc(handler)) {
-                    goto finish_event;
-                }
-                handler->apc_discarding = FALSE;
-                handler->apc_saw_esc = FALSE;
+            if (next == '_' || next == 'P') {
+                handler->control_prefix_pending = next == 'P' ? INPUT_PREFIX_DCS_GT : INPUT_PREFIX_APC_G;
+                input_reply_start(handler);
+                input_read_control_prefix(handler, event);
                 goto finish_event;
             }
             // We have a character following ESC
@@ -344,6 +418,24 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                 while (buf_idx < sizeof(buffer) - 1) {
                     gint ch = input_read_char_with_timeout(handler, 50);
                     if (ch != 0) {
+                        if (handler->csi_pending) {
+                            input_reply_reset(handler);
+                            if (ch != '?' && !g_ascii_isdigit(ch) && ch != ';' && ch != '<' &&
+                                strchr("ABCDHF", ch) == NULL) {
+                                handler->pending_byte = (guchar)ch;
+                                handler->has_pending_byte = TRUE;
+                                goto finish_event;
+                            }
+                        }
+                        if (next == '[' && buf_idx == 0 && ch == '?') {
+                            handler->csi_discarding = TRUE;
+                            input_reply_start(handler);
+                            if (!input_discard_control_string(handler)) {
+                                goto finish_event;
+                            }
+                            input_reply_reset(handler);
+                            goto finish_event;
+                        }
                         buffer[buf_idx++] = (gchar)ch;
                         // Stop reading if we hit a terminator (letter, ~, M, m)
                         if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~' || ch == 'M' || ch == 'm') {
@@ -351,6 +443,10 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                             break;
                         }
                     } else {
+                        if (next == '[' && buf_idx == 0 && !handler->csi_pending) {
+                            handler->csi_pending = TRUE;
+                            input_reply_start(handler);
+                        }
                         break; // No more data available
                     }
                 }
@@ -586,6 +682,12 @@ gboolean input_has_pending_input(InputHandler *handler) {
     if (handler->has_pending_byte) {
         return TRUE;
     }
+    if (terminal_probe_has_pending_input()) {
+        return TRUE;
+    }
+    if (handler->control_prefix_pending == INPUT_PREFIX_DCS_PIPE && input_reply_expired(handler)) {
+        return TRUE;
+    }
 
     struct timeval tv = {0, 0};
     fd_set fds;
@@ -623,6 +725,9 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
 
     handler->has_pending_event = FALSE;
     handler->has_pending_byte = FALSE;
+    input_reply_reset(handler);
+    while (terminal_probe_take_pending_byte() >= 0) {
+    }
     tcflush(STDIN_FILENO, TCIFLUSH);
     return ERROR_NONE;
 }
@@ -661,6 +766,10 @@ gint input_read_char(InputHandler *handler) {
         handler->has_pending_byte = FALSE;
         return handler->pending_byte;
     }
+    gint pending = terminal_probe_take_pending_byte();
+    if (pending >= 0) {
+        return pending;
+    }
 
     unsigned char c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
@@ -681,6 +790,10 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     if (handler->has_pending_byte) {
         handler->has_pending_byte = FALSE;
         return handler->pending_byte;
+    }
+    gint pending = terminal_probe_take_pending_byte();
+    if (pending >= 0) {
+        return pending;
     }
 
     struct timeval tv;
@@ -712,18 +825,38 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     return 0;
 }
 
-static gboolean input_discard_kitty_apc(InputHandler *handler) {
+static gboolean input_discard_control_string(InputHandler *handler) {
     if (!handler) {
         return TRUE;
     }
 
     const gint64 deadline = g_get_monotonic_time() + 100000;
     while (g_get_monotonic_time() < deadline) {
+        if (input_reply_expired(handler)) {
+            return TRUE;
+        }
         gint ch = input_read_char_with_timeout(handler, 0);
         if (ch == 0) {
             return FALSE;
         }
-        if (handler->apc_saw_esc && ch == '\\') {
+        if (input_reply_expired(handler)) {
+            handler->pending_byte = (guchar)ch;
+            handler->has_pending_byte = TRUE;
+            return TRUE;
+        }
+        handler->reply_idle_deadline_us = g_get_monotonic_time() + INPUT_REPLY_IDLE_TIMEOUT_US;
+        if (handler->csi_discarding) {
+            if (ch == 'c') {
+                return TRUE;
+            }
+            if (!g_ascii_isdigit(ch) && ch != ';') {
+                handler->pending_byte = (guchar)ch;
+                handler->has_pending_byte = TRUE;
+                return TRUE;
+            }
+            continue;
+        }
+        if (!handler->csi_discarding && handler->apc_saw_esc && ch == '\\') {
             handler->apc_saw_esc = FALSE;
             return TRUE;
         }
@@ -738,63 +871,55 @@ static gboolean input_response_has_sixel(const char *buffer) {
         return FALSE;
     }
 
-    const char *cursor = strchr(buffer, '?');
-    if (!cursor) {
-        cursor = strchr(buffer, '[');
-    }
-    if (!cursor) {
-        cursor = buffer;
-    }
-
-    for (; *cursor != '\0'; cursor++) {
-        if (!g_ascii_isdigit(*cursor)) {
-            continue;
-        }
-
-        gint value = 0;
-        while (g_ascii_isdigit(*cursor)) {
-            value = value * 10 + (*cursor - '0');
+    const char *reply = buffer;
+    while ((reply = strstr(reply, "\033[?")) != NULL) {
+        const char *cursor = reply + 3;
+        gboolean first = TRUE;
+        gboolean has_sixel = FALSE;
+        for (;;) {
+            const char *number = cursor;
+            while (g_ascii_isdigit(*cursor)) {
+                cursor++;
+            }
+            if (cursor == number) {
+                break;
+            }
+            /* DA1's first number is a device class, not a capability. */
+            if (!first && cursor - number == 1 && *number == '4') {
+                has_sixel = TRUE;
+            }
+            if (*cursor == 'c') {
+                if (has_sixel) {
+                    return TRUE;
+                }
+                break;
+            }
+            if (*cursor != ';') {
+                break;
+            }
             cursor++;
+            first = FALSE;
         }
-
-        if (value == 4) {
-            return TRUE;
-        }
-
-        if (*cursor == '\0') {
-            break;
-        }
+        reply += 3;
     }
 
     return FALSE;
 }
 
-/* Probe replies are short ASCII payloads, so a simple sliding-window search
- * keeps the matcher allocation-free while still using GLib's case-insensitive
- * comparison helper for each candidate position. */
-static gboolean input_response_contains_case_insensitive(const char *buffer, const char *token) {
-    if (!buffer || !token || token[0] == '\0') {
+static gboolean input_response_has_xtversion(const char *buffer, const char *terminal_name) {
+    if (!buffer) {
         return FALSE;
     }
 
-    gsize token_length = strlen(token);
-    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
-        if (g_ascii_strncasecmp(cursor, token, token_length) == 0) {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
-static gboolean input_response_matches_any_case_insensitive(const char *buffer,
-                                                            const char *const *tokens) {
-    if (!buffer || !tokens) {
-        return FALSE;
-    }
-
-    for (gsize i = 0; tokens[i] != NULL; i++) {
-        if (input_response_contains_case_insensitive(buffer, tokens[i])) {
+    gsize name_length = strlen(terminal_name);
+    const char *reply = buffer;
+    while ((reply = strstr(reply, "\033P>|")) != NULL) {
+        reply += 4;
+        const char *end = strstr(reply, "\033\\");
+        if (end && (gsize)(end - reply) >= name_length &&
+            g_ascii_strncasecmp(reply, terminal_name, name_length) == 0 &&
+            (reply + name_length == end || reply[name_length] == ' ' ||
+             reply[name_length] == '(')) {
             return TRUE;
         }
     }
@@ -803,26 +928,21 @@ static gboolean input_response_matches_any_case_insensitive(const char *buffer,
 }
 
 static gboolean input_response_has_kitty(const char *buffer) {
-    /* Kitty may identify itself directly, while Ghostty/libghostty advertise
-     * kitty-compatible XTVERSION payloads with a ">|..." prefix. Keep these
-     * affirmative markers together and match them case-insensitively so future
-     * probe-format updates only need token-list changes here. */
-    static const char *const k_kitty_affirmative_tokens[] = {
-        "kitty",
-        ">|ghostty",
-        ">|libghostty",
-        NULL,
-    };
-
-    return input_response_matches_any_case_insensitive(buffer, k_kitty_affirmative_tokens);
-}
-
-static gboolean input_response_has_iterm2(const char *buffer) {
     if (!buffer) {
         return FALSE;
     }
+    /* The query action neither stores nor displays the one-pixel image. */
+    const char *reply = strstr(buffer, "\033_Gi=31;");
+    if (reply) {
+        return g_str_has_prefix(reply, "\033_Gi=31;OK\033\\");
+    }
+    return input_response_has_xtversion(buffer, "kitty") ||
+           input_response_has_xtversion(buffer, "ghostty") ||
+           input_response_has_xtversion(buffer, "libghostty");
+}
 
-    return strstr(buffer, "iTerm2") != NULL;
+static gboolean input_response_has_iterm2(const char *buffer) {
+    return input_response_has_xtversion(buffer, "iTerm2");
 }
 
 static gboolean input_probe_collect_response(InputHandler *handler,
@@ -863,7 +983,7 @@ gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
     char buffer[256];
 
     if (!input_probe_collect_response(handler,
-                                      "\033[>q\033[5n",
+                                      "\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\\033[>q\033[5n",
                                       timeout_ms,
                                       '\0',
                                       buffer,

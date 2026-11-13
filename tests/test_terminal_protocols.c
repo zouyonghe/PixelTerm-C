@@ -1,9 +1,12 @@
 #include <glib.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "process_env.h"
 #include "terminal_probe.h"
 #include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
+#include "input.h"
 
 static const gchar * const k_terminal_env_keys[] = {
     "TERM",
@@ -136,6 +139,14 @@ typedef struct {
     const gchar *response;
     gsize response_length;
     gsize response_offset;
+    gboolean query_written;
+    const gchar *queued_input;
+    gsize queued_input_length;
+    gsize queued_input_offset;
+    gint interrupts_remaining;
+    gboolean zero_on_interrupt;
+    gint read_error;
+    gboolean error_after_query;
     gint64 now_us;
 } TerminalProbeFixture;
 
@@ -185,7 +196,7 @@ static int terminal_probe_fixture_tcsetattr(gint optional_actions,
     } else {
         fixture->restore_calls++;
         fixture->restore_optional_actions = optional_actions;
-        g_assert_cmpint(optional_actions, ==, TCSAFLUSH);
+        g_assert_cmpint(optional_actions, ==, TCSANOW);
         g_assert_true(fixture->has_saved_termios);
         g_assert_cmpmem(state, sizeof(*state),
                         &fixture->saved_termios, sizeof(fixture->saved_termios));
@@ -207,6 +218,7 @@ static ssize_t terminal_probe_fixture_write(const char *buf, size_t len, gpointe
 
     g_assert_nonnull(buf);
     g_string_append_len(fixture->writes, buf, len);
+    fixture->query_written = TRUE;
     return (ssize_t)len;
 }
 
@@ -215,9 +227,31 @@ static gint terminal_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoin
 
     g_array_append_val(fixture->read_timeouts_ms, timeout_ms);
 
+    if (fixture->interrupts_remaining != 0) {
+        if (fixture->interrupts_remaining > 0) {
+            fixture->interrupts_remaining--;
+        }
+        fixture->now_us += 1000;
+        errno = EINTR;
+        return fixture->zero_on_interrupt ? 0 : -1;
+    }
+    if (fixture->read_error && (fixture->query_written || !fixture->error_after_query)) {
+        fixture->now_us += 1000;
+        errno = fixture->read_error;
+        return -1;
+    }
+    gsize queued_length = fixture->queued_input_length ? fixture->queued_input_length :
+                          fixture->queued_input ? strlen(fixture->queued_input) : 0;
+    if (fixture->queued_input_offset < queued_length) {
+        fixture->now_us += 1000;
+        return (guchar)fixture->queued_input[fixture->queued_input_offset++];
+    }
+    if (!fixture->query_written) {
+        return TERMINAL_PROBE_READ_TIMEOUT;
+    }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     fixture->now_us += 1000;
@@ -274,12 +308,13 @@ static void test_terminal_probe_transport_reads_until_terminator_with_short_time
     g_assert_cmpint(fixture.raw_mode_calls, ==, 1);
     g_assert_cmpint(fixture.restore_calls, ==, 1);
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
-    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSAFLUSH);
-    g_assert_cmpint(fixture.tcflush_calls, ==, 1);
-    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, sizeof(k_expected_response) - 1);
+    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
+    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, sizeof(k_expected_response));
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 0);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[c", sizeof("\033[c") - 1);
 
-    for (guint i = 0; i < fixture.read_timeouts_ms->len; i++) {
+    for (guint i = 1; i < fixture.read_timeouts_ms->len; i++) {
         gint timeout_ms = g_array_index(fixture.read_timeouts_ms, gint, i);
         g_assert_cmpint(timeout_ms, ==, TERMINAL_PROBE_POLL_TIMEOUT_MS);
     }
@@ -323,12 +358,150 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
     g_assert_cmpint(fixture.raw_mode_calls, ==, 1);
     g_assert_cmpint(fixture.restore_calls, ==, 1);
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
-    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSAFLUSH);
-    g_assert_cmpint(fixture.tcflush_calls, ==, 1);
-    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, 1);
-    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 15);
+    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
+    g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, 2);
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 0);
+    g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 1), ==, 15);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[5n", sizeof("\033[5n") - 1);
 
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
+}
+
+static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
+    gint mode = GPOINTER_TO_INT(user_data);
+    gboolean flood = mode == 1;
+    const char *partial = mode == 2 || mode == 4 ? "\033P>|iTerm2" :
+                          mode == 3 || mode == 5 ? "\033[?62;" : NULL;
+    static const char response[] = "ch\033[?62;4cj\033[A\033P>|iTerm2 3.5\033\\\033";
+    static const char keys[] = "chj\033[A\033";
+    static const char nul_bytes[] = "\0h\0j\377\0";
+    static const char nul_response[] = "\0h\0\033[?62;4cj\377\0";
+    gboolean nul_input = mode == 6 || mode == 7;
+    gchar *flood_input = flood ? g_strnfill(5000, 'x') : NULL;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .response = mode == 7 ? NULL : nul_input ? nul_response : partial ? partial : flood ? flood_input : response,
+        .response_length = mode == 7 ? 0 : nul_input ? sizeof(nul_response) - 1 :
+                           partial ? strlen(partial) : flood ? 5000 : sizeof(response) - 1,
+        .queued_input = mode == 7 ? nul_bytes : NULL,
+        .queued_input_length = mode == 7 ? sizeof(nul_bytes) - 1 : 0,
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    char buffer[128];
+    terminal_probe_query_response("\033[c\033[>q", flood ? 5000 : 120, 20, '\0', buffer, sizeof(buffer));
+    g_assert_cmpstr(buffer, ==, mode == 6 ? "\033[?62;4c" :
+                    flood || partial || nul_input ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
+    if (flood) {
+        g_assert_cmpuint(fixture.response_offset, ==, 4096);
+    }
+
+    InputHandler *handler = input_handler_create();
+    if (mode == 4 || mode == 5) {
+        gint pipe_fds[2];
+        g_assert_cmpint(pipe(pipe_fds), ==, 0);
+        gint saved_stdin = dup(STDIN_FILENO);
+        g_assert_cmpint(saved_stdin, >=, 0);
+        g_assert_cmpint(dup2(pipe_fds[0], STDIN_FILENO), >=, 0);
+        close(pipe_fds[0]);
+        InputEvent event = {0};
+        g_assert_true(input_has_pending_input(handler));
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        const char *tail = mode == 4 ? " 3.5\033\\x" : "4cx";
+        g_assert_cmpint(write(pipe_fds[1], tail, strlen(tail)), ==, (gssize)strlen(tail));
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, 'x');
+        g_assert_cmpint(dup2(saved_stdin, STDIN_FILENO), >=, 0);
+        close(saved_stdin);
+        close(pipe_fds[1]);
+    } else {
+        for (gsize i = 0; i < (nul_input ? sizeof(nul_bytes) - 1 : partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
+            g_assert_true(input_has_pending_input(handler));
+            gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
+            g_assert_cmpint(ch, ==, nul_input ? (guchar)nul_bytes[i] :
+                            partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
+        }
+    }
+    g_assert_false(terminal_probe_has_pending_input());
+    input_handler_destroy(handler);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
+    g_free(flood_input);
+}
+
+typedef struct {
+    const char *queued;
+    const char *tail;
+    const char *expected;
+    gint interrupts;
+    gboolean zero_on_interrupt;
+    gint read_error;
+    gboolean error_after_query;
+} QueuedProbeReply;
+
+static void test_terminal_probe_rejects_prequery_reply(gconstpointer user_data) {
+    const QueuedProbeReply *test = user_data;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .queued_input = test->queued,
+        .response = test->tail,
+        .response_length = test->tail ? strlen(test->tail) : 0,
+        .interrupts_remaining = test->interrupts,
+        .zero_on_interrupt = test->zero_on_interrupt,
+        .read_error = test->read_error,
+        .error_after_query = test->error_after_query,
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    char buffer[128];
+    const char *expected = test->expected ? test->expected : "";
+    gboolean failed = test->read_error != 0 || test->interrupts < 0;
+    g_assert_cmpint(terminal_probe_query_response("\033[c", 120, 20, '\0', buffer, sizeof(buffer)), ==,
+                    failed ? -1 : (gssize)strlen(expected));
+    g_assert_cmpstr(buffer, ==, expected);
+    g_assert_cmpint(fixture.query_written, ==, !failed || test->error_after_query);
+    g_assert_cmpint(fixture.now_us, <=, 240000);
+    InputHandler *handler = input_handler_create();
+    if (!failed) {
+        g_assert_true(input_has_pending_input(handler));
+        g_assert_cmpint(input_read_char(handler), ==, 'h');
+        g_assert_true(input_has_pending_input(handler));
+        g_assert_cmpint(input_read_char(handler), ==, 'j');
+    }
+    g_assert_false(terminal_probe_has_pending_input());
+    input_handler_destroy(handler);
     g_string_free(fixture.writes, TRUE);
     g_array_free(fixture.read_timeouts_ms, TRUE);
 }
@@ -416,7 +589,7 @@ static void test_terminal_protocol_resolver_falls_back_to_text(
                              "text-fallback");
 }
 
-static void test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal(
+static void test_terminal_protocol_resolver_direct_ssh_accepts_probe(
     TerminalProtocolEnvFixture *fixture,
     gconstpointer user_data) {
     (void)fixture;
@@ -433,9 +606,47 @@ static void test_terminal_protocol_resolver_direct_ssh_requires_affirmative_sign
     TerminalProtocolDecision decision = terminal_protocol_resolve(&input);
 
     assert_resolver_decision(decision,
-                             TERMINAL_RESOLVED_PROTOCOL_TEXT,
-                             TERMINAL_PROTOCOL_DECISION_SOURCE_TEXT_FALLBACK,
-                             "ssh-no-affirmative-signal");
+                             TERMINAL_RESOLVED_PROTOCOL_SIXEL,
+                             TERMINAL_PROTOCOL_DECISION_SOURCE_PROBE,
+                             "probe");
+}
+
+typedef struct {
+    const gchar *name;
+    gboolean (*probe)(InputHandler *, gint);
+    const gchar *response;
+    gboolean expected;
+} ProtocolReplyCase;
+
+static void test_terminal_protocol_reply(gconstpointer user_data) {
+    const ProtocolReplyCase *test = user_data;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .response = test->response,
+        .response_length = strlen(test->response),
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    InputHandler *handler = input_handler_create();
+    g_assert_cmpint(test->probe(handler, 120), ==, test->expected);
+    g_assert_cmpint(fixture.restore_calls, ==, 1);
+    g_assert_cmpint(fixture.now_us, <=, 120000);
+    input_handler_destroy(handler);
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
 }
 
 static void test_terminal_protocol_kitty_term_match_is_weak_candidate(TerminalProtocolEnvFixture *fixture,
@@ -563,6 +774,84 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
+    g_test_add_data_func("/terminal_protocols/probe/preserves_nul_after_query",
+                         GINT_TO_POINTER(6), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_nul_before_query",
+                         GINT_TO_POINTER(7), test_terminal_probe_preserves_keys);
+    static const QueuedProbeReply stale_sixel = {.queued = "h\033[?62;4cj"};
+    static const QueuedProbeReply stale_kitty = {.queued = "h\033_Gi=31;OK\033\\j"};
+    static const QueuedProbeReply stale_partial = {.queued = "h\033P>|iTerm2", .tail = " 3.5\033\\j"};
+    static const QueuedProbeReply current_sixel = {
+        .queued = "h\033[?62;4cj", .tail = "\033[?62;22c", .expected = "\033[?62;22c"};
+    static const QueuedProbeReply interrupted = {.queued = "h\033[?62;4cj", .interrupts = 1};
+    static const QueuedProbeReply interrupted_zero = {
+        .queued = "h\033[?62;4cj", .interrupts = 1, .zero_on_interrupt = TRUE};
+    static const QueuedProbeReply repeated_interrupts = {.interrupts = -1};
+    static const QueuedProbeReply failed_read = {.read_error = EBADF};
+    static const QueuedProbeReply failed_response_read = {.read_error = EBADF, .error_after_query = TRUE};
+    static const char long_reply[] = "\033P>|iTerm2 "
+        "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890\033\\";
+    static const QueuedProbeReply response_budget = {
+        .queued = "h\033P>|iTerm2 12345678901234567890\033\\j", .tail = long_reply, .expected = long_reply};
+    g_test_add_data_func("/terminal_protocols/probe/rejects_queued_sixel_reply", &stale_sixel,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/rejects_queued_kitty_reply", &stale_kitty,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/rejects_cross_boundary_reply", &stale_partial,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/keeps_only_current_reply", &current_sixel,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/retries_interrupted_boundary", &interrupted,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/interrupted_zero_is_not_empty_boundary", &interrupted_zero,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/repeated_interrupts_remain_bounded", &repeated_interrupts,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/read_failure_does_not_send_query", &failed_read,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/response_read_failure_is_error", &failed_response_read,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/response_keeps_full_budget_after_drain", &response_budget,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_keys_between_replies", NULL,
+                         test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/stops_before_pending_input_overflows",
+                         GINT_TO_POINTER(TRUE), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_partial_dcs_reply",
+                         GINT_TO_POINTER(2), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_partial_csi_reply",
+                         GINT_TO_POINTER(3), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/replayed_dcs_is_not_a_shortcut",
+                         GINT_TO_POINTER(4), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/replayed_csi_is_not_a_shortcut",
+                         GINT_TO_POINTER(5), test_terminal_probe_preserves_keys);
+    static const ProtocolReplyCase replies[] = {
+        {"kitty_ok", input_probe_kitty_support, "\033_Gi=31;OK\033\\", TRUE},
+        {"kitty_wrong_id", input_probe_kitty_support, "\033_Gi=32;OK\033\\", FALSE},
+        {"kitty_error", input_probe_kitty_support, "\033_Gi=31;EINVAL\033\\", FALSE},
+        {"kitty_error_with_identity", input_probe_kitty_support,
+         "\033_Gi=31;EINVAL\033\\\033P>|kitty 0.40.0\033\\", FALSE},
+        {"kitty_incomplete", input_probe_kitty_support, "\033_Gi=31;OK", FALSE},
+        {"kitty_plain_text", input_probe_kitty_support, "not a kitty terminal", FALSE},
+        {"kitty_xtversion", input_probe_kitty_support, "\033P>|kitty 0.40.0\033\\", TRUE},
+        {"sixel_da", input_probe_sixel_support, "\033[?62;4;22c", TRUE},
+        {"sixel_missing", input_probe_sixel_support, "\033[?62;22c", FALSE},
+        {"sixel_plain_text", input_probe_sixel_support, "4", FALSE},
+        {"sixel_incomplete", input_probe_sixel_support, "\033[?62;4", FALSE},
+        {"sixel_device_class", input_probe_sixel_support, "\033[?4c", FALSE},
+        {"sixel_large_number", input_probe_sixel_support, "\033[?62;9999999999999999999999999c", FALSE},
+        {"iterm2_xtversion", input_probe_iterm2_support, "\033P>|iTerm2 3.5.0\033\\", TRUE},
+        {"iterm2_case_insensitive", input_probe_iterm2_support, "\033P>|ITERM2 3.5.0\033\\", TRUE},
+        {"iterm2_plain_text", input_probe_iterm2_support, "not iTerm2", FALSE},
+        {"iterm2_incomplete", input_probe_iterm2_support, "\033P>|iTerm2 3.5.0", FALSE},
+        {"iterm2_name_prefix", input_probe_iterm2_support, "\033P>|iTerm2-fake\033\\", FALSE},
+        {"iterm2_status", input_probe_iterm2_support, "\033[0n", FALSE},
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(replies); i++) {
+        gchar *path = g_strdup_printf("/terminal_protocols/replies/%s", replies[i].name);
+        g_test_add_data_func(path, &replies[i], test_terminal_protocol_reply);
+        g_free(path);
+    }
     g_free(g_terminal_protocol_baseline_term);
     g_free(g_terminal_protocol_baseline_term_program);
     g_terminal_protocol_baseline_term = g_strdup(g_getenv("TERM"));
@@ -583,8 +872,8 @@ void register_terminal_protocols_tests(void) {
     add_terminal_protocol_resolver_test(
         "/terminal_protocols/resolver/falls_back_to_text",
         test_terminal_protocol_resolver_falls_back_to_text);
-    add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_requires_affirmative_signal",
-                               test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal);
+    add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_accepts_probe",
+                               test_terminal_protocol_resolver_direct_ssh_accepts_probe);
 
     add_terminal_protocol_test("/terminal_protocols/kitty/term_match_keeps_family_without_support_claim",
                                test_terminal_protocol_kitty_term_match_is_weak_candidate);

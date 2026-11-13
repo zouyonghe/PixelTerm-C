@@ -14,8 +14,8 @@ pixelterm --protocol text /path/to/media
 ```
 
 - `auto` first checks the matched terminal hint and only tries that hint's plausible protocols in `sixel -> iterm2 -> kitty` priority.
-- On a local session, if no hinted probe confirms a protocol, `auto` runs the same `sixel -> iterm2 -> kitty` order as a generic probe pass. If nothing confirms, it falls back to text.
-- In a direct SSH session (`SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY` set, without `TMUX` or `STY`), `auto` stays conservative: it skips the generic probe pass and falls back to text unless the hinted family returns an affirmative signal.
+- Locally and over direct SSH, if no hinted probe confirms a protocol, `auto` runs generic probes in `sixel -> iterm2 -> kitty` order, even without terminal-family environment variables. Warp is an exception: with `TERM_PROGRAM=WarpTerminal`, the Kitty compatibility fallback runs before the generic pass and skips Sixel/iTerm2 generic probes. Otherwise, inconclusive probes fall back to text.
+- Sixel checks advertised DA capabilities; Kitty sends a non-displaying graphics query; iTerm2 relies on a complete iTerm2 identity reply. High latency or blocked replies can still defeat bounded probing. tmux/screen passthrough wrapping is not supported.
 - If you already know the correct protocol, or if a remote/passthrough setup keeps `auto` in text, use an explicit `--protocol` value or a terminal-specific `config.ini` override.
 - If a video is already open, press `p` or `P` to switch video output modes in this order: `text -> sixel -> iterm2 -> kitty -> text`.
 - See [TERMINAL_PROTOCOL_SUPPORT.md](TERMINAL_PROTOCOL_SUPPORT.md) for terminal-specific notes.
