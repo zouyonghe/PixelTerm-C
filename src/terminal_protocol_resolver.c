@@ -1,5 +1,4 @@
 #include "terminal_protocol_resolver.h"
-#include "terminal_protocols.h"
 
 static TerminalProtocolDecision terminal_protocol_make_decision(TerminalResolvedProtocol protocol,
                                                                 TerminalProtocolDecisionSource source,
@@ -23,12 +22,6 @@ TerminalProtocolDecision terminal_protocol_resolve(const TerminalProtocolResolve
         return terminal_protocol_make_decision(input->signal_protocol,
                                                TERMINAL_PROTOCOL_DECISION_SOURCE_SIGNAL,
                                                "signal");
-    }
-
-    if (terminal_session_is_direct_ssh()) {
-        return terminal_protocol_make_decision(TERMINAL_RESOLVED_PROTOCOL_TEXT,
-                                               TERMINAL_PROTOCOL_DECISION_SOURCE_TEXT_FALLBACK,
-                                               "ssh-no-affirmative-signal");
     }
 
     if (input && input->has_probe) {

@@ -613,15 +613,14 @@ static gboolean terminal_hint_primary_protocol(const TerminalProtocolHint *hint,
     return FALSE;
 }
 
-static gboolean terminal_hint_prefers_local_fallback_protocol(const TerminalProtocolHint *hint,
-                                                              TerminalResolvedProtocol *out_protocol) {
+static gboolean terminal_hint_prefers_fallback_protocol(const TerminalProtocolHint *hint,
+                                                        TerminalResolvedProtocol *out_protocol) {
     if (!hint || !out_protocol) {
         return FALSE;
     }
 
-    /* Warp documents kitty image support, but its default TERM remains
-     * xterm-256color, so local auto-detection needs to trust the family hint
-     * once the Warp-specific probe path stays inconclusive. */
+    /* Warp's default TERM is xterm-256color; keep its existing compatibility
+     * fallback available over direct SSH too. */
     if (strcmp(hint->name, "warp") == 0 && hint->supports_kitty) {
         *out_protocol = TERMINAL_RESOLVED_PROTOCOL_KITTY;
         return TRUE;
@@ -657,13 +656,11 @@ static void collect_auto_protocol_inputs(TerminalProtocolResolverInput *input) {
     };
     gboolean tried_protocols[TERMINAL_RESOLVED_PROTOCOL_ITERM2 + 1] = {FALSE};
     const TerminalProtocolHint *hint = NULL;
-    gboolean direct_ssh = FALSE;
 
     if (!input) {
         return;
     }
 
-    direct_ssh = terminal_session_is_direct_ssh();
     hint = terminal_protocol_env_weak_candidate();
     if (terminal_hint_primary_protocol(hint, &input->weak_hint_protocol)) {
         input->has_weak_hint = TRUE;
@@ -685,11 +682,7 @@ static void collect_auto_protocol_inputs(TerminalProtocolResolverInput *input) {
         }
     }
 
-    if (direct_ssh) {
-        return;
-    }
-
-    if (terminal_hint_prefers_local_fallback_protocol(hint, &input->probe_protocol)) {
+    if (terminal_hint_prefers_fallback_protocol(hint, &input->probe_protocol)) {
         input->has_probe = TRUE;
         return;
     }

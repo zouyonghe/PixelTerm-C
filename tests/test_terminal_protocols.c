@@ -4,6 +4,7 @@
 #include "terminal_probe.h"
 #include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
+#include "input.h"
 
 static const gchar * const k_terminal_env_keys[] = {
     "TERM",
@@ -416,7 +417,7 @@ static void test_terminal_protocol_resolver_falls_back_to_text(
                              "text-fallback");
 }
 
-static void test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal(
+static void test_terminal_protocol_resolver_direct_ssh_accepts_probe(
     TerminalProtocolEnvFixture *fixture,
     gconstpointer user_data) {
     (void)fixture;
@@ -433,9 +434,47 @@ static void test_terminal_protocol_resolver_direct_ssh_requires_affirmative_sign
     TerminalProtocolDecision decision = terminal_protocol_resolve(&input);
 
     assert_resolver_decision(decision,
-                             TERMINAL_RESOLVED_PROTOCOL_TEXT,
-                             TERMINAL_PROTOCOL_DECISION_SOURCE_TEXT_FALLBACK,
-                             "ssh-no-affirmative-signal");
+                             TERMINAL_RESOLVED_PROTOCOL_SIXEL,
+                             TERMINAL_PROTOCOL_DECISION_SOURCE_PROBE,
+                             "probe");
+}
+
+typedef struct {
+    const gchar *name;
+    gboolean (*probe)(InputHandler *, gint);
+    const gchar *response;
+    gboolean expected;
+} ProtocolReplyCase;
+
+static void test_terminal_protocol_reply(gconstpointer user_data) {
+    const ProtocolReplyCase *test = user_data;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .response = test->response,
+        .response_length = strlen(test->response),
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    InputHandler *handler = input_handler_create();
+    g_assert_cmpint(test->probe(handler, 120), ==, test->expected);
+    g_assert_cmpint(fixture.restore_calls, ==, 1);
+    g_assert_cmpint(fixture.now_us, <=, 120000);
+    input_handler_destroy(handler);
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
 }
 
 static void test_terminal_protocol_kitty_term_match_is_weak_candidate(TerminalProtocolEnvFixture *fixture,
@@ -563,6 +602,33 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
+    static const ProtocolReplyCase replies[] = {
+        {"kitty_ok", input_probe_kitty_support, "\033_Gi=31;OK\033\\", TRUE},
+        {"kitty_wrong_id", input_probe_kitty_support, "\033_Gi=32;OK\033\\", FALSE},
+        {"kitty_error", input_probe_kitty_support, "\033_Gi=31;EINVAL\033\\", FALSE},
+        {"kitty_error_with_identity", input_probe_kitty_support,
+         "\033_Gi=31;EINVAL\033\\\033P>|kitty 0.40.0\033\\", FALSE},
+        {"kitty_incomplete", input_probe_kitty_support, "\033_Gi=31;OK", FALSE},
+        {"kitty_plain_text", input_probe_kitty_support, "not a kitty terminal", FALSE},
+        {"kitty_xtversion", input_probe_kitty_support, "\033P>|kitty 0.40.0\033\\", TRUE},
+        {"sixel_da", input_probe_sixel_support, "\033[?62;4;22c", TRUE},
+        {"sixel_missing", input_probe_sixel_support, "\033[?62;22c", FALSE},
+        {"sixel_plain_text", input_probe_sixel_support, "4", FALSE},
+        {"sixel_incomplete", input_probe_sixel_support, "\033[?62;4", FALSE},
+        {"sixel_device_class", input_probe_sixel_support, "\033[?4c", FALSE},
+        {"sixel_large_number", input_probe_sixel_support, "\033[?62;9999999999999999999999999c", FALSE},
+        {"iterm2_xtversion", input_probe_iterm2_support, "\033P>|iTerm2 3.5.0\033\\", TRUE},
+        {"iterm2_case_insensitive", input_probe_iterm2_support, "\033P>|ITERM2 3.5.0\033\\", TRUE},
+        {"iterm2_plain_text", input_probe_iterm2_support, "not iTerm2", FALSE},
+        {"iterm2_incomplete", input_probe_iterm2_support, "\033P>|iTerm2 3.5.0", FALSE},
+        {"iterm2_name_prefix", input_probe_iterm2_support, "\033P>|iTerm2-fake\033\\", FALSE},
+        {"iterm2_status", input_probe_iterm2_support, "\033[0n", FALSE},
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(replies); i++) {
+        gchar *path = g_strdup_printf("/terminal_protocols/replies/%s", replies[i].name);
+        g_test_add_data_func(path, &replies[i], test_terminal_protocol_reply);
+        g_free(path);
+    }
     g_free(g_terminal_protocol_baseline_term);
     g_free(g_terminal_protocol_baseline_term_program);
     g_terminal_protocol_baseline_term = g_strdup(g_getenv("TERM"));
@@ -583,8 +649,8 @@ void register_terminal_protocols_tests(void) {
     add_terminal_protocol_resolver_test(
         "/terminal_protocols/resolver/falls_back_to_text",
         test_terminal_protocol_resolver_falls_back_to_text);
-    add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_requires_affirmative_signal",
-                               test_terminal_protocol_resolver_direct_ssh_requires_affirmative_signal);
+    add_terminal_protocol_test("/terminal_protocols/resolver/direct_ssh_accepts_probe",
+                               test_terminal_protocol_resolver_direct_ssh_accepts_probe);
 
     add_terminal_protocol_test("/terminal_protocols/kitty/term_match_keeps_family_without_support_claim",
                                test_terminal_protocol_kitty_term_match_is_weak_candidate);

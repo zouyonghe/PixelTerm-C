@@ -738,63 +738,55 @@ static gboolean input_response_has_sixel(const char *buffer) {
         return FALSE;
     }
 
-    const char *cursor = strchr(buffer, '?');
-    if (!cursor) {
-        cursor = strchr(buffer, '[');
-    }
-    if (!cursor) {
-        cursor = buffer;
-    }
-
-    for (; *cursor != '\0'; cursor++) {
-        if (!g_ascii_isdigit(*cursor)) {
-            continue;
-        }
-
-        gint value = 0;
-        while (g_ascii_isdigit(*cursor)) {
-            value = value * 10 + (*cursor - '0');
+    const char *reply = buffer;
+    while ((reply = strstr(reply, "\033[?")) != NULL) {
+        const char *cursor = reply + 3;
+        gboolean first = TRUE;
+        gboolean has_sixel = FALSE;
+        for (;;) {
+            const char *number = cursor;
+            while (g_ascii_isdigit(*cursor)) {
+                cursor++;
+            }
+            if (cursor == number) {
+                break;
+            }
+            /* DA1's first number is a device class, not a capability. */
+            if (!first && cursor - number == 1 && *number == '4') {
+                has_sixel = TRUE;
+            }
+            if (*cursor == 'c') {
+                if (has_sixel) {
+                    return TRUE;
+                }
+                break;
+            }
+            if (*cursor != ';') {
+                break;
+            }
             cursor++;
+            first = FALSE;
         }
-
-        if (value == 4) {
-            return TRUE;
-        }
-
-        if (*cursor == '\0') {
-            break;
-        }
+        reply += 3;
     }
 
     return FALSE;
 }
 
-/* Probe replies are short ASCII payloads, so a simple sliding-window search
- * keeps the matcher allocation-free while still using GLib's case-insensitive
- * comparison helper for each candidate position. */
-static gboolean input_response_contains_case_insensitive(const char *buffer, const char *token) {
-    if (!buffer || !token || token[0] == '\0') {
+static gboolean input_response_has_xtversion(const char *buffer, const char *terminal_name) {
+    if (!buffer) {
         return FALSE;
     }
 
-    gsize token_length = strlen(token);
-    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
-        if (g_ascii_strncasecmp(cursor, token, token_length) == 0) {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
-static gboolean input_response_matches_any_case_insensitive(const char *buffer,
-                                                            const char *const *tokens) {
-    if (!buffer || !tokens) {
-        return FALSE;
-    }
-
-    for (gsize i = 0; tokens[i] != NULL; i++) {
-        if (input_response_contains_case_insensitive(buffer, tokens[i])) {
+    gsize name_length = strlen(terminal_name);
+    const char *reply = buffer;
+    while ((reply = strstr(reply, "\033P>|")) != NULL) {
+        reply += 4;
+        const char *end = strstr(reply, "\033\\");
+        if (end && (gsize)(end - reply) >= name_length &&
+            g_ascii_strncasecmp(reply, terminal_name, name_length) == 0 &&
+            (reply + name_length == end || reply[name_length] == ' ' ||
+             reply[name_length] == '(')) {
             return TRUE;
         }
     }
@@ -803,26 +795,21 @@ static gboolean input_response_matches_any_case_insensitive(const char *buffer,
 }
 
 static gboolean input_response_has_kitty(const char *buffer) {
-    /* Kitty may identify itself directly, while Ghostty/libghostty advertise
-     * kitty-compatible XTVERSION payloads with a ">|..." prefix. Keep these
-     * affirmative markers together and match them case-insensitively so future
-     * probe-format updates only need token-list changes here. */
-    static const char *const k_kitty_affirmative_tokens[] = {
-        "kitty",
-        ">|ghostty",
-        ">|libghostty",
-        NULL,
-    };
-
-    return input_response_matches_any_case_insensitive(buffer, k_kitty_affirmative_tokens);
-}
-
-static gboolean input_response_has_iterm2(const char *buffer) {
     if (!buffer) {
         return FALSE;
     }
+    /* The query action neither stores nor displays the one-pixel image. */
+    const char *reply = strstr(buffer, "\033_Gi=31;");
+    if (reply) {
+        return g_str_has_prefix(reply, "\033_Gi=31;OK\033\\");
+    }
+    return input_response_has_xtversion(buffer, "kitty") ||
+           input_response_has_xtversion(buffer, "ghostty") ||
+           input_response_has_xtversion(buffer, "libghostty");
+}
 
-    return strstr(buffer, "iTerm2") != NULL;
+static gboolean input_response_has_iterm2(const char *buffer) {
+    return input_response_has_xtversion(buffer, "iTerm2");
 }
 
 static gboolean input_probe_collect_response(InputHandler *handler,
@@ -863,7 +850,7 @@ gboolean input_probe_kitty_support(InputHandler *handler, gint timeout_ms) {
     char buffer[256];
 
     if (!input_probe_collect_response(handler,
-                                      "\033[>q\033[5n",
+                                      "\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\\033[>q\033[5n",
                                       timeout_ms,
                                       '\0',
                                       buffer,
