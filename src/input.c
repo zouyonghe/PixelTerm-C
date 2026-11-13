@@ -281,6 +281,72 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
     return ERROR_NONE;
 }
 
+/* shortcut: ESC/Alt keys and replies share bytes; allow 250 ms idle gaps,
+ * and revisit this bound if supporting slower terminal transports. */
+#define INPUT_REPLY_IDLE_TIMEOUT_US 250000
+#define INPUT_REPLY_TOTAL_TIMEOUT_US 2000000
+
+enum {
+    INPUT_PREFIX_NONE,
+    INPUT_PREFIX_DCS_GT,
+    INPUT_PREFIX_DCS_PIPE,
+    INPUT_PREFIX_APC_G
+};
+
+static void input_reply_reset(InputHandler *handler) {
+    handler->apc_discarding = FALSE;
+    handler->apc_saw_esc = FALSE;
+    handler->csi_pending = FALSE;
+    handler->csi_discarding = FALSE;
+    handler->control_prefix_pending = INPUT_PREFIX_NONE;
+    handler->reply_idle_deadline_us = 0;
+    handler->reply_deadline_us = 0;
+}
+
+static void input_reply_start(InputHandler *handler) {
+    gint64 now = g_get_monotonic_time();
+    handler->reply_idle_deadline_us = now + INPUT_REPLY_IDLE_TIMEOUT_US;
+    handler->reply_deadline_us = now + INPUT_REPLY_TOTAL_TIMEOUT_US;
+}
+
+static gboolean input_reply_expired(const InputHandler *handler) {
+    gint64 now = g_get_monotonic_time();
+    return handler->reply_idle_deadline_us > 0 &&
+           (now >= handler->reply_idle_deadline_us || now >= handler->reply_deadline_us);
+}
+
+static void input_read_control_prefix(InputHandler *handler, InputEvent *event) {
+    while (handler->control_prefix_pending != INPUT_PREFIX_NONE) {
+        gint ch = input_read_char_with_timeout(handler, 0);
+        if (ch == 0) {
+            return;
+        }
+        guint8 prefix = handler->control_prefix_pending;
+        gint expected = prefix == INPUT_PREFIX_DCS_GT ? '>' :
+                        prefix == INPUT_PREFIX_DCS_PIPE ? '|' : 'G';
+        if (ch != expected || input_reply_expired(handler)) {
+            input_reply_reset(handler);
+            if (prefix == INPUT_PREFIX_DCS_PIPE) {
+                event->key_code = (KeyCode)'>';
+            }
+            handler->pending_byte = (guchar)ch;
+            handler->has_pending_byte = TRUE;
+            return;
+        }
+        handler->reply_idle_deadline_us = g_get_monotonic_time() + INPUT_REPLY_IDLE_TIMEOUT_US;
+        if (prefix == INPUT_PREFIX_DCS_GT) {
+            handler->control_prefix_pending = INPUT_PREFIX_DCS_PIPE;
+        } else {
+            handler->control_prefix_pending = INPUT_PREFIX_NONE;
+            handler->apc_discarding = TRUE;
+            if (input_discard_control_string(handler)) {
+                input_reply_reset(handler);
+            }
+            return;
+        }
+    }
+}
+
 // Read and parse input event
 ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (!handler || !event) {
@@ -298,13 +364,23 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->type = INPUT_KEY_PRESS;
     event->key_code = KEY_UNKNOWN;
 
+    if (input_reply_expired(handler)) {
+        gboolean replay_gt = handler->control_prefix_pending == INPUT_PREFIX_DCS_PIPE;
+        input_reply_reset(handler);
+        if (replay_gt) {
+            event->key_code = (KeyCode)'>';
+            goto finish_event;
+        }
+    }
+    if (handler->control_prefix_pending != INPUT_PREFIX_NONE) {
+        input_read_control_prefix(handler, event);
+        goto finish_event;
+    }
     if (handler->apc_discarding || handler->csi_discarding) {
         if (!input_discard_control_string(handler)) {
             goto finish_event;
         }
-        handler->apc_discarding = FALSE;
-        handler->csi_discarding = FALSE;
-        handler->apc_saw_esc = FALSE;
+        input_reply_reset(handler);
         goto finish_event;
     }
 
@@ -321,17 +397,14 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (c == '\033') {
         // Check if it's an escape sequence or just ESC key
         // We use a timeout to wait for potential following characters
-        gint next = handler->csi_pending ? '[' : input_read_char_with_timeout(handler, 50);
+        gint next = handler->csi_pending ? '[' :
+                    input_read_char_with_timeout(handler, INPUT_REPLY_IDLE_TIMEOUT_US / 1000);
 
         if (next != 0) {
             if (next == '_' || next == 'P') {
-                handler->apc_discarding = TRUE;
-                handler->apc_saw_esc = FALSE;
-                if (!input_discard_control_string(handler)) {
-                    goto finish_event;
-                }
-                handler->apc_discarding = FALSE;
-                handler->apc_saw_esc = FALSE;
+                handler->control_prefix_pending = next == 'P' ? INPUT_PREFIX_DCS_GT : INPUT_PREFIX_APC_G;
+                input_reply_start(handler);
+                input_read_control_prefix(handler, event);
                 goto finish_event;
             }
             // We have a character following ESC
@@ -345,13 +418,16 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                 while (buf_idx < sizeof(buffer) - 1) {
                     gint ch = input_read_char_with_timeout(handler, 50);
                     if (ch != 0) {
-                        handler->csi_pending = FALSE;
+                        if (handler->csi_pending) {
+                            input_reply_reset(handler);
+                        }
                         if (next == '[' && buf_idx == 0 && ch == '?') {
                             handler->csi_discarding = TRUE;
+                            input_reply_start(handler);
                             if (!input_discard_control_string(handler)) {
                                 goto finish_event;
                             }
-                            handler->csi_discarding = FALSE;
+                            input_reply_reset(handler);
                             goto finish_event;
                         }
                         buffer[buf_idx++] = (gchar)ch;
@@ -361,8 +437,9 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                             break;
                         }
                     } else {
-                        if (next == '[' && buf_idx == 0) {
+                        if (next == '[' && buf_idx == 0 && !handler->csi_pending) {
                             handler->csi_pending = TRUE;
+                            input_reply_start(handler);
                         }
                         break; // No more data available
                     }
@@ -602,6 +679,9 @@ gboolean input_has_pending_input(InputHandler *handler) {
     if (terminal_probe_has_pending_input()) {
         return TRUE;
     }
+    if (handler->control_prefix_pending == INPUT_PREFIX_DCS_PIPE && input_reply_expired(handler)) {
+        return TRUE;
+    }
 
     struct timeval tv = {0, 0};
     fd_set fds;
@@ -639,6 +719,7 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
 
     handler->has_pending_event = FALSE;
     handler->has_pending_byte = FALSE;
+    input_reply_reset(handler);
     while (terminal_probe_take_pending_byte() >= 0) {
     }
     tcflush(STDIN_FILENO, TCIFLUSH);
@@ -745,12 +826,29 @@ static gboolean input_discard_control_string(InputHandler *handler) {
 
     const gint64 deadline = g_get_monotonic_time() + 100000;
     while (g_get_monotonic_time() < deadline) {
+        if (input_reply_expired(handler)) {
+            return TRUE;
+        }
         gint ch = input_read_char_with_timeout(handler, 0);
         if (ch == 0) {
             return FALSE;
         }
-        if (handler->csi_discarding && ch >= '@' && ch <= '~') {
+        if (input_reply_expired(handler)) {
+            handler->pending_byte = (guchar)ch;
+            handler->has_pending_byte = TRUE;
             return TRUE;
+        }
+        handler->reply_idle_deadline_us = g_get_monotonic_time() + INPUT_REPLY_IDLE_TIMEOUT_US;
+        if (handler->csi_discarding) {
+            if (ch == 'c') {
+                return TRUE;
+            }
+            if (!g_ascii_isdigit(ch) && ch != ';') {
+                handler->pending_byte = (guchar)ch;
+                handler->has_pending_byte = TRUE;
+                return TRUE;
+            }
+            continue;
         }
         if (!handler->csi_discarding && handler->apc_saw_esc && ch == '\\') {
             handler->apc_saw_esc = FALSE;

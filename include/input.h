@@ -104,6 +104,9 @@ typedef struct {
     gboolean apc_saw_esc;
     gboolean csi_pending;
     gboolean csi_discarding;
+    guint8 control_prefix_pending;
+    gint64 reply_idle_deadline_us;
+    gint64 reply_deadline_us;
 } InputHandler;
 
 typedef void (*InputRawModeObserverForTest)(InputHandler *handler, gpointer user_data);

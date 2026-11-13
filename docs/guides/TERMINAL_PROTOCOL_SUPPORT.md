@@ -78,5 +78,6 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 - Use this page as a practical guide, not as a complete certification matrix.
 - Rendering behavior can still vary by terminal version, local settings, remote session setup, and whether protocol probing succeeds at runtime.
 - Probes have bounded timeouts. High SSH latency or hidden responses can still cause text fallback; use an explicit override for a known working protocol. tmux/screen passthrough wrapping is not supported.
+- Reply/key disambiguation is also bounded: Escape may wait up to 250 ms for an introducer; partial reply state expires after 250 ms idle or 2 seconds total. Replies and Alt-key sequences share bytes, so arbitrarily delayed replies cannot be distinguished perfectly from user input. After expiry, keyboard recovery takes priority; use an explicit protocol to bypass probing on slower links.
 - If your terminal works better with an explicit protocol than with `auto`, prefer a local config override for that terminal.
 - Shared-memory kitty transfer is local-only by design. Avoid forcing it through SSH, tmux, or screen unless you are deliberately testing a setup that supports it.

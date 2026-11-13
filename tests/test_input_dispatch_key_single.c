@@ -104,8 +104,8 @@ static void test_input_discards_late_terminal_identity_reply(void) {
     g_assert_cmpint(event.key_code, ==, 'x');
 }
 
-static void test_input_unknown_dcs_payload_keeps_following_key(void) {
-    static const char bytes[] = "\033Punknown\033\\x";
+static void test_input_alt_upper_p_keeps_following_key(void) {
+    static const char bytes[] = "\033Px";
     InputHandler handler = {0};
     InputEvent event = {0};
     redirect_stdin_bytes(bytes, sizeof(bytes) - 1);
@@ -113,6 +113,95 @@ static void test_input_unknown_dcs_payload_keeps_following_key(void) {
     g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
     g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
     g_assert_cmpint(event.key_code, ==, 'x');
+}
+
+static void test_input_truncated_reply_expires(gconstpointer user_data) {
+    const char *prefix = user_data;
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    g_assert_cmpint(write(writer, prefix, strlen(prefix)), ==, (gssize)strlen(prefix));
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_usleep(350000);
+    g_assert_cmpint(write(writer, "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
+}
+
+static void test_input_unmatched_csi_tail_is_replayed(void) {
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    const char *prefix = "\033[?62;";
+    g_assert_cmpint(write(writer, prefix, strlen(prefix)), ==, (gssize)strlen(prefix));
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(write(writer, "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
+}
+
+static void test_input_reply_total_deadline_expires(void) {
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    const char *prefix = "\033P>|iTerm2";
+    g_assert_cmpint(write(writer, prefix, strlen(prefix)), ==, (gssize)strlen(prefix));
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    handler.reply_deadline_us = g_get_monotonic_time() - 1;
+    g_assert_cmpint(write(writer, "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
+}
+
+static void test_input_expired_dcs_prefix_replays_buffered_key(void) {
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    const char *prefix = "\033P>";
+    g_assert_cmpint(write(writer, prefix, strlen(prefix)), ==, (gssize)strlen(prefix));
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_usleep(350000);
+    g_assert_true(input_has_pending_input(&handler));
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, '>');
+    g_assert_cmpint(write(writer, "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
+}
+
+typedef struct {
+    gint writer;
+    const char *reply;
+} DelayedReply;
+
+static gpointer write_delayed_reply(gpointer user_data) {
+    DelayedReply *reply = user_data;
+    g_usleep(80000);
+    g_assert_cmpint(write(reply->writer, reply->reply, strlen(reply->reply)), ==,
+                    (gssize)strlen(reply->reply));
+    return NULL;
+}
+
+static void test_input_accepts_delayed_escape_introducer(gconstpointer user_data) {
+    gint writer = redirect_stdin_pipe();
+    DelayedReply reply = {.writer = writer, .reply = user_data};
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    g_assert_cmpint(write(writer, "\033", 1), ==, 1);
+    GThread *thread = g_thread_new("late-reply", write_delayed_reply, &reply);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_thread_join(thread);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
 }
 
 static void test_input_discards_fragmented_terminal_reply(gconstpointer user_data) {
@@ -518,8 +607,26 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 void register_input_dispatch_key_single_tests(void) {
     g_test_add_func("/input/discards_late_terminal_identity_reply",
                     test_input_discards_late_terminal_identity_reply);
-    g_test_add_func("/input/unknown_dcs_payload_keeps_following_key",
-                    test_input_unknown_dcs_payload_keeps_following_key);
+    g_test_add_func("/input/alt_upper_p_keeps_following_key",
+                    test_input_alt_upper_p_keeps_following_key);
+    g_test_add_data_func("/input/truncated_dcs_expires", "\033P>|iTerm2",
+                         test_input_truncated_reply_expires);
+    g_test_add_data_func("/input/truncated_csi_expires", "\033[?62;",
+                         test_input_truncated_reply_expires);
+    g_test_add_data_func("/input/truncated_csi_introducer_expires", "\033[",
+                         test_input_truncated_reply_expires);
+    g_test_add_data_func("/input/truncated_apc_expires", "\033_Gi=31;OK",
+                         test_input_truncated_reply_expires);
+    g_test_add_data_func("/input/alt_upper_p_idle_expires", "\033P",
+                         test_input_truncated_reply_expires);
+    g_test_add_func("/input/unmatched_csi_tail_is_replayed", test_input_unmatched_csi_tail_is_replayed);
+    g_test_add_func("/input/reply_total_deadline_expires", test_input_reply_total_deadline_expires);
+    g_test_add_func("/input/expired_dcs_prefix_replays_buffered_key",
+                    test_input_expired_dcs_prefix_replays_buffered_key);
+    g_test_add_data_func("/input/delayed_dcs_introducer", "P>|iTerm2\033\\x",
+                         test_input_accepts_delayed_escape_introducer);
+    g_test_add_data_func("/input/delayed_apc_introducer", "_Gi=31;OK\033\\x",
+                         test_input_accepts_delayed_escape_introducer);
     static const char *const dcs_chunks[] = {"\033P", ">", "|", "iTerm2 3.5", "\033", "\\", NULL};
     static const char *const csi_chunks[] = {"\033[", "?", "62;", "4", "c", NULL};
     g_test_add_data_func("/input/discards_fragmented_dcs_reply", dcs_chunks,

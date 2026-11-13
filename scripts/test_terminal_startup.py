@@ -90,12 +90,15 @@ class TerminalStartupTests(unittest.TestCase):
                                 if fragmented and not sent_fragmented:
                                     reply = b"\x1bP" if fragmented == "prefix" else b"\x1bP>|"
                                     chunks = [b">", b"|", b"iTerm2 3.5.0", b"\x1b\\"] if fragmented == "prefix" else [b"iTerm2 3.5.0", b"\x1b\\"]
+                                    if fragmented in ("truncated_dcs", "truncated_csi"):
+                                        reply = b"\x1bP>|iTerm2" if fragmented == "truncated_dcs" else b"\x1b[?62;"
+                                        chunks = []
                                     now = time.monotonic()
                                     delayed = [(now + 0.18 + 0.07 * i, chunk) for i, chunk in enumerate(chunks)]
-                                    exit_after = delayed[-1][0] + 0.1
+                                    exit_after = delayed[-1][0] + 0.1 if delayed else now + 0.5
                                     sent_fragmented = True
                             elif request == b"\x1b[5n":
-                                reply = b"" if delayed else b"\x1b[0n"
+                                reply = b"" if sent_fragmented else b"\x1b[0n"
                             else:
                                 reply = b"\x1b_Gi=31;OK\x1b\\" if mode == "kitty" else b""
                             if reply:
@@ -144,6 +147,11 @@ class TerminalStartupTests(unittest.TestCase):
         for split in ("prefix", "payload"):
             with self.subTest(split=split):
                 self.run_terminal("warp", early_escape=False, fragmented=split)
+
+    def test_truncated_replies_do_not_block_escape(self):
+        for reply in ("truncated_dcs", "truncated_csi"):
+            with self.subTest(reply=reply):
+                self.run_terminal("warp", early_escape=False, fragmented=reply)
 
 
 if __name__ == "__main__":

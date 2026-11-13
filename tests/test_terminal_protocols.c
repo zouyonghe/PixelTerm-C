@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <unistd.h>
 
 #include "process_env.h"
 #include "terminal_probe.h"
@@ -337,7 +338,8 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
 static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
     gint mode = GPOINTER_TO_INT(user_data);
     gboolean flood = mode == 1;
-    const char *partial = mode == 2 ? "\033P>|iTerm2" : mode == 3 ? "\033[?62;" : NULL;
+    const char *partial = mode == 2 || mode == 4 ? "\033P>|iTerm2" :
+                          mode == 3 || mode == 5 ? "\033[?62;" : NULL;
     static const char response[] = "ch\033[?62;4cj\033[A\033P>|iTerm2 3.5\033\\\033";
     static const char keys[] = "chj\033[A\033";
     gchar *flood_input = flood ? g_strnfill(5000, 'x') : NULL;
@@ -369,10 +371,32 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
     }
 
     InputHandler *handler = input_handler_create();
-    for (gsize i = 0; i < (partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
+    if (mode >= 4) {
+        gint pipe_fds[2];
+        g_assert_cmpint(pipe(pipe_fds), ==, 0);
+        gint saved_stdin = dup(STDIN_FILENO);
+        g_assert_cmpint(saved_stdin, >=, 0);
+        g_assert_cmpint(dup2(pipe_fds[0], STDIN_FILENO), >=, 0);
+        close(pipe_fds[0]);
+        InputEvent event = {0};
         g_assert_true(input_has_pending_input(handler));
-        gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
-        g_assert_cmpint(ch, ==, partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        const char *tail = mode == 4 ? " 3.5\033\\x" : "4cx";
+        g_assert_cmpint(write(pipe_fds[1], tail, strlen(tail)), ==, (gssize)strlen(tail));
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        g_assert_cmpint(input_get_event(handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, 'x');
+        g_assert_cmpint(dup2(saved_stdin, STDIN_FILENO), >=, 0);
+        close(saved_stdin);
+        close(pipe_fds[1]);
+    } else {
+        for (gsize i = 0; i < (partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
+            g_assert_true(input_has_pending_input(handler));
+            gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
+            g_assert_cmpint(ch, ==, partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
+        }
     }
     g_assert_false(terminal_probe_has_pending_input());
     input_handler_destroy(handler);
@@ -658,6 +682,10 @@ void register_terminal_protocols_tests(void) {
                          GINT_TO_POINTER(2), test_terminal_probe_preserves_keys);
     g_test_add_data_func("/terminal_protocols/probe/preserves_partial_csi_reply",
                          GINT_TO_POINTER(3), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/replayed_dcs_is_not_a_shortcut",
+                         GINT_TO_POINTER(4), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/replayed_csi_is_not_a_shortcut",
+                         GINT_TO_POINTER(5), test_terminal_probe_preserves_keys);
     static const ProtocolReplyCase replies[] = {
         {"kitty_ok", input_probe_kitty_support, "\033_Gi=31;OK\033\\", TRUE},
         {"kitty_wrong_id", input_probe_kitty_support, "\033_Gi=32;OK\033\\", FALSE},
