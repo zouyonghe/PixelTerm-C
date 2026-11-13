@@ -20,6 +20,7 @@ typedef struct {
                         gpointer user_data);
     int (*tcflush_fn)(gint queue_selector, gpointer user_data);
     ssize_t (*write_fn)(const char *buf, size_t len, gpointer user_data);
+    /* Byte or 0 on timeout; -1 with errno on failure (EINTR is retried). */
     gint (*read_char_with_timeout_fn)(gint timeout_ms, gpointer user_data);
     gint64 (*monotonic_time_us_fn)(gpointer user_data);
 } TerminalProbeTransportHooks;

@@ -145,6 +145,28 @@ static void test_input_unmatched_csi_tail_is_replayed(void) {
     close(writer);
 }
 
+static void test_input_ambiguous_csi_tail(gconstpointer user_data) {
+    gboolean arrow = GPOINTER_TO_INT(user_data);
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    g_assert_cmpint(write(writer, "\033[", 2), ==, 2);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_usleep(70000);
+    g_assert_cmpint(write(writer, arrow ? "A" : "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    if (arrow) {
+        g_assert_cmpint(event.key_code, ==, KEY_UP);
+    } else {
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        g_assert_true(input_has_pending_input(&handler));
+        g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, 'x');
+    }
+    close(writer);
+}
+
 static void test_input_reply_total_deadline_expires(void) {
     gint writer = redirect_stdin_pipe();
     InputHandler handler = {0};
@@ -620,6 +642,10 @@ void register_input_dispatch_key_single_tests(void) {
     g_test_add_data_func("/input/alt_upper_p_idle_expires", "\033P",
                          test_input_truncated_reply_expires);
     g_test_add_func("/input/unmatched_csi_tail_is_replayed", test_input_unmatched_csi_tail_is_replayed);
+    g_test_add_data_func("/input/ambiguous_csi_ordinary_tail_is_replayed", GINT_TO_POINTER(FALSE),
+                         test_input_ambiguous_csi_tail);
+    g_test_add_data_func("/input/ambiguous_csi_arrow_tail_stays_navigation", GINT_TO_POINTER(TRUE),
+                         test_input_ambiguous_csi_tail);
     g_test_add_func("/input/reply_total_deadline_expires", test_input_reply_total_deadline_expires);
     g_test_add_func("/input/expired_dcs_prefix_replays_buffered_key",
                     test_input_expired_dcs_prefix_replays_buffered_key);

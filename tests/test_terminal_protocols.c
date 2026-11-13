@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <errno.h>
 #include <unistd.h>
 
 #include "process_env.h"
@@ -141,6 +142,10 @@ typedef struct {
     gboolean query_written;
     const gchar *queued_input;
     gsize queued_input_offset;
+    gint interrupts_remaining;
+    gboolean zero_on_interrupt;
+    gint read_error;
+    gboolean error_after_query;
     gint64 now_us;
 } TerminalProbeFixture;
 
@@ -221,6 +226,19 @@ static gint terminal_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoin
 
     g_array_append_val(fixture->read_timeouts_ms, timeout_ms);
 
+    if (fixture->interrupts_remaining != 0) {
+        if (fixture->interrupts_remaining > 0) {
+            fixture->interrupts_remaining--;
+        }
+        fixture->now_us += 1000;
+        errno = EINTR;
+        return fixture->zero_on_interrupt ? 0 : -1;
+    }
+    if (fixture->read_error && (fixture->query_written || !fixture->error_after_query)) {
+        fixture->now_us += 1000;
+        errno = fixture->read_error;
+        return -1;
+    }
     if (fixture->queued_input && fixture->queued_input[fixture->queued_input_offset]) {
         fixture->now_us += 1000;
         return (guchar)fixture->queued_input[fixture->queued_input_offset++];
@@ -423,6 +441,10 @@ typedef struct {
     const char *queued;
     const char *tail;
     const char *expected;
+    gint interrupts;
+    gboolean zero_on_interrupt;
+    gint read_error;
+    gboolean error_after_query;
 } QueuedProbeReply;
 
 static void test_terminal_probe_rejects_prequery_reply(gconstpointer user_data) {
@@ -435,6 +457,10 @@ static void test_terminal_probe_rejects_prequery_reply(gconstpointer user_data) 
         .queued_input = test->queued,
         .response = test->tail,
         .response_length = test->tail ? strlen(test->tail) : 0,
+        .interrupts_remaining = test->interrupts,
+        .zero_on_interrupt = test->zero_on_interrupt,
+        .read_error = test->read_error,
+        .error_after_query = test->error_after_query,
     };
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
@@ -450,15 +476,19 @@ static void test_terminal_probe_rejects_prequery_reply(gconstpointer user_data) 
     g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
     char buffer[128];
     const char *expected = test->expected ? test->expected : "";
+    gboolean failed = test->read_error != 0 || test->interrupts < 0;
     g_assert_cmpint(terminal_probe_query_response("\033[c", 120, 20, '\0', buffer, sizeof(buffer)), ==,
-                    (gssize)strlen(expected));
+                    failed ? -1 : (gssize)strlen(expected));
     g_assert_cmpstr(buffer, ==, expected);
-    g_assert_true(fixture.query_written);
+    g_assert_cmpint(fixture.query_written, ==, !failed || test->error_after_query);
+    g_assert_cmpint(fixture.now_us, <=, 240000);
     InputHandler *handler = input_handler_create();
-    g_assert_true(input_has_pending_input(handler));
-    g_assert_cmpint(input_read_char(handler), ==, 'h');
-    g_assert_true(input_has_pending_input(handler));
-    g_assert_cmpint(input_read_char(handler), ==, 'j');
+    if (!failed) {
+        g_assert_true(input_has_pending_input(handler));
+        g_assert_cmpint(input_read_char(handler), ==, 'h');
+        g_assert_true(input_has_pending_input(handler));
+        g_assert_cmpint(input_read_char(handler), ==, 'j');
+    }
     g_assert_false(terminal_probe_has_pending_input());
     input_handler_destroy(handler);
     g_string_free(fixture.writes, TRUE);
@@ -733,10 +763,21 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
-    static const QueuedProbeReply stale_sixel = {"h\033[?62;4cj", NULL, NULL};
-    static const QueuedProbeReply stale_kitty = {"h\033_Gi=31;OK\033\\j", NULL, NULL};
-    static const QueuedProbeReply stale_partial = {"h\033P>|iTerm2", " 3.5\033\\j", NULL};
-    static const QueuedProbeReply current_sixel = {"h\033[?62;4cj", "\033[?62;22c", "\033[?62;22c"};
+    static const QueuedProbeReply stale_sixel = {.queued = "h\033[?62;4cj"};
+    static const QueuedProbeReply stale_kitty = {.queued = "h\033_Gi=31;OK\033\\j"};
+    static const QueuedProbeReply stale_partial = {.queued = "h\033P>|iTerm2", .tail = " 3.5\033\\j"};
+    static const QueuedProbeReply current_sixel = {
+        .queued = "h\033[?62;4cj", .tail = "\033[?62;22c", .expected = "\033[?62;22c"};
+    static const QueuedProbeReply interrupted = {.queued = "h\033[?62;4cj", .interrupts = 1};
+    static const QueuedProbeReply interrupted_zero = {
+        .queued = "h\033[?62;4cj", .interrupts = 1, .zero_on_interrupt = TRUE};
+    static const QueuedProbeReply repeated_interrupts = {.interrupts = -1};
+    static const QueuedProbeReply failed_read = {.read_error = EBADF};
+    static const QueuedProbeReply failed_response_read = {.read_error = EBADF, .error_after_query = TRUE};
+    static const char long_reply[] = "\033P>|iTerm2 "
+        "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890\033\\";
+    static const QueuedProbeReply response_budget = {
+        .queued = "h\033P>|iTerm2 12345678901234567890\033\\j", .tail = long_reply, .expected = long_reply};
     g_test_add_data_func("/terminal_protocols/probe/rejects_queued_sixel_reply", &stale_sixel,
                          test_terminal_probe_rejects_prequery_reply);
     g_test_add_data_func("/terminal_protocols/probe/rejects_queued_kitty_reply", &stale_kitty,
@@ -744,6 +785,18 @@ void register_terminal_protocols_tests(void) {
     g_test_add_data_func("/terminal_protocols/probe/rejects_cross_boundary_reply", &stale_partial,
                          test_terminal_probe_rejects_prequery_reply);
     g_test_add_data_func("/terminal_protocols/probe/keeps_only_current_reply", &current_sixel,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/retries_interrupted_boundary", &interrupted,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/interrupted_zero_is_not_empty_boundary", &interrupted_zero,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/repeated_interrupts_remain_bounded", &repeated_interrupts,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/read_failure_does_not_send_query", &failed_read,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/response_read_failure_is_error", &failed_response_read,
+                         test_terminal_probe_rejects_prequery_reply);
+    g_test_add_data_func("/terminal_protocols/probe/response_keeps_full_budget_after_drain", &response_budget,
                          test_terminal_probe_rejects_prequery_reply);
     g_test_add_data_func("/terminal_protocols/probe/preserves_keys_between_replies", NULL,
                          test_terminal_probe_preserves_keys);

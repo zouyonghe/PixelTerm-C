@@ -1,5 +1,6 @@
 #include "terminal_probe.h"
 
+#include <errno.h>
 #include <string.h>
 #include <sys/select.h>
 #include <unistd.h>
@@ -48,13 +49,22 @@ static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpoin
     FD_SET(STDIN_FILENO, &fds);
 
     int ready = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-    if (ready <= 0 || !FD_ISSET(STDIN_FILENO, &fds)) {
+    if (ready < 0) {
+        return -1;
+    }
+    if (ready == 0 || !FD_ISSET(STDIN_FILENO, &fds)) {
         return 0;
     }
 
     unsigned char ch = 0;
     ssize_t bytes_read = read(STDIN_FILENO, &ch, 1);
-    return (bytes_read == 1) ? (gint)ch : 0;
+    if (bytes_read == 1) {
+        return ch;
+    }
+    if (bytes_read == 0) {
+        errno = EIO;
+    }
+    return -1;
 }
 
 static gint64 terminal_probe_default_monotonic_time_us(gpointer user_data) {
@@ -175,6 +185,7 @@ gssize terminal_probe_query_response(const char *query,
         gsize sequence_length = 0;
         gboolean query_sent = FALSE;
         gboolean sequence_before_query = FALSE;
+        gboolean read_failed = FALSE;
 
         while (offset + 1 < buffer_size && sequence_length + 1 < sizeof(sequence) &&
                g_terminal_probe_pending_input.length + sequence_length < TERMINAL_PROBE_PENDING_LIMIT) {
@@ -186,7 +197,15 @@ gssize terminal_probe_query_response(const char *query,
 
             gint remaining_ms = (gint)MAX((remaining_us + 999) / 1000, (gint64)1);
             gint step_timeout_ms = query_sent ? MIN(poll_timeout_ms, remaining_ms) : 0;
+            errno = 0;
             gint ch = hooks->read_char_with_timeout_fn(step_timeout_ms, user_data);
+            if (ch <= 0 && errno == EINTR) {
+                continue;
+            }
+            if (ch < 0) {
+                read_failed = TRUE;
+                break;
+            }
             if (ch == 0) {
                 if (!query_sent) {
                     /* Establish a non-flushing boundary; preserve queued keys but
@@ -245,7 +264,7 @@ gssize terminal_probe_query_response(const char *query,
         }
 
         buffer[offset] = '\0';
-        length = query_sent ? (gssize)offset : -1;
+        length = query_sent && !read_failed ? (gssize)offset : -1;
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {

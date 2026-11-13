@@ -420,6 +420,12 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                     if (ch != 0) {
                         if (handler->csi_pending) {
                             input_reply_reset(handler);
+                            if (ch != '?' && !g_ascii_isdigit(ch) && ch != ';' && ch != '<' &&
+                                strchr("ABCDHF", ch) == NULL) {
+                                handler->pending_byte = (guchar)ch;
+                                handler->has_pending_byte = TRUE;
+                                goto finish_event;
+                            }
                         }
                         if (next == '[' && buf_idx == 0 && ch == '?') {
                             handler->csi_discarding = TRUE;
