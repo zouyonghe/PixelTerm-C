@@ -53,4 +53,4 @@ PixelTerm-C/
 ## Notes
 - Default source build output is `bin/pixelterm`.
 - `make install` installs `/usr/local/bin/pixelterm` by default (override with `PREFIX`/`DESTDIR`).
-- Shipped behavior and automated coverage now include the layered auto-protocol resolver, bounded probe transport, direct-SSH conservative fallback behavior, non-overlapping short-last-page preview/book pagination, and paused video seek target restoration after seek-preview redraw so repeated paused seeks stay anchored to the latest requested position.
+- Behavior and automated coverage include the layered auto-protocol resolver, bounded probe transport, direct-SSH generic graphics probing with a Warp-specific Kitty compatibility fallback before the generic pass, non-overlapping short-last-page preview/book pagination, and paused video seek target restoration after seek-preview redraw so repeated paused seeks stay anchored to the latest requested position.

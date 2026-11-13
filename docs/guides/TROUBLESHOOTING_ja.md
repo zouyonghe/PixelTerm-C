@@ -14,8 +14,8 @@ pixelterm --protocol text /path/to/media
 ```
 
 - `auto` はまず一致した端末ヒントを確認し、そのヒントで妥当なプロトコルだけを `sixel` -> `iterm2` -> `kitty` の順で試します。
-- ローカルと直結 SSH の両方で、ヒント側で確定しなければ `sixel` -> `iterm2` -> `kitty` 順の汎用プローブを行います。端末系統の環境変数は不要です。不確定なら text に戻りますが、既存の Warp 専用 Kitty フォールバックは例外で、`TERM_PROGRAM=WarpTerminal` の直結 SSH でも利用します。
-- Sixel は DA 能力、Kitty は画像を表示しないグラフィックスクエリ、iTerm2 は完全な iTerm2 識別応答を確認します。高遅延や応答の遮断でタイムアウトする場合があります。tmux/screen のパススルーラッピングは追加しません。
+- ローカルと直結 SSH の両方で、ヒント側で確定しなければ `sixel` -> `iterm2` -> `kitty` 順の汎用プローブを行います。端末系統の環境変数は不要です。Warp は例外で、`TERM_PROGRAM=WarpTerminal` の Kitty フォールバックは汎用プローブより先に実行され、Sixel/iTerm2 の汎用プローブを省略します。それ以外は不確定なら text に戻ります。
+- Sixel は DA 能力、Kitty は画像を表示しないグラフィックスクエリ、iTerm2 は完全な iTerm2 識別応答を確認します。高遅延や応答の遮断でタイムアウトする場合があります。tmux/screen のパススルーラッピングには対応していません。
 - 正しいプロトコルが分かっている場合や、リモート/パススルー構成で `auto` が text のままになる場合は、明示的な `--protocol` 値か端末別 `config.ini` 上書きを使ってください。
 - 動画を開いている場合は、`p` または `P` で動画出力モードを `text -> sixel -> iterm2 -> kitty -> text` の順に切り替えられます。
 - 端末ごとの補足は [TERMINAL_PROTOCOL_SUPPORT_ja.md](TERMINAL_PROTOCOL_SUPPORT_ja.md) を参照してください。

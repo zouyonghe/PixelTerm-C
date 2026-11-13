@@ -88,6 +88,28 @@ static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
     close(pipe_fds[1]);
 }
 
+static void test_input_discards_late_terminal_identity_reply(void) {
+    static const char bytes[] = "\033P>|iTerm2 3.5.0\033\\x";
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    redirect_stdin_bytes(bytes, sizeof(bytes) - 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+}
+
+static void test_input_unknown_dcs_prefix_keeps_following_key(void) {
+    static const char bytes[] = "\033Px";
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    redirect_stdin_bytes(bytes, sizeof(bytes) - 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+}
+
 static void test_input_eof_requests_exit(void) {
     InputHandler handler = {0};
     InputEvent event = {0};
@@ -472,6 +494,10 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 }
 
 void register_input_dispatch_key_single_tests(void) {
+    g_test_add_func("/input/discards_late_terminal_identity_reply",
+                    test_input_discards_late_terminal_identity_reply);
+    g_test_add_func("/input/unknown_dcs_prefix_keeps_following_key",
+                    test_input_unknown_dcs_prefix_keeps_following_key);
     g_test_add_func("/input/eof/requests_exit", test_input_eof_requests_exit);
     g_test_add_func("/input/read_error/requests_exit",
                     test_input_persistent_read_error_requests_exit);

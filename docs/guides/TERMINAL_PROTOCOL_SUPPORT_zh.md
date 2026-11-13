@@ -11,9 +11,9 @@
 - `已识别` 表示 PixelTerm-C 能识别这类终端，但除非你已经在本地验证过手动覆盖，否则不要默认它能输出图形。
 - 任何显式的非 `auto` `--protocol` 值，或 `config.ini` 里的非 `auto` `protocol = ...`，都会跳过 `auto`，直接使用指定协议。
 - 在 `auto` 模式下，PixelTerm-C 会先根据 `TERM`、`TERM_PROGRAM` 或终端专用环境变量匹配终端提示，只尝试该提示对应的可能协议，优先顺序是 `sixel` -> `iterm2` -> `kitty`。
-- 如果提示内的协议探测到了肯定信号，`auto` 就会选用它；否则按相同的 `sixel` -> `iterm2` -> `kitty` 顺序做通用探测。直连 SSH 也会探测，即使远端只有 `TERM=xterm-256color`。
+- 如果提示内的协议探测到了肯定信号，`auto` 就会选用它；否则，除下述 Warp 回退外，按 `sixel` -> `iterm2` -> `kitty` 顺序做通用探测。直连 SSH 也会探测，即使远端只有 `TERM=xterm-256color`。
 - Sixel 要求完整的主设备属性响应包含能力 `4`。Kitty 发送不显示、不存储图片的内联图形查询，并接受匹配的 `OK` 响应；同时保留完整的 kitty/Ghostty/libghostty 身份响应作为兼容依据。iTerm2 使用完整的 iTerm2 身份响应，而非普通状态响应；它是兼容信号，不是通用图片能力查询。
-- 探测无结论时回落到文本。已有的 Warp 专用 Kitty 回退是例外：当 `TERM_PROGRAM=WarpTerminal` 且提示内探测无结论时，本地和直连 SSH 均可使用；其他终端提示本身不会启用图形。
+- 探测无结论时回落到文本。Warp 专用 Kitty 回退是例外：当 `TERM_PROGRAM=WarpTerminal` 且提示内探测无结论时，本地和直连 SSH 都会在通用探测前选择 Kitty，此时不再做 Sixel 和 iTerm2 通用探测。其他终端提示本身不会启用图形。
 - 如果你已经知道正确协议，或者远程/透传环境让 `auto` 一直停留在文本输出，就用 `--protocol` 或终端专用的 `config.ini` 覆盖。
 
 ## 已有协议说明的终端
@@ -66,5 +66,5 @@ pixelterm --protocol auto|text|sixel|kitty|iterm2 /path/to/image.jpg
 - 把本页当作实际使用指南，而不是完整的认证矩阵。
 - 实际渲染效果仍可能受到终端版本、本地设置、远程会话环境以及运行时协议探测结果的影响。
 - 在直连 Kitty 中，符合限制的 GIF 和动画 WebP 会使用 Kitty 原生动画帧；其他情况继续使用客户端逐帧回退路径。
-- 探测有超时上限，SSH 延迟较高或响应被屏蔽时仍可能回落到文本；对已知可用的协议使用显式覆盖。本次检测不增加 tmux/screen 透传封装。
+- 探测有超时上限，SSH 延迟较高或响应被屏蔽时仍可能回落到文本；对已知可用的协议使用显式覆盖。不包含 tmux/screen 透传封装。
 - 如果某个终端在显式指定协议时比 `auto` 更稳定，优先为该终端使用本地配置覆盖。

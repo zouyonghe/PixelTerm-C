@@ -14,8 +14,8 @@ pixelterm --protocol text /path/to/media
 ```
 
 - `auto` 会先检查匹配到的终端提示，只尝试该提示对应的可能协议，顺序是 `sixel` -> `iterm2` -> `kitty`。
-- 本地和直连 SSH 中，如果提示探测没有确认出协议，`auto` 都会按 `sixel` -> `iterm2` -> `kitty` 做通用探测，不要求终端家族环境变量。无结论时回落到文本；已有的 Warp 专用 Kitty 兼容回退是例外，现在也适用于 `TERM_PROGRAM=WarpTerminal` 的直连 SSH。
-- Sixel 检查 DA 能力，Kitty 发送不显示图片的图形查询，iTerm2 依赖完整的 iTerm2 身份响应。SSH 延迟较高或响应被屏蔽时，有限时探测仍可能失败；本次不增加 tmux/screen 透传封装。
+- 本地和直连 SSH 中，如果提示探测没有确认出协议，`auto` 会按 `sixel` -> `iterm2` -> `kitty` 做通用探测，不要求终端家族环境变量。Warp 是例外：`TERM_PROGRAM=WarpTerminal` 的 Kitty 兼容回退优先于通用探测，此时不会再做 Sixel 和 iTerm2 通用探测。其他情况探测无结论时回落到文本。
+- Sixel 检查 DA 能力，Kitty 发送不显示图片的图形查询，iTerm2 依赖完整的 iTerm2 身份响应。SSH 延迟较高或响应被屏蔽时，有限时探测仍可能失败；不包含 tmux/screen 透传封装。
 - 如果你已经知道正确协议，或者远程/透传环境让 `auto` 一直停留在文本输出，就用显式 `--protocol` 值或终端专用 `config.ini` 覆盖。
 - 如果视频已经打开，可以按 `p` 或 `P` 切换视频输出模式，顺序如下：`text -> sixel -> iterm2 -> kitty -> text`。
 - 终端相关说明见 [TERMINAL_PROTOCOL_SUPPORT_zh.md](TERMINAL_PROTOCOL_SUPPORT_zh.md)。

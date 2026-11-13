@@ -186,7 +186,7 @@ static int terminal_probe_fixture_tcsetattr(gint optional_actions,
     } else {
         fixture->restore_calls++;
         fixture->restore_optional_actions = optional_actions;
-        g_assert_cmpint(optional_actions, ==, TCSAFLUSH);
+        g_assert_cmpint(optional_actions, ==, TCSANOW);
         g_assert_true(fixture->has_saved_termios);
         g_assert_cmpmem(state, sizeof(*state),
                         &fixture->saved_termios, sizeof(fixture->saved_termios));
@@ -275,8 +275,8 @@ static void test_terminal_probe_transport_reads_until_terminator_with_short_time
     g_assert_cmpint(fixture.raw_mode_calls, ==, 1);
     g_assert_cmpint(fixture.restore_calls, ==, 1);
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
-    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSAFLUSH);
-    g_assert_cmpint(fixture.tcflush_calls, ==, 1);
+    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
     g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, sizeof(k_expected_response) - 1);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[c", sizeof("\033[c") - 1);
 
@@ -324,14 +324,60 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
     g_assert_cmpint(fixture.raw_mode_calls, ==, 1);
     g_assert_cmpint(fixture.restore_calls, ==, 1);
     g_assert_cmpint(fixture.raw_mode_optional_actions, ==, TCSANOW);
-    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSAFLUSH);
-    g_assert_cmpint(fixture.tcflush_calls, ==, 1);
+    g_assert_cmpint(fixture.restore_optional_actions, ==, TCSANOW);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
     g_assert_cmpuint(fixture.read_timeouts_ms->len, ==, 1);
     g_assert_cmpint(g_array_index(fixture.read_timeouts_ms, gint, 0), ==, 15);
     g_assert_cmpmem(fixture.writes->str, fixture.writes->len, "\033[5n", sizeof("\033[5n") - 1);
 
     g_string_free(fixture.writes, TRUE);
     g_array_free(fixture.read_timeouts_ms, TRUE);
+}
+
+static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
+    gboolean flood = GPOINTER_TO_INT(user_data);
+    static const char response[] = "ch\033[?62;4cj\033[A\033P>|iTerm2 3.5\033\\\033";
+    static const char keys[] = "chj\033[A\033";
+    gchar *flood_input = flood ? g_strnfill(5000, 'x') : NULL;
+    TerminalProbeFixture fixture = {
+        .stdin_is_tty = TRUE,
+        .stdout_is_tty = TRUE,
+        .writes = g_string_new(NULL),
+        .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
+        .response = flood ? flood_input : response,
+        .response_length = flood ? 5000 : sizeof(response) - 1,
+    };
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = terminal_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = terminal_probe_fixture_tcgetattr,
+        .tcsetattr_fn = terminal_probe_fixture_tcsetattr,
+        .tcflush_fn = terminal_probe_fixture_tcflush,
+        .write_fn = terminal_probe_fixture_write,
+        .read_char_with_timeout_fn = terminal_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = terminal_probe_fixture_monotonic_time_us,
+    };
+    terminal_probe_set_transport_hooks_for_test(&hooks, &fixture);
+    g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
+    char buffer[128];
+    terminal_probe_query_response("\033[c\033[>q", flood ? 5000 : 120, 20, '\0', buffer, sizeof(buffer));
+    g_assert_cmpstr(buffer, ==, flood ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
+    if (flood) {
+        g_assert_cmpuint(fixture.response_offset, ==, 4096);
+    }
+
+    InputHandler *handler = input_handler_create();
+    for (gsize i = 0; i < (flood ? 4096 : sizeof(keys) - 1); i++) {
+        g_assert_true(input_has_pending_input(handler));
+        gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
+        g_assert_cmpint(ch, ==, flood ? 'x' : (guchar)keys[i]);
+    }
+    g_assert_false(terminal_probe_has_pending_input());
+    input_handler_destroy(handler);
+    g_assert_cmpint(fixture.tcflush_calls, ==, 0);
+    g_string_free(fixture.writes, TRUE);
+    g_array_free(fixture.read_timeouts_ms, TRUE);
+    g_free(flood_input);
 }
 
 static void test_terminal_protocol_resolver_override_beats_signal_and_probe(
@@ -602,6 +648,10 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
+    g_test_add_data_func("/terminal_protocols/probe/preserves_keys_between_replies", NULL,
+                         test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/stops_before_pending_input_overflows",
+                         GINT_TO_POINTER(TRUE), test_terminal_probe_preserves_keys);
     static const ProtocolReplyCase replies[] = {
         {"kitty_ok", input_probe_kitty_support, "\033_Gi=31;OK\033\\", TRUE},
         {"kitty_wrong_id", input_probe_kitty_support, "\033_Gi=32;OK\033\\", FALSE},

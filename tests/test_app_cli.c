@@ -181,9 +181,9 @@ static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer
     g_string_append_len(fixture->writes, buf, len);
     if (fixture->query_aware) {
         gchar *query = g_strndup(buf, len);
-        fixture->response = strstr(query, "\033_G") ? fixture->kitty_response :
-                            strstr(query, "\033[>q") ? fixture->version_response :
-                            fixture->sixel_response;
+        fixture->response = strcmp(query, KITTY_PROBE_QUERY) == 0 ? fixture->kitty_response :
+                            strcmp(query, "\033[>q\033[5n") == 0 ? fixture->version_response :
+                            strcmp(query, "\033[c") == 0 ? fixture->sixel_response : NULL;
         fixture->response_length = fixture->response ? strlen(fixture->response) : 0;
         fixture->response_offset = 0;
         g_free(query);
@@ -1600,6 +1600,23 @@ typedef struct {
     AppProtocolMode expected;
 } SshProtocolCase;
 
+static void test_cli_probe_fixture_rejects_unrecognized_queries(void) {
+    static const char *queries[] = {"unrelated", "\033[garbage", "prefix\033[>q", "\033_Ggarbage"};
+    AppCliProbeFixture probe = {
+        .query_aware = TRUE,
+        .sixel_response = "\033[?62;4c",
+        .version_response = "\033P>|iTerm2\033\\",
+        .kitty_response = "\033_Gi=31;OK\033\\",
+        .writes = g_string_new(NULL),
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(queries); i++) {
+        app_cli_probe_fixture_write(queries[i], strlen(queries[i]), &probe);
+        g_assert_null(probe.response);
+        g_assert_cmpuint(probe.response_length, ==, 0);
+    }
+    g_string_free(probe.writes, TRUE);
+}
+
 static void test_cli_protocol_resolution_ssh(AppCliFixture *fixture G_GNUC_UNUSED,
                                              gconstpointer user_data) {
     const SshProtocolCase *test = user_data;
@@ -1651,6 +1668,8 @@ static void test_cli_protocol_resolution_ssh(AppCliFixture *fixture G_GNUC_UNUSE
 }
 
 void register_app_cli_tests(void) {
+    g_test_add_func("/app_cli/protocol_resolution/fixture_rejects_unrecognized_queries",
+                     test_cli_probe_fixture_rejects_unrecognized_queries);
     static const SshProtocolCase ssh_cases[] = {
         {"sixel", NULL, "\033[?62;4;22c", NULL, NULL, APP_PROTOCOL_AUTO, APP_PROTOCOL_SIXEL},
         {"kitty", NULL, "\033[?62;22c", "\033P>|unknown\033\\", "\033_Gi=31;OK\033\\",

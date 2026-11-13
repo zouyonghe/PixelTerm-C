@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static gboolean input_discard_kitty_apc(InputHandler *handler);
+static gboolean input_discard_control_string(InputHandler *handler);
 static gboolean g_scroll_coalesce_active = FALSE;
 
 #define INPUT_SGR_MOUSE_BUTTON_MAX 255
@@ -190,7 +190,7 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
     term.c_cc[VMIN] = 1;  // Minimum number of characters for non-canonical read
     term.c_cc[VTIME] = 0; // Timeout in deciseconds for non-canonical read
 
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) != 0) {
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &term) != 0) {
         return ERROR_TERMINAL_SIZE;
     }
 
@@ -299,7 +299,7 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->key_code = KEY_UNKNOWN;
 
     if (handler->apc_discarding) {
-        if (!input_discard_kitty_apc(handler)) {
+        if (!input_discard_control_string(handler)) {
             goto finish_event;
         }
         handler->apc_discarding = FALSE;
@@ -323,10 +323,27 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
         gint next = input_read_char_with_timeout(handler, 50);
 
         if (next != 0) {
-            if (next == '_') {
+            if (next == 'P') {
+                gint prefix = input_read_char_with_timeout(handler, 50);
+                gboolean has_version_prefix = prefix == '>';
+                if (has_version_prefix) {
+                    prefix = input_read_char_with_timeout(handler, 50);
+                }
+                if (!has_version_prefix || prefix != '|') {
+                    if (has_version_prefix) {
+                        event->key_code = (KeyCode)'>';
+                    }
+                    if (prefix != 0) {
+                        handler->pending_byte = (guchar)prefix;
+                        handler->has_pending_byte = TRUE;
+                    }
+                    goto finish_event;
+                }
+            }
+            if (next == '_' || next == 'P') {
                 handler->apc_discarding = TRUE;
                 handler->apc_saw_esc = FALSE;
-                if (!input_discard_kitty_apc(handler)) {
+                if (!input_discard_control_string(handler)) {
                     goto finish_event;
                 }
                 handler->apc_discarding = FALSE;
@@ -586,6 +603,9 @@ gboolean input_has_pending_input(InputHandler *handler) {
     if (handler->has_pending_byte) {
         return TRUE;
     }
+    if (terminal_probe_has_pending_input()) {
+        return TRUE;
+    }
 
     struct timeval tv = {0, 0};
     fd_set fds;
@@ -623,6 +643,8 @@ ErrorCode input_flush_buffer(InputHandler *handler) {
 
     handler->has_pending_event = FALSE;
     handler->has_pending_byte = FALSE;
+    while (terminal_probe_take_pending_byte() >= 0) {
+    }
     tcflush(STDIN_FILENO, TCIFLUSH);
     return ERROR_NONE;
 }
@@ -661,6 +683,10 @@ gint input_read_char(InputHandler *handler) {
         handler->has_pending_byte = FALSE;
         return handler->pending_byte;
     }
+    gint pending = terminal_probe_take_pending_byte();
+    if (pending >= 0) {
+        return pending;
+    }
 
     unsigned char c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
@@ -681,6 +707,10 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     if (handler->has_pending_byte) {
         handler->has_pending_byte = FALSE;
         return handler->pending_byte;
+    }
+    gint pending = terminal_probe_take_pending_byte();
+    if (pending >= 0) {
+        return pending;
     }
 
     struct timeval tv;
@@ -712,7 +742,7 @@ gint input_read_char_with_timeout(InputHandler *handler, gint timeout_ms) {
     return 0;
 }
 
-static gboolean input_discard_kitty_apc(InputHandler *handler) {
+static gboolean input_discard_control_string(InputHandler *handler) {
     if (!handler) {
         return TRUE;
     }

@@ -76,10 +76,6 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         return error;
     }
 
-    // Drop any pending bytes (some terminals can leave an ESC or other bytes queued)
-    // which would otherwise immediately trigger an action like exit.
-    input_flush_buffer(input_handler);
-
     // Initial render
     if (input_handler->alt_screen_enabled) {
         app->suppress_full_clear = TRUE;
