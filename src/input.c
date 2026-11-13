@@ -298,17 +298,18 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     event->type = INPUT_KEY_PRESS;
     event->key_code = KEY_UNKNOWN;
 
-    if (handler->apc_discarding) {
+    if (handler->apc_discarding || handler->csi_discarding) {
         if (!input_discard_control_string(handler)) {
             goto finish_event;
         }
         handler->apc_discarding = FALSE;
+        handler->csi_discarding = FALSE;
         handler->apc_saw_esc = FALSE;
         goto finish_event;
     }
 
     // Read first character (treat as unsigned byte to avoid sign-extension issues)
-    gint c = input_read_key(handler);
+    gint c = handler->csi_pending ? '\033' : input_read_key(handler);
     if (handler->should_exit) {
         return ERROR_INPUT_EOF;
     }
@@ -320,26 +321,9 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
     if (c == '\033') {
         // Check if it's an escape sequence or just ESC key
         // We use a timeout to wait for potential following characters
-        gint next = input_read_char_with_timeout(handler, 50);
+        gint next = handler->csi_pending ? '[' : input_read_char_with_timeout(handler, 50);
 
         if (next != 0) {
-            if (next == 'P') {
-                gint prefix = input_read_char_with_timeout(handler, 50);
-                gboolean has_version_prefix = prefix == '>';
-                if (has_version_prefix) {
-                    prefix = input_read_char_with_timeout(handler, 50);
-                }
-                if (!has_version_prefix || prefix != '|') {
-                    if (has_version_prefix) {
-                        event->key_code = (KeyCode)'>';
-                    }
-                    if (prefix != 0) {
-                        handler->pending_byte = (guchar)prefix;
-                        handler->has_pending_byte = TRUE;
-                    }
-                    goto finish_event;
-                }
-            }
             if (next == '_' || next == 'P') {
                 handler->apc_discarding = TRUE;
                 handler->apc_saw_esc = FALSE;
@@ -361,6 +345,15 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                 while (buf_idx < sizeof(buffer) - 1) {
                     gint ch = input_read_char_with_timeout(handler, 50);
                     if (ch != 0) {
+                        handler->csi_pending = FALSE;
+                        if (next == '[' && buf_idx == 0 && ch == '?') {
+                            handler->csi_discarding = TRUE;
+                            if (!input_discard_control_string(handler)) {
+                                goto finish_event;
+                            }
+                            handler->csi_discarding = FALSE;
+                            goto finish_event;
+                        }
                         buffer[buf_idx++] = (gchar)ch;
                         // Stop reading if we hit a terminator (letter, ~, M, m)
                         if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~' || ch == 'M' || ch == 'm') {
@@ -368,6 +361,9 @@ ErrorCode input_get_event(InputHandler *handler, InputEvent *event) {
                             break;
                         }
                     } else {
+                        if (next == '[' && buf_idx == 0) {
+                            handler->csi_pending = TRUE;
+                        }
                         break; // No more data available
                     }
                 }
@@ -753,7 +749,10 @@ static gboolean input_discard_control_string(InputHandler *handler) {
         if (ch == 0) {
             return FALSE;
         }
-        if (handler->apc_saw_esc && ch == '\\') {
+        if (handler->csi_discarding && ch >= '@' && ch <= '~') {
+            return TRUE;
+        }
+        if (!handler->csi_discarding && handler->apc_saw_esc && ch == '\\') {
             handler->apc_saw_esc = FALSE;
             return TRUE;
         }

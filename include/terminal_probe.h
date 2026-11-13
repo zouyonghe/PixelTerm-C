@@ -33,6 +33,7 @@ gssize terminal_probe_query_response(const char *query,
 
 /* Non-reply bytes read during startup probes are replayed by the input handler. */
 gboolean terminal_probe_has_pending_input(void);
+/* Returns the next replayed byte (0-255), or -1 when no pending input remains. */
 gint terminal_probe_take_pending_byte(void);
 
 void terminal_probe_set_transport_hooks_for_test(const TerminalProbeTransportHooks *hooks,

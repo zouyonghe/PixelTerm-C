@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise SSH graphics detection and early keystrokes through a real PTY."""
 
+import argparse
 import fcntl
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import re
 import select
 import struct
 import subprocess
+import sys
 import tempfile
 import termios
 import time
@@ -16,6 +18,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parent.parent
+BINARY = ROOT / "bin/pixelterm"
 QUERY = re.compile(
     rb"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\|\x1b\[>q|\x1b\[5n|\x1b\[c"
 )
@@ -35,10 +38,12 @@ ComSpec COMSPEC XTERM_VERSION
 
 
 class TerminalStartupTests(unittest.TestCase):
-    def run_terminal(self, mode, early_escape):
+    def run_terminal(self, mode, early_escape, fragmented=None):
         with tempfile.TemporaryDirectory(prefix="pixelterm-terminal-") as directory:
             config = Path(directory) / "config.ini"
             config.write_text("[default]\nprotocol=auto\n", encoding="utf-8")
+            image = Path(directory) / "image.png"
+            image.write_bytes((ROOT / "screenshots/1.png").read_bytes())
             env = os.environ.copy()
             for key in HINT_KEYS:
                 env.pop(key, None)
@@ -51,8 +56,8 @@ class TerminalStartupTests(unittest.TestCase):
             process = None
             try:
                 process = subprocess.Popen(
-                    [str(ROOT / "bin/pixelterm"), "--config", str(config),
-                     "--preload", "false", str(ROOT / "screenshots/1.png")],
+                    [str(BINARY), "--config", str(config),
+                     "--preload", "false", str(image)],
                     stdin=slave, stdout=slave, stderr=slave, env=env, cwd=ROOT,
                 )
                 output = bytearray()
@@ -60,8 +65,13 @@ class TerminalStartupTests(unittest.TestCase):
                 injected = False
                 rendered = False
                 next_escape = 0.0
+                delayed = []
+                sent_fragmented = False
+                exit_after = 0.0
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
+                    while delayed and delayed[0][0] <= time.monotonic():
+                        os.write(master, delayed.pop(0)[1])
                     ready, _, _ = select.select([master], [], [], 0.05)
                     if ready:
                         chunk = os.read(master, 65536)
@@ -77,8 +87,15 @@ class TerminalStartupTests(unittest.TestCase):
                                 reply = b"\x1b[?62;4;22c" if mode == "sixel" else b"\x1b[?62;22c"
                             elif request == b"\x1b[>q":
                                 reply = b"\x1bP>|iTerm2 3.5.0\x1b\\" if mode == "iterm2" else b"\x1bP>|unknown\x1b\\"
+                                if fragmented and not sent_fragmented:
+                                    reply = b"\x1bP" if fragmented == "prefix" else b"\x1bP>|"
+                                    chunks = [b">", b"|", b"iTerm2 3.5.0", b"\x1b\\"] if fragmented == "prefix" else [b"iTerm2 3.5.0", b"\x1b\\"]
+                                    now = time.monotonic()
+                                    delayed = [(now + 0.18 + 0.07 * i, chunk) for i, chunk in enumerate(chunks)]
+                                    exit_after = delayed[-1][0] + 0.1
+                                    sent_fragmented = True
                             elif request == b"\x1b[5n":
-                                reply = b"\x1b[0n"
+                                reply = b"" if delayed else b"\x1b[0n"
                             else:
                                 reply = b"\x1b_Gi=31;OK\x1b\\" if mode == "kitty" else b""
                             if reply:
@@ -88,15 +105,19 @@ class TerminalStartupTests(unittest.TestCase):
                             rendered = rendered or re.search(IMAGE[mode], output) is not None
                     if process.poll() is not None:
                         break
-                    if not early_escape and rendered and time.monotonic() >= next_escape:
+                    if not early_escape and rendered and time.monotonic() >= max(next_escape, exit_after):
                         os.write(master, b"\x1b")
                         next_escape = time.monotonic() + 0.3
-                self.assertIsNotNone(process.poll(), "Escape was lost during startup")
+                self.assertIsNotNone(process.poll(), "pixelterm did not exit within the 10 s test deadline")
                 self.assertEqual(process.returncode, 0)
                 if mode in IMAGE:
                     self.assertTrue(rendered, "Expected image protocol was not emitted")
                 if early_escape:
                     self.assertTrue(injected)
+                if fragmented:
+                    self.assertTrue(sent_fragmented)
+                    self.assertFalse(delayed)
+                    self.assertFalse(b"File Info" in output, "Identity payload triggered a shortcut")
                 restored = termios.tcgetattr(slave)
                 # Kernels may mark buffered canonical input for reprocessing.
                 restored[3] &= ~getattr(termios, "PENDIN", 0)
@@ -119,6 +140,15 @@ class TerminalStartupTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.run_terminal(mode, early_escape=True)
 
+    def test_fragmented_replies_do_not_trigger_shortcuts(self):
+        for split in ("prefix", "payload"):
+            with self.subTest(split=split):
+                self.run_terminal("warp", early_escape=False, fragmented=split)
+
 
 if __name__ == "__main__":
-    unittest.main()
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--binary", type=Path, default=BINARY)
+    options, test_args = parser.parse_known_args()
+    BINARY = options.binary.resolve()
+    unittest.main(argv=[sys.argv[0], *test_args])

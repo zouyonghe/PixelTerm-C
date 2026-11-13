@@ -102,6 +102,8 @@ typedef struct {
 
     gboolean apc_discarding;
     gboolean apc_saw_esc;
+    gboolean csi_pending;
+    gboolean csi_discarding;
 } InputHandler;
 
 typedef void (*InputRawModeObserverForTest)(InputHandler *handler, gpointer user_data);

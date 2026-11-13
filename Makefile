@@ -183,7 +183,8 @@ MAINTENANCE_SCRIPT_TESTS = \
 	$(PYTHON_TEST_ENV) python3 scripts/test_build_version.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_install_script.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_generate_release_notes.py && \
-	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py
+	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_terminal_startup.py --binary "$(abspath $(TARGET))"
 TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
 FILE_MANAGER_TEST_SOURCE = tests/test_app_file_manager.c
@@ -326,7 +327,7 @@ install: $(TARGET)
 	$(INSTALL) -m 0755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/pixelterm"
 
 # Test
-test: $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(BOOK_PREVIEW_TEST_TARGET)
+test: $(TARGET) $(TEST_TARGET) $(FILE_MANAGER_TEST_TARGET) $(PREVIEW_GRID_TEST_TARGET) $(BOOK_PREVIEW_TEST_TARGET)
 	@echo "Running tests..."
 	@$(TEST_TARGET)
 	@$(FILE_MANAGER_TEST_TARGET)

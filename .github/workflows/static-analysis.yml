@@ -64,7 +64,6 @@ jobs:
       - name: Run tests
         run: |
           make EXTRA_CFLAGS=-Werror test
-          python3 scripts/test_terminal_startup.py
 
       - name: Run debug AddressSanitizer tests
         run: |
@@ -179,7 +178,6 @@ jobs:
       - name: Run tests
         run: |
           make EXTRA_CFLAGS=-Werror test
-          python3 scripts/test_terminal_startup.py
 
       - name: Run debug AddressSanitizer tests
         run: |

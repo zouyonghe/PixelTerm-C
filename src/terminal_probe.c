@@ -227,8 +227,8 @@ gssize terminal_probe_query_response(const char *query,
                 break;
             }
         }
-        /* Incomplete protocol replies must not become an accidental Escape key. */
-        if (sequence_length > 0 && !terminal_probe_is_reply_prefix(sequence)) {
+        /* Preserve framing so the input parser can finish discarding late replies. */
+        if (sequence_length > 0) {
             terminal_probe_keep_input(sequence, sequence_length);
         }
 

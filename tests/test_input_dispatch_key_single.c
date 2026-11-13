@@ -72,7 +72,7 @@ static void restore_stdin(gpointer data) {
     g_free(redirect);
 }
 
-static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
+static gint redirect_stdin_pipe(void) {
     gint pipe_fds[2] = {-1, -1};
     g_assert_cmpint(pipe(pipe_fds), ==, 0);
 
@@ -84,8 +84,13 @@ static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
     g_assert_cmpint(dup2(pipe_fds[0], STDIN_FILENO), >=, 0);
     close(pipe_fds[0]);
 
-    g_assert_cmpint(write(pipe_fds[1], bytes, len), ==, (gssize)len);
-    close(pipe_fds[1]);
+    return pipe_fds[1];
+}
+
+static void redirect_stdin_bytes(const gchar *bytes, gsize len) {
+    gint writer = redirect_stdin_pipe();
+    g_assert_cmpint(write(writer, bytes, len), ==, (gssize)len);
+    close(writer);
 }
 
 static void test_input_discards_late_terminal_identity_reply(void) {
@@ -99,8 +104,8 @@ static void test_input_discards_late_terminal_identity_reply(void) {
     g_assert_cmpint(event.key_code, ==, 'x');
 }
 
-static void test_input_unknown_dcs_prefix_keeps_following_key(void) {
-    static const char bytes[] = "\033Px";
+static void test_input_unknown_dcs_payload_keeps_following_key(void) {
+    static const char bytes[] = "\033Punknown\033\\x";
     InputHandler handler = {0};
     InputEvent event = {0};
     redirect_stdin_bytes(bytes, sizeof(bytes) - 1);
@@ -108,6 +113,23 @@ static void test_input_unknown_dcs_prefix_keeps_following_key(void) {
     g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
     g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
     g_assert_cmpint(event.key_code, ==, 'x');
+}
+
+static void test_input_discards_fragmented_terminal_reply(gconstpointer user_data) {
+    const char *const *chunks = user_data;
+    gint writer = redirect_stdin_pipe();
+    InputHandler handler = {0};
+    InputEvent event = {0};
+    for (gsize i = 0; chunks[i]; i++) {
+        g_assert_cmpint(write(writer, chunks[i], strlen(chunks[i])), ==, (gssize)strlen(chunks[i]));
+        g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+        g_assert_cmpint(event.key_code, ==, KEY_UNKNOWN);
+        g_usleep(60000);
+    }
+    g_assert_cmpint(write(writer, "x", 1), ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &event), ==, ERROR_NONE);
+    g_assert_cmpint(event.key_code, ==, 'x');
+    close(writer);
 }
 
 static void test_input_eof_requests_exit(void) {
@@ -496,8 +518,14 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 void register_input_dispatch_key_single_tests(void) {
     g_test_add_func("/input/discards_late_terminal_identity_reply",
                     test_input_discards_late_terminal_identity_reply);
-    g_test_add_func("/input/unknown_dcs_prefix_keeps_following_key",
-                    test_input_unknown_dcs_prefix_keeps_following_key);
+    g_test_add_func("/input/unknown_dcs_payload_keeps_following_key",
+                    test_input_unknown_dcs_payload_keeps_following_key);
+    static const char *const dcs_chunks[] = {"\033P", ">", "|", "iTerm2 3.5", "\033", "\\", NULL};
+    static const char *const csi_chunks[] = {"\033[", "?", "62;", "4", "c", NULL};
+    g_test_add_data_func("/input/discards_fragmented_dcs_reply", dcs_chunks,
+                         test_input_discards_fragmented_terminal_reply);
+    g_test_add_data_func("/input/discards_fragmented_csi_reply", csi_chunks,
+                         test_input_discards_fragmented_terminal_reply);
     g_test_add_func("/input/eof/requests_exit", test_input_eof_requests_exit);
     g_test_add_func("/input/read_error/requests_exit",
                     test_input_persistent_read_error_requests_exit);

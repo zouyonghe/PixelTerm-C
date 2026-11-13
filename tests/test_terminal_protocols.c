@@ -335,7 +335,9 @@ static void test_terminal_probe_transport_bounds_timeout_and_restores_input_stat
 }
 
 static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
-    gboolean flood = GPOINTER_TO_INT(user_data);
+    gint mode = GPOINTER_TO_INT(user_data);
+    gboolean flood = mode == 1;
+    const char *partial = mode == 2 ? "\033P>|iTerm2" : mode == 3 ? "\033[?62;" : NULL;
     static const char response[] = "ch\033[?62;4cj\033[A\033P>|iTerm2 3.5\033\\\033";
     static const char keys[] = "chj\033[A\033";
     gchar *flood_input = flood ? g_strnfill(5000, 'x') : NULL;
@@ -344,8 +346,8 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
         .stdout_is_tty = TRUE,
         .writes = g_string_new(NULL),
         .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
-        .response = flood ? flood_input : response,
-        .response_length = flood ? 5000 : sizeof(response) - 1,
+        .response = partial ? partial : flood ? flood_input : response,
+        .response_length = partial ? strlen(partial) : flood ? 5000 : sizeof(response) - 1,
     };
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
@@ -361,16 +363,16 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
     g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
     char buffer[128];
     terminal_probe_query_response("\033[c\033[>q", flood ? 5000 : 120, 20, '\0', buffer, sizeof(buffer));
-    g_assert_cmpstr(buffer, ==, flood ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
+    g_assert_cmpstr(buffer, ==, flood || partial ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
     if (flood) {
         g_assert_cmpuint(fixture.response_offset, ==, 4096);
     }
 
     InputHandler *handler = input_handler_create();
-    for (gsize i = 0; i < (flood ? 4096 : sizeof(keys) - 1); i++) {
+    for (gsize i = 0; i < (partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
         g_assert_true(input_has_pending_input(handler));
         gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
-        g_assert_cmpint(ch, ==, flood ? 'x' : (guchar)keys[i]);
+        g_assert_cmpint(ch, ==, partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
     }
     g_assert_false(terminal_probe_has_pending_input());
     input_handler_destroy(handler);
@@ -652,6 +654,10 @@ void register_terminal_protocols_tests(void) {
                          test_terminal_probe_preserves_keys);
     g_test_add_data_func("/terminal_protocols/probe/stops_before_pending_input_overflows",
                          GINT_TO_POINTER(TRUE), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_partial_dcs_reply",
+                         GINT_TO_POINTER(2), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_partial_csi_reply",
+                         GINT_TO_POINTER(3), test_terminal_probe_preserves_keys);
     static const ProtocolReplyCase replies[] = {
         {"kitty_ok", input_probe_kitty_support, "\033_Gi=31;OK\033\\", TRUE},
         {"kitty_wrong_id", input_probe_kitty_support, "\033_Gi=32;OK\033\\", FALSE},
