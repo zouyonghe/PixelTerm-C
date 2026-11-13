@@ -53,7 +53,7 @@ static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpoin
         return -1;
     }
     if (ready == 0 || !FD_ISSET(STDIN_FILENO, &fds)) {
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     unsigned char ch = 0;
@@ -202,11 +202,11 @@ gssize terminal_probe_query_response(const char *query,
             if (ch <= 0 && errno == EINTR) {
                 continue;
             }
-            if (ch < 0) {
+            if (ch < 0 && ch != TERMINAL_PROBE_READ_TIMEOUT) {
                 read_failed = TRUE;
                 break;
             }
-            if (ch == 0) {
+            if (ch == TERMINAL_PROBE_READ_TIMEOUT) {
                 if (!query_sent) {
                     /* Establish a non-flushing boundary; preserve queued keys but
                      * never use replies that started before this query. */
@@ -219,6 +219,11 @@ gssize terminal_probe_query_response(const char *query,
                 continue;
             }
 
+            if (ch == 0) {
+                char byte = '\0';
+                terminal_probe_keep_input(&byte, 1);
+                continue;
+            }
             if (sequence_length == 0 && ch != '\033') {
                 char byte = (char)ch;
                 terminal_probe_keep_input(&byte, 1);

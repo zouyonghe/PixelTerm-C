@@ -141,6 +141,7 @@ typedef struct {
     gsize response_offset;
     gboolean query_written;
     const gchar *queued_input;
+    gsize queued_input_length;
     gsize queued_input_offset;
     gint interrupts_remaining;
     gboolean zero_on_interrupt;
@@ -239,16 +240,18 @@ static gint terminal_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoin
         errno = fixture->read_error;
         return -1;
     }
-    if (fixture->queued_input && fixture->queued_input[fixture->queued_input_offset]) {
+    gsize queued_length = fixture->queued_input_length ? fixture->queued_input_length :
+                          fixture->queued_input ? strlen(fixture->queued_input) : 0;
+    if (fixture->queued_input_offset < queued_length) {
         fixture->now_us += 1000;
         return (guchar)fixture->queued_input[fixture->queued_input_offset++];
     }
     if (!fixture->query_written) {
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     fixture->now_us += 1000;
@@ -373,14 +376,20 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
                           mode == 3 || mode == 5 ? "\033[?62;" : NULL;
     static const char response[] = "ch\033[?62;4cj\033[A\033P>|iTerm2 3.5\033\\\033";
     static const char keys[] = "chj\033[A\033";
+    static const char nul_bytes[] = "\0h\0j\377\0";
+    static const char nul_response[] = "\0h\0\033[?62;4cj\377\0";
+    gboolean nul_input = mode == 6 || mode == 7;
     gchar *flood_input = flood ? g_strnfill(5000, 'x') : NULL;
     TerminalProbeFixture fixture = {
         .stdin_is_tty = TRUE,
         .stdout_is_tty = TRUE,
         .writes = g_string_new(NULL),
         .read_timeouts_ms = g_array_new(FALSE, FALSE, sizeof(gint)),
-        .response = partial ? partial : flood ? flood_input : response,
-        .response_length = partial ? strlen(partial) : flood ? 5000 : sizeof(response) - 1,
+        .response = mode == 7 ? NULL : nul_input ? nul_response : partial ? partial : flood ? flood_input : response,
+        .response_length = mode == 7 ? 0 : nul_input ? sizeof(nul_response) - 1 :
+                           partial ? strlen(partial) : flood ? 5000 : sizeof(response) - 1,
+        .queued_input = mode == 7 ? nul_bytes : NULL,
+        .queued_input_length = mode == 7 ? sizeof(nul_bytes) - 1 : 0,
     };
     static const TerminalProbeTransportHooks hooks = {
         .stdin_is_tty = terminal_probe_fixture_stdin_is_tty,
@@ -396,13 +405,14 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
     g_test_queue_destroy(reset_terminal_probe_hooks, NULL);
     char buffer[128];
     terminal_probe_query_response("\033[c\033[>q", flood ? 5000 : 120, 20, '\0', buffer, sizeof(buffer));
-    g_assert_cmpstr(buffer, ==, flood || partial ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
+    g_assert_cmpstr(buffer, ==, mode == 6 ? "\033[?62;4c" :
+                    flood || partial || nul_input ? "" : "\033[?62;4c\033P>|iTerm2 3.5\033\\");
     if (flood) {
         g_assert_cmpuint(fixture.response_offset, ==, 4096);
     }
 
     InputHandler *handler = input_handler_create();
-    if (mode >= 4) {
+    if (mode == 4 || mode == 5) {
         gint pipe_fds[2];
         g_assert_cmpint(pipe(pipe_fds), ==, 0);
         gint saved_stdin = dup(STDIN_FILENO);
@@ -423,10 +433,11 @@ static void test_terminal_probe_preserves_keys(gconstpointer user_data) {
         close(saved_stdin);
         close(pipe_fds[1]);
     } else {
-        for (gsize i = 0; i < (partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
+        for (gsize i = 0; i < (nul_input ? sizeof(nul_bytes) - 1 : partial ? strlen(partial) : flood ? 4096 : sizeof(keys) - 1); i++) {
             g_assert_true(input_has_pending_input(handler));
             gint ch = i % 2 ? input_read_char(handler) : input_read_char_with_timeout(handler, 0);
-            g_assert_cmpint(ch, ==, partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
+            g_assert_cmpint(ch, ==, nul_input ? (guchar)nul_bytes[i] :
+                            partial ? (guchar)partial[i] : flood ? 'x' : (guchar)keys[i]);
         }
     }
     g_assert_false(terminal_probe_has_pending_input());
@@ -763,6 +774,10 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
 }
 
 void register_terminal_protocols_tests(void) {
+    g_test_add_data_func("/terminal_protocols/probe/preserves_nul_after_query",
+                         GINT_TO_POINTER(6), test_terminal_probe_preserves_keys);
+    g_test_add_data_func("/terminal_protocols/probe/preserves_nul_before_query",
+                         GINT_TO_POINTER(7), test_terminal_probe_preserves_keys);
     static const QueuedProbeReply stale_sixel = {.queued = "h\033[?62;4cj"};
     static const QueuedProbeReply stale_kitty = {.queued = "h\033_Gi=31;OK\033\\j"};
     static const QueuedProbeReply stale_partial = {.queued = "h\033P>|iTerm2", .tail = " 3.5\033\\j"};

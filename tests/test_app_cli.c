@@ -197,11 +197,11 @@ static gint app_cli_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoint
     AppCliProbeFixture *fixture = user_data;
 
     if (!fixture->query_written) {
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
-        return 0;
+        return TERMINAL_PROBE_READ_TIMEOUT;
     }
 
     fixture->now_us += 1000;
