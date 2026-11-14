@@ -75,6 +75,8 @@ typedef struct {
     gsize response_length;
     gsize response_offset;
     gint64 now_us;
+    gint response_delay_ms;
+    gint64 response_ready_us;
     GString *writes;
     gint enable_raw_mode_calls;
     gint disable_raw_mode_calls;
@@ -181,6 +183,7 @@ static ssize_t app_cli_probe_fixture_write(const char *buf, size_t len, gpointer
     g_assert_nonnull(buf);
     g_string_append_len(fixture->writes, buf, len);
     fixture->query_written = TRUE;
+    fixture->response_ready_us = fixture->now_us + (gint64)fixture->response_delay_ms * 1000;
     if (fixture->query_aware) {
         gchar *query = g_strndup(buf, len);
         fixture->response = strcmp(query, KITTY_PROBE_QUERY) == 0 ? fixture->kitty_response :
@@ -198,6 +201,14 @@ static gint app_cli_probe_fixture_read_char_with_timeout(gint timeout_ms, gpoint
 
     if (!fixture->query_written) {
         return TERMINAL_PROBE_READ_TIMEOUT;
+    }
+    if (fixture->now_us < fixture->response_ready_us) {
+        gint64 wait_us = MIN((gint64)timeout_ms * 1000,
+                             fixture->response_ready_us - fixture->now_us);
+        fixture->now_us += wait_us;
+        if (fixture->now_us < fixture->response_ready_us || timeout_ms == 0) {
+            return TERMINAL_PROBE_READ_TIMEOUT;
+        }
     }
     if (!fixture->response || fixture->response_offset >= fixture->response_length) {
         fixture->now_us += (gint64)timeout_ms * 1000;
@@ -1672,7 +1683,77 @@ static void test_cli_protocol_resolution_ssh(AppCliFixture *fixture G_GNUC_UNUSE
     g_string_free(probe.writes, TRUE);
 }
 
+typedef struct {
+    const char *name;
+    const char *ssh_key;
+    const char *sixel;
+    const char *version;
+    const char *kitty;
+    gint delay_ms;
+    AppProtocolMode expected;
+} ProbeLatencyCase;
+
+static void test_cli_protocol_probe_latency(AppCliFixture *fixture G_GNUC_UNUSED,
+                                           gconstpointer user_data) {
+    const ProbeLatencyCase *test = user_data;
+    static const TerminalProbeTransportHooks hooks = {
+        .stdin_is_tty = app_cli_probe_fixture_stdin_is_tty,
+        .stdout_is_tty = app_cli_probe_fixture_stdout_is_tty,
+        .tcgetattr_fn = app_cli_probe_fixture_tcgetattr,
+        .tcsetattr_fn = app_cli_probe_fixture_tcsetattr,
+        .tcflush_fn = app_cli_probe_fixture_tcflush,
+        .write_fn = app_cli_probe_fixture_write,
+        .read_char_with_timeout_fn = app_cli_probe_fixture_read_char_with_timeout,
+        .monotonic_time_us_fn = app_cli_probe_fixture_monotonic_time_us,
+    };
+    AppCliProbeFixture probe = {
+        .query_aware = TRUE,
+        .sixel_response = test->sixel,
+        .version_response = test->version,
+        .kitty_response = test->kitty,
+        .response_delay_ms = test->delay_ms,
+        .writes = g_string_new(NULL),
+    };
+    queue_terminal_protocol_env_restore_and_clear();
+    pixelterm_env_set_for_test("TERM", "xterm-256color");
+    if (test->ssh_key) {
+        pixelterm_env_set_for_test(test->ssh_key, "ssh-test");
+    }
+    terminal_probe_set_transport_hooks_for_test(&hooks, &probe);
+    g_test_queue_destroy(reset_app_cli_probe_hooks, NULL);
+    AppConfig config;
+    app_config_init(&config);
+    app_config_resolve_protocol(&config);
+    g_assert_cmpint(config.force_text, ==, test->expected == APP_PROTOCOL_TEXT);
+    g_assert_cmpint(config.force_sixel, ==, test->expected == APP_PROTOCOL_SIXEL);
+    g_assert_cmpint(config.force_iterm2, ==, test->expected == APP_PROTOCOL_ITERM2);
+    g_assert_cmpint(config.force_kitty, ==, test->expected == APP_PROTOCOL_KITTY);
+    g_assert_cmpint(probe.now_us, <=, test->ssh_key ? 1500000 : 360000);
+    g_string_free(probe.writes, TRUE);
+}
+
 void register_app_cli_tests(void) {
+    static const ProbeLatencyCase latency_cases[] = {
+        {"rio_measured_da", "SSH_TTY", "\033[?62;4;6;22c", "\033P>|Rio 0.2.37\033\\", NULL,
+         165, APP_PROTOCOL_SIXEL},
+        {"iterm2_measured_da", "SSH_CONNECTION", "\033[?64;1;2;4;6;17;18;21;22;52c",
+         "\033P>|iTerm2 3.7.7\033\\", NULL, 178, APP_PROTOCOL_SIXEL},
+        {"iterm2_measured_version", "SSH_CLIENT", NULL, "\033P>|iTerm2 3.7.7\033\\", NULL,
+         167, APP_PROTOCOL_ITERM2},
+        {"kitty_delayed_query", "SSH_TTY", NULL, NULL, "\033_Gi=31;OK\033\\",
+         180, APP_PROTOCOL_KITTY},
+        {"local_keeps_short_timeout", NULL, "\033[?62;4;6;22c", NULL, NULL,
+         165, APP_PROTOCOL_TEXT},
+        {"ssh_still_has_deadline", "SSH_TTY", "\033[?62;4;6;22c", NULL, NULL,
+         700, APP_PROTOCOL_TEXT},
+        {"ssh_no_reply_is_bounded", "SSH_TTY", NULL, NULL, NULL, 0, APP_PROTOCOL_TEXT},
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(latency_cases); i++) {
+        gchar *path = g_strdup_printf("/app_cli/protocol_latency/%s", latency_cases[i].name);
+        g_test_add(path, AppCliFixture, &latency_cases[i], app_cli_fixture_set_up,
+                   test_cli_protocol_probe_latency, app_cli_fixture_tear_down);
+        g_free(path);
+    }
     g_test_add_func("/app_cli/protocol_resolution/fixture_rejects_unrecognized_queries",
                      test_cli_probe_fixture_rejects_unrecognized_queries);
     static const SshProtocolCase ssh_cases[] = {

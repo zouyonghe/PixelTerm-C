@@ -6,6 +6,7 @@
 #include "process_env.h"
 #include "terminal_protocol_resolver.h"
 #include "terminal_protocols.h"
+#include "terminal_probe.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -521,6 +522,12 @@ static ErrorCode app_config_preload_from_args(int argc, char *argv[], AppConfig 
     return error;
 }
 
+static gint app_protocol_probe_timeout_ms(void) {
+    /* Measured SSH replies from Rio/iTerm2 take 147-178 ms, beyond the local budget. */
+    return terminal_session_is_direct_ssh() ? TERMINAL_PROBE_SSH_TIMEOUT_MS :
+                                             TERMINAL_PROBE_DEFAULT_TIMEOUT_MS;
+}
+
 static gboolean probe_sixel_support(void) {
     InputHandler *probe = input_handler_create();
     if (!probe) {
@@ -532,7 +539,7 @@ static gboolean probe_sixel_support(void) {
         return FALSE;
     }
 
-    gboolean sixel_supported = input_probe_sixel_support(probe, 120);
+    gboolean sixel_supported = input_probe_sixel_support(probe, app_protocol_probe_timeout_ms());
     input_handler_destroy(probe);
 
     return sixel_supported;
@@ -549,7 +556,7 @@ static gboolean probe_kitty_support(void) {
         return FALSE;
     }
 
-    gboolean kitty_supported = input_probe_kitty_support(probe, 120);
+    gboolean kitty_supported = input_probe_kitty_support(probe, app_protocol_probe_timeout_ms());
     input_handler_destroy(probe);
 
     return kitty_supported;
@@ -566,7 +573,7 @@ static gboolean probe_iterm2_support(void) {
         return FALSE;
     }
 
-    gboolean iterm2_supported = input_probe_iterm2_support(probe, 120);
+    gboolean iterm2_supported = input_probe_iterm2_support(probe, app_protocol_probe_timeout_ms());
     input_handler_destroy(probe);
 
     return iterm2_supported;

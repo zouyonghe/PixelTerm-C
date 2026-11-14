@@ -38,7 +38,8 @@ ComSpec COMSPEC XTERM_VERSION
 
 
 class TerminalStartupTests(unittest.TestCase):
-    def run_terminal(self, mode, early_escape, fragmented=None, queued_reply=None):
+    def run_terminal(self, mode, early_escape, fragmented=None, queued_reply=None,
+                     response_delay_ms=0, da_reply=None):
         with tempfile.TemporaryDirectory(prefix="pixelterm-terminal-") as directory:
             config = Path(directory) / "config.ini"
             config.write_text("[default]\nprotocol=auto\n", encoding="utf-8")
@@ -86,7 +87,8 @@ class TerminalStartupTests(unittest.TestCase):
                                 os.write(master, b"\x1b")
                                 injected = True
                             if request == b"\x1b[c":
-                                reply = b"\x1b[?62;4;22c" if mode == "sixel" else b"\x1b[?62;22c"
+                                reply = da_reply if da_reply is not None else (
+                                    b"\x1b[?62;4;22c" if mode == "sixel" else b"\x1b[?62;22c")
                             elif request == b"\x1b[>q":
                                 reply = b"\x1bP>|iTerm2 3.5.0\x1b\\" if mode == "iterm2" else b"\x1bP>|unknown\x1b\\"
                                 if fragmented and not sent_fragmented:
@@ -111,7 +113,10 @@ class TerminalStartupTests(unittest.TestCase):
                             else:
                                 reply = b"\x1b_Gi=31;OK\x1b\\" if mode == "kitty" else b""
                             if reply:
-                                os.write(master, reply)
+                                if response_delay_ms:
+                                    delayed.append((time.monotonic() + response_delay_ms / 1000, reply))
+                                else:
+                                    os.write(master, reply)
                         pending = pending[-100:]
                         if mode in IMAGE:
                             rendered = rendered or re.search(IMAGE[mode], output) is not None
@@ -167,6 +172,17 @@ class TerminalStartupTests(unittest.TestCase):
 
     def test_stale_reply_does_not_select_protocol(self):
         self.run_terminal("unknown", early_escape=False, queued_reply=b"\x1b[?62;4;22c")
+
+    def test_measured_ssh_latency(self):
+        cases = [
+            ("sixel", 165, b"\x1b[?62;4;6;22c"),
+            ("sixel", 178, b"\x1b[?64;1;2;4;6;17;18;21;22;52c"),
+            ("iterm2", 167, None),
+            ("kitty", 180, None),
+        ]
+        for mode, delay_ms, da in cases:
+            with self.subTest(mode=mode, delay_ms=delay_ms):
+                self.run_terminal(mode, early_escape=False, response_delay_ms=delay_ms, da_reply=da)
 
 
 if __name__ == "__main__":
