@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.8.7: Reliable SSH graphics detection and startup input recovery.
+    - **SSH Graphics**: Detect Sixel, iTerm2, and Kitty over direct SSH even when the remote environment only identifies `xterm-256color`. Extend the existing Warp Kitty compatibility fallback to direct SSH and use a non-displaying Kitty graphics query.
+    - **Remote Latency**: Allow up to 500 ms per protocol response over direct SSH while retaining the 120 ms local timeout. Fix character-art fallback with measured 147–178 ms Rio and iTerm2 replies; keep explicit protocol overrides and the Sixel-first automatic priority unchanged.
+    - **Input Recovery**: Preserve ordinary startup keystrokes, including NUL, instead of flushing them during probing. Handle interrupted reads, exclude replies queued before a query, and prevent prompt fragmented replies from triggering shortcuts. Bound incomplete-reply state so truncated responses do not lock out later keyboard input.
+    - **Verification**: Add real-PTY startup, delayed-response, and keyboard-recovery regressions to normal, AddressSanitizer, and coverage test targets. Fix coverage report generation for conditional implementations, update translated protocol guides, and verify the latency fix in Rio and iTerm2 SSH sessions.
+
 - v1.8.6: Reliable release version metadata and stricter packaging checks.
     - **Build Metadata**: Preserve Git version identifiers and fall back to `unknown` when Git metadata is unavailable. Release builds explicitly embed the requested tag and verify the actual version output before publishing.
     - **Release Safety**: Validate release inputs against the supported `vX.Y.Z` format before invoking Make. Reject empty, incorrect, or failed version-command output on Linux and macOS.
