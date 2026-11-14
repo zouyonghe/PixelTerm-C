@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.8.8: Clear stale Kitty images when entering grid preview.
+    - **Preview Cleanup**: Explicitly delete old Kitty image placements before clearing the screen and drawing grid thumbnails. Fix the full-size image remaining underneath the preview grid in Warp over SSH, without changing non-Kitty protocols.
+    - **Verification**: Add command-order and real-PTY single-image-to-preview regressions, and confirm the fix in a Warp SSH session on Arch Linux.
+
 - v1.8.7: Reliable SSH graphics detection and startup input recovery.
     - **SSH Graphics**: Detect Sixel, iTerm2, and Kitty over direct SSH even when the remote environment only identifies `xterm-256color`. Extend the existing Warp Kitty compatibility fallback to direct SSH and use a non-displaying Kitty graphics query.
     - **Remote Latency**: Allow up to 500 ms per protocol response over direct SSH while retaining the 120 ms local timeout. Fix character-art fallback with measured 147–178 ms Rio and iTerm2 replies; keep explicit protocol overrides and the Sixel-first automatic priority unchanged.
