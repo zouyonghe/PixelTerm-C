@@ -95,6 +95,44 @@ static void render_preview_grid_capture(gpointer user_data) {
     g_assert_cmpint(app_render_preview_grid(app), ==, ERROR_NONE);
 }
 
+static void enter_preview_capture(gpointer user_data) {
+    g_assert_cmpint(app_enter_preview(user_data), ==, ERROR_NONE);
+}
+
+static void test_enter_preview_clears_kitty_before_screen(void) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.mode = APP_MODE_SINGLE;
+    app.force_kitty = TRUE;
+    app.current_index = 1;
+    gchar *output = capture_output(enter_preview_capture, &app);
+    const char *delete_images = strstr(output, "\033_Ga=d,q=2\033\\");
+    const char *clear_screen = strstr(output, "\033[2J");
+    g_assert_nonnull(delete_images);
+    g_assert_nonnull(clear_screen);
+    g_assert_true(delete_images < clear_screen);
+    g_assert_cmpint(app.mode, ==, APP_MODE_PREVIEW);
+    g_assert_cmpint(app.preview.selected, ==, 1);
+    g_free(output);
+    cleanup_preview_app(&app);
+}
+
+static void test_enter_preview_other_protocols_skip_kitty_delete(void) {
+    for (gint protocol = 0; protocol < 3; protocol++) {
+        PixelTermApp app;
+        init_preview_app(&app, 1, 20, 80, 30);
+        app.mode = APP_MODE_SINGLE;
+        app.force_text = protocol == 0;
+        app.force_sixel = protocol == 1;
+        app.force_iterm2 = protocol == 2;
+        gchar *output = capture_output(enter_preview_capture, &app);
+        g_assert_null(strstr(output, "\033_G"));
+        g_assert_nonnull(strstr(output, "\033[2J"));
+        g_free(output);
+        cleanup_preview_app(&app);
+    }
+}
+
 static void test_move_selection_normalizes_selection_and_scroll_before_moving(void) {
     PixelTermApp app;
 
@@ -435,6 +473,11 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
     return ERROR_NONE;
 }
 
+void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+    (void)app;
+    (void)clear_preloader_queue;
+}
+
 void get_terminal_size(gint *width, gint *height) {
     if (width) {
         *width = g_preview_grid_stub_state.term_width;
@@ -478,6 +521,10 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/app_preview_grid/entry/clears_kitty_before_screen",
+                    test_enter_preview_clears_kitty_before_screen);
+    g_test_add_func("/app_preview_grid/entry/other_protocols_skip_kitty_delete",
+                    test_enter_preview_other_protocols_skip_kitty_delete);
 
     g_test_add_func("/app_preview_grid/move_selection/normalizes_selection_and_scroll_before_moving",
                     test_move_selection_normalizes_selection_and_scroll_before_moving);

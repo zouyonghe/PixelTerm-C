@@ -600,7 +600,8 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     app->needs_redraw = TRUE;
 
-    // Clear screen on mode entry to avoid ghosting
+    // Text clears do not reliably remove Kitty placements (e.g. Warp over SSH).
+    ui_clear_kitty_images(app);
     ui_clear_screen_for_refresh(app);
     fflush(stdout);
 

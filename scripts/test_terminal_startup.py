@@ -39,7 +39,7 @@ ComSpec COMSPEC XTERM_VERSION
 
 class TerminalStartupTests(unittest.TestCase):
     def run_terminal(self, mode, early_escape, fragmented=None, queued_reply=None,
-                     response_delay_ms=0, da_reply=None):
+                     response_delay_ms=0, da_reply=None, preview=False):
         with tempfile.TemporaryDirectory(prefix="pixelterm-terminal-") as directory:
             config = Path(directory) / "config.ini"
             config.write_text("[default]\nprotocol=auto\n", encoding="utf-8")
@@ -67,6 +67,8 @@ class TerminalStartupTests(unittest.TestCase):
                 pending = b""
                 injected = False
                 rendered = False
+                preview_start = None
+                preview_ready = False
                 next_escape = 0.0
                 delayed = []
                 sent_fragmented = False
@@ -122,7 +124,12 @@ class TerminalStartupTests(unittest.TestCase):
                             rendered = rendered or re.search(IMAGE[mode], output) is not None
                     if process.poll() is not None:
                         break
-                    if not early_escape and (rendered or queued_reply) and time.monotonic() >= max(next_escape, exit_after):
+                    if preview and rendered and preview_start is None:
+                        preview_start = len(output)
+                        os.write(master, b"\r")
+                    if preview_start is not None:
+                        preview_ready = b"Preview Grid" in output[preview_start:]
+                    if not early_escape and (preview_ready if preview else rendered or queued_reply) and time.monotonic() >= max(next_escape, exit_after):
                         os.write(master, b"\x1b")
                         next_escape = time.monotonic() + 0.3
                 self.assertIsNotNone(process.poll(), "pixelterm did not exit within the 10 s test deadline")
@@ -138,6 +145,17 @@ class TerminalStartupTests(unittest.TestCase):
                 if queued_reply:
                     for pattern in IMAGE.values():
                         self.assertIsNone(re.search(pattern, output), "A stale reply selected graphics")
+                if preview:
+                    self.assertTrue(preview_ready, "Enter did not open the preview grid")
+                    transition = output[preview_start:]
+                    delete = transition.find(b"\x1b_Ga=d,q=2\x1b\\")
+                    clear = transition.find(b"\x1b[2J")
+                    title = transition.find(b"Preview Grid")
+                    self.assertGreaterEqual(delete, 0, "Old Kitty image placements were not deleted")
+                    self.assertLess(delete, clear)
+                    self.assertLess(clear, title)
+                    self.assertIsNotNone(re.search(IMAGE["kitty"], transition[title:]),
+                                         "Preview graphics were not drawn after cleanup")
                 restored = termios.tcgetattr(slave)
                 # Kernels may mark buffered canonical input for reprocessing.
                 restored[3] &= ~getattr(termios, "PENDIN", 0)
@@ -154,6 +172,9 @@ class TerminalStartupTests(unittest.TestCase):
         for mode in IMAGE:
             with self.subTest(mode=mode):
                 self.run_terminal(mode, early_escape=False)
+
+    def test_warp_ssh_preview_deletes_single_image(self):
+        self.run_terminal("warp", early_escape=False, preview=True)
 
     def test_escape_during_probe_is_replayed(self):
         for mode in (*IMAGE, "unknown"):
