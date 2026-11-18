@@ -30,6 +30,7 @@ static void book_fallback_test_g_free(gpointer data) {
 #define g_free book_fallback_test_g_free
 #define PIXELTERM_BOOK_TESTING 1
 #ifdef HAVE_MUPDF
+#define TEST_HAS_MUPDF 1
 #undef HAVE_MUPDF
 #endif
 #include "../src/book.c"
@@ -248,6 +249,56 @@ static void test_book_null_helpers_are_safe(void) {
     book_toc_free(NULL);
 }
 
+static void test_book_open_invalid_epub_releases_streams(void) {
+    static const guint8 invalid[] = "not a book";
+    gchar *path = write_temp_file(".epub", invalid, sizeof(invalid) - 1);
+    /* LeakSanitizer must see no retained streams after repeated parse failures. */
+    for (gint attempt = 0; attempt < 8; attempt++) {
+        BookOpenInvocation invocation = {.path = path};
+        gchar *output = capture_stderr(invoke_book_open, &invocation);
+        g_assert_null(invocation.doc);
+        g_assert_cmpint(invocation.error, ==, ERROR_INVALID_IMAGE);
+        g_assert_cmpstr(output, ==, "");
+        g_free(output);
+    }
+}
+
+static void test_book_open_pdf_keeps_stream_until_close(void) {
+#ifdef TEST_HAS_MUPDF
+    const char *objects[] = {
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] >>",
+    };
+    GString *pdf = g_string_new("%PDF-1.4\n");
+    gsize offsets[G_N_ELEMENTS(objects)];
+    for (guint i = 0; i < G_N_ELEMENTS(objects); i++) {
+        offsets[i] = pdf->len;
+        g_string_append_printf(pdf, "%u 0 obj\n%s\nendobj\n", i + 1, objects[i]);
+    }
+    gsize xref = pdf->len;
+    g_string_append(pdf, "xref\n0 4\n0000000000 65535 f \n");
+    for (guint i = 0; i < G_N_ELEMENTS(objects); i++) {
+        g_string_append_printf(pdf, "%010" G_GSIZE_FORMAT " 00000 n \n", offsets[i]);
+    }
+    g_string_append_printf(pdf, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%" G_GSIZE_FORMAT "\n%%%%EOF\n", xref);
+    gchar *path = write_temp_file(".pdf", (const guint8 *)pdf->str, pdf->len);
+    g_string_free(pdf, TRUE);
+    ErrorCode error = ERROR_NONE;
+    BookDocument *doc = book_open(path, &error);
+    g_assert_nonnull(doc);
+    g_assert_cmpint(error, ==, ERROR_NONE);
+    g_assert_cmpint(book_get_page_count(doc), ==, 1);
+    BookPageImage image = {0};
+    g_assert_cmpint(book_render_page(doc, 0, 20, 10, &image), ==, ERROR_NONE);
+    g_assert_nonnull(image.pixels);
+    book_page_image_free(&image);
+    book_close(doc);
+#else
+    g_test_skip("MuPDF support unavailable");
+#endif
+}
+
 static void test_book_page_image_free_resets_and_is_idempotent(void) {
     BookPageImage image = {
         .pixels = g_malloc(12),
@@ -317,6 +368,10 @@ void register_book_tests(void) {
     g_test_add_func("/book/open/missing_path", test_book_open_reports_missing_path);
     g_test_add_func("/book/open/directory_path", test_book_open_rejects_directory_path);
     g_test_add_func("/book/open/invalid_book_bytes", test_book_open_rejects_invalid_book_bytes);
+    g_test_add_func("/book/open/invalid_epub_releases_streams",
+                    test_book_open_invalid_epub_releases_streams);
+    g_test_add_func("/book/open/pdf_keeps_stream_until_close",
+                    test_book_open_pdf_keeps_stream_until_close);
     g_test_add_func("/book/null_helpers_are_safe", test_book_null_helpers_are_safe);
     g_test_add_func("/book/fallback/page_image_free/frees_pixels",
                     test_book_fallback_page_image_free_frees_pixels);
