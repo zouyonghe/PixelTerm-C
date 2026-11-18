@@ -86,6 +86,20 @@ class VideoLogSummaryTests(unittest.TestCase):
         self.assertEqual(len(summary["submission_runs"]), 2)
         self.assertEqual([run["submission_fps"] for run in summary["submission_runs"]], [100, 50])
 
+    def test_failed_output_splits_runs_without_a_submission(self):
+        log = record("play-start")
+        for a, b in ((0, 1000), (10, 11000), (20, 21000)):
+            log += record("render-submit", a=a, b=b)
+        log += record("render-output-error", a=30, b=31000)
+        log += record("play-start")
+        for a, b in ((0, 1000000), (20, 1020000), (40, 1040000)):
+            log += record("render-submit", a=a, b=b)
+        summary = summarize(io.StringIO(log))
+        self.assertEqual(summary["events"]["render-submit"], 6)
+        self.assertEqual(summary["events"]["render-output-error"], 1)
+        self.assertIsNone(summary["submission_fps"])
+        self.assertEqual([run["submission_fps"] for run in summary["submission_runs"]], [100, 50])
+
     def test_rejects_invalid_records_and_empty_input(self):
         for log in ("", "unrelated\n", "[video-debug] broken\n",
                     record("worker-convert-time", b=-1),

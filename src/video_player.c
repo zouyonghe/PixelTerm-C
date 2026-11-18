@@ -28,15 +28,40 @@
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
-static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player) {
-    if (!player->kitty_direct_image_present) return TRUE;
-    GString *command = kitty_graphics_build_delete_image_command(player->kitty_direct_image_id);
+static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gboolean release) {
+    if (!player->kitty_direct_image_id || (!release && !player->kitty_direct_image_present)) return TRUE;
+    GString *command = NULL;
+    if (release) {
+        command = kitty_graphics_build_delete_image_command(player->kitty_direct_image_id);
+    } else {
+        /* Keep the allocated ID reserved while workers can still refer to it. */
+        command = g_string_new(NULL);
+        g_string_printf(command, "\033_Ga=d,d=i,i=%u,q=2\033\\", player->kitty_direct_image_id);
+    }
+    clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
     gsize written = fwrite(command->str, 1, command->len, stdout);
     gint flushed = fflush(stdout);
     gboolean deleted = written == command->len && flushed == 0 && !ferror(stdout);
     g_string_free(command, TRUE);
-    if (deleted) player->kitty_direct_image_present = FALSE;
+    if (deleted) {
+        player->kitty_direct_image_present = FALSE;
+        if (release) player->kitty_direct_image_id = 0;
+    }
     return deleted;
+}
+
+static void video_player_prepare_direct_kitty_image(VideoPlayer *player) {
+    if (player->kitty_direct_image_id || player->kitty_transfer == KITTY_TRANSFER_SHM ||
+        pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return;
+    g_mutex_lock(&player->render_mutex);
+    gboolean eligible = player->renderer && player->renderer->config.force_kitty &&
+        !player->renderer->config.force_text && player->renderer->config.gamma == 1.0 &&
+        player->renderer->config.color_enhance == COLOR_ENHANCE_OFF;
+    g_mutex_unlock(&player->render_mutex);
+    if (eligible) {
+        clearerr(stdout);
+        player->kitty_direct_image_id = kitty_graphics_allocate_image_id();
+    }
 }
 
 static int video_player_interrupt_callback(void *opaque) {
@@ -631,9 +656,6 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE;
     player->playback_generation = 1;
     player->render_layout_generation = 1;
-    /* shortcut: random IDs can collide across apps; terminal-allocated IDs require reply routing. */
-    player->kitty_direct_image_id = g_random_int();
-    if (player->kitty_direct_image_id == 0) player->kitty_direct_image_id = 1;
     player->renderer = renderer_create();
     player->owns_renderer = FALSE;
     g_mutex_init(&player->render_mutex);
@@ -718,7 +740,8 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     }
 
     g_mutex_lock(&player->render_mutex);
-    gboolean replacing_renderer = player->renderer && player->renderer != renderer;
+    gboolean replacing_renderer = (player->renderer && player->renderer != renderer) ||
+        player->worker_thread || player->render_workers_started;
     g_mutex_unlock(&player->render_mutex);
     /* Replacing with NULL detaches the renderer, so playback must stop now;
      * a later reattach is inert until callers explicitly start playback again.
@@ -740,7 +763,11 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
         g_source_remove(timer_id);
     }
 
-    if (!renderer) video_player_clear_direct_kitty_image(player);
+    gboolean next_is_kitty = renderer && !renderer->config.force_text &&
+        (renderer->config.force_kitty ||
+         (renderer->canvas_config &&
+          chafa_canvas_config_get_pixel_mode(renderer->canvas_config) == CHAFA_PIXEL_MODE_KITTY));
+    if (!next_is_kitty) video_player_clear_direct_kitty_image(player, TRUE);
     g_mutex_lock(&player->render_mutex);
     if (player->renderer && player->renderer != renderer && player->owns_renderer) {
         renderer_destroy(player->renderer);
@@ -863,8 +890,11 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     g_mutex_unlock(&player->state_mutex);
     g_mutex_unlock(&player->render_mutex);
 
-    if (!next_kitty) video_player_clear_direct_kitty_image(player);
-    if (was_playing) video_player_start_worker(player);
+    if (!next_kitty) video_player_clear_direct_kitty_image(player, TRUE);
+    if (was_playing) {
+        video_player_prepare_direct_kitty_image(player);
+        video_player_start_worker(player);
+    }
 
     /* Re-render when entering graphics mode or when leaving it so stale
      * graphics placements do not remain behind the next text frame. */
@@ -1294,6 +1324,7 @@ static void video_player_resume_playback_loop(VideoPlayer *player) {
         return;
     }
 
+    video_player_prepare_direct_kitty_image(player);
     video_player_start_worker(player);
     video_player_render_frame(player);
     video_player_schedule_tick(player);
@@ -1624,7 +1655,7 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
                 kitty_graphics_frame_free(kitty_frame);
             }
         }
-        if (!rendered && player->kitty_transfer != KITTY_TRANSFER_SHM &&
+        if (!rendered && player->kitty_direct_image_id && player->kitty_transfer != KITTY_TRANSFER_SHM &&
             renderer->config.force_kitty && !renderer->config.force_text) {
             KittyGraphicsFrame *kitty_frame = video_player_render_direct_kitty_frame(
                 renderer,
@@ -1761,9 +1792,10 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
-    gboolean output_success = !ferror(stdout);
+    clearerr(stdout);
+    gboolean output_success = TRUE;
     if (!frame->kitty_direct_image_id) {
-        output_success = video_player_clear_direct_kitty_image(player) && output_success;
+        output_success = video_player_clear_direct_kitty_image(player, FALSE) && output_success;
     } else {
         /* Keep ownership even if a later write is partial, so stop can clean up. */
         player->kitty_direct_image_present = TRUE;
@@ -1953,7 +1985,9 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     if (!output_success) {
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
+        player->is_playing = FALSE;
         g_mutex_unlock(&player->state_mutex);
+        video_player_stop_worker(player);
         video_player_debug_log(player, "render-output-error", frame->pts_ms, io_end_us, 0, 0);
         video_frame_destroy(frame);
         return FALSE;
@@ -2132,6 +2166,8 @@ ErrorCode video_player_play(VideoPlayer *player) {
         return ERROR_NONE;
     }
 
+    /* Error paths may leave stopped thread handles; join before resetting state or reserving IDs. */
+    video_player_stop_worker_internal(player, FALSE);
     if (video_player_is_eof_ended(player)) {
         g_mutex_lock(&player->state_mutex);
         guint timer_id = player->timer_id;
@@ -2140,7 +2176,6 @@ ErrorCode video_player_play(VideoPlayer *player) {
         if (timer_id != 0) {
             g_source_remove(timer_id);
         }
-        video_player_stop_worker_internal(player, FALSE);
         ErrorCode seek_result = video_player_seek_to_ms(player, 0, 0);
         if (seek_result != ERROR_NONE) {
             return seek_result == ERROR_INVALID_ARGS ? ERROR_INVALID_IMAGE : seek_result;
@@ -2158,12 +2193,13 @@ ErrorCode video_player_play(VideoPlayer *player) {
     video_player_reset_timing_state(player);
 
     video_player_queue_clear(player);
+    video_player_decode_queue_clear(player);
+    video_player_prepare_direct_kitty_image(player);
+    video_player_debug_log(player, "play-start", 0, player->video_width, player->video_height, player->frame_delay_ms);
     video_player_start_worker(player);
 
     video_player_render_frame(player);
 
-    int delay = video_player_calc_delay_ms(player);
-    video_player_debug_log(player, "play-start", delay, player->video_width, player->video_height, player->frame_delay_ms);
     video_player_schedule_tick(player);
 
     return ERROR_NONE;
@@ -2203,7 +2239,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
         g_source_remove(timer_id);
     }
     video_player_stop_worker(player);
-    video_player_clear_direct_kitty_image(player);
+    video_player_clear_direct_kitty_image(player, TRUE);
 
     return ERROR_NONE;
 }

@@ -15,7 +15,13 @@ The application main thread owns user-visible control flow:
 - terminal presentation and render-area updates;
 - renderer replacement and protocol/configuration changes.
 
-`kitty_direct_image_id` is assigned before workers start and remains immutable.
+`kitty_direct_image_id` is reserved through a validated terminal allocation reply
+before workers start and remains immutable while they run. Main-context probes
+reuse terminal-probe key replay and bounded deadlines; workers never read stdin.
+Pause retains the reservation; full release happens only after joining workers.
+The play entry point joins stale worker handles before resetting playback state
+or allocating an image ID. Failed allocation requests are cleaned up by image
+number; pending user keys continue to be replayed by the existing input owner.
 `kitty_direct_image_present` is main-context-only: workers annotate queued frames
 with the ID but never change terminal-image ownership or emit cleanup commands.
 

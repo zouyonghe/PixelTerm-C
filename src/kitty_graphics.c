@@ -1,6 +1,7 @@
 #include "kitty_graphics.h"
 #include "process_env.h"
 #include "media_buffer.h"
+#include "terminal_probe.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -99,6 +100,57 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
     }
     return kitty_graphics_shm_auto_enabled();
 #endif
+}
+
+guint32 kitty_graphics_allocate_image_id(void) {
+    /* I= requests a fresh terminal-assigned i=; the nonce only correlates replies. */
+    guint32 nonce = g_random_int();
+    if (!nonce) nonce = 1;
+    gchar query[160], response[1024] = {0};
+    gboolean query_written = FALSE;
+    g_snprintf(query, sizeof(query),
+               "\033_Ga=t,f=32,s=1,v=1,I=%u;AAAAAA==\033\\\033[5n", nonce);
+    gint timeout = pixelterm_getenv("SSH_CONNECTION") || pixelterm_getenv("SSH_CLIENT") ?
+        TERMINAL_PROBE_SSH_TIMEOUT_MS : TERMINAL_PROBE_DEFAULT_TIMEOUT_MS;
+    if (fflush(stdout) != 0) {
+        return 0;
+    }
+    gssize response_length = terminal_probe_query_response_tracked(query, timeout,
+        TERMINAL_PROBE_POLL_TIMEOUT_MS, 'n', response, sizeof(response), &query_written);
+    if (response_length <= 0) response[0] = '\0';
+    const gchar *cursor = response;
+    while ((cursor = strstr(cursor, "\033_G")) != NULL) {
+        const gchar *end = strstr(cursor, "\033\\");
+        const gchar *separator = strchr(cursor, ';');
+        if (!end || !separator) break;
+        if (separator < end && end - separator == 3 && memcmp(separator + 1, "OK", 2) == 0) {
+            gchar *control = g_strndup(cursor + 3, separator - (cursor + 3));
+            gchar **fields = g_strsplit(control, ",", -1);
+            guint64 id = 0, number = 0;
+            gboolean valid = TRUE;
+            for (gsize i = 0; fields[i]; i++) {
+                if (g_str_has_prefix(fields[i], "i=") || g_str_has_prefix(fields[i], "I=")) {
+                    guint64 *value = fields[i][0] == 'i' ? &id : &number;
+                    if (*value || !g_ascii_string_to_unsigned(fields[i] + 2, 10, 1,
+                                                              G_MAXUINT32, value, NULL)) {
+                        valid = FALSE;
+                        break;
+                    }
+                }
+            }
+            g_strfreev(fields);
+            g_free(control);
+            if (valid && id && number == nonce) return (guint32)id;
+        }
+        cursor = end + 2;
+    }
+    if (query_written) {
+        /* FIFO cleanup by request number also handles an allocation whose i= reply is late.
+         * ST first terminates a partially written allocation APC. */
+        fprintf(stdout, "\033\\\033_Ga=d,d=N,I=%u,q=2\033\\", nonce);
+        fflush(stdout);
+    }
+    return 0;
 }
 
 GString *kitty_graphics_build_shm_command(const gchar *shm_name,

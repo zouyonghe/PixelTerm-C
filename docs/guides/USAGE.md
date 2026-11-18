@@ -85,3 +85,4 @@ pixelterm -- --config=gallery.txt
 - A directory path is never treated as a valid book file; directories open in file manager mode instead.
 - If rendering looks wrong, try an explicit `--protocol` value or see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - For repeatable kitty video tuning, prefer `kitty_transfer = auto|direct|shm` in `config.ini`; use `--kitty-transfer` for one-off A/B tests.
+- The RGB24 path first reserves an invisible 1×1 image using a terminal-assigned ID. If allocation replies are unsupported, invalid, or time out (120 ms locally, 500 ms over SSH), video uses Chafa instead. Pause retains the reservation; stop or leaving Kitty releases it. `direct` therefore does not guarantee that every frame takes the RGB24 optimization.

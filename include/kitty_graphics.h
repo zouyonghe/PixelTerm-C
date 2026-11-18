@@ -13,6 +13,9 @@ typedef struct {
 
 gboolean kitty_graphics_shm_auto_enabled(void);
 gboolean kitty_graphics_should_use_shm(KittyTransferMode mode);
+/* Main context only; reserves an invisible pixel using a terminal-assigned ID.
+ * Returns 0 on unsupported transport, malformed reply or timeout. */
+guint32 kitty_graphics_allocate_image_id(void);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */
 #define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)

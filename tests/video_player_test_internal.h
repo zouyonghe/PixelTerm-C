@@ -10,6 +10,7 @@
 /* Test-only declarations for video_player internals.
  * These are not part of the supported production API surface.
  */
+gchar *write_seek_preview_video_fixture(void);
 
 void decoded_frame_destroy(DecodedFrame *frame);
 void video_frame_destroy(RenderedFrame *frame);

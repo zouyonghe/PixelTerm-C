@@ -60,7 +60,7 @@ typedef struct {
     gint max_queue_size;
     gint playback_generation;
     guint render_layout_generation;
-    guint32 kitty_direct_image_id; /* Immutable while workers run. */
+    guint32 kitty_direct_image_id; /* Terminal reservation; immutable while workers run. */
     gboolean kitty_direct_image_present; /* Main-context presentation ownership. */
 
     // Renderer reference

@@ -3,6 +3,183 @@
 
 #include "kitty_graphics.h"
 #include "process_env.h"
+#include "terminal_probe.h"
+#include "video_player_test_internal.h"
+#include <unistd.h>
+
+typedef struct {
+    gchar reply[256];
+    gsize offset;
+    gint64 now;
+    gint mode;
+    guint32 next_id;
+    guint32 request_number;
+    VideoPlayer *recovering_player;
+    gint setattrs;
+} AllocationTerminal;
+
+static gboolean allocation_tty(gpointer data) { (void)data; return TRUE; }
+static int allocation_getattr(struct termios *state, gpointer data) {
+    (void)data;
+    memset(state, 0, sizeof(*state));
+    return 0;
+}
+static int allocation_setattr(gint action, const struct termios *state, gpointer data) {
+    (void)action; (void)state;
+    AllocationTerminal *terminal = data;
+    terminal->setattrs++;
+    return terminal->mode == 8 && terminal->setattrs == 2 ? -1 : 0;
+}
+static int allocation_flush(gint queue, gpointer data) { (void)queue; (void)data; return 0; }
+static ssize_t allocation_write(const char *buf, size_t length, gpointer data) {
+    AllocationTerminal *terminal = data;
+    if (terminal->recovering_player) {
+        g_assert_null(terminal->recovering_player->worker_thread);
+        g_assert_false(terminal->recovering_player->render_workers_started);
+    }
+    const gchar *number = strstr(buf, "I=");
+    g_assert_nonnull(number);
+    g_assert_null(strstr(buf, ",i=")); /* Never guess an existing terminal image ID. */
+    guint32 request = (guint32)g_ascii_strtoull(number + 2, NULL, 10);
+    terminal->request_number = request;
+    terminal->offset = 0;
+    if (terminal->mode == 3) terminal->reply[0] = '\0';
+    else if (terminal->mode == 7) g_strlcpy(terminal->reply, "\033[0n", sizeof(terminal->reply));
+    else {
+        const gchar *id = terminal->mode == 4 ? "0" :
+                          terminal->mode == 5 ? "4294967296" :
+                          terminal->mode == 6 ? "-1" : NULL;
+        gchar allocated[32];
+        g_snprintf(allocated, sizeof(allocated), "%u", terminal->next_id++);
+        g_snprintf(terminal->reply, sizeof(terminal->reply),
+                   "x\033_GI=%u,i=%s;%s\033\\\033[0n",
+                   terminal->mode == 2 ? request + 1 : request,
+                   id ? id : allocated, terminal->mode == 1 ? "ERROR" : "OK");
+    }
+    return terminal->mode == 9 ? (ssize_t)length / 2 : (ssize_t)length;
+}
+static gint allocation_read(gint timeout, gpointer data) {
+    AllocationTerminal *terminal = data;
+    if (terminal->reply[terminal->offset]) return (guchar)terminal->reply[terminal->offset++];
+    terminal->now += (gint64)MAX(timeout, 1) * 1000;
+    return TERMINAL_PROBE_READ_TIMEOUT;
+}
+static gint64 allocation_time(gpointer data) { return ((AllocationTerminal *)data)->now; }
+static const TerminalProbeTransportHooks allocation_hooks = {
+    .stdin_is_tty = allocation_tty, .stdout_is_tty = allocation_tty,
+    .tcgetattr_fn = allocation_getattr, .tcsetattr_fn = allocation_setattr,
+    .tcflush_fn = allocation_flush, .write_fn = allocation_write,
+    .read_char_with_timeout_fn = allocation_read, .monotonic_time_us_fn = allocation_time,
+};
+
+static void test_kitty_allocates_terminal_ids_and_preserves_keys(void) {
+    AllocationTerminal terminal = {.next_id = 123};
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    g_assert_cmpuint(kitty_graphics_allocate_image_id(), ==, 123);
+    g_assert_cmpint(terminal_probe_take_pending_byte(), ==, 'x');
+    g_assert_cmpuint(kitty_graphics_allocate_image_id(), ==, 124);
+    g_assert_cmpint(terminal_probe_take_pending_byte(), ==, 'x');
+    terminal_probe_reset_transport_hooks_for_test();
+}
+
+static void test_kitty_allocation_rejects_bad_replies(void) {
+    for (gint mode = 1; mode <= 9; mode++) {
+        AllocationTerminal terminal = {.next_id = 123, .mode = mode};
+        terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+        FILE *capture = tmpfile();
+        g_assert_nonnull(capture);
+        fflush(stdout);
+        gint saved = dup(STDOUT_FILENO);
+        g_assert_cmpint(saved, >=, 0);
+        g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
+        guint32 id = kitty_graphics_allocate_image_id();
+        fflush(stdout);
+        rewind(capture);
+        gchar output[256] = {0};
+        fread(output, 1, sizeof(output) - 1, capture);
+        g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
+        close(saved);
+        fclose(capture);
+        g_assert_cmpuint(id, ==, 0);
+        gchar *cleanup = g_strdup_printf("\033_Ga=d,d=N,I=%u,q=2\033\\", terminal.request_number);
+        g_assert_nonnull(strstr(output, cleanup));
+        g_free(cleanup);
+        terminal_probe_reset_transport_hooks_for_test();
+    }
+}
+
+static gpointer allocation_stale_worker(gpointer data) {
+    (void)data;
+    return NULL;
+}
+
+static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
+    AllocationTerminal terminal = {.next_id = 123};
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                           TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    player->worker_thread = g_thread_new("allocation-stale-worker", allocation_stale_worker, NULL);
+    g_atomic_int_set(&player->worker_stop, TRUE);
+    terminal.recovering_player = player;
+    gchar *log_path = NULL;
+    gint fd = g_file_open_tmp("pixelterm-reservation-XXXXXX.log", &log_path, NULL);
+    g_assert_cmpint(fd, >=, 0);
+    close(fd);
+    video_player_debug_reset_for_test();
+    pixelterm_env_set_for_test("PIXELTERM_DEBUG_VIDEO", "1");
+    pixelterm_env_set_for_test("PIXELTERM_DEBUG_VIDEO_LOG", log_path);
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    fflush(stdout);
+    gint saved = dup(STDOUT_FILENO);
+    g_assert_cmpint(saved, >=, 0);
+    g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
+    g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
+    gint64 deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    while (player->last_presented_pts_ms == G_MININT64 && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, FALSE);
+        g_usleep(1000);
+    }
+    gboolean presented = player->last_presented_pts_ms != G_MININT64;
+    video_player_pause(player);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
+    g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
+    g_assert_cmpuint(terminal.next_id, ==, 124);
+    video_player_stop(player);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
+    video_player_destroy(player);
+    fflush(stdout);
+    rewind(capture);
+    gchar output[8192] = {0};
+    fread(output, 1, sizeof(output) - 1, capture);
+    g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
+    close(saved);
+    fclose(capture);
+    video_player_debug_reset_for_test();
+    pixelterm_env_reset_for_test();
+    terminal_probe_reset_transport_hooks_for_test();
+    g_assert_true(presented);
+    g_assert_nonnull(strstr(output, "a=T,f=24"));
+    g_assert_nonnull(strstr(output, "i=123,"));
+    g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=123,q=2\033\\"));
+    gchar *log = NULL;
+    g_assert_true(g_file_get_contents(log_path, &log, NULL, NULL));
+    const gchar *start = strstr(log, "[video-debug] play-start ");
+    const gchar *first = strstr(log, "[video-debug] render-first ");
+    g_assert_nonnull(start);
+    g_assert_nonnull(first);
+    g_assert_true(start < first);
+    g_free(log);
+    remove(log_path);
+    g_free(log_path);
+}
 
 static void test_kitty_graphics_shm_command_contains_expected_controls(void) {
     GString *command = kitty_graphics_build_shm_command("/pixelterm-test", 16, 8, 4, 2, 512);
@@ -252,6 +429,9 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 }
 
 void register_kitty_graphics_tests(void) {
+    g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
+    g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
+    g_test_add_func("/kitty_graphics/allocation/player_lifecycle", test_kitty_player_uses_and_releases_terminal_reservation);
     g_test_add_func("/kitty_graphics/direct_rgb/aspect_and_budget",
                     test_kitty_direct_size_preserves_aspect_and_budget);
     g_test_add_func("/kitty_graphics/shm_command/controls", test_kitty_graphics_shm_command_contains_expected_controls);
