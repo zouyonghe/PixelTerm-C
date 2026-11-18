@@ -284,6 +284,10 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
+        /* Recover transient failures, but reject replies from a failed probe. */
+        for (gint retry = 0; retry < 2; retry++) {
+            if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) == 0) break;
+        }
         return -1;
     }
 

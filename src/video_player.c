@@ -29,7 +29,9 @@ static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
 static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gboolean release) {
+    release = release || player->kitty_direct_release_pending;
     if (!player->kitty_direct_image_id || (!release && !player->kitty_direct_image_present)) return TRUE;
+    if (release) player->kitty_direct_release_pending = TRUE;
     GString *command = NULL;
     if (release) {
         command = kitty_graphics_build_delete_image_command(player->kitty_direct_image_id);
@@ -38,20 +40,29 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
         command = g_string_new(NULL);
         g_string_printf(command, "\033_Ga=d,d=i,i=%u,q=2\033\\", player->kitty_direct_image_id);
     }
-    clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
-    gsize written = fwrite(command->str, 1, command->len, stdout);
-    gint flushed = fflush(stdout);
-    gboolean deleted = written == command->len && flushed == 0 && !ferror(stdout);
+    gboolean deleted = FALSE;
+    for (gint attempt = 0; attempt < (release ? 3 : 1); attempt++) {
+        clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
+        gsize written = fwrite(command->str, 1, command->len, stdout);
+        gint flushed = fflush(stdout);
+        deleted = written == command->len && flushed == 0 && !ferror(stdout);
+        if (deleted) break;
+    }
     g_string_free(command, TRUE);
     if (deleted) {
         player->kitty_direct_image_present = FALSE;
-        if (release) player->kitty_direct_image_id = 0;
+        if (release) {
+            player->kitty_direct_image_id = 0;
+            player->kitty_direct_release_pending = FALSE;
+        }
     }
     return deleted;
 }
 
 static void video_player_prepare_direct_kitty_image(VideoPlayer *player) {
-    if (player->kitty_direct_image_id || player->kitty_transfer == KITTY_TRANSFER_SHM ||
+    if (player->kitty_direct_release_pending &&
+        !video_player_clear_direct_kitty_image(player, TRUE)) return;
+    if (player->kitty_direct_image_id || player->kitty_shm_enabled || player->kitty_transfer == KITTY_TRANSFER_SHM ||
         pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return;
     g_mutex_lock(&player->render_mutex);
     gboolean eligible = player->renderer && player->renderer->config.force_kitty &&
@@ -1046,6 +1057,12 @@ static gboolean video_player_has_renderer(VideoPlayer *player) {
 
 static void video_player_start_worker(VideoPlayer *player) {
     if (!player || !video_player_has_renderer(player)) {
+        return;
+    }
+    if (player->kitty_direct_release_pending) {
+        g_mutex_lock(&player->state_mutex);
+        player->is_playing = FALSE;
+        g_mutex_unlock(&player->state_mutex);
         return;
     }
 

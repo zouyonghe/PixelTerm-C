@@ -93,6 +93,7 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         g_assert_cmpint(saved, >=, 0);
         g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
         guint32 id = kitty_graphics_allocate_image_id();
+        if (mode == 8) g_assert_cmpint(terminal.setattrs, ==, 3);
         fflush(stdout);
         rewind(capture);
         gchar output[256] = {0};
@@ -113,6 +114,34 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
 static gpointer allocation_stale_worker(gpointer data) {
     (void)data;
     return NULL;
+}
+
+static void test_kitty_shm_playback_skips_direct_allocation(void) {
+    AllocationTerminal terminal = {.next_id = 123};
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                           TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->kitty_shm_enabled = TRUE;
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    fflush(stdout);
+    gint saved = dup(STDOUT_FILENO);
+    g_assert_cmpint(saved, >=, 0);
+    g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
+    g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
+    video_player_stop(player);
+    video_player_destroy(player);
+    fflush(stdout);
+    g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
+    close(saved);
+    fclose(capture);
+    terminal_probe_reset_transport_hooks_for_test();
+    pixelterm_env_reset_for_test();
+    g_assert_cmpuint(terminal.request_number, ==, 0);
 }
 
 static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
@@ -287,7 +316,7 @@ static void test_kitty_direct_size_preserves_aspect_and_budget(void) {
     g_assert_cmpint(height, ==, 12);
     kitty_graphics_get_direct_size(4096, 4096, 0, 0, &width, &height);
     g_assert_cmpint(width, ==, height);
-    g_assert_cmpint(width, >, 0);
+    g_assert_cmpint(width, ==, 1672);
     g_assert_cmpuint((gsize)width * height * 3, <=, KITTY_GRAPHICS_DIRECT_MAX_BYTES);
     kitty_graphics_get_direct_size(16, 8, 100, 100, &width, &height);
     g_assert_cmpint(width, ==, 16);
@@ -435,6 +464,7 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
     g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
+    g_test_add_func("/kitty_graphics/allocation/shm_skips_direct", test_kitty_shm_playback_skips_direct_allocation);
     g_test_add_func("/kitty_graphics/allocation/player_lifecycle", test_kitty_player_uses_and_releases_terminal_reservation);
     g_test_add_func("/kitty_graphics/direct_rgb/aspect_and_budget",
                     test_kitty_direct_size_preserves_aspect_and_budget);
