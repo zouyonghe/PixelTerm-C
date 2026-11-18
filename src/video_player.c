@@ -9,6 +9,7 @@
 #include "video_player_seek_internal.h"
 #include "kitty_graphics.h"
 #include "media_buffer.h"
+#include "process_env.h"
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -1043,8 +1044,135 @@ static RendererConfig video_player_render_worker_config(VideoPlayer *player) {
     return config;
 }
 
+static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer *renderer,
+                                                                  const DecodedFrame *decoded,
+                                                                  struct SwsContext **sws_context,
+                                                                  guint8 **rgb_buffer,
+                                                                  gsize *rgb_buffer_capacity,
+                                                                  gint *rendered_width,
+                                                                  gint *rendered_height) {
+    if (!renderer || !decoded || !sws_context || !rgb_buffer ||
+        !rgb_buffer_capacity || !rendered_width || !rendered_height) {
+        return NULL;
+    }
+    if (renderer->config.gamma != 1.0 ||
+        renderer->config.color_enhance != COLOR_ENHANCE_OFF ||
+        pixelterm_getenv("TMUX") || pixelterm_getenv("STY") ||
+        !decoded->pixels ||
+        !video_player_rgba_layout_within_limits(decoded->width, decoded->height,
+                                                decoded->rowstride, NULL)) {
+        return NULL;
+    }
+    /* RGB cannot represent alpha; keep the established renderer for such frames. */
+    for (gint y = 0; y < decoded->height; y++) {
+        const guint8 *row = decoded->pixels + (gsize)y * decoded->rowstride;
+        for (gint x = 0; x < decoded->width; x++) {
+            if (row[(gsize)x * 4 + 3] != 255) return NULL;
+        }
+    }
+
+    gint cell_width = 0;
+    gint cell_height = 0;
+    get_terminal_cell_geometry(&cell_width, &cell_height);
+    *rendered_width = renderer->config.max_width;
+    *rendered_height = renderer->config.max_height;
+    if (renderer->config.preserve_aspect_ratio) {
+        chafa_calc_canvas_geometry(decoded->width,
+                                   decoded->height,
+                                   rendered_width,
+                                   rendered_height,
+                                   get_terminal_cell_aspect_ratio(),
+                                   TRUE,
+                                   FALSE);
+    }
+    if (*rendered_width <= 0 || *rendered_height <= 0) {
+        return NULL;
+    }
+
+    gint pixel_width = decoded->width;
+    gint pixel_height = decoded->height;
+    if (cell_width > 0 && cell_height > 0) {
+        pixel_width = (gint)MIN((gint64)decoded->width, (gint64)*rendered_width * cell_width);
+        pixel_height = (gint)MIN((gint64)decoded->height, (gint64)*rendered_height * cell_height);
+    }
+    if (pixel_width <= 0 || pixel_height <= 0 || pixel_width > G_MAXINT / 3) {
+        return NULL;
+    }
+
+    gsize required_size = 0;
+    if (!g_size_checked_mul(&required_size,
+                            (gsize)pixel_width * 3,
+                            (gsize)pixel_height)) {
+        return NULL;
+    }
+    if (!g_size_checked_add(&required_size, required_size, AV_INPUT_BUFFER_PADDING_SIZE)) {
+        return NULL;
+    }
+    if (required_size > *rgb_buffer_capacity) {
+        guint8 *resized = g_try_realloc(*rgb_buffer, required_size);
+        if (!resized) {
+            return NULL;
+        }
+        *rgb_buffer = resized;
+        *rgb_buffer_capacity = required_size;
+    }
+
+    *sws_context = sws_getCachedContext(*sws_context,
+                                        decoded->width,
+                                        decoded->height,
+                                        AV_PIX_FMT_RGBA,
+                                        pixel_width,
+                                        pixel_height,
+                                        AV_PIX_FMT_RGB24,
+                                        SWS_BILINEAR,
+                                        NULL,
+                                        NULL,
+                                        NULL);
+    if (!*sws_context) {
+        return NULL;
+    }
+
+    const uint8_t *source_data[4] = {decoded->pixels, NULL, NULL, NULL};
+    gint source_stride[4] = {decoded->rowstride, 0, 0, 0};
+    uint8_t *destination_data[4] = {*rgb_buffer, NULL, NULL, NULL};
+    gint destination_stride[4] = {pixel_width * 3, 0, 0, 0};
+    if (sws_scale(*sws_context,
+                  source_data,
+                  source_stride,
+                  0,
+                  decoded->height,
+                  destination_data,
+                  destination_stride) != pixel_height) {
+        return NULL;
+    }
+
+    return kitty_graphics_frame_new_direct_rgb(*rgb_buffer,
+                                               pixel_width,
+                                               pixel_height,
+                                               pixel_width * 3,
+                                               *rendered_width,
+                                               *rendered_height);
+}
+
 RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player) {
     return video_player_render_worker_config(player);
+}
+
+GString *video_player_render_direct_kitty_for_test(ImageRenderer *renderer,
+                                                  const DecodedFrame *decoded) {
+    struct SwsContext *context = NULL;
+    guint8 *buffer = NULL;
+    gsize capacity = 0;
+    gint width = 0, height = 0;
+    KittyGraphicsFrame *frame = video_player_render_direct_kitty_frame(
+        renderer, decoded, &context, &buffer, &capacity, &width, &height);
+    sws_freeContext(context);
+    g_free(buffer);
+    if (!frame) return NULL;
+    GString *command = frame->command;
+    frame->command = NULL;
+    kitty_graphics_frame_free(frame);
+    return command;
 }
 
 gboolean video_player_frame_buffer_size_for_test(gint height, gint rowstride, gsize *buffer_size) {
@@ -1275,13 +1403,6 @@ static gpointer video_player_worker_thread(gpointer user_data) {
                     g_mutex_unlock(&player->queue_mutex);
                     break;
                 }
-                sws_scale(player->sws_context,
-                          (const uint8_t * const *)player->decode_frame->data,
-                          player->decode_frame->linesize,
-                          0,
-                          player->codec_context->height,
-                          player->rgba_frame->data,
-                          player->rgba_frame->linesize);
                 frame_ready = TRUE;
                 break;
             }
@@ -1346,7 +1467,7 @@ static gpointer video_player_worker_thread(gpointer user_data) {
         player->smooth_last_pts_ms = raw_pts_ms;
         player->smooth_pts_ms = pts_ms;
         video_player_debug_log(player, "worker-frame-ready", raw_pts_ms, pts_ms, next_fallback_pts_ms, 0);
-        video_player_debug_log(player, "worker-decode-time", pts_ms, decode_elapsed_us, 0, 0);
+        video_player_debug_log(player, "worker-decode-time", pts_ms, decode_elapsed_us, 1, 0);
         if (video_player_should_drop_late_frame(player, pts_ms)) {
             gint64 target_pts_ms = 0;
             (void)video_player_get_target_pts_ms(player, &target_pts_ms);
@@ -1356,6 +1477,20 @@ static gpointer video_player_worker_thread(gpointer user_data) {
                                    target_pts_ms,
                                    target_pts_ms - pts_ms,
                                    video_player_calc_late_window_ms(player, 1, 10));
+            continue;
+        }
+
+        gint64 convert_start_us = g_get_monotonic_time();
+        gint converted_rows = sws_scale(player->sws_context,
+                                        (const uint8_t * const *)player->decode_frame->data,
+                                        player->decode_frame->linesize,
+                                        0,
+                                        player->codec_context->height,
+                                        player->rgba_frame->data,
+                                        player->rgba_frame->linesize);
+        video_player_debug_log(player, "worker-convert-time", pts_ms,
+                               g_get_monotonic_time() - convert_start_us, 0, 0);
+        if (converted_rows != player->video_height) {
             continue;
         }
 
@@ -1377,7 +1512,10 @@ static gpointer video_player_worker_thread(gpointer user_data) {
             decoded_frame_destroy(decoded);
             continue;
         }
+        gint64 copy_start_us = g_get_monotonic_time();
         decoded->pixels = g_memdup2(player->rgba_frame->data[0], buffer_size);
+        video_player_debug_log(player, "worker-copy-time", pts_ms,
+                               g_get_monotonic_time() - copy_start_us, buffer_size, 0);
         if (!decoded->pixels) {
             decoded_frame_destroy(decoded);
             continue;
@@ -1391,6 +1529,10 @@ static gpointer video_player_worker_thread(gpointer user_data) {
     }
 
     return NULL;
+}
+
+void video_player_start_decode_worker_for_test(VideoPlayer *player) {
+    player->worker_thread = g_thread_new("video-decode-test", video_player_worker_thread, player);
 }
 
 static gpointer video_player_render_worker_thread(gpointer user_data) {
@@ -1410,6 +1552,9 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
         return NULL;
     }
     guint layout_generation = 0;
+    struct SwsContext *direct_sws_context = NULL;
+    guint8 *direct_rgb_buffer = NULL;
+    gsize direct_rgb_buffer_capacity = 0;
 
     while (!video_player_should_stop(player)) {
         DecodedFrame *decoded = video_player_decode_queue_wait_and_take(player);
@@ -1448,6 +1593,22 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
                 kitty_shm_name = kitty_frame->shm_name;
                 kitty_frame->command = NULL;
                 kitty_frame->shm_name = NULL;
+                pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+                kitty_graphics_frame_free(kitty_frame);
+            }
+        }
+        if (!rendered && renderer->config.force_kitty && !renderer->config.force_text) {
+            KittyGraphicsFrame *kitty_frame = video_player_render_direct_kitty_frame(
+                renderer,
+                decoded,
+                &direct_sws_context,
+                &direct_rgb_buffer,
+                &direct_rgb_buffer_capacity,
+                &rendered_w,
+                &rendered_h);
+            if (kitty_frame) {
+                rendered = kitty_frame->command;
+                kitty_frame->command = NULL;
                 pixel_mode = CHAFA_PIXEL_MODE_KITTY;
                 kitty_graphics_frame_free(kitty_frame);
             }
@@ -1503,6 +1664,8 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
     }
 
     renderer_destroy(renderer);
+    sws_freeContext(direct_sws_context);
+    g_free(direct_rgb_buffer);
     return NULL;
 }
 
@@ -1749,6 +1912,7 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     player->last_presented_pts_ms = frame->pts_ms;
     g_mutex_unlock(&player->state_mutex);
     video_player_debug_log(player, "render-draw-time", frame->pts_ms, io_end_us - io_start_us, rendered_w, rendered_h);
+    video_player_debug_log(player, "render-submit", frame->pts_ms, io_end_us, 0, 0);
     video_player_update_present_fps(player, io_end_us);
     video_player_update_io_avg(player, (io_end_us - io_start_us) / 1000);
 

@@ -38,6 +38,7 @@ The repository root keeps only the core project documents. Everything else is gr
 - [Architecture](development/ARCHITECTURE.md)
 - [Release Notes Automation](development/RELEASE_NOTES_AUTOMATION.md)
 - [Video Player Threading and Locking](development/VIDEO_PLAYER_THREADING.md)
+- [Video Playback Performance Design and Validation (中文)](development/VIDEO_PLAYBACK_PERFORMANCE.md)
 
 ## Project Tracking
 

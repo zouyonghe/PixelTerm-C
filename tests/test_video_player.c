@@ -1620,6 +1620,80 @@ static void test_should_drop_late_frame_when_backlog_is_deep(void) {
     video_player_destroy(player);
 }
 
+static guint count_debug_event(const gchar *log, const gchar *event) {
+    gchar *needle = g_strdup_printf("[video-debug] %s ", event);
+    gchar **parts = g_strsplit(log, needle, -1);
+    guint count = g_strv_length(parts) - 1;
+    g_strfreev(parts);
+    g_free(needle);
+    return count;
+}
+
+static void test_decode_worker_conversion_gating(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    gboolean late = mode == 1;
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                           TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+
+    gchar *log_path = NULL;
+    gint fd = g_file_open_tmp("pixelterm-conversion-XXXXXX.log", &log_path, NULL);
+    g_assert_cmpint(fd, >=, 0);
+    close(fd);
+    g_test_queue_destroy(remove_path, log_path);
+    video_player_debug_reset_for_test();
+    pixelterm_env_set_for_test("PIXELTERM_DEBUG_VIDEO", "1");
+    pixelterm_env_set_for_test("PIXELTERM_DEBUG_VIDEO_LOG", log_path);
+
+    /* Only the decode queue is drained; render backlog remains fixed. */
+    player->max_queue_size = 16;
+    for (gint i = 0; i < 5; i++) {
+        video_player_queue_push(player, make_test_frame_with_generation(
+            200000 + i * 1000, (guint)g_atomic_int_get(&player->playback_generation)));
+    }
+    player->clock_started = mode != 0;
+    player->clock_start_us = g_get_monotonic_time();
+    player->clock_start_pts_ms = 100000;
+    player->last_presented_pts_ms = 99999;
+    if (mode == 2) {
+        player->last_presented_pts_ms = G_MININT64;
+        player->last_present_us = g_get_monotonic_time() - 10 * G_TIME_SPAN_SECOND;
+    }
+    player->rewind_needs_resync = mode == 3;
+    video_player_start_decode_worker_for_test(player);
+
+    gboolean pending = FALSE;
+    gint64 deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    do {
+        DecodedFrame *decoded_frame = video_player_decode_queue_take(player);
+        decoded_frame_destroy(decoded_frame);
+        g_mutex_lock(&player->state_mutex);
+        pending = player->eof_pending;
+        g_mutex_unlock(&player->state_mutex);
+        if (!pending) {
+            g_usleep(1000);
+        }
+    } while (!pending && g_get_monotonic_time() < deadline);
+    video_player_stop(player);
+    video_player_destroy(player);
+    video_player_debug_reset_for_test();
+    pixelterm_env_unset_for_test("PIXELTERM_DEBUG_VIDEO");
+    pixelterm_env_unset_for_test("PIXELTERM_DEBUG_VIDEO_LOG");
+
+    gchar *log = NULL;
+    g_assert_true(g_file_get_contents(log_path, &log, NULL, NULL));
+    g_test_message("decode trace:\n%s", log);
+    guint decoded = count_debug_event(log, "worker-decode-time");
+    guint converted = count_debug_event(log, "worker-convert-time");
+    guint dropped = count_debug_event(log, "worker-drop-late");
+    g_free(log);
+    g_assert_true(pending);
+    g_assert_cmpuint(decoded, ==, 6);
+    g_assert_cmpuint(converted, ==, late ? 0 : decoded);
+    g_assert_cmpuint(dropped, ==, late ? decoded : 0);
+}
+
 static void test_queue_take_for_playback_waits_even_when_future_queue_is_full(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -2299,6 +2373,12 @@ static void test_debug_logging_honors_environment_toggle(void) {
     video_player_destroy(player);
 }
 
+static void test_debug_logging_accepts_performance_events(void) {
+    g_assert_true(video_player_debug_should_log_for_test("worker-convert-time"));
+    g_assert_true(video_player_debug_should_log_for_test("worker-copy-time"));
+    g_assert_true(video_player_debug_should_log_for_test("render-submit"));
+}
+
 static void test_debug_logging_closes_stream_when_last_player_is_destroyed(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -2687,7 +2767,45 @@ static void test_worker_restart_reclaims_stale_thread_handle(void) {
     video_player_destroy(player);
 }
 
+static void test_direct_kitty_preserves_fallback_boundaries(void) {
+    ImageRenderer *renderer = renderer_create();
+    renderer->config.max_width = 1;
+    renderer->config.max_height = 1;
+    renderer->config.gamma = 2.0;
+    guint8 pixels[] = {30, 60, 90, 255};
+    DecodedFrame decoded = {.pixels = pixels, .width = 1, .height = 1, .rowstride = 4};
+    GString *command = video_player_render_direct_kitty_for_test(renderer, &decoded);
+    if (command) g_string_free(command, TRUE);
+    g_assert_null(command);
+    renderer->config.gamma = 1.0;
+    renderer->config.color_enhance = COLOR_ENHANCE_VIVID;
+    command = video_player_render_direct_kitty_for_test(renderer, &decoded);
+    if (command) g_string_free(command, TRUE);
+    g_assert_null(command);
+    renderer->config.color_enhance = COLOR_ENHANCE_OFF;
+    pixels[3] = 128;
+    command = video_player_render_direct_kitty_for_test(renderer, &decoded);
+    if (command) g_string_free(command, TRUE);
+    g_assert_null(command);
+    pixels[3] = 255;
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    command = video_player_render_direct_kitty_for_test(renderer, &decoded);
+    g_assert_nonnull(command);
+    g_assert_nonnull(strstr(command->str, "f=24,s=1,v=1,"));
+    g_assert_nonnull(strstr(command->str, ";Hjxa\033\\"));
+    g_string_free(command, TRUE);
+    pixelterm_env_set_for_test("TMUX", "/test/tmux");
+    command = video_player_render_direct_kitty_for_test(renderer, &decoded);
+    if (command) g_string_free(command, TRUE);
+    g_assert_null(command);
+    pixelterm_env_reset_for_test();
+    renderer_destroy(renderer);
+}
+
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/direct_kitty/fallback_boundaries",
+                    test_direct_kitty_preserves_fallback_boundaries);
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",
                     test_reset_timing_state_clears_loop_sensitive_fields);
     g_test_add_func("/video_player/fallback_pts/set_waits_on_state_mutex",
@@ -2796,6 +2914,14 @@ void register_video_player_tests(void) {
                     test_should_not_drop_late_frame_when_backlog_is_medium);
     g_test_add_func("/video_player/drop_late_frame/drops_when_backlog_is_deep",
                     test_should_drop_late_frame_when_backlog_is_deep);
+    g_test_add_data_func("/video_player/decode_worker/skips_conversion_for_late_frames",
+                         GINT_TO_POINTER(TRUE), test_decode_worker_conversion_gating);
+    g_test_add_data_func("/video_player/decode_worker/converts_frames_without_clock",
+                         GINT_TO_POINTER(FALSE), test_decode_worker_conversion_gating);
+    g_test_add_data_func("/video_player/decode_worker/converts_frames_after_silence",
+                         GINT_TO_POINTER(2), test_decode_worker_conversion_gating);
+    g_test_add_data_func("/video_player/decode_worker/converts_frames_before_rewind_resync",
+                         GINT_TO_POINTER(3), test_decode_worker_conversion_gating);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_when_silence_exceeded",
                     test_should_not_drop_late_frame_when_backlog_is_deep_and_silence_exceeded);
     g_test_add_func("/video_player/drop_late_frame/does_not_drop_without_clock",
@@ -2826,6 +2952,8 @@ void register_video_player_tests(void) {
                     test_debug_logging_stale_drop_completes_after_eof_handling);
     g_test_add_func("/video_player/debug_logging/honors_environment_toggle",
                     test_debug_logging_honors_environment_toggle);
+    g_test_add_func("/video_player/debug_logging/accepts_performance_events",
+                    test_debug_logging_accepts_performance_events);
     g_test_add_func("/video_player/debug_logging/closes_stream_when_last_player_is_destroyed",
                     test_debug_logging_closes_stream_when_last_player_is_destroyed);
     g_test_add_func("/video_player/debug_logging/disabled_skips_metric_locks_before_queue_wait",

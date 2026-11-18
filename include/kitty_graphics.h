@@ -20,6 +20,12 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                        gint rowstride,
                                                        gint display_width_cells,
                                                        gint display_height_cells);
+KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
+                                                        gint width,
+                                                        gint height,
+                                                        gint rowstride,
+                                                        gint display_width_cells,
+                                                        gint display_height_cells);
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,
                                                                gint width,
                                                                gint height,

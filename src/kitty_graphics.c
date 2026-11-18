@@ -1,5 +1,6 @@
 #include "kitty_graphics.h"
 #include "process_env.h"
+#include "media_buffer.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -459,6 +460,70 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                       0,
                                                       0,
                                                       FALSE);
+}
+
+KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
+                                                        gint width,
+                                                        gint height,
+                                                        gint rowstride,
+                                                        gint display_width_cells,
+                                                        gint display_height_cells) {
+    gsize min_rowstride = 0;
+    gsize payload_size = 0;
+    if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
+        display_width_cells <= 0 || display_height_cells <= 0 ||
+        !g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)3) ||
+        min_rowstride > G_MAXINT || (gsize)rowstride < min_rowstride ||
+        !g_size_checked_mul(&payload_size, min_rowstride, (gsize)height) ||
+        !media_buffer_validate_layout(width, height, rowstride, 3, 1, NULL)) {
+        return NULL;
+    }
+
+    GByteArray *packed = g_byte_array_sized_new(payload_size);
+    for (gint y = 0; y < height; y++) {
+        g_byte_array_append(packed,
+                            pixels + (gsize)y * (gsize)rowstride,
+                            (guint)min_rowstride);
+    }
+    gchar *encoded = g_base64_encode(packed->data, packed->len);
+    g_byte_array_unref(packed);
+    if (!encoded) {
+        return NULL;
+    }
+
+    GString *command = g_string_sized_new(strlen(encoded) + 128);
+    gsize encoded_len = strlen(encoded);
+    for (gsize offset = 0; offset < encoded_len;) {
+        gsize remaining = encoded_len - offset;
+        gsize chunk_size = MIN(remaining, (gsize)4096);
+        gboolean more = offset + chunk_size < encoded_len;
+        if (more) {
+            chunk_size -= chunk_size % 4;
+        }
+
+        if (offset == 0) {
+            g_string_append_printf(command,
+                                   "\033_Ga=T,f=24,s=%d,v=%d,c=%d,r=%d,C=1,m=%d,q=2;",
+                                   width, height, display_width_cells,
+                                   display_height_cells, more ? 1 : 0);
+        } else {
+            g_string_append_printf(command, "\033_Gm=%d;", more ? 1 : 0);
+        }
+        g_string_append_len(command, encoded + offset, chunk_size);
+        g_string_append(command, "\033\\");
+        offset += chunk_size;
+    }
+    g_free(encoded);
+
+    KittyGraphicsFrame *frame = g_new0(KittyGraphicsFrame, 1);
+    if (!frame) {
+        g_string_free(command, TRUE);
+        return NULL;
+    }
+    frame->command = command;
+    frame->display_width_cells = display_width_cells;
+    frame->display_height_cells = display_height_cells;
+    return frame;
 }
 
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,
