@@ -37,12 +37,12 @@ static void test_kitty_graphics_direct_rgb_command_roundtrips_chunks(void) {
     }
 
     KittyGraphicsFrame *frame = kitty_graphics_frame_new_direct_rgb(
-        pixels, 1000, 2, 3000, 64, 18);
+        pixels, 1000, 2, 3000, 64, 18, 42);
     g_assert_nonnull(frame);
     g_assert_null(frame->shm_name);
     g_assert_cmpint(frame->display_width_cells, ==, 64);
     g_assert_cmpint(frame->display_height_cells, ==, 18);
-    g_assert_nonnull(strstr(frame->command->str, "a=T,f=24,s=1000,v=2,c=64,r=18,C=1,m=1,q=2;"));
+    g_assert_nonnull(strstr(frame->command->str, "a=T,f=24,s=1000,v=2,c=64,r=18,i=42,C=1,m=1,q=2;"));
 
     GByteArray *decoded = g_byte_array_new();
     gchar **commands = g_strsplit(frame->command->str, "\033\\", -1);
@@ -80,18 +80,40 @@ static void test_kitty_graphics_direct_rgb_command_roundtrips_chunks(void) {
 static void test_kitty_graphics_direct_rgb_rejects_oversized_layout(void) {
     guint8 pixel[3] = {1, 2, 3};
     g_assert_null(kitty_graphics_frame_new_direct_rgb(pixel, 100000, 100000,
-                                                      300000, 1, 1));
-    g_assert_null(kitty_graphics_frame_new_direct_rgb(pixel, 2, 1, 3, 1, 1));
-    g_assert_null(kitty_graphics_frame_new_direct_rgb(NULL, 1, 1, 3, 1, 1));
+                                                      300000, 1, 1, 42));
+    g_assert_null(kitty_graphics_frame_new_direct_rgb(pixel, 2, 1, 3, 1, 1, 42));
+    g_assert_null(kitty_graphics_frame_new_direct_rgb(NULL, 1, 1, 3, 1, 1, 42));
+    g_assert_null(kitty_graphics_frame_new_direct_rgb(pixel, 1, 1, 3, 1, 1, 0));
+    g_assert_null(kitty_graphics_frame_new_direct_rgb(pixel, 4096, 4096, 12288, 1, 1, 42));
 }
 
 static void test_kitty_graphics_direct_rgb_omits_row_padding(void) {
     const guint8 pixels[] = {1, 2, 3, 99, 4, 5, 6, 99};
-    KittyGraphicsFrame *frame = kitty_graphics_frame_new_direct_rgb(pixels, 1, 2, 4, 1, 2);
+    KittyGraphicsFrame *frame = kitty_graphics_frame_new_direct_rgb(pixels, 1, 2, 4, 1, 2, 42);
     g_assert_nonnull(frame);
     g_assert_cmpstr(frame->command->str, ==,
-                    "\033_Ga=T,f=24,s=1,v=2,c=1,r=2,C=1,m=0,q=2;AQIDBAUG\033\\");
+                    "\033_Ga=T,f=24,s=1,v=2,c=1,r=2,i=42,C=1,m=0,q=2;AQIDBAUG\033\\");
     kitty_graphics_frame_free(frame);
+}
+
+static void test_kitty_direct_size_preserves_aspect_and_budget(void) {
+    gint width = 0, height = 0;
+    kitty_graphics_get_direct_size(120, 1000, 100, 100, &width, &height);
+    g_assert_cmpint(width, ==, 12);
+    g_assert_cmpint(height, ==, 100);
+    kitty_graphics_get_direct_size(1000, 120, 100, 100, &width, &height);
+    g_assert_cmpint(width, ==, 100);
+    g_assert_cmpint(height, ==, 12);
+    kitty_graphics_get_direct_size(4096, 4096, 0, 0, &width, &height);
+    g_assert_cmpint(width, ==, height);
+    g_assert_cmpint(width, >, 0);
+    g_assert_cmpuint((gsize)width * height * 3, <=, KITTY_GRAPHICS_DIRECT_MAX_BYTES);
+    kitty_graphics_get_direct_size(16, 8, 100, 100, &width, &height);
+    g_assert_cmpint(width, ==, 16);
+    g_assert_cmpint(height, ==, 8);
+    kitty_graphics_get_direct_size(1, 16000000, 0, 0, &width, &height);
+    g_assert_cmpint(width, ==, 1);
+    g_assert_cmpuint((gsize)width * height * 3, <=, KITTY_GRAPHICS_DIRECT_MAX_BYTES);
 }
 
 static void test_kitty_graphics_animation_commands(void) {
@@ -230,6 +252,8 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 }
 
 void register_kitty_graphics_tests(void) {
+    g_test_add_func("/kitty_graphics/direct_rgb/aspect_and_budget",
+                    test_kitty_direct_size_preserves_aspect_and_budget);
     g_test_add_func("/kitty_graphics/shm_command/controls", test_kitty_graphics_shm_command_contains_expected_controls);
     g_test_add_func("/kitty_graphics/shm_command/rejects_invalid_input", test_kitty_graphics_shm_command_rejects_invalid_input);
     g_test_add_func("/kitty_graphics/direct_rgb/roundtrips_chunks",

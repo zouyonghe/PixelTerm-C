@@ -8,9 +8,9 @@
 
 ## 当前链路与证据
 
-`av_read_frame → avcodec_receive_frame → sws_scale(RGBA) → PTS/迟到判断 → g_memdup2 → decode_queue → render workers → frame_queue → GLib tick → stdout`
+`av_read_frame → avcodec_receive_frame → PTS/迟到判断（拒绝则跳过转换） → sws_scale(RGBA) → g_memdup2 → decode_queue → render workers（RGB direct／Chafa 回退） → frame_queue → GLib tick → stdout`
 
-- `src/video_player.c`：解码工作线程转换后才丢弃迟到帧；队列使用单独复制的 RGBA；渲染工作线程持有各自 renderer。
+- `src/video_player.c`：解码工作线程在转换前丢弃迟到帧；队列使用单独复制的 RGBA；渲染工作线程持有各自 renderer。
 - `src/kitty_graphics.c`：本地共享内存路径仍逐帧创建对象，并复制或缩放 RGBA，不是 GPU 零拷贝。
 - `src/renderer.c`：`renderer_setup_canvas()` 每次创建 Chafa canvas。
 - `src/video_player_playback.c`：已按播放时钟和队首 PTS 计算延迟，并有防饥饿丢帧策略。不能把现有实现描述为固定延迟播放。
@@ -75,15 +75,15 @@ python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
 
 使用 `tests/test_video_player.c` 内嵌的六帧视频，运行实际解码线程，保持深渲染队列和落后 PTS。修改前回归测试按预期失败：解码 6、转换 6、丢弃 6；移动转换位置后通过：解码 6、转换 0、丢弃 6。无播放时钟、超过静默期限、rewind 重同步三组测试均解码并转换 6 帧，不误丢。
 
-验证命令与结果：
+首批历史验证记录（此时摘要脚本尚未加入 copy 和单区间测试，6 项；当前脚本为 8 项）：
 
 | 命令 | 实际结果 |
 | --- | --- |
 | `python3 scripts/test_summarize_video_log.py` | 6 项通过 |
-| `make -s -j4 test` | 通过，439 条 C TAP 成功记录，附带 Python／启动测试通过 |
-| `make -s -j4 debug-test` | ASan 完整套件通过，439 条 C TAP 成功记录 |
-| `make -s -j4 ubsan-test` | UBSan 完整套件通过，439 条 C TAP 成功记录 |
-| `make -s -j4 tsan-test` | 针对性并发套件通过，20 项，包括 4 项实际解码线程测试 |
+| `make -s -j4 test` | 首批完整套件通过，附带 Python／启动测试通过；最新计数见下文 |
+| `make -s -j4 debug-test` | 首批 ASan 完整套件通过；最新计数见下文 |
+| `make -s -j4 ubsan-test` | 首批 UBSan 完整套件通过；最新计数见下文 |
+| `make -s -j4 tsan-test` | 针对性并发套件通过，21 项，包括 4 项实际解码线程测试 |
 
 这里只证明被拒绝帧省去了转色，未测代表性素材的 CPU／RSS、真实终端显示 FPS 或 P95/P99 改善。计时日志可用于下一轮同配置对照；小型回归素材的微秒耗时不作为性能宣传。
 
@@ -106,11 +106,15 @@ python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
 | 80×24 | 512×288 | 31.19 → 30.84 | 6.13 → 4.61 ms | 42.52 → 42.17 ms |
 | 160×48 | 1200×672 | 19.40 → 27.01 | 31.96 → 22.63 ms | 72.51 → 55.51 ms |
 
-表中为各轮指标的中位数。大窗口的渲染耗时 P50 从 15.33 增至 19.09 ms，小窗口从 5.99 增至 11.30 ms；收益来自减少终端写入，而非加快渲染。伪终端只接收字节，不负责解码或绘制。提交率超过素材标称帧率不代表画面显示得更快；真实 Warp/Kitty 的显示和画质仍待实机验证。
+表中为各轮指标的中位数。小窗口（80×24）未见吞吐收益，提交率从 31.19 略降至 30.84，仅输出 P50 明显下降。大窗口的渲染耗时 P50 从 15.33 增至 19.09 ms，小窗口从 5.99 增至 11.30 ms；收益来自减少终端写入，而非加快渲染。伪终端只接收字节，不负责解码或绘制。提交率超过素材标称帧率不代表画面显示得更快；真实 Warp/Kitty 的显示和画质仍待实机验证。
+
+Review 后补充：direct RGB 按统一比例缩放两个轴，像素负载始终不超过 8 MiB，即使没有终端像素尺寸也适用；constructor 再次检查上限。紧密排列的 RGB 缓冲直接 base64 编码，只有含行填充时才打包。每个播放器复用一个非零 Kitty 图像 ID，`a=T` 替换同 ID 的图像数据并重新显示，停止／销毁及退回其他输出路径时仅删除该播放器已提交的图像；未提交帧不触发删除。显式 SHM 模式失败仍沿用旧 Chafa 回退，不进入 RGB 优化。仅一个提交区间时保留区间统计，但 FPS 输出 null；两个以上区间才计算提交率。
+
+上表是这些 review 修正前的实验记录：统一比例缩放会改变部分尺寸的舍入结果，不能把原数字当作新版本的复测结论。`tsan-suite` 当前有 21 个路径。早先只统计行首 `ok`，会漏掉带终端控制输出前缀的成功记录；现在用 TAP 计划和全部 `ok N /path` 记录交叉验证。
 
 独立 FFmpeg 微基准中，前 60 帧从单线程的 1.54 秒降到 4 线程的 0.51 秒（各三轮中位数），两组 `framemd5` 一致，但播放器直传对照没有稳定提升，未保留线程改动。512×288 RGBA 帧使用 zlib level 1 可将像素载荷压到约 38%，但编码约 4.77 ms/帧，且未验证 Warp 压缩支持，因此未启用。
 
-验证：正常、ASan、UBSan 套件各有 443 条 C TAP 成功记录，覆盖 RGB 分块、行填充、超限拒绝和回退条件；TSan 针对性套件 20 项通过。
+最新 review 修正验证：正常、ASan、UBSan 套件各有 470 条 C TAP 成功记录（计划合计亦为 470），Python 摘要测试 8 项通过；TSan 针对性套件 21 项通过。覆盖 RGB 分块、行填充、超限拒绝、等比缩放、未知边界内存上限、图像生命周期，以及实际渲染工作线程的 direct/auto/显式 SHM 回退。
 
 ## 上游依据
 

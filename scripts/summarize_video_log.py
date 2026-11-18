@@ -78,7 +78,7 @@ def summarize(lines):
         "timings_us": {name: distribution(values) for name, values in timings.items()},
         "copy_bytes": distribution(copy_bytes),
         "submission_interval_us": distribution(intervals),
-        "submission_fps": len(intervals) * 1e6 / sum(intervals) if intervals else None,
+        "submission_fps": len(intervals) * 1e6 / sum(intervals) if len(intervals) >= 2 else None,
         "empty_queue_retries": empty_queue_retries,
     }
 

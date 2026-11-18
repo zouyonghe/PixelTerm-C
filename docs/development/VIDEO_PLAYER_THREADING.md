@@ -15,6 +15,10 @@ The application main thread owns user-visible control flow:
 - terminal presentation and render-area updates;
 - renderer replacement and protocol/configuration changes.
 
+`kitty_direct_image_id` is assigned before workers start and remains immutable.
+`kitty_direct_image_present` is main-context-only: workers annotate queued frames
+with the ID but never change terminal-image ownership or emit cleanup commands.
+
 Public control functions are not a license to invoke the same player
 concurrently from arbitrary application threads. Unless a function explicitly
 states otherwise, call it from the player-owning main context.

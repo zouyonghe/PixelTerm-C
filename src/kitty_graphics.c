@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -462,31 +463,50 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                       FALSE);
 }
 
+void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
+                                    gint64 bound_height, gint *width_out, gint *height_out) {
+    gdouble scale = 1.0;
+    if (width <= 0 || height <= 0) {
+        *width_out = *height_out = 0;
+        return;
+    }
+    if (bound_width > 0) scale = MIN(scale, (gdouble)bound_width / width);
+    if (bound_height > 0) scale = MIN(scale, (gdouble)bound_height / height);
+    scale = MIN(scale, sqrt((gdouble)KITTY_GRAPHICS_DIRECT_MAX_BYTES / (3.0 * width * height)));
+    scale = MIN(scale, (KITTY_GRAPHICS_DIRECT_MAX_BYTES / 3.0) / MAX(width, height));
+    *width_out = MAX(1, (gint)(width * scale));
+    *height_out = MAX(1, (gint)(height * scale));
+}
+
 KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
                                                         gint width,
                                                         gint height,
                                                         gint rowstride,
                                                         gint display_width_cells,
-                                                        gint display_height_cells) {
+                                                        gint display_height_cells,
+                                                        guint32 image_id) {
     gsize min_rowstride = 0;
     gsize payload_size = 0;
     if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
-        display_width_cells <= 0 || display_height_cells <= 0 ||
+        display_width_cells <= 0 || display_height_cells <= 0 || image_id == 0 ||
         !g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)3) ||
         min_rowstride > G_MAXINT || (gsize)rowstride < min_rowstride ||
         !g_size_checked_mul(&payload_size, min_rowstride, (gsize)height) ||
+        payload_size > KITTY_GRAPHICS_DIRECT_MAX_BYTES ||
         !media_buffer_validate_layout(width, height, rowstride, 3, 1, NULL)) {
         return NULL;
     }
 
-    GByteArray *packed = g_byte_array_sized_new(payload_size);
-    for (gint y = 0; y < height; y++) {
-        g_byte_array_append(packed,
-                            pixels + (gsize)y * (gsize)rowstride,
-                            (guint)min_rowstride);
+    GByteArray *packed = NULL;
+    if ((gsize)rowstride != min_rowstride) {
+        packed = g_byte_array_sized_new(payload_size);
+        for (gint y = 0; y < height; y++) {
+            g_byte_array_append(packed, pixels + (gsize)y * rowstride, (guint)min_rowstride);
+        }
+        pixels = packed->data;
     }
-    gchar *encoded = g_base64_encode(packed->data, packed->len);
-    g_byte_array_unref(packed);
+    gchar *encoded = g_base64_encode(pixels, payload_size);
+    if (packed) g_byte_array_unref(packed);
     if (!encoded) {
         return NULL;
     }
@@ -503,9 +523,9 @@ KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
 
         if (offset == 0) {
             g_string_append_printf(command,
-                                   "\033_Ga=T,f=24,s=%d,v=%d,c=%d,r=%d,C=1,m=%d,q=2;",
+                                   "\033_Ga=T,f=24,s=%d,v=%d,c=%d,r=%d,i=%u,C=1,m=%d,q=2;",
                                    width, height, display_width_cells,
-                                   display_height_cells, more ? 1 : 0);
+                                   display_height_cells, image_id, more ? 1 : 0);
         } else {
             g_string_append_printf(command, "\033_Gm=%d;", more ? 1 : 0);
         }

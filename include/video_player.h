@@ -23,6 +23,7 @@ typedef struct {
 typedef struct {
     GString *rendered;
     gchar *kitty_shm_name;
+    guint32 kitty_direct_image_id;
     gint rendered_width;
     gint rendered_height;
     gint64 pts_ms;
@@ -59,6 +60,8 @@ typedef struct {
     gint max_queue_size;
     gint playback_generation;
     guint render_layout_generation;
+    guint32 kitty_direct_image_id; /* Immutable while workers run. */
+    gboolean kitty_direct_image_present; /* Main-context presentation ownership. */
 
     // Renderer reference
     ImageRenderer *renderer;

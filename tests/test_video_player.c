@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "process_env.h"
+#include "kitty_graphics.h"
 #include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
@@ -2769,6 +2770,7 @@ static void test_worker_restart_reclaims_stale_thread_handle(void) {
 
 static void test_direct_kitty_preserves_fallback_boundaries(void) {
     ImageRenderer *renderer = renderer_create();
+    g_assert_nonnull(renderer);
     renderer->config.max_width = 1;
     renderer->config.max_height = 1;
     renderer->config.gamma = 2.0;
@@ -2803,7 +2805,105 @@ static void test_direct_kitty_preserves_fallback_boundaries(void) {
     renderer_destroy(renderer);
 }
 
+static void test_direct_kitty_image_is_replaced_and_cleaned_up(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                           TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    guint32 image_id = player->kitty_direct_image_id;
+    g_assert_cmpuint(image_id, !=, 0);
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    fflush(stdout);
+    gint saved_stdout = dup(STDOUT_FILENO);
+    g_assert_cmpint(saved_stdout, >=, 0);
+    g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
+    for (gint i = 0; i < 3; i++) {
+        VideoFrame *frame = make_test_frame_with_generation(i * 1000,
+            (guint)g_atomic_int_get(&player->playback_generation));
+        const guint8 pixel[] = {1, 2, 3};
+        KittyGraphicsFrame *encoded = kitty_graphics_frame_new_direct_rgb(pixel, 1, 1, 3, 1, 1, image_id);
+        g_assert_nonnull(encoded);
+        g_string_free(frame->rendered, TRUE);
+        frame->rendered = encoded->command;
+        encoded->command = NULL;
+        kitty_graphics_frame_free(encoded);
+        frame->kitty_direct_image_id = image_id;
+        frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+        video_player_queue_push(player, frame);
+        player->clock_started = FALSE;
+        g_assert_true(video_player_render_frame_for_test(player));
+        g_assert_true(player->kitty_direct_image_present);
+        if (i == 1) {
+            video_player_queue_push(player, make_test_frame_with_generation(2500,
+                (guint)g_atomic_int_get(&player->playback_generation)));
+            player->clock_started = FALSE;
+            g_assert_true(video_player_render_frame_for_test(player));
+            g_assert_false(player->kitty_direct_image_present);
+        }
+    }
+    video_player_stop(player);
+    g_assert_false(player->kitty_direct_image_present);
+    video_player_destroy(player);
+    fflush(stdout);
+    g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
+    close(saved_stdout);
+    rewind(capture);
+    gchar output[4096] = {0};
+    gsize length = fread(output, 1, sizeof(output) - 1, capture);
+    g_assert_cmpuint(length, >, 0);
+    fclose(capture);
+    gchar *delete_command = g_strdup_printf("\033_Ga=d,d=I,i=%u,q=2\033\\", image_id);
+    gchar **parts = g_strsplit(output, delete_command, -1);
+    g_assert_cmpuint(g_strv_length(parts) - 1, ==, 2);
+    g_strfreev(parts);
+    g_free(delete_command);
+    gchar *image_header = g_strdup_printf("a=T,f=24,s=1,v=1,c=1,r=1,i=%u,", image_id);
+    parts = g_strsplit(output, image_header, -1);
+    g_assert_cmpuint(g_strv_length(parts) - 1, ==, 3);
+    g_strfreev(parts);
+    g_free(image_header);
+}
+
+static void test_direct_kitty_worker_respects_transfer_mode(gconstpointer data) {
+    KittyTransferMode mode = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                           TEXT_SYMBOL_MODE_AUTO, 1.0, mode);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    player->kitty_shm_enabled = FALSE; /* Exercise the unavailable-SHM fallback. */
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    video_player_start_worker_for_test(player);
+    VideoFrame *frame = NULL;
+    gint64 deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    while (!frame && g_get_monotonic_time() < deadline) {
+        frame = video_player_queue_take_first(player);
+        if (!frame) g_usleep(1000);
+    }
+    video_player_stop(player);
+    g_assert_nonnull(frame);
+    if (mode == KITTY_TRANSFER_SHM) {
+        g_assert_cmpuint(frame->kitty_direct_image_id, ==, 0);
+        g_assert_nonnull(strstr(frame->rendered->str, "f=32"));
+    } else {
+        g_assert_cmpuint(frame->kitty_direct_image_id, ==, player->kitty_direct_image_id);
+        g_assert_nonnull(strstr(frame->rendered->str, "f=24"));
+    }
+    video_frame_destroy(frame);
+    video_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
 void register_video_player_tests(void) {
+    g_test_add_data_func("/video_player/direct_kitty/worker_explicit_shm",
+                         GINT_TO_POINTER(KITTY_TRANSFER_SHM), test_direct_kitty_worker_respects_transfer_mode);
+    g_test_add_data_func("/video_player/direct_kitty/worker_explicit_direct",
+                         GINT_TO_POINTER(KITTY_TRANSFER_DIRECT), test_direct_kitty_worker_respects_transfer_mode);
+    g_test_add_data_func("/video_player/direct_kitty/worker_auto",
+                         GINT_TO_POINTER(KITTY_TRANSFER_AUTO), test_direct_kitty_worker_respects_transfer_mode);
+    g_test_add_func("/video_player/direct_kitty/image_lifecycle",
+                    test_direct_kitty_image_is_replaced_and_cleaned_up);
     g_test_add_func("/video_player/direct_kitty/fallback_boundaries",
                     test_direct_kitty_preserves_fallback_boundaries);
     g_test_add_func("/video_player/reset_timing_state/clears_loop_sensitive_fields",

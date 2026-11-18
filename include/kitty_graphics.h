@@ -14,18 +14,26 @@ typedef struct {
 gboolean kitty_graphics_shm_auto_enabled(void);
 gboolean kitty_graphics_should_use_shm(KittyTransferMode mode);
 
+/* Bound direct pixel data before base64/command allocations in each worker. */
+#define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)
+/* Fits without upscaling, preserving aspect to pixel rounding; nonpositive bounds are unknown. */
+void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
+                                    gint64 bound_height, gint *width_out, gint *height_out);
+
 KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                        gint width,
                                                        gint height,
                                                        gint rowstride,
                                                        gint display_width_cells,
                                                        gint display_height_cells);
+/* image_id must be nonzero; a=T replaces that image and displays its new data. */
 KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
                                                         gint width,
                                                         gint height,
                                                         gint rowstride,
                                                         gint display_width_cells,
-                                                        gint display_height_cells);
+                                                        gint display_height_cells,
+                                                        guint32 image_id);
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,
                                                                gint width,
                                                                gint height,

@@ -54,6 +54,13 @@ class VideoLogSummaryTests(unittest.TestCase):
                 self.assertIsNone(summary["submission_fps"])
                 self.assertEqual(summary["submission_interval_us"]["count"], 0)
 
+    def test_single_interval_keeps_distribution_without_fps(self):
+        log = record("render-submit", a=0, b=1000) + record("render-submit", a=33, b=34000)
+        summary = summarize(io.StringIO(log))
+        self.assertEqual(summary["submission_interval_us"]["count"], 1)
+        self.assertEqual(summary["submission_interval_us"]["p50"], 33000)
+        self.assertIsNone(summary["submission_fps"])
+
     def test_submission_intervals_reset_on_restart_or_backward_pts(self):
         log = record("render-submit", a=100, b=1000)
         log += record("play-start")

@@ -28,6 +28,15 @@
 static gboolean video_player_render_frame(VideoPlayer *player);
 static gint video_player_live_instances = 0;
 
+static void video_player_clear_direct_kitty_image(VideoPlayer *player) {
+    if (!player->kitty_direct_image_present) return;
+    GString *command = kitty_graphics_build_delete_image_command(player->kitty_direct_image_id);
+    fwrite(command->str, 1, command->len, stdout);
+    g_string_free(command, TRUE);
+    fflush(stdout);
+    player->kitty_direct_image_present = FALSE;
+}
+
 static int video_player_interrupt_callback(void *opaque) {
     return video_player_io_should_interrupt((VideoPlayer *)opaque) ? 1 : 0;
 }
@@ -620,6 +629,8 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     player->max_queue_size = VIDEO_PLAYER_QUEUE_DEPTH_SMALL_SIZE;
     player->playback_generation = 1;
     player->render_layout_generation = 1;
+    player->kitty_direct_image_id = g_random_int();
+    if (player->kitty_direct_image_id == 0) player->kitty_direct_image_id = 1;
     player->renderer = renderer_create();
     player->owns_renderer = FALSE;
     g_mutex_init(&player->render_mutex);
@@ -835,10 +846,13 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     renderer->config.force_kitty = force_iterm2;
 
     gboolean next_graphics = renderer->config.force_kitty ||
-                             renderer->config.force_iterm2 ||
-                             renderer->config.force_sixel;
+                              renderer->config.force_iterm2 ||
+                              renderer->config.force_sixel;
+    gboolean next_kitty = renderer->config.force_kitty;
     renderer_update_terminal_size(renderer);
     g_mutex_unlock(&player->render_mutex);
+
+    if (!next_kitty) video_player_clear_direct_kitty_image(player);
 
     /* Re-render when entering graphics mode or when leaving it so stale
      * graphics placements do not remain behind the next text frame. */
@@ -1046,6 +1060,7 @@ static RendererConfig video_player_render_worker_config(VideoPlayer *player) {
 
 static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer *renderer,
                                                                   const DecodedFrame *decoded,
+                                                                  guint32 image_id,
                                                                   struct SwsContext **sws_context,
                                                                   guint8 **rgb_buffer,
                                                                   gsize *rgb_buffer_capacity,
@@ -1089,12 +1104,11 @@ static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer 
         return NULL;
     }
 
-    gint pixel_width = decoded->width;
-    gint pixel_height = decoded->height;
-    if (cell_width > 0 && cell_height > 0) {
-        pixel_width = (gint)MIN((gint64)decoded->width, (gint64)*rendered_width * cell_width);
-        pixel_height = (gint)MIN((gint64)decoded->height, (gint64)*rendered_height * cell_height);
-    }
+    gint pixel_width = 0, pixel_height = 0;
+    kitty_graphics_get_direct_size(decoded->width, decoded->height,
+                                    (gint64)*rendered_width * cell_width,
+                                    (gint64)*rendered_height * cell_height,
+                                    &pixel_width, &pixel_height);
     if (pixel_width <= 0 || pixel_height <= 0 || pixel_width > G_MAXINT / 3) {
         return NULL;
     }
@@ -1151,7 +1165,7 @@ static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer 
                                                pixel_height,
                                                pixel_width * 3,
                                                *rendered_width,
-                                               *rendered_height);
+                                               *rendered_height, image_id);
 }
 
 RendererConfig video_player_render_worker_config_for_test(VideoPlayer *player) {
@@ -1165,7 +1179,7 @@ GString *video_player_render_direct_kitty_for_test(ImageRenderer *renderer,
     gsize capacity = 0;
     gint width = 0, height = 0;
     KittyGraphicsFrame *frame = video_player_render_direct_kitty_frame(
-        renderer, decoded, &context, &buffer, &capacity, &width, &height);
+        renderer, decoded, 42, &context, &buffer, &capacity, &width, &height);
     sws_freeContext(context);
     g_free(buffer);
     if (!frame) return NULL;
@@ -1575,6 +1589,7 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
         ChafaPixelMode pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
         GString *rendered = NULL;
         gchar *kitty_shm_name = NULL;
+        guint32 kitty_direct_image_id = 0;
         gboolean try_kitty_shm = renderer->config.force_kitty &&
                                  !renderer->config.force_text &&
                                  !renderer->config.force_sixel &&
@@ -1597,10 +1612,12 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
                 kitty_graphics_frame_free(kitty_frame);
             }
         }
-        if (!rendered && renderer->config.force_kitty && !renderer->config.force_text) {
+        if (!rendered && player->kitty_transfer != KITTY_TRANSFER_SHM &&
+            renderer->config.force_kitty && !renderer->config.force_text) {
             KittyGraphicsFrame *kitty_frame = video_player_render_direct_kitty_frame(
                 renderer,
                 decoded,
+                player->kitty_direct_image_id,
                 &direct_sws_context,
                 &direct_rgb_buffer,
                 &direct_rgb_buffer_capacity,
@@ -1609,6 +1626,7 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
             if (kitty_frame) {
                 rendered = kitty_frame->command;
                 kitty_frame->command = NULL;
+                kitty_direct_image_id = player->kitty_direct_image_id;
                 pixel_mode = CHAFA_PIXEL_MODE_KITTY;
                 kitty_graphics_frame_free(kitty_frame);
             }
@@ -1651,6 +1669,7 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
         }
         frame->rendered = rendered;
         frame->kitty_shm_name = kitty_shm_name;
+        frame->kitty_direct_image_id = kitty_direct_image_id;
         frame->rendered_width = rendered_w;
         frame->rendered_height = rendered_h;
         frame->pts_ms = decoded->pts_ms;
@@ -1730,6 +1749,12 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
+    if (!frame->kitty_direct_image_id) {
+        video_player_clear_direct_kitty_image(player);
+    } else {
+        /* Keep ownership even if a later write is partial, so stop can clean up. */
+        player->kitty_direct_image_present = TRUE;
+    }
     g_mutex_lock(&player->state_mutex);
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
@@ -2153,6 +2178,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
         g_source_remove(timer_id);
     }
     video_player_stop_worker(player);
+    video_player_clear_direct_kitty_image(player);
 
     return ERROR_NONE;
 }
