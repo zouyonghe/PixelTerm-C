@@ -1700,12 +1700,22 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     gboolean pending = FALSE;
     guint output_frames = 0;
     gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
+    guint8 first_pixel_value = 0;
+    gboolean first_pixel_captured = FALSE;
     do {
         DecodedFrame *decoded_frame = video_player_decode_queue_take(player);
         if (decoded_frame) {
             g_assert_nonnull(decoded_frame->pixels);
             g_assert_cmpint(decoded_frame->width, >, 0);
             g_assert_cmpint(decoded_frame->rowstride, >=, decoded_frame->width * 4);
+            /* Verify actual pixel conversion occurred, not just the timing event. */
+            if (!first_pixel_captured && !late) {
+                first_pixel_value = decoded_frame->pixels[0];
+                first_pixel_captured = TRUE;
+            } else if (!late && first_pixel_captured) {
+                /* Converted frames should have consistent pixel structure. */
+                g_assert_cmpuint(decoded_frame->pixels[0], !=, 0);
+            }
             output_frames++;
         }
         decoded_frame_destroy(decoded_frame);

@@ -760,6 +760,7 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     g_mutex_lock(&player->render_mutex);
     gboolean replacing_renderer = (player->renderer && player->renderer != renderer) ||
         player->worker_thread || player->render_workers_started;
+    gboolean same_renderer = player->renderer == renderer && renderer != NULL;
     g_mutex_unlock(&player->render_mutex);
     /* Replacing with NULL detaches the renderer, so playback must stop now;
      * a later reattach is inert until callers explicitly start playback again.
@@ -777,6 +778,15 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
         }
         video_player_stop_worker(player);
     }
+    /* Clear any existing timer before restarting playback to avoid duplicate ticks. */
+    if (was_playing) {
+        g_mutex_lock(&player->state_mutex);
+        if (player->timer_id != 0 && timer_id == 0) {
+            timer_id = player->timer_id;
+            player->timer_id = 0;
+        }
+        g_mutex_unlock(&player->state_mutex);
+    }
     if (timer_id != 0) {
         g_source_remove(timer_id);
     }
@@ -787,11 +797,14 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
           chafa_canvas_config_get_pixel_mode(renderer->canvas_config) == CHAFA_PIXEL_MODE_KITTY));
     if (!next_is_kitty) video_player_clear_direct_kitty_image(player, TRUE);
     g_mutex_lock(&player->render_mutex);
+    /* Same-renderer replacement while workers are active: preserve owns_renderer to avoid leak. */
     if (player->renderer && player->renderer != renderer && player->owns_renderer) {
         renderer_destroy(player->renderer);
     }
     player->renderer = renderer;
-    player->owns_renderer = FALSE;
+    if (!same_renderer) {
+        player->owns_renderer = FALSE;
+    }
     g_mutex_unlock(&player->render_mutex);
 
     if (renderer && was_playing) {
@@ -872,7 +885,17 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
 
     gboolean was_playing = video_player_is_playing(player);
     /* Join old workers before changing configuration; queued old-protocol frames are discarded. */
+    guint timer_id = 0;
+    if (was_playing) {
+        g_mutex_lock(&player->state_mutex);
+        timer_id = player->timer_id;
+        player->timer_id = 0;
+        g_mutex_unlock(&player->state_mutex);
+    }
     video_player_stop_worker(player);
+    if (timer_id != 0) {
+        g_source_remove(timer_id);
+    }
     g_mutex_lock(&player->render_mutex);
     ImageRenderer *renderer = player->renderer;
     if (!renderer) {
@@ -2323,7 +2346,11 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     ErrorCode seek_result = video_player_seek_to_ms(player, current_ms, target_ms);
     if (seek_result != ERROR_NONE) {
         if (was_playing) {
-            video_player_resume_playback_loop(player);
+            ErrorCode resume_result = video_player_resume_playback_loop(player);
+            /* Resume errors (e.g. terminal output failure) take precedence over seek errors. */
+            if (resume_result != ERROR_NONE) {
+                return resume_result;
+            }
         }
         return seek_result == ERROR_INVALID_ARGS ? ERROR_INVALID_IMAGE : seek_result;
     }

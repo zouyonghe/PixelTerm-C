@@ -192,7 +192,8 @@ guint32 kitty_graphics_allocate_image_id(void) {
             g_free(control);
             if (valid && id && number == nonce) {
                 if (response_length > 0) return (guint32)id;
-                /* A failed restore invalidates use, not ownership of a complete reply. */
+                /* A failed restore invalidates use, not ownership of a complete reply.
+                 * defer_image_delete prepends \033\\ for recovery, so skip the separate defer. */
                 kitty_graphics_defer_image_delete((guint32)id);
                 kitty_graphics_retry_pending_deletes();
                 return 0;
