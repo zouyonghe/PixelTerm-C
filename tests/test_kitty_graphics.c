@@ -6,6 +6,7 @@
 #include "terminal_probe.h"
 #include "video_player_test_internal.h"
 #include <unistd.h>
+#include <fcntl.h>
 
 typedef struct {
     gchar reply[256];
@@ -144,7 +145,44 @@ static void test_kitty_shm_playback_skips_direct_allocation(void) {
     g_assert_cmpuint(terminal.request_number, ==, 0);
 }
 
-static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
+static void test_kitty_failed_allocation_cleanup_recovers(void) {
+    AllocationTerminal terminal = {.next_id = 123, .mode = 3};
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    fflush(stdout);
+    gint saved = dup(STDOUT_FILENO);
+    gint failed = open("/dev/null", O_RDONLY);
+    g_assert_cmpint(saved, >=, 0);
+    g_assert_cmpint(failed, >=, 0);
+    g_assert_cmpint(dup2(failed, STDOUT_FILENO), >=, 0);
+    close(failed);
+    guint32 first = kitty_graphics_allocate_image_id();
+    guint32 request = terminal.request_number;
+    guint32 blocked = kitty_graphics_allocate_image_id();
+    g_assert_cmpuint(terminal.request_number, ==, request);
+    g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
+    clearerr(stdout);
+    terminal.mode = 0;
+    guint32 second = kitty_graphics_allocate_image_id();
+    fflush(stdout);
+    rewind(capture);
+    gchar output[256] = {0};
+    gsize length = fread(output, 1, sizeof(output) - 1, capture);
+    g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
+    close(saved);
+    fclose(capture);
+    terminal_probe_reset_transport_hooks_for_test();
+    g_assert_cmpuint(first, ==, 0);
+    g_assert_cmpuint(blocked, ==, 0);
+    g_assert_cmpuint(second, ==, 123);
+    g_assert_cmpuint(length, >, 0);
+    gchar *cleanup = g_strdup_printf("\033_Ga=d,d=N,I=%u,q=2\033\\", request);
+    g_assert_nonnull(strstr(output, cleanup));
+    g_free(cleanup);
+}
+
+static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpointer data) {
     AllocationTerminal terminal = {.next_id = 123};
     terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
     pixelterm_env_unset_for_test("TMUX");
@@ -154,6 +192,10 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
     g_assert_nonnull(player);
     g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    if (GPOINTER_TO_INT(data)) {
+        player->renderer->config.force_kitty = FALSE;
+        chafa_canvas_config_set_pixel_mode(player->renderer->canvas_config, CHAFA_PIXEL_MODE_KITTY);
+    }
     player->worker_thread = g_thread_new("allocation-stale-worker", allocation_stale_worker, NULL);
     g_atomic_int_set(&player->worker_stop, TRUE);
     terminal.recovering_player = player;
@@ -183,13 +225,20 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
     g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
     g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
     g_assert_cmpuint(terminal.next_id, ==, 124);
+    gchar padding[8192];
+    memset(padding, ' ', sizeof(padding));
+    g_assert_cmpuint(fwrite(padding, 1, sizeof(padding), stdout), ==, sizeof(padding));
     video_player_stop(player);
     g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
     video_player_destroy(player);
     fflush(stdout);
+    g_assert_cmpint(fseek(capture, 0, SEEK_END), ==, 0);
+    long capture_length = ftell(capture);
+    g_assert_cmpint(capture_length, >, 0);
     rewind(capture);
-    gchar output[8192] = {0};
-    gsize output_length = fread(output, 1, sizeof(output) - 1, capture);
+    gchar *output = g_malloc0((gsize)capture_length + 1);
+    gsize output_length = fread(output, 1, (gsize)capture_length, capture);
+    g_assert_cmpuint(output_length, ==, (gsize)capture_length);
     g_assert_cmpuint(output_length, >, 0);
     g_assert_cmpint(ferror(capture), ==, 0);
     g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
@@ -202,6 +251,7 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
     g_assert_nonnull(strstr(output, "a=T,f=24"));
     g_assert_nonnull(strstr(output, "i=123,"));
     g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=123,q=2\033\\"));
+    g_free(output);
     gchar *log = NULL;
     g_assert_true(g_file_get_contents(log_path, &log, NULL, NULL));
     const gchar *start = strstr(log, "[video-debug] play-start ");
@@ -464,8 +514,10 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
     g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
+    g_test_add_func("/kitty_graphics/allocation/failed_cleanup_recovers", test_kitty_failed_allocation_cleanup_recovers);
     g_test_add_func("/kitty_graphics/allocation/shm_skips_direct", test_kitty_shm_playback_skips_direct_allocation);
-    g_test_add_func("/kitty_graphics/allocation/player_lifecycle", test_kitty_player_uses_and_releases_terminal_reservation);
+    g_test_add_data_func("/kitty_graphics/allocation/player_lifecycle", NULL, test_kitty_player_uses_and_releases_terminal_reservation);
+    g_test_add_data_func("/kitty_graphics/allocation/effective_kitty_lifecycle", GINT_TO_POINTER(1), test_kitty_player_uses_and_releases_terminal_reservation);
     g_test_add_func("/kitty_graphics/direct_rgb/aspect_and_budget",
                     test_kitty_direct_size_preserves_aspect_and_budget);
     g_test_add_func("/kitty_graphics/shm_command/controls", test_kitty_graphics_shm_command_contains_expected_controls);

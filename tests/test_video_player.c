@@ -2937,7 +2937,7 @@ static void test_direct_kitty_destroy_retries_failed_flush(void) {
 #endif
 
 static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
-    gint mode = GPOINTER_TO_INT(data); /* 0: delete failure, 1: detach, 2: frame failure, 3: text replacement. */
+    gint mode = GPOINTER_TO_INT(data); /* 0: delete failure, 1: detach, 2: frame failure, 3: text replacement, 4: destroy. */
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                            TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
@@ -2993,6 +2993,10 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     gint64 presented_us = player->last_present_us;
     gboolean workers_stopped = player->worker_thread == NULL && !player->render_workers_started;
     guint32 owned_image_id = player->kitty_direct_image_id;
+    if (mode == 4) {
+        video_player_destroy(player);
+        player = NULL;
+    }
     if (mode == 0) {
         video_player_play(player);
         g_assert_false(video_player_is_playing(player));
@@ -3001,6 +3005,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     }
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     gboolean resumed_output = FALSE;
+    if (mode == 4) kitty_graphics_allocate_image_id(); /* A new output owner retries old releases. */
     if (mode == 0) {
         VideoFrame *next = make_test_frame_with_generation(1,
             (guint)g_atomic_int_get(&player->playback_generation));
@@ -3019,8 +3024,8 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         player->clock_started = FALSE;
         resumed_output = video_player_render_frame_for_test(player);
     }
-    video_player_stop(player); /* Retry cleanup after the output recovers. */
-    gboolean cleanup_retried = !player->kitty_direct_image_present;
+    if (player) video_player_stop(player); /* Retry cleanup after the output recovers. */
+    gboolean cleanup_retried = !player || !player->kitty_direct_image_present;
     video_player_destroy(player);
     if (mode == 2) clear_parked_worker_for_test(&worker);
     renderer_destroy(replacement);
@@ -3106,6 +3111,8 @@ void register_video_player_tests(void) {
                     test_direct_kitty_destroy_retries_failed_flush);
 #endif
     g_test_add_data_func("/video_player/direct_kitty/retry_failed_delete", GINT_TO_POINTER(0),
+                         test_direct_kitty_output_errors_and_detach);
+    g_test_add_data_func("/video_player/direct_kitty/destroy_retains_failed_release", GINT_TO_POINTER(4),
                          test_direct_kitty_output_errors_and_detach);
     g_test_add_data_func("/video_player/direct_kitty/detach_cleans_image", GINT_TO_POINTER(1),
                          test_direct_kitty_output_errors_and_detach);

@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -102,7 +103,46 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
 #endif
 }
 
+/* The main input/output owner services this queue; render workers never use it. */
+static GQueue pending_deletes = G_QUEUE_INIT;
+static gboolean cleanup_registered = FALSE;
+
+gboolean kitty_graphics_retry_pending_deletes(void) {
+    while (!g_queue_is_empty(&pending_deletes)) {
+        GString *command = g_queue_peek_head(&pending_deletes);
+        clearerr(stdout);
+        gsize written = fwrite(command->str, 1, command->len, stdout);
+        gint flushed = fflush(stdout);
+        if (written != command->len || flushed != 0 || ferror(stdout)) return FALSE;
+        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
+    }
+    return TRUE;
+}
+
+static void kitty_graphics_cleanup_at_exit(void) {
+    kitty_graphics_retry_pending_deletes();
+    /* Process exit is the last retry opportunity, even if the terminal is gone. */
+    while (!g_queue_is_empty(&pending_deletes)) {
+        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
+    }
+}
+
+static void kitty_graphics_queue_delete(GString *command) {
+    if (!cleanup_registered) {
+        cleanup_registered = atexit(kitty_graphics_cleanup_at_exit) == 0;
+    }
+    g_queue_push_tail(&pending_deletes, command);
+}
+
+void kitty_graphics_defer_image_delete(guint32 image_id) {
+    if (!image_id) return;
+    GString *command = kitty_graphics_build_delete_image_command(image_id);
+    g_string_prepend(command, "\033\\"); /* Finish an interrupted graphics command first. */
+    kitty_graphics_queue_delete(command);
+}
+
 guint32 kitty_graphics_allocate_image_id(void) {
+    if (!kitty_graphics_retry_pending_deletes()) return 0;
     /* I= requests a fresh terminal-assigned i=; the nonce only correlates replies. */
     guint32 nonce = g_random_int();
     if (!nonce) nonce = 1;
@@ -147,8 +187,10 @@ guint32 kitty_graphics_allocate_image_id(void) {
     if (query_written) {
         /* FIFO cleanup by request number also handles an allocation whose i= reply is late.
          * ST first terminates a partially written allocation APC. */
-        fprintf(stdout, "\033\\\033_Ga=d,d=N,I=%u,q=2\033\\", nonce);
-        fflush(stdout);
+        GString *command = g_string_new(NULL);
+        g_string_printf(command, "\033\\\033_Ga=d,d=N,I=%u,q=2\033\\", nonce);
+        kitty_graphics_queue_delete(command);
+        kitty_graphics_retry_pending_deletes();
     }
     return 0;
 }
