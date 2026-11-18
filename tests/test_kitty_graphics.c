@@ -96,7 +96,9 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         fflush(stdout);
         rewind(capture);
         gchar output[256] = {0};
-        fread(output, 1, sizeof(output) - 1, capture);
+        gsize output_length = fread(output, 1, sizeof(output) - 1, capture);
+        g_assert_cmpuint(output_length, >, 0);
+        g_assert_cmpint(ferror(capture), ==, 0);
         g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
         close(saved);
         fclose(capture);
@@ -158,7 +160,9 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(void) {
     fflush(stdout);
     rewind(capture);
     gchar output[8192] = {0};
-    fread(output, 1, sizeof(output) - 1, capture);
+    gsize output_length = fread(output, 1, sizeof(output) - 1, capture);
+    g_assert_cmpuint(output_length, >, 0);
+    g_assert_cmpint(ferror(capture), ==, 0);
     g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
     close(saved);
     fclose(capture);

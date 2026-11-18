@@ -2972,7 +2972,9 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     fflush(stdout);
     rewind(capture);
     gchar output[4096] = {0};
-    fread(output, 1, sizeof(output) - 1, capture);
+    gsize output_length = fread(output, 1, sizeof(output) - 1, capture);
+    g_assert_cmpuint(output_length, >, 0);
+    g_assert_cmpint(ferror(capture), ==, 0);
     g_assert_cmpint(dup2(saved_stdout, STDOUT_FILENO), >=, 0);
     close(saved_stdout);
     fclose(capture);
