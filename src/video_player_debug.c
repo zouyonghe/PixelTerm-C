@@ -138,6 +138,7 @@ static gboolean video_player_debug_should_log(const gchar *event) {
            g_strcmp0(event, "render-frame") == 0 ||
            g_strcmp0(event, "render-draw-time") == 0 ||
            g_strcmp0(event, "render-submit") == 0 ||
+           g_strcmp0(event, "render-output-error") == 0 ||
            g_strcmp0(event, "render-wait") == 0;
 }
 

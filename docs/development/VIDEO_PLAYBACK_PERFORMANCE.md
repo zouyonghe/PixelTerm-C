@@ -42,8 +42,9 @@
 
 ```sh
 make -j4
-PIXELTERM_DEBUG_VIDEO=1 PIXELTERM_DEBUG_VIDEO_LOG="$HOME/pixelterm-before.log" bin/pixelterm /absolute/path/to/video.mp4
-python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
+log=$(mktemp "${TMPDIR:-/tmp}/pixelterm-video.XXXXXX")
+PIXELTERM_DEBUG_VIDEO=1 PIXELTERM_DEBUG_VIDEO_LOG="$log" bin/pixelterm /absolute/path/to/video.mp4
+python3 scripts/summarize_video_log.py "$log"
 ```
 
 使用绝对路径启动后播放同一段、同样时长；基准运行不要 seek／暂停。交互正确性另测，不能把暂停时长算成卡顿。源时间戳间隔不等于实际提交间隔。
@@ -56,10 +57,13 @@ python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
 - `worker-render-time` 的 `b`：工作线程渲染／编码耗时（微秒）。
 - `render-draw-time` 的 `b`：主线程准备输出与 stdout flush 的耗时（微秒），不是屏幕显示延迟。
 - `render-submit` 的 `a`：PTS，`b`：输出结束的单调时间（微秒）。同一次无交互播放内相邻提交时间用于统计间隔和提交 FPS；一个区间样本不能计算稳定 FPS。
+- 只有完整帧写入并成功 flush 才记录 `render-submit` 并更新呈现时钟／FPS。`render-output-error` 单独记录失败并终止当前输出循环，不把未送达的数据计入提交率。删除命令失败时保留图像所有权，输出恢复后的 stop 可重试。
 - `render-wait` 的 `b=-1`：没有可用队首帧的重试次数，不是“卡顿事件数”或独立耗尽次数。其他等待可能只是下一帧尚未到 PTS。
 - `worker-drop-late`／`worker-drop-stale`：各自事件计数，不等于总丢帧率；播放选帧也会淘汰帧，没有完整帧账本前不输出总丢帧率。
 
 统计采用 nearest-rank 百分位：排序后取 `ceil(p*N)-1`；样本过少仍显示样本数，不能将其作为稳定尾延迟结论。脚本只做离线汇总，不改变运行时配置。
+
+追加日志中的各播放段通过 `submission_runs` 分开报告；`play-start`、`tick-stop`、输出失败或 PTS 不再递增都会分段，已结束播放的数据不会丢失。多段日志的顶层提交 FPS 为 null、区间样本数为 0，不混合不同播放过程；耗时和事件计数仍是整份日志汇总。
 
 ## 正确性与性能门槛
 
@@ -75,7 +79,7 @@ python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
 
 使用 `tests/test_video_player.c` 内嵌的六帧视频，运行实际解码线程，保持深渲染队列和落后 PTS。修改前回归测试按预期失败：解码 6、转换 6、丢弃 6；移动转换位置后通过：解码 6、转换 0、丢弃 6。无播放时钟、超过静默期限、rewind 重同步三组测试均解码并转换 6 帧，不误丢。
 
-首批历史验证记录（此时摘要脚本尚未加入 copy 和单区间测试，6 项；当前脚本为 8 项）：
+首批历史验证记录（此时摘要脚本尚未加入 copy 和单区间测试，6 项；当前脚本为 9 项）：
 
 | 命令 | 实际结果 |
 | --- | --- |
@@ -99,6 +103,10 @@ python3 scripts/summarize_video_log.py "$HOME/pixelterm-before.log"
 
 普通视频的 Kitty direct 路径对不透明帧使用 swscale 输出 RGB24，再按 Kitty 协议分块发送；同尺寸像素载荷比 RGBA32 少 25%。透明帧、非默认 gamma、颜色增强、tmux/screen 或转换失败时保留 Chafa 路径。共享内存、静态图片和 GIF 不受此改动影响。RGB 路径使用双线性缩放，与 Chafa 的缩放结果并不保证逐像素一致。
 
+为了不丢失透明度，每个被消费的帧先做一次 O(width×height) alpha 扫描，再缩放／转色。该扫描计入 `worker-render-time`，也是 RGB 渲染耗时上升的组成部分；不是零成本，也没有单独测出它占总耗时的比例。当前每个 decoded frame 只由一个 worker 消费，简单缓存扫描结果不会减少扫描次数；基于源格式的透明度元数据优化留待独立测量。
+
+已知边界：专属图像 ID 目前仍使用非零随机 32-bit ID，与其他应用碰撞的概率低但不为零。真正避免跨应用碰撞需要使用终端分配图像 ID，并将异步回复接入输入解析；在完成该机制前不能声称跨应用隔离得到保证，此风险须在合并前明确接受或解决。
+
 同一 4K H.264 素材，同分辨率下交替运行 RGBA 基线和 RGB 版本，各三轮，每轮采样 3 秒，诊断日志开启。每种窗口内两版使用相同的载荷像素尺寸：
 
 | PTY 尺寸 | 载荷尺寸 | 提交帧/秒（RGBA → RGB） | 输出耗时 P50 | 提交间隔 P95 |
@@ -114,7 +122,7 @@ Review 后补充：direct RGB 按统一比例缩放两个轴，像素负载始�
 
 独立 FFmpeg 微基准中，前 60 帧从单线程的 1.54 秒降到 4 线程的 0.51 秒（各三轮中位数），两组 `framemd5` 一致，但播放器直传对照没有稳定提升，未保留线程改动。512×288 RGBA 帧使用 zlib level 1 可将像素载荷压到约 38%，但编码约 4.77 ms/帧，且未验证 Warp 压缩支持，因此未启用。
 
-最新 review 修正验证：正常、ASan、UBSan 套件各有 470 条 C TAP 成功记录（计划合计亦为 470），Python 摘要测试 8 项通过；TSan 针对性套件 21 项通过。覆盖 RGB 分块、行填充、超限拒绝、等比缩放、未知边界内存上限、图像生命周期，以及实际渲染工作线程的 direct/auto/显式 SHM 回退。
+最新 review 修正验证：正常、ASan、UBSan 套件各有 475 条 C TAP 成功记录（计划合计亦为 475），Python 摘要测试 9 项通过；TSan 针对性套件 21 项通过。覆盖 RGB 分块、行填充、超限拒绝、等比缩放、未知边界内存上限、图像生命周期，以及实际渲染工作线程的 direct/auto/显式 SHM 回退；新增只读输出 FD 的失败注入、失败删除重试、渲染器分离清图、协议切换代数失效和实际 worker 重启回归。
 
 ## 上游依据
 

@@ -32,6 +32,13 @@ def distribution(values):
     }
 
 
+def submission_summary(intervals):
+    return {
+        "submission_interval_us": distribution(intervals),
+        "submission_fps": len(intervals) * 1e6 / sum(intervals) if len(intervals) >= 2 else None,
+    }
+
+
 def summarize(lines):
     events = Counter()
     timings = {name: [] for name in (
@@ -39,6 +46,7 @@ def summarize(lines):
     )}
     copy_bytes = []
     intervals = []
+    runs = []
     previous = None
     empty_queue_retries = 0
     for number, line in enumerate(lines, 1):
@@ -61,7 +69,10 @@ def summarize(lines):
             if c < 0:
                 raise ValueError(f"line {number}: negative copy size")
             copy_bytes.append(c)
-        if event in ("play-start", "tick-stop"):
+        if event in ("play-start", "tick-stop", "render-output-error"):
+            if previous is not None:
+                runs.append(intervals)
+                intervals = []
             previous = None
         if event == "render-wait" and b == -1:
             empty_queue_retries += 1
@@ -70,15 +81,20 @@ def summarize(lines):
                 raise ValueError(f"line {number}: invalid submission clock")
             if previous and a > previous[0]:
                 intervals.append(b - previous[1])
+            elif previous:
+                runs.append(intervals)
+                intervals = []
             previous = (a, b)
     if not events:
         raise ValueError("no video diagnostics found; enable PIXELTERM_DEBUG_VIDEO")
+    if previous is not None:
+        runs.append(intervals)
     return {
         "events": dict(sorted(events.items())),
         "timings_us": {name: distribution(values) for name, values in timings.items()},
         "copy_bytes": distribution(copy_bytes),
-        "submission_interval_us": distribution(intervals),
-        "submission_fps": len(intervals) * 1e6 / sum(intervals) if len(intervals) >= 2 else None,
+        **submission_summary(runs[0] if len(runs) == 1 else []),
+        "submission_runs": [submission_summary(run) for run in runs],
         "empty_queue_retries": empty_queue_retries,
     }
 

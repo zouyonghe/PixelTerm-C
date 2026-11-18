@@ -16,7 +16,8 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */
 #define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)
-/* Fits without upscaling, preserving aspect to pixel rounding; nonpositive bounds are unknown. */
+/* Fits without upscaling, preserving aspect to pixel rounding; nonpositive bounds are unknown.
+ * A nonpositive source width or height produces 0x0 output. */
 void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
                                     gint64 bound_height, gint *width_out, gint *height_out);
 

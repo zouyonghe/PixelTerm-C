@@ -68,8 +68,23 @@ class VideoLogSummaryTests(unittest.TestCase):
         log += record("render-submit", a=0, b=2000000)
         log += record("render-submit", a=33, b=2033000)
         summary = summarize(io.StringIO(log))
-        self.assertEqual(summary["submission_interval_us"]["count"], 1)
-        self.assertEqual(summary["submission_interval_us"]["mean"], 33000)
+        self.assertEqual(summary["submission_interval_us"]["count"], 0)
+        self.assertIsNone(summary["submission_fps"])
+        self.assertEqual(summary["submission_runs"][-1]["submission_interval_us"]["mean"], 33000)
+
+    def test_completed_runs_are_kept_separate(self):
+        log = record("render-submit", a=0, b=1000)
+        log += record("render-submit", a=10, b=11000)
+        log += record("render-submit", a=20, b=21000)
+        log += record("tick-stop") + record("play-start")
+        log += record("render-submit", a=0, b=1000000)
+        log += record("render-submit", a=20, b=1020000)
+        log += record("render-submit", a=40, b=1040000)
+        log += record("tick-stop")
+        summary = summarize(io.StringIO(log))
+        self.assertIsNone(summary["submission_fps"])
+        self.assertEqual(len(summary["submission_runs"]), 2)
+        self.assertEqual([run["submission_fps"] for run in summary["submission_runs"]], [100, 50])
 
     def test_rejects_invalid_records_and_empty_input(self):
         for log in ("", "unrelated\n", "[video-debug] broken\n",

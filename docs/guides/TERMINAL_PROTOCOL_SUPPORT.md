@@ -68,7 +68,7 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 ## Kitty transfer modes
 
 - `auto`: default. PixelTerm-C uses conservative shared-memory detection for kitty video and otherwise keeps the direct inline path.
-- `direct`: always use Chafa's inline kitty output. This is useful for comparing behavior or avoiding terminal-specific shared-memory issues.
+- `direct`: avoid shared memory and send eligible opaque video frames as inline RGB24. Frames are proportionally scaled to terminal bounds and an 8 MiB pixel-data budget using bilinear scaling. Alpha, non-default gamma, color enhancement, tmux/screen, or conversion failure retains Chafa inline output. RGB24 is not guaranteed pixel-identical to Chafa scaling; use this mode to avoid terminal-specific shared-memory issues, not as a forced-Chafa reference.
 - `shm`: force the kitty shared-memory path for video frames. If shared-memory setup fails for a frame, PixelTerm-C falls back to direct rendering.
 - `PIXELTERM_KITTY_SHM=1` remains available as a debug override for `auto`, but `config.ini` or `--kitty-transfer` is preferred for normal use.
 - If a kitty-compatible terminal becomes sluggish outside PixelTerm-C itself, for example, if the mouse cursor changes to a loading state or tabs become hard to switch, use `kitty_transfer = direct`. That usually means the terminal's own shared-memory graphics consumer is overloaded.
