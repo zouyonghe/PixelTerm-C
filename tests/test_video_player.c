@@ -1709,12 +1709,16 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
             g_assert_cmpint(decoded_frame->width, >, 0);
             g_assert_cmpint(decoded_frame->rowstride, >=, decoded_frame->width * 4);
             /* Verify actual pixel conversion occurred, not just the timing event. */
-            if (!first_pixel_captured && !late) {
-                first_pixel_value = decoded_frame->pixels[0];
-                first_pixel_captured = TRUE;
-            } else if (!late && first_pixel_captured) {
-                /* Converted frames should have consistent pixel structure. */
-                g_assert_cmpuint(decoded_frame->pixels[0], !=, 0);
+            if (!late) {
+                if (!first_pixel_captured) {
+                    first_pixel_value = decoded_frame->pixels[0];
+                    first_pixel_captured = TRUE;
+                    /* Converted video frames should have nonzero pixel data. */
+                    g_assert_cmpuint(first_pixel_value, !=, 0);
+                } else {
+                    /* All converted frames from the same source should have consistent structure. */
+                    g_assert_cmpuint(decoded_frame->pixels[0], ==, first_pixel_value);
+                }
             }
             output_frames++;
         }

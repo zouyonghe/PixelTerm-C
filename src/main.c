@@ -191,6 +191,8 @@ int main(int argc, char *argv[]) {
     // Setup signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    /* Ignore SIGPIPE so broken pipe writes return EPIPE instead of terminating. */
+    signal(SIGPIPE, SIG_IGN);
 
     // Parse command line arguments
     char *path = NULL;

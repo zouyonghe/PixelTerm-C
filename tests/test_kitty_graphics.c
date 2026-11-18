@@ -164,7 +164,7 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     guint32 first = kitty_graphics_allocate_image_id();
     guint32 request = terminal.request_number;
     guint32 blocked = kitty_graphics_allocate_image_id();
-    g_assert_cmpuint(terminal.request_number, ==, request);
+    guint32 request_after_blocked = terminal.request_number;
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     terminal.mode = 0;
     guint32 second = kitty_graphics_allocate_image_id();
@@ -176,6 +176,8 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     close(saved);
     fclose(capture);
     terminal_probe_reset_transport_hooks_for_test();
+    /* Assertions after stdout restore so g_test output is visible on failure. */
+    g_assert_cmpuint(request_after_blocked, ==, request);
     g_assert_cmpuint(first, ==, 0);
     g_assert_cmpuint(blocked, ==, 0);
     g_assert_cmpuint(second, ==, 123);
