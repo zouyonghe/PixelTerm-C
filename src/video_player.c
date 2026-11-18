@@ -41,6 +41,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
         command = g_string_new(NULL);
         g_string_printf(command, "\033_Ga=d,d=i,i=%u,q=2\033\\", player->kitty_direct_image_id);
     }
+    g_string_prepend(command, "\033\\"); /* End a partial APC before every delete attempt. */
     gboolean deleted = FALSE;
     for (gint attempt = 0; attempt < (release ? 3 : 1); attempt++) {
         clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
@@ -2216,6 +2217,12 @@ ErrorCode video_player_play(VideoPlayer *player) {
     video_player_queue_clear(player);
     video_player_decode_queue_clear(player);
     video_player_prepare_direct_kitty_image(player);
+    if (player->kitty_direct_release_pending) {
+        g_mutex_lock(&player->state_mutex);
+        player->is_playing = FALSE;
+        g_mutex_unlock(&player->state_mutex);
+        return ERROR_OUTPUT_IO;
+    }
     video_player_debug_log(player, "play-start", 0, player->video_width, player->video_height, player->frame_delay_ms);
     video_player_start_worker(player);
 

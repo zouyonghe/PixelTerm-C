@@ -185,11 +185,9 @@ guint32 kitty_graphics_allocate_image_id(void) {
         cursor = end + 2;
     }
     if (query_written) {
-        /* FIFO cleanup by request number also handles an allocation whose i= reply is late.
-         * ST first terminates a partially written allocation APC. */
-        GString *command = g_string_new(NULL);
-        g_string_printf(command, "\033\\\033_Ga=d,d=N,I=%u,q=2\033\\", nonce);
-        kitty_graphics_queue_delete(command);
+        /* Image numbers are shared across clients; without a confirmed i=, a
+         * d=N delete could target another client's newer image. Only end the APC. */
+        kitty_graphics_queue_delete(g_string_new("\033\\"));
         kitty_graphics_retry_pending_deletes();
     }
     return 0;

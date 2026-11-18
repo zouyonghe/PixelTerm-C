@@ -89,7 +89,8 @@ typedef enum {
     ERROR_INPUT_EOF,
     ERROR_HELP_EXIT,
     ERROR_VERSION_EXIT,
-    ERROR_INVALID_ARGS
+    ERROR_INVALID_ARGS,
+    ERROR_OUTPUT_IO
 } ErrorCode;
 
 typedef enum {

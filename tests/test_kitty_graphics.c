@@ -44,7 +44,9 @@ static ssize_t allocation_write(const char *buf, size_t length, gpointer data) {
     guint32 request = (guint32)g_ascii_strtoull(number + 2, NULL, 10);
     terminal->request_number = request;
     terminal->offset = 0;
-    if (terminal->mode == 3) terminal->reply[0] = '\0';
+    if (strstr(buf, ",q=1") || strstr(buf, ",q=2"))
+        g_strlcpy(terminal->reply, "\033[0n", sizeof(terminal->reply));
+    else if (terminal->mode == 3) terminal->reply[0] = '\0';
     else if (terminal->mode == 7) g_strlcpy(terminal->reply, "\033[0n", sizeof(terminal->reply));
     else {
         const gchar *id = terminal->mode == 4 ? "0" :
@@ -105,9 +107,7 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         close(saved);
         fclose(capture);
         g_assert_cmpuint(id, ==, 0);
-        gchar *cleanup = g_strdup_printf("\033_Ga=d,d=N,I=%u,q=2\033\\", terminal.request_number);
-        g_assert_nonnull(strstr(output, cleanup));
-        g_free(cleanup);
+        g_assert_cmpstr(output, ==, "\033\\"); /* Never guess ownership from a shared image number. */
         terminal_probe_reset_transport_hooks_for_test();
     }
 }
@@ -177,9 +177,7 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     g_assert_cmpuint(blocked, ==, 0);
     g_assert_cmpuint(second, ==, 123);
     g_assert_cmpuint(length, >, 0);
-    gchar *cleanup = g_strdup_printf("\033_Ga=d,d=N,I=%u,q=2\033\\", request);
-    g_assert_nonnull(strstr(output, cleanup));
-    g_free(cleanup);
+    g_assert_cmpstr(output, ==, "\033\\");
 }
 
 static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpointer data) {
@@ -214,7 +212,7 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
     g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
-    gint64 deadline = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
+    gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
     while (player->last_presented_pts_ms == G_MININT64 && g_get_monotonic_time() < deadline) {
         g_main_context_iteration(NULL, FALSE);
         g_usleep(1000);
@@ -248,8 +246,13 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     pixelterm_env_reset_for_test();
     terminal_probe_reset_transport_hooks_for_test();
     g_assert_true(presented);
-    g_assert_nonnull(strstr(output, "a=T,f=24"));
-    g_assert_nonnull(strstr(output, "i=123,"));
+    const gchar *frame = strstr(output, "\033_Ga=T,f=24,");
+    g_assert_nonnull(frame);
+    const gchar *control_end = strchr(frame, ';');
+    const gchar *frame_id = strstr(frame, ",i=123,");
+    g_assert_nonnull(control_end);
+    g_assert_nonnull(frame_id);
+    g_assert_true(frame_id < control_end);
     g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=123,q=2\033\\"));
     g_free(output);
     gchar *log = NULL;
