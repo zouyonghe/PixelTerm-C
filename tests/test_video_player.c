@@ -1668,9 +1668,16 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     video_player_start_decode_worker_for_test(player);
 
     gboolean pending = FALSE;
+    guint output_frames = 0;
     gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
     do {
         DecodedFrame *decoded_frame = video_player_decode_queue_take(player);
+        if (decoded_frame) {
+            g_assert_nonnull(decoded_frame->pixels);
+            g_assert_cmpint(decoded_frame->width, >, 0);
+            g_assert_cmpint(decoded_frame->rowstride, >=, decoded_frame->width * 4);
+            output_frames++;
+        }
         decoded_frame_destroy(decoded_frame);
         g_mutex_lock(&player->state_mutex);
         pending = player->eof_pending;
@@ -1679,6 +1686,12 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
             g_usleep(1000);
         }
     } while (!pending && g_get_monotonic_time() < deadline);
+    DecodedFrame *tail;
+    while ((tail = video_player_decode_queue_take(player))) {
+        g_assert_nonnull(tail->pixels);
+        output_frames++;
+        decoded_frame_destroy(tail);
+    }
     video_player_stop(player);
     video_player_destroy(player);
     video_player_debug_reset_for_test();
@@ -1696,6 +1709,7 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     g_assert_cmpuint(decoded, ==, 6);
     g_assert_cmpuint(converted, ==, late ? 0 : decoded);
     g_assert_cmpuint(dropped, ==, late ? decoded : 0);
+    g_assert_cmpuint(output_frames, ==, late ? 0 : decoded);
 }
 
 static void test_queue_take_for_playback_waits_even_when_future_queue_is_full(void) {
@@ -2873,7 +2887,7 @@ static void test_direct_kitty_worker_respects_transfer_mode(gconstpointer data) 
     g_assert_nonnull(player);
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
     player->kitty_shm_enabled = FALSE; /* Exercise the unavailable-SHM fallback. */
-    player->kitty_direct_image_id = mode == KITTY_TRANSFER_SHM ? 0 : 42;
+    player->kitty_direct_image_id = 42; /* Nonzero so SHM mode must enforce its own guard. */
     pixelterm_env_unset_for_test("TMUX");
     pixelterm_env_unset_for_test("STY");
     video_player_start_worker_for_test(player);
@@ -2936,7 +2950,11 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     fclose(capture);
     stdout = saved_stdout;
     g_assert_cmpuint(output.attempts, ==, 2);
-    g_assert_true(g_str_has_suffix(output.output->str, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\"));
+    if (output.partial) {
+        g_assert_true(g_str_has_suffix(output.output->str, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\"));
+    } else {
+        g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\");
+    }
     g_string_free(output.output, TRUE);
 }
 #endif
@@ -2985,13 +3003,13 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         frame->kitty_direct_image_id = player->kitty_direct_image_id;
         frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
         video_player_queue_push(player, frame);
-        rendered = video_player_render_frame_for_test(player);
+        rendered = video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
     } else if (mode == 1) {
         video_player_set_renderer(player, NULL);
     } else if (mode == 3) {
         video_player_set_renderer(player, replacement);
     } else {
-        video_player_stop(player);
+        g_assert_cmpint(video_player_stop(player), ==, ERROR_OUTPUT_IO);
     }
     gboolean image_present = player->kitty_direct_image_present;
     gint64 presented_pts = player->last_presented_pts_ms;
@@ -3010,6 +3028,10 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     }
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     gboolean resumed_output = FALSE;
+    if (mode == 0) {
+        g_assert_true(kitty_graphics_retry_pending_deletes());
+        g_assert_cmpint(ftell(capture), >, 0); /* Cleanup works while the stopped player is alive. */
+    }
     if (mode == 4) kitty_graphics_allocate_image_id(); /* A new output owner retries old releases. */
     if (mode == 0) {
         VideoFrame *next = make_test_frame_with_generation(1,
@@ -3045,11 +3067,12 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     fclose(capture);
     video_player_debug_reset_for_test();
     pixelterm_env_reset_for_test();
-    if (mode == 0) g_assert_true(image_present);
+    if (mode == 0) g_assert_false(image_present);
     if (mode == 1) g_assert_false(image_present);
     if (mode == 3) g_assert_false(image_present);
     g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=42,q=2\033\\"));
     if (mode == 2) {
+        g_assert_true(g_str_has_prefix(output, "\033\\"));
         g_assert_false(rendered);
         g_assert_true(resumed_output);
         g_assert_true(workers_stopped);

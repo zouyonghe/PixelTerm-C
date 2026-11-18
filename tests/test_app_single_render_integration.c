@@ -16,6 +16,7 @@ typedef struct {
     ErrorCode gif_play_result;
     gint video_load_calls;
     gint video_play_calls;
+    ErrorCode video_play_result;
     gint renderer_render_file_calls;
     ErrorCode video_load_result;
     gboolean last_force_text;
@@ -227,6 +228,20 @@ static void test_single_view_video_load_failure_does_not_fallback_to_image_rende
     g_assert_cmpint(g_app_single_render_stub_state.video_play_calls, ==, 0);
     g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
 
+    destroy_render_test_app(&app);
+}
+
+static void test_single_view_video_play_failure_is_propagated(void) {
+    PixelTermApp app = {0};
+    g_assert_true(init_render_test_app(&app));
+    app_single_render_reset_stubs();
+    g_app_single_render_stub_state.video_play_result = ERROR_OUTPUT_IO;
+    app.current_index = 0;
+    app.needs_redraw = TRUE;
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_redraw);
+    g_assert_false(app.video_player->is_playing);
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
     destroy_render_test_app(&app);
 }
 
@@ -568,6 +583,8 @@ void register_app_single_render_integration_tests(void) {
                     test_single_view_render_switches_media_players);
     g_test_add_func("/app_single_render/single_view/video_load_failure_does_not_fallback_to_image_render",
                     test_single_view_video_load_failure_does_not_fallback_to_image_render);
+    g_test_add_func("/app_single_render/single_view/video_play_failure_is_propagated",
+                    test_single_view_video_play_failure_is_propagated);
     g_test_add_func("/app_single_render/single_view/gif_play_failure_falls_back_to_image_render",
                     test_single_view_gif_play_failure_falls_back_to_image_render);
     g_test_add_func("/app_single_render/single_view/visible_shell_preserves_current_layout_contract",
@@ -712,9 +729,9 @@ static ErrorCode test_video_player_play(VideoPlayer *player) {
         return ERROR_INVALID_IMAGE;
     }
 
-    player->is_playing = TRUE;
     g_app_single_render_stub_state.video_play_calls++;
-    return ERROR_NONE;
+    player->is_playing = g_app_single_render_stub_state.video_play_result == ERROR_NONE;
+    return g_app_single_render_stub_state.video_play_result;
 }
 
 static ImageRenderer *test_renderer_create(void) {

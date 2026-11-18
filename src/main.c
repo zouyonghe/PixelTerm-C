@@ -40,6 +40,7 @@ static void run_application_cleanup(InputHandler *input_handler) {
         return;
     }
 
+    kitty_graphics_retry_pending_deletes();
     printf("\033[2J\033[H\033[0m");
     printf("\033[?25h");
     fflush(stdout);

@@ -141,6 +141,10 @@ void kitty_graphics_defer_image_delete(guint32 image_id) {
     kitty_graphics_queue_delete(command);
 }
 
+void kitty_graphics_defer_output_recovery(void) {
+    kitty_graphics_queue_delete(g_string_new("\033\\"));
+}
+
 guint32 kitty_graphics_allocate_image_id(void) {
     if (!kitty_graphics_retry_pending_deletes()) return 0;
     /* I= requests a fresh terminal-assigned i=; the nonce only correlates replies. */
@@ -187,7 +191,7 @@ guint32 kitty_graphics_allocate_image_id(void) {
     if (query_written) {
         /* Image numbers are shared across clients; without a confirmed i=, a
          * d=N delete could target another client's newer image. Only end the APC. */
-        kitty_graphics_queue_delete(g_string_new("\033\\"));
+        kitty_graphics_defer_output_recovery();
         kitty_graphics_retry_pending_deletes();
     }
     return 0;
@@ -565,6 +569,7 @@ void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
     if (bound_width > 0) scale = MIN(scale, (gdouble)bound_width / width);
     if (bound_height > 0) scale = MIN(scale, (gdouble)bound_height / height);
     scale = MIN(scale, sqrt((gdouble)KITTY_GRAPHICS_DIRECT_MAX_BYTES / (3.0 * width * height)));
+    /* Dimensionless scale bound for extreme aspect ratios rounding up to one pixel. */
     scale = MIN(scale, (KITTY_GRAPHICS_DIRECT_MAX_BYTES / 3.0) / MAX(width, height));
     *width_out = MAX(1, (gint)(width * scale));
     *height_out = MAX(1, (gint)(height * scale));

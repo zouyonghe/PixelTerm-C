@@ -162,7 +162,6 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     guint32 blocked = kitty_graphics_allocate_image_id();
     g_assert_cmpuint(terminal.request_number, ==, request);
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
-    clearerr(stdout);
     terminal.mode = 0;
     guint32 second = kitty_graphics_allocate_image_id();
     fflush(stdout);
@@ -377,6 +376,15 @@ static void test_kitty_direct_size_preserves_aspect_and_budget(void) {
     kitty_graphics_get_direct_size(1, 16000000, 0, 0, &width, &height);
     g_assert_cmpint(width, ==, 1);
     g_assert_cmpuint((gsize)width * height * 3, <=, KITTY_GRAPHICS_DIRECT_MAX_BYTES);
+    const gint dimensions[] = {1, 2, 3, 4096, 16000000, G_MAXINT};
+    for (guint x = 0; x < G_N_ELEMENTS(dimensions); x++) {
+        for (guint y = 0; y < G_N_ELEMENTS(dimensions); y++) {
+            kitty_graphics_get_direct_size(dimensions[x], dimensions[y], 0, 0, &width, &height);
+            g_assert_cmpint(width, >, 0);
+            g_assert_cmpint(height, >, 0);
+            g_assert_cmpuint((guint64)width * height * 3, <=, KITTY_GRAPHICS_DIRECT_MAX_BYTES);
+        }
+    }
 }
 
 static void test_kitty_graphics_animation_commands(void) {

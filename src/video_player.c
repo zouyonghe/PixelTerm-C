@@ -25,14 +25,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static gboolean video_player_render_frame(VideoPlayer *player);
+static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error);
 static gint video_player_live_instances = 0;
 static RendererConfig video_player_render_worker_config(VideoPlayer *player);
 
 static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gboolean release) {
-    release = release || player->kitty_direct_release_pending;
     if (!player->kitty_direct_image_id || (!release && !player->kitty_direct_image_present)) return TRUE;
-    if (release) player->kitty_direct_release_pending = TRUE;
     GString *command = NULL;
     if (release) {
         command = kitty_graphics_build_delete_image_command(player->kitty_direct_image_id);
@@ -51,21 +49,21 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
         if (deleted) break;
     }
     g_string_free(command, TRUE);
-    if (deleted) {
+    if (release) {
+        if (!deleted) kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
+        /* Release has one owner, even while this stopped player remains alive. */
+        player->kitty_direct_image_id = 0;
         player->kitty_direct_image_present = FALSE;
-        if (release) {
-            player->kitty_direct_image_id = 0;
-            player->kitty_direct_release_pending = FALSE;
-        }
+    } else if (deleted) {
+        player->kitty_direct_image_present = FALSE;
     }
     return deleted;
 }
 
-static void video_player_prepare_direct_kitty_image(VideoPlayer *player) {
-    if (player->kitty_direct_release_pending &&
-        !video_player_clear_direct_kitty_image(player, TRUE)) return;
+static gboolean video_player_prepare_direct_kitty_image(VideoPlayer *player) {
+    if (!kitty_graphics_retry_pending_deletes()) return FALSE;
     if (player->kitty_direct_image_id || player->kitty_shm_enabled || player->kitty_transfer == KITTY_TRANSFER_SHM ||
-        pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return;
+        pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return TRUE;
     RendererConfig config = video_player_render_worker_config(player);
     gboolean eligible = config.force_kitty && !config.force_text && config.gamma == 1.0 &&
         config.color_enhance == COLOR_ENHANCE_OFF;
@@ -73,6 +71,7 @@ static void video_player_prepare_direct_kitty_image(VideoPlayer *player) {
         clearerr(stdout);
         player->kitty_direct_image_id = kitty_graphics_allocate_image_id();
     }
+    return !ferror(stdout);
 }
 
 static int video_player_interrupt_callback(void *opaque) {
@@ -91,7 +90,7 @@ static void video_player_handle_terminal_eof(VideoPlayer *player);
 static void video_player_handle_worker_eof(VideoPlayer *player);
 static void video_player_stop_worker(VideoPlayer *player);
 static void video_player_stop_worker_internal(VideoPlayer *player, gboolean clear_queues);
-static void video_player_resume_playback_loop(VideoPlayer *player);
+static ErrorCode video_player_resume_playback_loop(VideoPlayer *player);
 static gboolean video_player_tick(gpointer user_data);
 static void video_player_start_worker(VideoPlayer *player);
 static void video_player_debug_log(VideoPlayer *player,
@@ -345,7 +344,7 @@ void video_player_handle_terminal_eof_for_test(VideoPlayer *player) {
 }
 
 gboolean video_player_render_frame_for_test(VideoPlayer *player) {
-    return video_player_render_frame(player);
+    return video_player_render_frame(player, NULL);
 }
 
 void video_player_render_work_finished_for_test(VideoPlayer *player) {
@@ -903,8 +902,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
 
     if (!next_kitty) video_player_clear_direct_kitty_image(player, TRUE);
     if (was_playing) {
-        video_player_prepare_direct_kitty_image(player);
-        video_player_start_worker(player);
+        (void)video_player_resume_playback_loop(player);
     }
 
     /* Re-render when entering graphics mode or when leaving it so stale
@@ -1008,7 +1006,7 @@ void video_player_clear_render_area(VideoPlayer *player) {
     g_mutex_unlock(&player->state_mutex);
 }
 
-static gboolean video_player_render_frame(VideoPlayer *player);
+static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error);
 static gpointer video_player_worker_thread(gpointer user_data);
 static gpointer video_player_render_worker_thread(gpointer user_data);
 static void video_player_debug_log(VideoPlayer *player,
@@ -1057,12 +1055,6 @@ static gboolean video_player_has_renderer(VideoPlayer *player) {
 
 static void video_player_start_worker(VideoPlayer *player) {
     if (!player || !video_player_has_renderer(player)) {
-        return;
-    }
-    if (player->kitty_direct_release_pending) {
-        g_mutex_lock(&player->state_mutex);
-        player->is_playing = FALSE;
-        g_mutex_unlock(&player->state_mutex);
         return;
     }
 
@@ -1341,15 +1333,28 @@ static void video_player_stop_worker(VideoPlayer *player) {
     video_player_stop_worker_internal(player, TRUE);
 }
 
-static void video_player_resume_playback_loop(VideoPlayer *player) {
+static ErrorCode video_player_resume_playback_loop(VideoPlayer *player) {
     if (!video_player_is_playing(player)) {
-        return;
+        return ERROR_NONE;
     }
 
-    video_player_prepare_direct_kitty_image(player);
+    if (!video_player_prepare_direct_kitty_image(player)) {
+        video_player_pause(player);
+        return ERROR_OUTPUT_IO;
+    }
     video_player_start_worker(player);
-    video_player_render_frame(player);
+    ErrorCode output_error = ERROR_NONE;
+    video_player_render_frame(player, &output_error);
+    if (output_error != ERROR_NONE) {
+        video_player_pause(player);
+        return output_error;
+    }
     video_player_schedule_tick(player);
+    return ERROR_NONE;
+}
+
+G_GNUC_INTERNAL ErrorCode video_player_resume_playback_loop_for_test(VideoPlayer *player) {
+    return video_player_resume_playback_loop(player);
 }
 
 static int video_player_seek_frame(VideoPlayer *player, int64_t target_ts, int flags) {
@@ -1397,7 +1402,7 @@ static gboolean video_player_tick(gpointer user_data) {
         return G_SOURCE_REMOVE;
     }
 
-    if (!video_player_render_frame(player)) {
+    if (!video_player_render_frame(player, NULL)) {
         video_player_debug_log(player, "tick-stop", 0, 0, 0, 0);
         g_mutex_lock(&player->state_mutex);
         player->timer_id = 0;
@@ -1753,7 +1758,8 @@ static gpointer video_player_render_worker_thread(gpointer user_data) {
     return NULL;
 }
 
-static gboolean video_player_render_frame(VideoPlayer *player) {
+static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error) {
+    if (output_error) *output_error = ERROR_NONE;
     if (!player || !video_player_has_renderer(player) || !player->format_context || !player->codec_context) {
         return FALSE;
     }
@@ -1815,7 +1821,8 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
 
     gint64 io_start_us = g_get_monotonic_time();
     clearerr(stdout);
-    gboolean output_success = TRUE;
+    /* Recovery must precede cursor/text output, not only the next graphics APC. */
+    gboolean output_success = fwrite("\033\\", 1, 2, stdout) == 2;
     if (!frame->kitty_direct_image_id) {
         output_success = video_player_clear_direct_kitty_image(player, FALSE) && output_success;
     } else {
@@ -2005,6 +2012,8 @@ static gboolean video_player_render_frame(VideoPlayer *player) {
     }
     gint64 io_end_us = g_get_monotonic_time();
     if (!output_success) {
+        if (output_error) *output_error = ERROR_OUTPUT_IO;
+        kitty_graphics_defer_output_recovery();
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
         player->is_playing = FALSE;
@@ -2216,21 +2225,8 @@ ErrorCode video_player_play(VideoPlayer *player) {
 
     video_player_queue_clear(player);
     video_player_decode_queue_clear(player);
-    video_player_prepare_direct_kitty_image(player);
-    if (player->kitty_direct_release_pending) {
-        g_mutex_lock(&player->state_mutex);
-        player->is_playing = FALSE;
-        g_mutex_unlock(&player->state_mutex);
-        return ERROR_OUTPUT_IO;
-    }
     video_player_debug_log(player, "play-start", 0, player->video_width, player->video_height, player->frame_delay_ms);
-    video_player_start_worker(player);
-
-    video_player_render_frame(player);
-
-    video_player_schedule_tick(player);
-
-    return ERROR_NONE;
+    return video_player_resume_playback_loop(player);
 }
 
 ErrorCode video_player_pause(VideoPlayer *player) {
@@ -2267,9 +2263,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
         g_source_remove(timer_id);
     }
     video_player_stop_worker(player);
-    video_player_clear_direct_kitty_image(player, TRUE);
-
-    return ERROR_NONE;
+    return video_player_clear_direct_kitty_image(player, TRUE) ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
@@ -2312,7 +2306,7 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     gint64 target_ms = video_player_seek_target_ms(player, delta_ms, duration_ms);
     if (target_ms == current_ms) {
         if (was_playing) {
-            video_player_resume_playback_loop(player);
+            return video_player_resume_playback_loop(player);
         }
         return ERROR_NONE;
     }
@@ -2336,10 +2330,10 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     g_mutex_unlock(&player->state_mutex);
 
     if (was_playing) {
-        video_player_resume_playback_loop(player);
+        return video_player_resume_playback_loop(player);
     } else {
         if (video_player_render_seek_preview(player, target_ms)) {
-            (void)video_player_render_frame(player);
+            (void)video_player_render_frame(player, NULL);
             video_player_restore_paused_seek_target(player, target_ms);
         }
     }
@@ -2619,9 +2613,6 @@ void video_player_destroy(VideoPlayer *player) {
     }
 
     video_player_stop(player);
-    if (player->kitty_direct_image_id) {
-        kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
-    }
     video_player_clear_line_cache(player);
     video_player_clear_decode(player);
 

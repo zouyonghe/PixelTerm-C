@@ -19,6 +19,7 @@ guint32 kitty_graphics_allocate_image_id(void);
 /* Main context only. Deferred deletes outlive players and retain ownership until
  * a checked write/flush succeeds. Retry from the event loop and before allocation. */
 void kitty_graphics_defer_image_delete(guint32 image_id);
+void kitty_graphics_defer_output_recovery(void);
 gboolean kitty_graphics_retry_pending_deletes(void);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */

@@ -40,6 +40,7 @@ gint video_player_calc_delay_ms(VideoPlayer *player);
 void video_player_update_queue_depth(VideoPlayer *player, gint rendered_w, gint rendered_h);
 G_GNUC_INTERNAL void video_player_schedule_tick_for_test(VideoPlayer *player);
 G_GNUC_INTERNAL void video_player_start_worker_for_test(VideoPlayer *player);
+G_GNUC_INTERNAL ErrorCode video_player_resume_playback_loop_for_test(VideoPlayer *player);
 G_GNUC_INTERNAL void video_player_start_decode_worker_for_test(VideoPlayer *player);
 G_GNUC_INTERNAL GString *video_player_render_direct_kitty_for_test(ImageRenderer *renderer,
                                                                   const DecodedFrame *decoded);
