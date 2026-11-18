@@ -34,7 +34,9 @@ gssize terminal_probe_query_response(const char *query,
                                      gchar terminator,
                                      char *buffer,
                                       gsize buffer_size);
-/* Also reports whether any query bytes were written, including on restore failure. */
+/* Also reports whether any query bytes were written, including on restore failure.
+ * A negative result may retain a NUL-terminated partial/complete reply for cleanup;
+ * callers must validate complete framing and correlation before trusting its ID. */
 gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
                                              gint poll_timeout_ms, gchar terminator,
                                              char *buffer, gsize buffer_size,

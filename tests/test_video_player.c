@@ -1018,6 +1018,36 @@ static void test_seek_relative_failed_seek_preserves_state(void) {
     video_player_destroy(player);
 }
 
+static void test_paused_seek_reports_output_failure(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    seek_hook_result = 0;
+    seek_preview_hook_return_value = TRUE;
+    seek_preview_hook_enqueue_frame = TRUE;
+    seek_preview_hook_frame_pts_offset_ms = 0;
+    video_player_set_seek_hook_for_test(test_seek_hook);
+    video_player_set_seek_preview_hook_for_test(test_seek_preview_hook);
+    fflush(stdout);
+    int saved = dup(STDOUT_FILENO);
+    int failed = open("/dev/null", O_RDONLY);
+    g_assert_cmpint(saved, >=, 0);
+    g_assert_cmpint(failed, >=, 0);
+    g_assert_cmpint(dup2(failed, STDOUT_FILENO), >=, 0);
+    close(failed);
+    ErrorCode result = video_player_seek_relative_ms(player, 1000);
+    g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
+    close(saved);
+    kitty_graphics_retry_pending_deletes();
+    video_player_set_seek_hook_for_test(NULL);
+    video_player_set_seek_preview_hook_for_test(NULL);
+    seek_preview_hook_enqueue_frame = FALSE;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 1000);
+    g_assert_false(video_player_is_playing(player));
+    video_player_destroy(player);
+}
+
 static void test_seek_relative_paused_seek_refreshes_preview(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -2933,6 +2963,29 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
     return (ssize_t)length;
 }
 
+static void test_deferred_cleanup_retry_deadline(void) {
+    DeleteOutput output = {.output = g_string_new(NULL)};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    kitty_graphics_defer_image_delete(42);
+    kitty_graphics_retry_pending_deletes_if_due(1000000);
+    guint first = output.attempts;
+    kitty_graphics_retry_pending_deletes_if_due(1099999);
+    guint before_deadline = output.attempts;
+    kitty_graphics_retry_pending_deletes_if_due(1100000);
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpuint(first, ==, 1);
+    g_assert_cmpuint(before_deadline, ==, 1);
+    g_assert_cmpuint(output.attempts, ==, 2);
+    g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\");
+    g_string_free(output.output, TRUE);
+}
+
 static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                            TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -2961,6 +3014,7 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
 
 static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     gint mode = GPOINTER_TO_INT(data); /* 0: delete failure, 1: detach, 2: frame failure, 3: text replacement, 4: destroy. */
+    gboolean frame_failure = mode == 2 || mode == 6;
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                            TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
@@ -2974,7 +3028,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         g_assert_cmpint(renderer_initialize(replacement, NULL), ==, ERROR_NONE);
     }
     ParkedWorkerCall worker;
-    if (mode == 2) {
+    if (frame_failure) {
         player->worker_thread = start_parked_worker_for_test("failed-output-worker", &worker, player);
         player->is_playing = TRUE;
     }
@@ -2991,19 +3045,26 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     fflush(stdout);
     gint saved_stdout = dup(STDOUT_FILENO);
     gint failing_fd = open("/dev/null", O_RDONLY);
+    FILE *errors = tmpfile();
+    g_assert_nonnull(errors);
+    fflush(stderr);
+    int saved_stderr = dup(STDERR_FILENO);
+    g_assert_cmpint(saved_stderr, >=, 0);
+    g_assert_cmpint(dup2(fileno(errors), STDERR_FILENO), >=, 0);
     g_assert_cmpint(saved_stdout, >=, 0);
     g_assert_cmpint(failing_fd, >=, 0);
     g_assert_cmpint(dup2(mode == 1 || mode == 3 ? fileno(capture) : failing_fd, STDOUT_FILENO), >=, 0);
     close(failing_fd);
-    player->kitty_direct_image_present = mode != 2;
+    player->kitty_direct_image_present = !frame_failure;
     gboolean rendered = FALSE;
-    if (mode == 2) {
+    if (frame_failure) {
         VideoFrame *frame = make_test_frame_with_generation(0,
             (guint)g_atomic_int_get(&player->playback_generation));
         frame->kitty_direct_image_id = player->kitty_direct_image_id;
         frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
         video_player_queue_push(player, frame);
-        rendered = video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
+        rendered = mode == 6 ? video_player_render_frame_for_test(player) :
+            video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
     } else if (mode == 1) {
         video_player_set_renderer(player, NULL);
     } else if (mode == 3) {
@@ -3042,7 +3103,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         g_assert_true(resumed_output);
         g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
     }
-    if (mode == 2) {
+    if (frame_failure) {
         VideoFrame *next = make_test_frame_with_generation(1,
             (guint)g_atomic_int_get(&player->playback_generation));
         next->kitty_direct_image_id = owned_image_id;
@@ -3054,7 +3115,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     if (player) video_player_stop(player); /* Retry cleanup after the output recovers. */
     gboolean cleanup_retried = player && !player->kitty_direct_image_present;
     video_player_destroy(player);
-    if (mode == 2) clear_parked_worker_for_test(&worker);
+    if (frame_failure) clear_parked_worker_for_test(&worker);
     renderer_destroy(replacement);
     fflush(stdout);
     rewind(capture);
@@ -3068,10 +3129,21 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     video_player_debug_reset_for_test();
     pixelterm_env_reset_for_test();
     if (mode == 0) g_assert_false(image_present);
+    fflush(stderr);
+    rewind(errors);
+    gchar diagnostic[512] = {0};
+    gsize diagnostic_length = fread(diagnostic, 1, sizeof(diagnostic) - 1, errors);
+    g_assert_cmpint(dup2(saved_stderr, STDERR_FILENO), >=, 0);
+    close(saved_stderr);
+    fclose(errors);
+    if (mode == 0 || mode == 4 || frame_failure) {
+        g_assert_cmpuint(diagnostic_length, >, 0);
+        g_assert_nonnull(strstr(diagnostic, "Video playback failed: Terminal output failed"));
+    }
     if (mode == 1) g_assert_false(image_present);
     if (mode == 3) g_assert_false(image_present);
     g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=42,q=2\033\\"));
-    if (mode == 2) {
+    if (frame_failure) {
         g_assert_true(g_str_has_prefix(output, "\033\\"));
         g_assert_false(rendered);
         g_assert_true(resumed_output);
@@ -3134,7 +3206,9 @@ static void test_protocol_cycle_restarts_active_workers(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #ifdef __GLIBC__
+    g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_failed_flush", NULL,
                          test_direct_kitty_destroy_retries_failed_flush);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_partial_delete", GINT_TO_POINTER(1),
@@ -3147,6 +3221,8 @@ void register_video_player_tests(void) {
     g_test_add_data_func("/video_player/direct_kitty/detach_cleans_image", GINT_TO_POINTER(1),
                          test_direct_kitty_output_errors_and_detach);
     g_test_add_data_func("/video_player/direct_kitty/failed_frame_not_presented", GINT_TO_POINTER(2),
+                         test_direct_kitty_output_errors_and_detach);
+    g_test_add_data_func("/video_player/direct_kitty/failed_frame_reports_without_error_out", GINT_TO_POINTER(6),
                          test_direct_kitty_output_errors_and_detach);
     g_test_add_data_func("/video_player/direct_kitty/paused_text_replacement", GINT_TO_POINTER(3),
                          test_direct_kitty_output_errors_and_detach);

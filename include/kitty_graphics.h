@@ -21,6 +21,8 @@ guint32 kitty_graphics_allocate_image_id(void);
 void kitty_graphics_defer_image_delete(guint32 image_id);
 void kitty_graphics_defer_output_recovery(void);
 gboolean kitty_graphics_retry_pending_deletes(void);
+/* Background retries are throttled; explicit allocation/shutdown retries are not. */
+void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */
 #define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)

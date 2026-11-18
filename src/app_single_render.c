@@ -567,7 +567,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             if (play_result != ERROR_NONE) {
                 APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
                 fflush(stdout);
-                fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(play_result));
+                if (play_result != ERROR_OUTPUT_IO) {
+                    fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(play_result));
+                }
                 return play_result;
             }
         } else {

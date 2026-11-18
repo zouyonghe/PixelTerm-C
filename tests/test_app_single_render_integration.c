@@ -237,7 +237,7 @@ static void test_single_view_video_play_failure_is_propagated(void) {
     app_single_render_reset_stubs();
     g_app_single_render_stub_state.video_play_result = ERROR_OUTPUT_IO;
     app.current_index = 0;
-    app.needs_redraw = TRUE;
+    app.needs_redraw = FALSE;
     g_assert_cmpint(app_render_current_image(&app), ==, ERROR_OUTPUT_IO);
     g_assert_true(app.needs_redraw);
     g_assert_false(app.video_player->is_playing);

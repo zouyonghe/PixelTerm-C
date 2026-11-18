@@ -106,6 +106,12 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
 /* The main input/output owner services this queue; render workers never use it. */
 static GQueue pending_deletes = G_QUEUE_INIT;
 static gboolean cleanup_registered = FALSE;
+static gint64 next_cleanup_retry_us = 0;
+
+void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
+    if (now_us < next_cleanup_retry_us) return;
+    if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;
+}
 
 gboolean kitty_graphics_retry_pending_deletes(void) {
     while (!g_queue_is_empty(&pending_deletes)) {
@@ -116,6 +122,7 @@ gboolean kitty_graphics_retry_pending_deletes(void) {
         if (written != command->len || flushed != 0 || ferror(stdout)) return FALSE;
         g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
     }
+    next_cleanup_retry_us = 0;
     return TRUE;
 }
 
@@ -161,7 +168,6 @@ guint32 kitty_graphics_allocate_image_id(void) {
     }
     gssize response_length = terminal_probe_query_response_tracked(query, timeout,
         TERMINAL_PROBE_POLL_TIMEOUT_MS, 'n', response, sizeof(response), &query_written);
-    if (response_length <= 0) response[0] = '\0';
     const gchar *cursor = response;
     while ((cursor = strstr(cursor, "\033_G")) != NULL) {
         const gchar *end = strstr(cursor, "\033\\");
@@ -184,7 +190,13 @@ guint32 kitty_graphics_allocate_image_id(void) {
             }
             g_strfreev(fields);
             g_free(control);
-            if (valid && id && number == nonce) return (guint32)id;
+            if (valid && id && number == nonce) {
+                if (response_length > 0) return (guint32)id;
+                /* A failed restore invalidates use, not ownership of a complete reply. */
+                kitty_graphics_defer_image_delete((guint32)id);
+                kitty_graphics_retry_pending_deletes();
+                return 0;
+            }
         }
         cursor = end + 2;
     }

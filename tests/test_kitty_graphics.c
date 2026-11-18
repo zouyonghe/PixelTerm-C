@@ -107,7 +107,11 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         close(saved);
         fclose(capture);
         g_assert_cmpuint(id, ==, 0);
-        g_assert_cmpstr(output, ==, "\033\\"); /* Never guess ownership from a shared image number. */
+        if (mode == 8) {
+            g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=123,q=2\033\\"));
+        } else {
+            g_assert_cmpstr(output, ==, "\033\\"); /* Never guess ownership from a shared image number. */
+        }
         terminal_probe_reset_transport_hooks_for_test();
     }
 }

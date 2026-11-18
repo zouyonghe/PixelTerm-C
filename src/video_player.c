@@ -29,6 +29,11 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
 static gint video_player_live_instances = 0;
 static RendererConfig video_player_render_worker_config(VideoPlayer *player);
 
+static ErrorCode video_player_report_output_failure(void) {
+    fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(ERROR_OUTPUT_IO));
+    return ERROR_OUTPUT_IO;
+}
+
 static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gboolean release) {
     if (!player->kitty_direct_image_id || (!release && !player->kitty_direct_image_present)) return TRUE;
     GString *command = NULL;
@@ -50,7 +55,10 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     }
     g_string_free(command, TRUE);
     if (release) {
-        if (!deleted) kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
+        if (!deleted) {
+            kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
+            video_player_report_output_failure();
+        }
         /* Release has one owner, even while this stopped player remains alive. */
         player->kitty_direct_image_id = 0;
         player->kitty_direct_image_present = FALSE;
@@ -1340,7 +1348,7 @@ static ErrorCode video_player_resume_playback_loop(VideoPlayer *player) {
 
     if (!video_player_prepare_direct_kitty_image(player)) {
         video_player_pause(player);
-        return ERROR_OUTPUT_IO;
+        return video_player_report_output_failure();
     }
     video_player_start_worker(player);
     ErrorCode output_error = ERROR_NONE;
@@ -2012,7 +2020,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     }
     gint64 io_end_us = g_get_monotonic_time();
     if (!output_success) {
-        if (output_error) *output_error = ERROR_OUTPUT_IO;
+        ErrorCode failure = video_player_report_output_failure();
+        if (output_error) *output_error = failure;
         kitty_graphics_defer_output_recovery();
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
@@ -2333,8 +2342,10 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         return video_player_resume_playback_loop(player);
     } else {
         if (video_player_render_seek_preview(player, target_ms)) {
-            (void)video_player_render_frame(player, NULL);
+            ErrorCode output_error = ERROR_NONE;
+            video_player_render_frame(player, &output_error);
             video_player_restore_paused_seek_target(player, target_ms);
+            return output_error;
         }
     }
 

@@ -100,7 +100,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     last_term_height = input_handler->terminal_height;
         
     while (app->running && !input_handler->should_exit) {
-        kitty_graphics_retry_pending_deletes();
+        kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time());
         if (g_terminate_requested) {
             app->running = FALSE;
             input_handler->should_exit = TRUE;
