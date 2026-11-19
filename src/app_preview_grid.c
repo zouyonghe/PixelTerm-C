@@ -577,6 +577,11 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
         }
+        app_prepare_mode_entry(app, TRUE);
+        if (app->last_error != ERROR_NONE) {
+            g_list_free_full(valid_images, g_free);
+            return app->last_error;
+        }
         // Free the old image list
         if (app->image_files) {
             g_list_free_full(app->image_files, (GDestroyNotify)g_free);
@@ -599,9 +604,8 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    app_prepare_mode_entry(app, TRUE);
-
-    (void)app_transition_mode(app, APP_MODE_PREVIEW);
+    ErrorCode transitioned = app_transition_mode(app, APP_MODE_PREVIEW);
+    if (transitioned != ERROR_NONE) return transitioned;
     app_preview_set_selected_index(app, app->current_index >= 0 ? app->current_index : 0);
 
     // For yellow border mode (RETURN_MODE_PREVIEW_VIRTUAL), always select first image
@@ -650,6 +654,7 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     if (!app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
 
     // Update terminal dimensions and force full clear if size changed
     gint prev_width = app->term_width;
@@ -736,9 +741,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
     renderer_destroy(renderer);
-    return ERROR_NONE;
+    if (!output_success) app->needs_screen_clear = TRUE;
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index) {

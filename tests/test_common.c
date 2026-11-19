@@ -23,6 +23,7 @@ void register_input_dispatch_key_file_manager_tests(void);
 void register_input_dispatch_mouse_modes_tests(void);
 void register_preview_shared_tests(void);
 void register_video_player_tests(void);
+void register_video_output_tests(void);
 void register_app_media_session_tests(void);
 void register_app_single_render_integration_tests(void);
 void register_terminal_protocols_tests(void);
@@ -403,6 +404,7 @@ int main(int argc, char **argv) {
     register_terminal_output_tests();
     register_main_lifecycle_tests();
     register_video_player_tests();
+    register_video_output_tests();
     register_app_media_session_tests();
     register_app_single_render_integration_tests();
 

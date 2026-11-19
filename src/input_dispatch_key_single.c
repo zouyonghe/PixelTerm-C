@@ -1,10 +1,13 @@
 #include "input_dispatch_key_modes_internal.h"
 
-#include <stdio.h>
-#include <string.h>
-
 #include "input_dispatch_media_internal.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
+
+static ErrorCode record_dispatch_error(PixelTermApp *app, ErrorCode result) {
+    if (result != ERROR_NONE) app->last_error = result;
+    return result;
+}
 
 static const gint64 k_protocol_toggle_debounce_us = 150000;
 static gint64 g_last_protocol_toggle_us = 0;
@@ -56,13 +59,14 @@ static void handle_single_media_navigation(PixelTermApp *app,
 
     gint old_index = app_get_current_index(app);
     ErrorCode result = navigate(app);
+    if (result == ERROR_OUTPUT_IO) record_dispatch_error(app, result);
     if (result != ERROR_NONE) {
         return;
     }
     if (old_index != app_get_current_index(app)) {
         app->suppress_full_clear = TRUE;
         app->async.render_request = TRUE;
-        app_refresh_display(app);
+        if (record_dispatch_error(app, app_refresh_display(app)) != ERROR_NONE) return;
     }
     skip_queued_navigation(input_handler, keys, key_count);
 }
@@ -90,6 +94,7 @@ static void drain_queued_video_seek_repeats(PixelTermApp *app,
             input_unget_event(input_handler, &queued_event);
             break;
         }
+        if (app->last_error == ERROR_OUTPUT_IO) break;
     }
 }
 
@@ -111,7 +116,7 @@ void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app) {
     if (video_player_is_playing(app->video_player)) {
         video_player_pause(app->video_player);
     } else if (video_player_has_video(app->video_player)) {
-        video_player_play(app->video_player);
+        record_dispatch_error(app, video_player_play(app->video_player));
     }
 }
 
@@ -127,12 +132,14 @@ void input_dispatch_key_modes_toggle_video_fps(PixelTermApp *app) {
         if (stats_row >= 1 && stats_row <= app->term_height) {
             gchar *line = video_player_dup_cached_line_at_row(app->video_player,
                                                               stats_row);
-            printf("\033[%d;1H\033[2K", stats_row);
+            GString *output = g_string_new(NULL);
+            g_string_append_printf(output, "\033[%d;1H\033[2K", stats_row);
             if (line) {
-                fwrite(line, 1, strlen(line), stdout);
+                g_string_append(output, line);
             }
             g_free(line);
-            fflush(stdout);
+            if (!terminal_output_write(output->str, output->len)) app->last_error = ERROR_OUTPUT_IO;
+            g_string_free(output, TRUE);
         }
     }
 }
@@ -170,11 +177,11 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
     app->video_scale = next_scale;
     gboolean was_playing = app->video_player && video_player_is_playing(app->video_player);
     if (app->video_player) {
-        video_player_stop(app->video_player);
+        if (record_dispatch_error(app, video_player_stop(app->video_player)) != ERROR_NONE) return;
     }
-    app_render_current_image(app);
+    if (record_dispatch_error(app, app_render_current_image(app)) != ERROR_NONE) return;
     if (was_playing && app->video_player) {
-        video_player_play(app->video_player);
+        record_dispatch_error(app, video_player_play(app->video_player));
     }
 }
 
@@ -189,17 +196,15 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
         return;
     }
     if (was_playing) {
-        if (video_player_stop(app->video_player) != ERROR_NONE) {
-            app->last_error = ERROR_OUTPUT_IO;
+        if (record_dispatch_error(app, video_player_stop(app->video_player)) != ERROR_NONE) {
             return;
         }
     }
-    if (video_player_cycle_protocol(app->video_player)) {
-        video_player_clear_render_area(app->video_player);
-    }
+    if (record_dispatch_error(app, video_player_clear_render_area(app->video_player)) != ERROR_NONE) return;
+    video_player_cycle_protocol(app->video_player);
 
     if (was_playing) {
-        video_player_play(app->video_player);
+        record_dispatch_error(app, video_player_play(app->video_player));
     }
 }
 
@@ -215,6 +220,7 @@ static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
     if (!g_video_seek_func) return FALSE;
 
     ErrorCode result = g_video_seek_func(app->video_player, delta_ms);
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
     return result == ERROR_NONE || result == ERROR_OUTPUT_IO;
 }
 
@@ -250,7 +256,8 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         case KEY_LEFT: {
             if (handle_video_seek(app, -k_video_seek_step_ms)) {
-                drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
+                if (app->last_error != ERROR_OUTPUT_IO)
+                    drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
                 break;
             }
             handle_single_media_navigation(app,
@@ -270,7 +277,8 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
         }
         case KEY_RIGHT: {
             if (handle_video_seek(app, k_video_seek_step_ms)) {
-                drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
+                if (app->last_error != ERROR_OUTPUT_IO)
+                    drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
                 break;
             }
             handle_single_media_navigation(app,
@@ -308,16 +316,16 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
         }
         case KEY_TAB:
             app->return_to_mode = RETURN_MODE_SINGLE;
-            app_enter_file_manager(app);
-            app_render_file_manager(app);
+            if (record_dispatch_error(app, app_enter_file_manager(app)) == ERROR_NONE)
+                record_dispatch_error(app, app_render_file_manager(app));
             break;
         case KEY_ENTER:
         case 13:
             if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
                 app->return_to_mode = RETURN_MODE_PREVIEW;
             }
-            if (app_enter_preview(app) == ERROR_NONE) {
-                app_render_preview_grid(app);
+            if (record_dispatch_error(app, app_enter_preview(app)) == ERROR_NONE) {
+                record_dispatch_error(app, app_render_preview_grid(app));
             }
             break;
         default:

@@ -371,7 +371,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (overlay_visible && active_kind == MEDIA_KIND_VIDEO) {
         active_kind = MEDIA_KIND_IMAGE;
     }
-    app_media_stop_inactive_players(app, active_kind);
+    ErrorCode stopped = app_media_stop_inactive_players(app, active_kind);
+    if (stopped != ERROR_NONE) return stopped;
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
@@ -593,6 +594,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
                                                        gif_player_play,
                                                        app->gif_player);
+        if (play_result == ERROR_OUTPUT_IO) {
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+            return play_result;
+        }
         if (play_result == ERROR_NONE) {
             app->needs_redraw = FALSE;
             rendered = g_string_new(NULL);

@@ -62,7 +62,8 @@ static void app_mode_on_enter_non_single(PixelTermApp *app) {
     if (!app) {
         return;
     }
-    app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    if (stopped != ERROR_NONE) app->last_error = stopped;
 }
 
 typedef struct {
@@ -104,11 +105,10 @@ void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
         return;
     }
 
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
-    }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
+    ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    if (stopped != ERROR_NONE) {
+        app->last_error = stopped;
+        return;
     }
     app->info_visible = FALSE;
     if (clear_preloader_queue) {
@@ -136,6 +136,11 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
         return ERROR_INVALID_ARGS;
     }
 
+    /* Entry hooks stop media before mode or input state is committed. */
+    if (k_modes[mode].on_enter) {
+        k_modes[mode].on_enter(app);
+        if (app->last_error != ERROR_NONE) return app->last_error;
+    }
     app->info_visible = FALSE;
     app->help_visible = FALSE;
 
@@ -143,9 +148,6 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
         k_modes[current].on_exit(app);
     }
     app->mode = mode;
-    if (k_modes[mode].on_enter) {
-        k_modes[mode].on_enter(app);
-    }
     return ERROR_NONE;
 }
 

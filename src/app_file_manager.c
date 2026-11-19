@@ -353,8 +353,10 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     }
 
     app_prepare_mode_entry(app, FALSE);
+    if (app->last_error != ERROR_NONE) return app->last_error;
 
-    (void)app_transition_mode(app, APP_MODE_FILE_MANAGER);
+    ErrorCode transitioned = app_transition_mode(app, APP_MODE_FILE_MANAGER);
+    if (transitioned != ERROR_NONE) return transitioned;
     app->file_manager.selected_entry = 0;
     app_file_manager_invalidate_selection_cache(app);
     app->file_manager.scroll_offset = 0;

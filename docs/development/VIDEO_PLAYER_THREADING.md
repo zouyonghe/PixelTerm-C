@@ -23,6 +23,11 @@ through this owner; UI/input do not depend on its recovery logic.
   The event loop must not run later output stages while readiness is false.
 - Termios recovery remains in input/probe lifecycle and never waits for stdout.
   Outer user-original settings override a pending probe app-raw snapshot.
+- Media stop and render-area clearing return submission failures. Callers must
+  stop before rendering, changing protocol or resuming playback on failure.
+  Void input-dispatch paths record failures in `app->last_error` for the main loop.
+  GIF timers wait during recovery backoff; failed frame submissions stop playback
+  and report the error instead of scheduling another frame.
 
 GIF/video build a presentation payload and submit once through this owner.
 Workers never write to stdout or mutate deferred restoration. This adds a

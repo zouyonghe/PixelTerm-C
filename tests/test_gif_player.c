@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 
@@ -6,6 +8,9 @@
 #include "gif_player.h"
 #include "kitty_graphics.h"
 #include "process_env.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include <errno.h>
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "gif_player_test_internal.h"
@@ -97,6 +102,13 @@ static gboolean unchanged_frame_advance(GdkPixbufAnimationIter *iter,
     return FALSE;
 }
 
+static gboolean changed_frame_advance(GdkPixbufAnimationIter *iter,
+                                      gconstpointer current_time) {
+    (void)iter;
+    (void)current_time;
+    return TRUE;
+}
+
 static void layout_capture(gpointer user_data) {
     GifPlayerLayoutCall *call = user_data;
     gif_player_set_render_area(call->player,
@@ -107,6 +119,162 @@ static void layout_capture(gpointer user_data) {
                                call->width,
                                call->height - 1);
 }
+
+#if defined(__GLIBC__) || defined(__APPLE__)
+typedef struct {
+    GString *bytes;
+    gboolean fail;
+    gboolean fail_once;
+    guint writes;
+} GifOutputSink;
+
+static ssize_t gif_output_write(void *data, const char *bytes, size_t length) {
+    GifOutputSink *sink = data;
+    sink->writes++;
+    if (sink->fail || sink->fail_once) {
+        sink->fail_once = FALSE;
+        errno = EIO;
+        return -1;
+    }
+    g_string_append_len(sink->bytes, bytes, length);
+    return (ssize_t)length;
+}
+
+static GifPlayer *software_test_player(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE,
+                                       TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player->renderer);
+    GdkPixbuf *frame = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, 1, 1);
+    gdk_pixbuf_fill(frame, 0xff0000ff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, frame);
+    gdk_pixbuf_simple_anim_add_frame(animation, frame);
+    g_object_unref(frame);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    return player;
+}
+
+static void test_gif_output_failure(gconstpointer data) {
+    const gchar *operation = data;
+    if (g_strcmp0(operation, "native_timer") == 0 &&
+        !native_kitty_shm_available_for_test()) {
+        g_test_skip("native Kitty SHM unavailable");
+        return;
+    }
+    GifPlayer *player = software_test_player();
+    gboolean native = !g_str_has_prefix(operation, "software") &&
+                      g_strcmp0(operation, "backoff") != 0;
+    if (native) {
+        player->kitty_animation_id = 4242;
+        player->kitty_animation_prepared = TRUE;
+        player->kitty_animation_complete = TRUE;
+        if (g_strcmp0(operation, "native_loading") == 0)
+            player->kitty_animation_complete = FALSE;
+    }
+    gboolean transient = g_strcmp0(operation, "software_play_recovered") == 0;
+    GifOutputSink sink = {.bytes = g_string_new(NULL), .fail = !transient,
+                          .fail_once = transient};
+    FILE *stream = test_output_stream(&sink, gif_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    GifOutputSink errors = {.bytes = g_string_new(NULL)};
+    FILE *error_stream = test_output_stream(&errors, gif_output_write);
+    g_assert_nonnull(error_stream);
+    FILE *saved_errors = stderr;
+    fflush(saved);
+    stdout = stream;
+    stderr = error_stream;
+    ErrorCode result = ERROR_NONE;
+    gboolean continued = FALSE;
+    if (g_strcmp0(operation, "stop") == 0) {
+        result = gif_player_stop(player);
+    } else if (g_strcmp0(operation, "load") == 0) {
+        result = gif_player_load(player, "/missing.gif");
+    } else if (g_strcmp0(operation, "pause") == 0) {
+        result = gif_player_pause(player);
+    } else if (g_strcmp0(operation, "redraw") == 0) {
+        player->is_playing = TRUE;
+        gif_player_prepare_for_redraw(player);
+    } else if (g_strcmp0(operation, "layout") == 0) {
+        player->is_playing = TRUE;
+        gif_player_set_render_area(player, 80, 24, 2, 20, 80, 20);
+    } else if (g_strcmp0(operation, "software_timer") == 0 ||
+               g_strcmp0(operation, "native_fallback") == 0 ||
+               g_strcmp0(operation, "native_timer") == 0) {
+        player->is_playing = TRUE;
+        if (native) {
+            player->kitty_animation_complete = FALSE;
+            player->kitty_animation_unchanged_ticks = 8;
+            gif_player_set_advance_hook_for_test(unchanged_frame_advance);
+            if (g_strcmp0(operation, "native_timer") == 0) {
+                player->total_frames = 2;
+                player->kitty_animation_frame_count = 1;
+                player->kitty_animation_source_width = 1;
+                player->kitty_animation_source_height = 1;
+                player->kitty_animation_display_width = 1;
+                player->kitty_animation_display_height = 1;
+                gif_player_set_advance_hook_for_test(changed_frame_advance);
+            }
+        }
+        continued = gif_player_render_next_frame_for_test(player);
+        gif_player_set_advance_hook_for_test(NULL);
+    } else if (g_strcmp0(operation, "backoff") == 0) {
+        g_assert_false(terminal_output_write("FAIL", 4));
+        guint attempts = sink.writes;
+        player->is_playing = TRUE;
+        continued = gif_player_render_next_frame_for_test(player);
+        g_assert_cmpuint(sink.writes, ==, attempts);
+    } else {
+        result = gif_player_play(player);
+    }
+    gboolean playing = player->is_playing;
+    guint timer = player->timer_id;
+    guint32 image_id = player->kitty_animation_id;
+    sink.fail = FALSE;
+    g_assert_true(terminal_output_flush());
+    /* A second stop must not submit an ambiguously delivered delete again. */
+    g_assert_cmpint(gif_player_stop(player), ==, ERROR_NONE);
+    fclose(stream);
+    stdout = saved;
+    fclose(error_stream);
+    stderr = saved_errors;
+    if (g_strcmp0(operation, "backoff") == 0) {
+        g_assert_true(continued);
+        g_assert_true(playing);
+    } else {
+        g_assert_false(playing);
+        g_assert_cmpuint(timer, ==, 0);
+        g_assert_false(continued);
+        if (g_strcmp0(operation, "redraw") == 0 ||
+            g_strcmp0(operation, "layout") == 0 ||
+            g_strcmp0(operation, "software_timer") == 0 ||
+            g_strcmp0(operation, "native_timer") == 0 ||
+            g_strcmp0(operation, "native_fallback") == 0)
+            g_assert_nonnull(strstr(errors.bytes->str, "GIF playback failed:"));
+        if (g_strcmp0(operation, "redraw") != 0 &&
+            g_strcmp0(operation, "layout") != 0 &&
+            g_strcmp0(operation, "software_timer") != 0 &&
+            g_strcmp0(operation, "native_timer") != 0 &&
+            g_strcmp0(operation, "native_fallback") != 0)
+            g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    }
+    if (native && g_strcmp0(operation, "pause") != 0) {
+        g_assert_cmpuint(image_id, ==, 0);
+        if (g_strcmp0(operation, "native_play") != 0 &&
+            g_strcmp0(operation, "native_loading") != 0 &&
+            g_strcmp0(operation, "native_timer") != 0)
+            g_assert_null(strstr(sink.bytes->str, "a=d,d=I,i=4242"));
+        const gchar *release = strstr(sink.bytes->str, "a=d,d=I,i=4242");
+        if (release) g_assert_null(strstr(release + 1, "a=d,d=I,i=4242"));
+    }
+    g_string_free(sink.bytes, TRUE);
+    g_string_free(errors.bytes, TRUE);
+    gif_player_destroy(player);
+}
+#endif
 
 static void test_gif_player_new_renderer_state(void) {
     GifPlayer *player = gif_player_new(9, FALSE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
@@ -605,6 +773,17 @@ static void test_gif_player_layout_change_repaints_cached_text_frame(void) {
 }
 
 void register_gif_player_tests(void) {
+#if defined(__GLIBC__) || defined(__APPLE__)
+    const gchar *operations[] = {"stop", "load", "pause", "redraw", "layout",
+                                 "native_play", "native_loading", "software_play",
+                                 "software_play_recovered", "software_timer", "native_timer",
+                                 "native_fallback", "backoff"};
+    for (guint i = 0; i < G_N_ELEMENTS(operations); i++) {
+        gchar *path = g_strdup_printf("/gif_player/output_failure/%s", operations[i]);
+        g_test_add_data_func(path, operations[i], test_gif_output_failure);
+        g_free(path);
+    }
+#endif
     g_test_add_func("/gif_player/new_renderer_state", test_gif_player_new_renderer_state);
     g_test_add_func("/gif_player/set_renderer_ownership", test_gif_player_set_renderer_ownership);
     g_test_add_func("/gif_player/default_state", test_gif_player_default_state);

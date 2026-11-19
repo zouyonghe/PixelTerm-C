@@ -22,19 +22,18 @@ ErrorCode app_display_help(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
     if (!app->help_visible && !ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
+    gboolean help_was_visible = app->help_visible;
     app->help_visible = !app->help_visible;
     if (app->help_visible) {
         app->needs_screen_clear = TRUE;
         app->suppress_full_clear = FALSE;
     }
-    if (!app->help_visible) {
-        return app_render_by_mode(app);
-    }
     ErrorCode err = app_render_by_mode(app);
     if (err != ERROR_NONE) {
+        app->help_visible = help_was_visible;
         return err;
     }
-    app_render_help_overlay(app);
+    if (app->help_visible) app_render_help_overlay(app);
     return ERROR_NONE;
 }
 

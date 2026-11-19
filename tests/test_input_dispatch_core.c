@@ -305,7 +305,37 @@ static void test_pause_video_for_resize_keeps_playing_state_across_repeated_resi
     g_mutex_clear(&player.state_mutex);
 }
 
+static void test_common_key_render_error(gconstpointer data) {
+    gint key = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = APP_MODE_SINGLE};
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(key == 'I' ? (KeyCode)'i' : (KeyCode)key);
+    app.help_visible = key == 'x';
+    app.info_visible = key == 'I';
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.render_by_mode_result = ERROR_OUTPUT_IO;
+    g_input_dispatch_stub_state.display_help_result = ERROR_OUTPUT_IO;
+    g_input_dispatch_stub_state.display_image_info_result = ERROR_OUTPUT_IO;
+    input_dispatch_core_handle_event(&app, &handler, &event);
+    g_assert_cmpint(app.last_error, ==, key == 'I' ? ERROR_INVALID_IMAGE : ERROR_OUTPUT_IO);
+    if (key == 'x') g_assert_true(app.help_visible);
+    if (key == '?') g_assert_false(app.help_visible);
+
+    /* Successful redraws must not erase an earlier failure. */
+    input_dispatch_test_reset_stubs();
+    event = make_key_event((KeyCode)'d');
+    app.help_visible = FALSE;
+    input_dispatch_core_handle_event(&app, &handler, &event);
+    g_assert_cmpint(app.last_error, ==, key == 'I' ? ERROR_INVALID_IMAGE : ERROR_OUTPUT_IO);
+}
+
 void register_input_dispatch_core_tests(void) {
+    g_test_add_data_func("/input_dispatch_core/errors/dither", GINT_TO_POINTER('d'), test_common_key_render_error);
+    g_test_add_data_func("/input_dispatch_core/errors/zen", GINT_TO_POINTER('~'), test_common_key_render_error);
+    g_test_add_data_func("/input_dispatch_core/errors/help_open", GINT_TO_POINTER('?'), test_common_key_render_error);
+    g_test_add_data_func("/input_dispatch_core/errors/info_open", GINT_TO_POINTER('i'), test_common_key_render_error);
+    g_test_add_data_func("/input_dispatch_core/errors/help_close", GINT_TO_POINTER('x'), test_common_key_render_error);
+    g_test_add_data_func("/input_dispatch_core/errors/info_close", GINT_TO_POINTER('I'), test_common_key_render_error);
     g_test_add_func("/input_dispatch_core/process_animations/only_runs_one_iteration_per_call",
                     test_process_animations_only_runs_one_iteration_per_call);
     g_test_add_func("/input_dispatch_core/process_animations/skips_when_nothing_is_playing",

@@ -203,8 +203,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
         input_dispatch_process_animations(app);
+        if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
         app_process_async_render(app);
+        if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (handled_input) {

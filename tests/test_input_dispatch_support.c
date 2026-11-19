@@ -86,11 +86,13 @@ ErrorCode app_previous_image(PixelTermApp *app) {
 ErrorCode app_refresh_display(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.refresh_display_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.refresh_display_result;
 }
 
 ErrorCode app_display_image_info(PixelTermApp *app) {
     g_input_dispatch_stub_state.display_image_info_calls++;
+    if (g_input_dispatch_stub_state.display_image_info_result != ERROR_NONE)
+        return g_input_dispatch_stub_state.display_image_info_result;
     if (app) {
         app->info_visible = !app->info_visible;
     }
@@ -99,6 +101,8 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
 
 ErrorCode app_display_help(PixelTermApp *app) {
     g_input_dispatch_stub_state.display_help_calls++;
+    if (g_input_dispatch_stub_state.display_help_result != ERROR_NONE)
+        return g_input_dispatch_stub_state.display_help_result;
     if (app) {
         app->help_visible = !app->help_visible;
     }
@@ -274,7 +278,7 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
 ErrorCode app_render_preview_grid(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.preview_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.preview_render_result;
 }
 
 ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index) {
@@ -411,7 +415,7 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
 ErrorCode app_render_by_mode(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.render_by_mode_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.render_by_mode_result;
 }
 
 ErrorCode app_enter_file_manager(PixelTermApp *app) {

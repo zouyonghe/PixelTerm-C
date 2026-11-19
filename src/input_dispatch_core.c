@@ -10,6 +10,10 @@
 #include "input_dispatch_pending_clicks_internal.h"
 #include "common.h"
 
+static void record_dispatch_error(PixelTermApp *app, ErrorCode result) {
+    if (result != ERROR_NONE) app->last_error = result;
+}
+
 typedef void (*ModeKeyPressHandler)(PixelTermApp *app,
                                     InputHandler *input_handler,
                                     const InputEvent *event);
@@ -56,7 +60,7 @@ static void handle_mouse_press_book_toc(PixelTermApp *app, const InputEvent *eve
                                     &redraw_needed,
                                     NULL);
     if (redraw_needed) {
-        app_render_book_toc(app);
+        record_dispatch_error(app, app_render_book_toc(app));
     }
 }
 
@@ -109,11 +113,11 @@ static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEve
     gint page = app_book_toc_get_selected_page(app);
     app->book.toc_visible = FALSE;
     if (page >= 0 && app_enter_book_page(app, page) == ERROR_NONE) {
-        app_render_book_page(app);
+        record_dispatch_error(app, app_render_book_page(app));
     } else if (app_is_book_preview_mode(app)) {
-        app_render_book_preview(app);
+        record_dispatch_error(app, app_render_book_preview(app));
     } else {
-        app_render_book_page(app);
+        record_dispatch_error(app, app_render_book_page(app));
     }
 }
 
@@ -168,7 +172,7 @@ static void handle_mouse_scroll_book_toc(PixelTermApp *app, const InputEvent *ev
     }
 
     if (app->book.toc_selected != old_selected || app->book.toc_scroll != old_scroll) {
-        app_render_book_toc(app);
+        record_dispatch_error(app, app_render_book_toc(app));
     }
 }
 
@@ -220,7 +224,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                                      app->force_text, app->force_sixel, app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma, app->color_enhance);
                 preloader_start(app->preloader);
             }
-            app_render_by_mode(app);
+            record_dispatch_error(app, app_render_by_mode(app));
             return TRUE;
         case (KeyCode)'i':
             if (app_is_book_mode(app) || app_is_book_preview_mode(app)) {
@@ -229,14 +233,14 @@ static gboolean handle_key_press_common(PixelTermApp *app,
             if (!app_is_preview_mode(app)) {
                 if (app->info_visible) {
                     app->info_visible = FALSE;
-                    app_render_current_image(app);
+                    record_dispatch_error(app, app_render_current_image(app));
                 } else {
-                    app_display_image_info(app);
+                    record_dispatch_error(app, app_display_image_info(app));
                 }
             }
             return TRUE;
         case (KeyCode)'?':
-            app_display_help(app);
+            record_dispatch_error(app, app_display_help(app));
             return TRUE;
         case (KeyCode)'f':
         case (KeyCode)'F':
@@ -258,7 +262,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 } else if (!info_was_visible) {
                     app->suppress_full_clear = TRUE;
                 }
-                app_render_by_mode(app);
+                record_dispatch_error(app, app_render_by_mode(app));
             }
             return TRUE;
         default:
@@ -378,7 +382,7 @@ static void handle_input_event(PixelTermApp *app, InputHandler *input_handler, c
             event->type == INPUT_MOUSE_SCROLL) {
             input_handler_reset_mouse_timing(input_handler);
         }
-        app_display_help(app);
+        record_dispatch_error(app, app_display_help(app));
         return;
     }
 

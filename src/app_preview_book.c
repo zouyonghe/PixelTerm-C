@@ -735,8 +735,10 @@ ErrorCode app_enter_book_preview(PixelTermApp *app) {
     }
 
     app_prepare_mode_entry(app, TRUE);
+    if (app->last_error != ERROR_NONE) return app->last_error;
 
-    (void)app_transition_mode(app, APP_MODE_BOOK_PREVIEW);
+    ErrorCode transitioned = app_transition_mode(app, APP_MODE_BOOK_PREVIEW);
+    if (transitioned != ERROR_NONE) return transitioned;
     app->book.preview_selected = app->book.page >= 0 ? app->book.page : 0;
     if (app->book.preview_selected >= app->book.page_count) {
         app->book.preview_selected = MAX(0, app->book.page_count - 1);
@@ -757,9 +759,11 @@ ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
     }
 
     app_prepare_mode_entry(app, TRUE);
+    if (app->last_error != ERROR_NONE) return app->last_error;
 
     app->book.page = page_index;
-    (void)app_transition_mode(app, APP_MODE_BOOK);
+    ErrorCode transitioned = app_transition_mode(app, APP_MODE_BOOK);
+    if (transitioned != ERROR_NONE) return transitioned;
     app->needs_redraw = TRUE;
     return ERROR_NONE;
 }

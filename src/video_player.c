@@ -989,9 +989,9 @@ gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_ro
     return line_copy;
 }
 
-void video_player_clear_render_area(VideoPlayer *player) {
+ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     if (!player) {
-        return;
+        return ERROR_INVALID_IMAGE;
     }
 
     gint area_top = 0;
@@ -1021,7 +1021,7 @@ void video_player_clear_render_area(VideoPlayer *player) {
     }
 
     if (clear_top <= 0 || clear_height <= 0) {
-        return;
+        return ERROR_NONE;
     }
 
     gint bottom = clear_top + clear_height - 1;
@@ -1033,11 +1033,13 @@ void video_player_clear_render_area(VideoPlayer *player) {
     for (gint row = clear_top; row <= bottom; row++) {
         g_string_append_printf(clear, "\033[%d;1H\033[2K", row);
     }
-    terminal_output_write(clear->str, clear->len);
+    gboolean cleared = terminal_output_write(clear->str, clear->len);
     g_string_free(clear, TRUE);
+    if (!cleared) return ERROR_OUTPUT_IO;
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
+    return ERROR_NONE;
 }
 
 static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error);

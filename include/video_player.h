@@ -164,9 +164,10 @@ void video_player_set_render_area(VideoPlayer *player,
 /**
  * @brief Clears the most recently rendered video area from the terminal.
  *
+ * @return ERROR_OUTPUT_IO on failed submission; the previous line cache is retained.
  * @note Call from the player-owning main context because this writes stdout.
  */
-void video_player_clear_render_area(VideoPlayer *player);
+ErrorCode video_player_clear_render_area(VideoPlayer *player);
 
 /**
  * @brief Enables or disables the playback statistics overlay.

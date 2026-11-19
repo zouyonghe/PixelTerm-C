@@ -181,6 +181,26 @@ static void test_enter_preview_output_failure_preserves_mode(gconstpointer data)
     cleanup_preview_app(&app);
 }
 
+static void test_full_preview_output_failure_is_reported(void) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.needs_screen_clear = TRUE;
+    PreviewOutput sink = {.fail_at = 1};
+    FILE *stream = test_output_stream(&sink, preview_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_preview_grid(&app);
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_true(recovered);
+    cleanup_preview_app(&app);
+}
+
 static void test_move_selection_normalizes_selection_and_scroll_before_moving(void) {
     PixelTermApp app;
 
@@ -571,6 +591,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/app_preview_grid/render/full_output_failure", test_full_preview_output_failure_is_reported);
     g_test_add_data_func("/app_preview_grid/entry/clear_failure_preserves_mode", GUINT_TO_POINTER(1), test_enter_preview_output_failure_preserves_mode);
     g_test_add_data_func("/app_preview_grid/entry/screen_failure_preserves_mode", GUINT_TO_POINTER(2), test_enter_preview_output_failure_preserves_mode);
     g_test_add_func("/app_preview_grid/entry/clears_kitty_before_screen",

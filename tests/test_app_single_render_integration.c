@@ -658,6 +658,28 @@ static void test_failed_help_clear_keeps_previous_state(void) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static void test_failed_help_redraw_restores_visibility(gconstpointer data) {
+    gboolean was_visible = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.help_visible = was_visible, .force_kitty = TRUE};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.render_by_mode_result = ERROR_OUTPUT_IO;
+    StillOutput sink = {.bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.help_visible, ==, was_visible);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 1);
+    if (!was_visible) g_assert_cmpuint(sink.bytes->len, >, 0);
+    g_string_free(sink.bytes, TRUE);
+    input_dispatch_test_reset_stubs();
+}
+
 static void test_failed_async_frame_retries_after_recovery(void) {
     PixelTermApp app = {0};
     app_single_render_reset_stubs();
@@ -700,6 +722,8 @@ static void test_failed_async_frame_retries_after_recovery(void) {
 }
 
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/runtime/help_open_redraw_failure", GINT_TO_POINTER(FALSE), test_failed_help_redraw_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/help_close_redraw_failure", GINT_TO_POINTER(TRUE), test_failed_help_redraw_restores_visibility);
     g_test_add_func("/app_single_render/runtime/help_clear_failure", test_failed_help_clear_keeps_previous_state);
     g_test_add_func("/app_single_render/runtime/async_failure_retries", test_failed_async_frame_retries_after_recovery);
     g_test_add_data_func("/app_single_render/output/begin_failure", GINT_TO_POINTER(1), test_still_output_failure);
