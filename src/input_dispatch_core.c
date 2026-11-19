@@ -234,12 +234,7 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 return TRUE;
             }
             if (!app_is_preview_mode(app)) {
-                if (app->info_visible) {
-                    app->info_visible = FALSE;
-                    record_dispatch_error(app, app_render_current_image(app));
-                } else {
-                    record_dispatch_error(app, app_display_image_info(app));
-                }
+                record_dispatch_error(app, app_display_image_info(app));
             }
             return TRUE;
         case (KeyCode)'?':

@@ -567,7 +567,12 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     // If we found valid images, replace the image list
     if (valid_images && valid_count > 0) {
-        /* Complete fallible output before committing the new mode and image list. */
+        /* Stop media before clearing its content; commit the list only after output succeeds. */
+        app_prepare_mode_entry(app, TRUE);
+        if (app->last_error != ERROR_NONE) {
+            g_list_free_full(valid_images, g_free);
+            return app->last_error;
+        }
         if (!ui_clear_kitty_images(app)) {
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
@@ -576,11 +581,6 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         if (!terminal_output_flush()) {
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
-        }
-        app_prepare_mode_entry(app, TRUE);
-        if (app->last_error != ERROR_NONE) {
-            g_list_free_full(valid_images, g_free);
-            return app->last_error;
         }
         // Free the old image list
         if (app->image_files) {

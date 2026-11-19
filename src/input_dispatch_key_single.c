@@ -4,11 +4,6 @@
 #include "ui_render_utils.h"
 #include "terminal_output.h"
 
-static ErrorCode record_dispatch_error(PixelTermApp *app, ErrorCode result) {
-    if (result != ERROR_NONE) app->last_error = result;
-    return result;
-}
-
 static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
     if (result == ERROR_OUTPUT_IO) app->last_error = result;
     return result;
@@ -64,7 +59,7 @@ static void handle_single_media_navigation(PixelTermApp *app,
 
     gint old_index = app_get_current_index(app);
     ErrorCode result = navigate(app);
-    if (result == ERROR_OUTPUT_IO) record_dispatch_error(app, result);
+    record_output_error(app, result);
     if (result != ERROR_NONE) {
         return;
     }
@@ -121,7 +116,7 @@ void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app) {
     if (video_player_is_playing(app->video_player)) {
         video_player_pause(app->video_player);
     } else if (video_player_has_video(app->video_player)) {
-        record_dispatch_error(app, video_player_play(app->video_player));
+        record_output_error(app, video_player_play(app->video_player));
     }
 }
 
@@ -182,11 +177,11 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
     app->video_scale = next_scale;
     gboolean was_playing = app->video_player && video_player_is_playing(app->video_player);
     if (app->video_player) {
-        if (record_dispatch_error(app, video_player_stop(app->video_player)) != ERROR_NONE) return;
+        if (record_output_error(app, video_player_stop(app->video_player)) != ERROR_NONE) return;
     }
     if (record_output_error(app, app_render_current_image(app)) != ERROR_NONE) return;
     if (was_playing && app->video_player) {
-        record_dispatch_error(app, video_player_play(app->video_player));
+        record_output_error(app, video_player_play(app->video_player));
     }
 }
 
@@ -203,16 +198,17 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
         return;
     }
     if (was_playing) {
-        if (record_dispatch_error(app, video_player_stop(app->video_player)) != ERROR_NONE) {
+        if (record_output_error(app, video_player_stop(app->video_player)) != ERROR_NONE) {
             return;
         }
     }
     if ((was_playing || redraw) &&
-        record_dispatch_error(app, video_player_clear_render_area(player)) != ERROR_NONE) return;
-    video_player_cycle_protocol(player);
+        record_output_error(app, video_player_clear_render_area(player)) != ERROR_NONE) return;
+    if (record_output_error(app, video_player_cycle_protocol_checked(player, &redraw)) != ERROR_NONE)
+        return;
 
     if (was_playing) {
-        record_dispatch_error(app, video_player_play(app->video_player));
+        record_output_error(app, video_player_play(app->video_player));
     }
 }
 

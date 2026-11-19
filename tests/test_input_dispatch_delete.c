@@ -131,7 +131,59 @@ static void test_delete_request_clears_pending_when_mode_becomes_unsupported(voi
     g_assert_cmpint(g_input_dispatch_stub_state.delete_calls, ==, 0);
 }
 
+static void test_delete_output_errors(gconstpointer data) {
+    gint path = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = path < 2 ? APP_MODE_PREVIEW : APP_MODE_SINGLE,
+                        .total_images = path == 0 || path == 2 ? 2 : 1,
+                        .delete_pending = TRUE};
+    InputEvent event = make_key_event((KeyCode)'r');
+    input_dispatch_test_reset_stubs();
+    if (path == 0) g_input_dispatch_stub_state.preview_render_result = ERROR_OUTPUT_IO;
+    if (path == 1 || path == 3) g_input_dispatch_stub_state.enter_file_manager_result = ERROR_OUTPUT_IO;
+    if (path == 2) g_input_dispatch_stub_state.render_by_mode_result = ERROR_OUTPUT_IO;
+    if (path == 4) g_input_dispatch_stub_state.file_manager_render_result = ERROR_OUTPUT_IO;
+    if (path == 5) g_input_dispatch_stub_state.delete_result = ERROR_OUTPUT_IO;
+    g_assert_true(input_dispatch_handle_delete_request(&app, &event));
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
+    if (path == 1 || path == 3 || path == 5)
+        g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
+    if (path == 5) g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 0);
+}
+
+static void test_delete_validation_error_remains_nonfatal(gconstpointer data) {
+    gboolean preview = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = preview ? APP_MODE_PREVIEW : APP_MODE_SINGLE,
+                        .total_images = 2, .delete_pending = TRUE};
+    InputEvent event = make_key_event((KeyCode)'r');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.delete_result = ERROR_INVALID_IMAGE;
+    g_assert_true(input_dispatch_handle_delete_request(&app, &event));
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, preview);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, !preview);
+}
+
+static void test_delete_entry_validation_falls_back(void) {
+    PixelTermApp app = {.mode = APP_MODE_SINGLE, .total_images = 1, .delete_pending = TRUE};
+    InputEvent event = make_key_event((KeyCode)'r');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_file_manager_result = ERROR_INVALID_IMAGE;
+    g_assert_true(input_dispatch_handle_delete_request(&app, &event));
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 1);
+}
+
 void register_input_dispatch_delete_tests(void) {
+    g_test_add_data_func("/input_dispatch_delete/errors/preview_render", GINT_TO_POINTER(0), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/preview_entry", GINT_TO_POINTER(1), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/single_render", GINT_TO_POINTER(2), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/single_entry", GINT_TO_POINTER(3), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/file_manager_render", GINT_TO_POINTER(4), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/delete", GINT_TO_POINTER(5), test_delete_output_errors);
+    g_test_add_data_func("/input_dispatch_delete/errors/preview_validation", GINT_TO_POINTER(TRUE), test_delete_validation_error_remains_nonfatal);
+    g_test_add_data_func("/input_dispatch_delete/errors/single_validation", GINT_TO_POINTER(FALSE), test_delete_validation_error_remains_nonfatal);
+    g_test_add_func("/input_dispatch_delete/errors/entry_validation_falls_back", test_delete_entry_validation_falls_back);
     g_test_add_func("/input_dispatch_delete/request/arms_in_supported_single_mode",
                     test_delete_request_arms_in_supported_single_mode);
     g_test_add_func("/input_dispatch_delete/request/ignored_in_unsupported_modes",

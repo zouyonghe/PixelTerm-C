@@ -14,7 +14,7 @@ void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
         return;
     }
     app->suppress_full_clear = TRUE;
-    if (app_enter_book_page(app, new_page) == ERROR_NONE) {
-        app_render_book_page(app);
-    }
+    ErrorCode result = app_enter_book_page(app, new_page);
+    if (result == ERROR_NONE) result = app_render_book_page(app);
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
 }

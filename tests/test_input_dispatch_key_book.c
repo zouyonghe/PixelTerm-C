@@ -3,6 +3,10 @@
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_test_support.h"
 
+#define input_dispatch_book_change_page real_book_change_page
+#include "../src/input_dispatch_book.c"
+#undef input_dispatch_book_change_page
+
 static InputEvent make_key_event(KeyCode key_code) {
     InputEvent event = {0};
     event.type = INPUT_KEY_PRESS;
@@ -86,7 +90,31 @@ static void test_preview_entry_error_boundary(gconstpointer data) {
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, result != ERROR_OUTPUT_IO);
 }
 
+static void test_real_page_entry_error(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    PixelTermApp app = make_book_app();
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_book_page_result = result;
+    real_book_change_page(&app, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.enter_book_page_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
+    g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
+}
+
+static void test_real_page_render_error(void) {
+    PixelTermApp app = make_book_app();
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.book_page_render_result = ERROR_OUTPUT_IO;
+    real_book_change_page(&app, 1);
+    g_assert_cmpint(app.book.page, ==, 5);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
 void register_input_dispatch_key_book_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_book/errors/page_entry_output", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_real_page_entry_error);
+    g_test_add_data_func("/input_dispatch_key_book/errors/page_entry_validation", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_real_page_entry_error);
+    g_test_add_func("/input_dispatch_key_book/errors/page_render_output", test_real_page_render_error);
     g_test_add_data_func("/input_dispatch_key_book/errors/preview_output", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_preview_entry_error_boundary);
     g_test_add_data_func("/input_dispatch_key_book/errors/preview_validation", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_preview_entry_error_boundary);
     g_test_add_func("/input_dispatch_key_book/reader/enter_opens_book_preview",

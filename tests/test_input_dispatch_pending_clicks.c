@@ -49,7 +49,22 @@ static void test_preview_click_processes_new_pending_after_mode_round_trip(void)
     g_assert_cmpint(g_input_dispatch_stub_state.preview_selection_render_calls, ==, 0);
 }
 
+static void test_pending_preview_render_output_failure(void) {
+    PixelTermApp app = {.mode = APP_MODE_PREVIEW};
+    input_dispatch_test_reset_stubs();
+    app.input.preview_click.pending = TRUE;
+    app.input.preview_click.pending_time = g_get_monotonic_time() - 500000;
+    g_input_dispatch_stub_state.preview_click_changes_selection = TRUE;
+    g_input_dispatch_stub_state.preview_selection_render_result = ERROR_OUTPUT_IO;
+    input_dispatch_process_pending_clicks(&app);
+    g_assert_false(app.input.preview_click.pending);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_click_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_selection_render_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
 void register_input_dispatch_pending_clicks_tests(void) {
+    g_test_add_func("/input_dispatch_pending_clicks/preview_click/render_output_failure", test_pending_preview_render_output_failure);
     g_test_add_func("/input_dispatch_pending_clicks/preview_click/clears_when_mode_changes_without_hooks",
                     test_preview_click_clears_when_mode_changes_without_hooks);
     g_test_add_func("/input_dispatch_pending_clicks/preview_click/processes_new_pending_after_mode_round_trip",

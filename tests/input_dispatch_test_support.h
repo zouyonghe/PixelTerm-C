@@ -26,6 +26,10 @@ typedef struct {
     gint enter_file_manager_calls;
     gint exit_file_manager_calls;
     gint enter_preview_calls;
+    gint preview_zoom_calls;
+    gint last_preview_zoom_delta;
+    gint exit_preview_calls;
+    gboolean last_exit_preview_open_selected;
     gint enter_book_preview_calls;
     gint enter_book_page_calls;
     gint book_page_render_calls;
@@ -65,10 +69,14 @@ typedef struct {
     ErrorCode display_help_result;
     ErrorCode render_by_mode_result;
     ErrorCode preview_render_result;
+    ErrorCode book_page_render_result;
+    ErrorCode file_manager_render_result;
+    gboolean render_by_mode_outputs_help;
     ErrorCode preview_selection_render_result;
     ErrorCode exit_preview_result;
     ErrorCode preview_zoom_result;
     gboolean preview_move_scroll;
+    gboolean preview_click_changes_selection;
 } InputDispatchTestStubState;
 
 extern InputDispatchTestStubState g_input_dispatch_stub_state;

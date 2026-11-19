@@ -20,6 +20,7 @@ typedef struct {
     gint term_height;
     gint prepare_calls;
     gint transition_calls;
+    ErrorCode prepare_error;
 } PreviewGridStubState;
 
 typedef void (*PreviewGridCaptureFunc)(gpointer user_data);
@@ -175,8 +176,34 @@ static void test_enter_preview_output_failure_preserves_mode(gconstpointer data)
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_true(app.image_files == original_images);
     g_assert_cmpint(app.current_index, ==, 1);
-    g_assert_true(app.info_visible);
-    g_assert_cmpint(g_preview_grid_stub_state.prepare_calls, ==, 0);
+    g_assert_false(app.info_visible);
+    g_assert_cmpint(g_preview_grid_stub_state.prepare_calls, ==, 1);
+    g_assert_cmpint(g_preview_grid_stub_state.transition_calls, ==, 0);
+    cleanup_preview_app(&app);
+}
+
+static void test_enter_preview_stop_failure_keeps_display(void) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.mode = APP_MODE_SINGLE;
+    app.force_kitty = TRUE;
+    GList *images = app.image_files;
+    g_preview_grid_stub_state.prepare_error = ERROR_OUTPUT_IO;
+    PreviewOutput sink = {0};
+    FILE *stream = test_output_stream(&sink, preview_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_enter_preview(&app);
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpuint(sink.writes, ==, 0);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_true(app.image_files == images);
+    g_assert_cmpint(g_preview_grid_stub_state.prepare_calls, ==, 1);
     g_assert_cmpint(g_preview_grid_stub_state.transition_calls, ==, 0);
     cleanup_preview_app(&app);
 }
@@ -544,7 +571,8 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
 
 void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
     g_preview_grid_stub_state.prepare_calls++;
-    (void)app;
+    app->last_error = g_preview_grid_stub_state.prepare_error;
+    if (app->last_error == ERROR_NONE) app->info_visible = FALSE;
     (void)clear_preloader_queue;
 }
 
@@ -591,6 +619,7 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/app_preview_grid/entry/stop_failure_keeps_display", test_enter_preview_stop_failure_keeps_display);
     g_test_add_func("/app_preview_grid/render/full_output_failure", test_full_preview_output_failure_is_reported);
     g_test_add_data_func("/app_preview_grid/entry/clear_failure_preserves_mode", GUINT_TO_POINTER(1), test_enter_preview_output_failure_preserves_mode);
     g_test_add_data_func("/app_preview_grid/entry/screen_failure_preserves_mode", GUINT_TO_POINTER(2), test_enter_preview_output_failure_preserves_mode);

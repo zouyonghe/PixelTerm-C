@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
+#include <errno.h>
 #include <glib.h>
 
 #include <string.h>
@@ -5,6 +8,8 @@
 #include "app.h"
 #include "grid_render.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
 
 typedef struct {
     gint create_grid_renderer_calls;
@@ -16,6 +21,9 @@ typedef struct {
     gboolean last_force_sixel;
     gboolean last_force_kitty;
     gboolean last_force_iterm2;
+    gboolean renderer_fail;
+    gint renderer_destroy_calls;
+    gint help_calls;
 } BookPreviewStubState;
 
 static BookPreviewStubState g_book_preview_stub_state;
@@ -218,6 +226,10 @@ ImageRenderer *app_create_grid_renderer(const PixelTermApp *app,
     (void)content_width;
     (void)content_height;
     g_book_preview_stub_state.create_grid_renderer_calls++;
+    if (g_book_preview_stub_state.renderer_fail) {
+        if (out_error) *out_error = ERROR_OUTPUT_IO;
+        return NULL;
+    }
     if (out_error) {
         *out_error = ERROR_NONE;
     }
@@ -243,6 +255,7 @@ void grid_render_cells(const GridRenderContext *context,
 }
 
 void renderer_destroy(ImageRenderer *renderer) {
+    g_book_preview_stub_state.renderer_destroy_calls++;
     g_free(renderer);
 }
 
@@ -420,6 +433,7 @@ void ui_print_centered_help_line(gint row,
     (void)term_width;
     (void)segments;
     (void)n;
+    g_book_preview_stub_state.help_calls++;
 }
 
 gint utf8_display_width(const gchar *text) {
@@ -430,8 +444,103 @@ void ui_clear_single_view_lines(const PixelTermApp *app) {
     (void)app;
 }
 
+gboolean app_grid_get_cell_origin(const PreviewLayout *layout, gint index,
+                                  gint total_items, gint start_row, gint vertical_offset,
+                                  gint *cell_x, gint *cell_y) {
+    (void)layout;
+    (void)start_row;
+    (void)vertical_offset;
+    *cell_x = *cell_y = 1;
+    return index >= 0 && index < total_items;
+}
+
+void app_grid_clear_cell_border(const PreviewLayout *layout, gint cell_x, gint cell_y) {
+    (void)layout;
+    printf("\033[%d;%dHclear-border", cell_y, cell_x);
+}
+
+void app_grid_draw_cell_border(const PreviewLayout *layout, gint cell_x, gint cell_y,
+                               const char *border_style) {
+    (void)layout;
+    printf("\033[%d;%dH%sdraw-border", cell_y, cell_x, border_style);
+}
+
+typedef struct {
+    gboolean fail;
+    GString *attempted;
+} BookOutput;
+
+static ssize_t book_output_write(void *data, const char *bytes, size_t length) {
+    BookOutput *sink = data;
+    g_string_append_len(sink->attempted, bytes, length);
+    if (sink->fail) { errno = EIO; return -1; }
+    return (ssize_t)length;
+}
+
+static void test_book_preview_output(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    gboolean selection = scenario & 1;
+    gboolean pending = scenario & 2;
+    gboolean success = scenario & 4;
+    gboolean renderer_fail = scenario & 8;
+    gboolean jump = scenario & 16;
+    PixelTermApp app;
+    init_book_preview_app(&app, 4, 20, 80, 30);
+    app.book.preview_selected = 1;
+    app.needs_screen_clear = FALSE;
+    if (jump) {
+        app.ui_text_hidden = FALSE;
+        app.book.path = "book.pdf";
+        app.book.jump_active = TRUE;
+    }
+    g_book_preview_stub_state.renderer_fail = renderer_fail;
+    BookOutput sink = {.fail = !success && !renderer_fail, .attempted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, book_output_write);
+    g_assert_nonnull(stream);
+    char buffer[65536];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    if (pending) terminal_output_defer("pending-book", TERMINAL_OUTPUT_RESTORE);
+    ErrorCode result = selection ? app_render_book_preview_selection_change(&app, 0)
+                                 : app_render_book_preview(&app);
+    gchar *attempted = g_strdup(sink.attempted->str);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, success ? ERROR_NONE : ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    if (!success) {
+        g_assert_true(app.needs_redraw);
+        g_assert_true(app.needs_screen_clear);
+    }
+    if (pending) {
+        g_assert_cmpstr(attempted, ==, "\033\\pending-book");
+        g_assert_cmpint(g_book_preview_stub_state.create_grid_renderer_calls, ==, 0);
+    } else if (!selection) {
+        g_assert_cmpint(g_book_preview_stub_state.create_grid_renderer_calls, ==, 1);
+        g_assert_cmpint(g_book_preview_stub_state.renderer_destroy_calls, ==, renderer_fail ? 0 : 1);
+    }
+    if (renderer_fail) g_assert_cmpstr(attempted, ==, "");
+    if (jump) g_assert_cmpint(g_book_preview_stub_state.help_calls, ==, 0);
+    g_free(attempted);
+    g_string_free(sink.attempted, TRUE);
+    cleanup_book_preview_app(&app);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_preview_book/output/full_final_failure", GINT_TO_POINTER(0), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/selection_final_failure", GINT_TO_POINTER(1), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/full_pending_failure", GINT_TO_POINTER(2), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/selection_pending_failure", GINT_TO_POINTER(3), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/full_success", GINT_TO_POINTER(4), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/selection_success", GINT_TO_POINTER(5), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/renderer_failure", GINT_TO_POINTER(8), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/full_jump_failure", GINT_TO_POINTER(16), test_book_preview_output);
+    g_test_add_data_func("/app_preview_book/output/selection_jump_failure", GINT_TO_POINTER(17), test_book_preview_output);
 
     g_test_add_func("/app_preview_book/scroll_pages/keeps_last_page_non_overlapping",
                     test_scroll_pages_keeps_last_page_non_overlapping);

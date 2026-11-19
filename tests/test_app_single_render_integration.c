@@ -680,8 +680,8 @@ static void test_failed_help_redraw_restores_visibility(gconstpointer data) {
     input_dispatch_test_reset_stubs();
 }
 
-static void test_help_overlay_output_failure_rolls_back(void) {
-    PixelTermApp app = {.mode = APP_MODE_SINGLE, .term_width = 80, .term_height = 24};
+static void test_help_overlay_output_failure_rolls_back(gconstpointer data) {
+    PixelTermApp app = {.mode = GPOINTER_TO_INT(data), .term_width = 80, .term_height = 24};
     input_dispatch_test_reset_stubs();
     StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, still_output_write);
@@ -774,8 +774,56 @@ static void test_failed_async_frame_retries_after_recovery(gconstpointer data) {
     destroy_render_test_app(&app);
 }
 
+static void test_info_render_failure_restores_visibility(gconstpointer data) {
+    gboolean was_visible = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.info_visible = was_visible;
+    g_app_single_render_stub_state.output_failure_stage = 1;
+    g_assert_cmpint(runtime_display_image_info(&app), ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.info_visible, ==, was_visible);
+    destroy_render_test_app(&app);
+}
+
+typedef struct { gint writes; } HelpSubmissionSink;
+static ssize_t help_submission_write(void *data, const char *bytes, size_t length) {
+    HelpSubmissionSink *sink = data;
+    (void)bytes;
+    if (++sink->writes > 1) { errno = EIO; return -1; }
+    return (ssize_t)length;
+}
+
+static void test_single_help_has_one_submission(void) {
+    PixelTermApp app = {.mode = APP_MODE_SINGLE, .term_width = 80, .term_height = 24};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.render_by_mode_outputs_help = TRUE;
+    HelpSubmissionSink sink = {0};
+    FILE *stream = test_output_stream(&sink, help_submission_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    stdout = saved;
+    /* Recover only if the regression submitted a second overlay. */
+    if (result != ERROR_NONE) g_assert_true(terminal_output_flush());
+    fclose(stream);
+    g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_true(app.help_visible);
+    g_assert_cmpint(sink.writes, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 1);
+    input_dispatch_test_reset_stubs();
+}
+
 void register_app_single_render_integration_tests(void) {
-    g_test_add_func("/app_single_render/runtime/help_overlay_output_failure", test_help_overlay_output_failure_rolls_back);
+    g_test_add_func("/app_single_render/runtime/single_help_one_submission", test_single_help_has_one_submission);
+    g_test_add_data_func("/app_single_render/runtime/info_open_failure", GINT_TO_POINTER(FALSE), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/info_close_failure", GINT_TO_POINTER(TRUE), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/preview_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_PREVIEW), test_help_overlay_output_failure_rolls_back);
+    g_test_add_data_func("/app_single_render/runtime/book_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_BOOK), test_help_overlay_output_failure_rolls_back);
+    g_test_add_data_func("/app_single_render/runtime/file_manager_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_FILE_MANAGER), test_help_overlay_output_failure_rolls_back);
     g_test_add_data_func("/app_single_render/output/gif_layout_cleanup_failure", NULL, test_gif_cleanup_failure_aborts_redraw);
     g_test_add_data_func("/app_single_render/output/gif_redraw_cleanup_failure", GINT_TO_POINTER(TRUE), test_gif_cleanup_failure_aborts_redraw);
     g_test_add_data_func("/app_single_render/runtime/help_open_redraw_failure", GINT_TO_POINTER(FALSE), test_failed_help_redraw_restores_visibility);
@@ -867,7 +915,7 @@ void app_preloader_update_terminal(PixelTermApp *app) {
 ErrorCode app_render_book_page(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_page_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.book_page_render_result;
 }
 
 static MediaKind test_media_classify(const char *path) {

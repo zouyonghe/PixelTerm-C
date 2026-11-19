@@ -34,7 +34,8 @@ external terminal reset or reconnect is not detected by a local retry deadline;
 cross-session queued-ID validation requires a separate continuity protocol.
 Shared-memory frames with failed/ambiguous submissions are discarded and their
 local resources reclaimed. A terminal that received the command but has not yet
-opened its name may lose that failed frame; no delivery success is reported.
+opened the shared-memory object by name may lose that failed frame; no delivery
+success is reported.
 Guaranteeing its display would require acknowledgement-based resource lifetime,
 which this recovery contract does not provide.
 

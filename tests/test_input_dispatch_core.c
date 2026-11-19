@@ -3,7 +3,6 @@
 #include "app.h"
 #include "input_dispatch_core.h"
 #include "input_dispatch_test_support.h"
-#include "app_single_render_test_internal.h"
 
 typedef struct {
     gint *order;
@@ -136,7 +135,7 @@ static void test_info_key_hides_info_overlay_on_second_press(void) {
     input_dispatch_core_handle_event(&app, &input_handler, &event);
 
     g_assert_false(app.info_visible);
-    g_assert_cmpint(g_input_dispatch_stub_state.display_image_info_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.display_image_info_calls, ==, 1);
 }
 
 static void test_info_key_opens_info_overlay_when_ui_text_hidden(void) {
@@ -306,11 +305,6 @@ static void test_pause_video_for_resize_keeps_playing_state_across_repeated_resi
     g_mutex_clear(&player.state_mutex);
 }
 
-static gint info_close_begin_calls;
-static gboolean fail_info_close_begin(void) {
-    info_close_begin_calls++;
-    return FALSE;
-}
 
 static void test_toc_double_click_entry_failure_aborts_render(void) {
     PixelTermApp app = {.mode = APP_MODE_BOOK, .book.toc_visible = TRUE};
@@ -332,13 +326,6 @@ static void test_common_key_render_error(gconstpointer data) {
     InputEvent event = make_key_event(key == 'I' ? (KeyCode)'i' : (KeyCode)key);
     app.help_visible = key == 'x';
     app.info_visible = key == 'I';
-    AppSingleRenderTestHooks hooks = {.ui_begin_sync_update = fail_info_close_begin};
-    if (key == 'I') {
-        app.total_images = 1;
-        app.image_files = g_list_append(NULL, "fixture.png");
-        info_close_begin_calls = 0;
-        app_single_render_set_test_hooks(&hooks);
-    }
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.render_by_mode_result = ERROR_OUTPUT_IO;
     g_input_dispatch_stub_state.display_help_result = ERROR_OUTPUT_IO;
@@ -346,10 +333,8 @@ static void test_common_key_render_error(gconstpointer data) {
     input_dispatch_core_handle_event(&app, &handler, &event);
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     if (key == 'I') {
-        g_assert_cmpint(info_close_begin_calls, ==, 1);
-        app_single_render_reset_test_hooks();
-        g_list_free(app.image_files);
-        app.image_files = NULL;
+        g_assert_cmpint(g_input_dispatch_stub_state.display_image_info_calls, ==, 1);
+        g_assert_true(app.info_visible);
     }
     if (key == 'x') g_assert_true(app.help_visible);
     if (key == '?') g_assert_false(app.help_visible);
@@ -379,6 +364,14 @@ static void test_preview_key_output_errors(gconstpointer data) {
     if (path == 1) g_assert_cmpint(g_input_dispatch_stub_state.preview_selection_render_calls, ==, 1);
     if (path == 2) g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 1);
     if (path == 3) g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
+    if (path == 2 || path == 3) {
+        g_assert_cmpint(g_input_dispatch_stub_state.exit_preview_calls, ==, 1);
+        g_assert_true(g_input_dispatch_stub_state.last_exit_preview_open_selected);
+    }
+    if (path == 4) {
+        g_assert_cmpint(g_input_dispatch_stub_state.preview_zoom_calls, ==, 1);
+        g_assert_cmpint(g_input_dispatch_stub_state.last_preview_zoom_delta, ==, 1);
+    }
 }
 
 void register_input_dispatch_core_tests(void) {

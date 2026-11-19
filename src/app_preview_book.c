@@ -5,6 +5,7 @@
 #include "media_utils.h"
 #include "preload_control.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static const gint k_book_spread_gutter_cols = 2;
 
@@ -783,6 +784,12 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+
     gint prev_width = app->term_width;
     gint prev_height = app->term_height;
     get_terminal_size(&app->term_width, &app->term_height);
@@ -793,6 +800,16 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
 
     PreviewLayout layout = app_book_preview_calculate_layout(app);
     app_book_preview_adjust_scroll(app, &layout);
+
+    gint content_width = MAX(1, layout.cell_width - 2);
+    gint content_height = MAX(1, layout.cell_height - 2);
+    ErrorCode renderer_error = ERROR_NONE;
+    ImageRenderer *renderer = app_create_grid_renderer(app, content_width, content_height, &renderer_error);
+    if (!renderer) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return renderer_error != ERROR_NONE ? renderer_error : ERROR_MEMORY_ALLOC;
+    }
 
     if (app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
@@ -820,16 +837,6 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
         app_book_preview_render_page_indicator(app);
     }
 
-    gint content_width = layout.cell_width - 2;
-    gint content_height = layout.cell_height - 2;
-    if (content_width < 1) content_width = 1;
-    if (content_height < 1) content_height = 1;
-    ErrorCode renderer_error = ERROR_NONE;
-    ImageRenderer *renderer = app_create_grid_renderer(app, content_width, content_height, &renderer_error);
-    if (!renderer) {
-        return renderer_error != ERROR_NONE ? renderer_error : ERROR_MEMORY_ALLOC;
-    }
-
     gint start_row = app->book.preview_scroll;
     gint end_row = MIN(layout.rows, start_row + layout.visible_rows);
     gint vertical_offset = app_preview_compute_vertical_offset(app, &layout, start_row, end_row);
@@ -852,6 +859,12 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
     app_book_preview_render_selected_info(app);
     if (app->book.jump_active) {
         app_book_jump_render_prompt(app);
+        if (!terminal_output_flush()) {
+            renderer_destroy(renderer);
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            return ERROR_OUTPUT_IO;
+        }
     }
 
     if (app->term_height > 0 && !app->ui_text_hidden) {
@@ -870,9 +883,13 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
         ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
     renderer_destroy(renderer);
-    return ERROR_NONE;
+    if (!output_success) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+    }
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_index) {
@@ -884,6 +901,12 @@ ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_i
     }
     if (app->book.page_count <= 0) {
         return ERROR_INVALID_IMAGE;
+    }
+
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
     }
 
     gint old_scroll = app->book.preview_scroll;
@@ -913,6 +936,10 @@ ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_i
         app_book_jump_render_prompt(app);
     }
 
-    fflush(stdout);
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
     return ERROR_NONE;
 }

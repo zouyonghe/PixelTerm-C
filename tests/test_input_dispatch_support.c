@@ -1,6 +1,7 @@
 #include "input_dispatch_test_support.h"
 
 #include "input.h"
+#include "terminal_output.h"
 
 #include <string.h>
 
@@ -266,8 +267,9 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
     (void)mouse_x;
     (void)mouse_y;
     if (redraw_needed) {
-        *redraw_needed = FALSE;
+        *redraw_needed = g_input_dispatch_stub_state.preview_click_changes_selection;
     }
+    if (app && g_input_dispatch_stub_state.preview_click_changes_selection) app->preview.selected++;
     if (out_hit) {
         *out_hit = TRUE;
     }
@@ -305,7 +307,7 @@ ErrorCode app_handle_mouse_file_manager(PixelTermApp *app, gint mouse_x, gint mo
 ErrorCode app_render_file_manager(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.file_manager_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.file_manager_render_result;
 }
 
 ErrorCode app_exit_file_manager(PixelTermApp *app) {
@@ -412,13 +414,15 @@ ErrorCode app_preview_move_selection(PixelTermApp *app, gint row, gint col) {
 
 ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
     (void)app;
-    (void)delta;
+    g_input_dispatch_stub_state.preview_zoom_calls++;
+    g_input_dispatch_stub_state.last_preview_zoom_delta = delta;
     return g_input_dispatch_stub_state.preview_zoom_result;
 }
 
 ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
     (void)app;
-    (void)open_selected;
+    g_input_dispatch_stub_state.exit_preview_calls++;
+    g_input_dispatch_stub_state.last_exit_preview_open_selected = open_selected;
     return g_input_dispatch_stub_state.exit_preview_result;
 }
 
@@ -429,6 +433,8 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
 ErrorCode app_render_by_mode(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.render_by_mode_calls++;
+    if (g_input_dispatch_stub_state.render_by_mode_outputs_help && app->help_visible &&
+        !terminal_output_write("FIRST-OVERLAY", 13)) return ERROR_OUTPUT_IO;
     return g_input_dispatch_stub_state.render_by_mode_result;
 }
 

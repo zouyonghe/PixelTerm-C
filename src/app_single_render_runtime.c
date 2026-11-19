@@ -11,8 +11,11 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
+    gboolean info_was_visible = app->info_visible;
     app->info_visible = !app->info_visible;
-    return app_render_current_image(app);
+    ErrorCode result = app_render_current_image(app);
+    if (result != ERROR_NONE) app->info_visible = info_was_visible;
+    return result;
 }
 
 ErrorCode app_display_help(PixelTermApp *app) {
@@ -31,7 +34,7 @@ ErrorCode app_display_help(PixelTermApp *app) {
         app->help_visible = help_was_visible;
         return err;
     }
-    if (app->help_visible) err = app_render_help_overlay(app);
+    if (app->help_visible && !app_is_single_mode(app)) err = app_render_help_overlay(app);
     if (err != ERROR_NONE) app->help_visible = help_was_visible;
     return err;
 }

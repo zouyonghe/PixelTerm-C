@@ -12,15 +12,23 @@
 #include <errno.h>
 
 static gint scale_render_calls;
+static ErrorCode scale_render_result;
+static gint resume_calls;
+static ErrorCode resume_result;
+static ErrorCode resume_spy(VideoPlayer *player) {
+    resume_calls++;
+    return resume_result != ERROR_NONE ? resume_result : video_player_play(player);
+}
 static ErrorCode scale_render_spy(PixelTermApp *app) {
     (void)app;
     scale_render_calls++;
-    return ERROR_NONE;
+    return scale_render_result;
 }
 
 /* Compile the dispatch boundary with an entry spy: a failed output flush can
  * otherwise hide an accidental call before renderer hooks are reached. */
 #define app_render_current_image scale_render_spy
+#define video_player_play resume_spy
 #define input_dispatch_handle_key_press_single spy_handle_key_press_single
 #define input_dispatch_key_modes_toggle_video_playback spy_toggle_video_playback
 #define input_dispatch_key_modes_toggle_video_fps spy_toggle_video_fps
@@ -28,6 +36,7 @@ static ErrorCode scale_render_spy(PixelTermApp *app) {
 #define input_dispatch_key_single_get_video_seek_step_ms_for_test spy_get_video_seek_step
 #include "../src/input_dispatch_key_single.c"
 #undef app_render_current_image
+#undef video_player_play
 #undef input_dispatch_handle_key_press_single
 #undef input_dispatch_key_modes_toggle_video_playback
 #undef input_dispatch_key_modes_toggle_video_fps
@@ -546,14 +555,19 @@ static void test_video_scale_render_failure_stays_stopped(void) {
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
     PixelTermApp app = make_single_app(player);
-    app.total_images = 0;
     app.video_scale = 1.0;
     player->is_playing = TRUE;
     InputEvent event = make_key_event((KeyCode)'-');
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.current_is_video = TRUE;
-    input_dispatch_handle_key_press_single(&app, NULL, &event);
-    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    scale_render_calls = 0;
+    scale_render_result = ERROR_OUTPUT_IO;
+    resume_calls = 0;
+    spy_handle_key_press_single(&app, NULL, &event);
+    scale_render_result = ERROR_NONE;
+    g_assert_cmpint(scale_render_calls, ==, 1);
+    g_assert_cmpint(resume_calls, ==, 0);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_false(video_player_is_playing(player));
     video_player_destroy(player);
 }
@@ -662,7 +676,7 @@ static void test_protocol_redraw_failure_stays_stopped(void) {
     video_player_destroy(player);
 }
 
-static void test_protocol_resume_failure_is_recorded(void) {
+static void test_protocol_resume_validation_is_nonfatal(void) {
     VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
@@ -674,7 +688,27 @@ static void test_protocol_resume_failure_is_recorded(void) {
     g_input_dispatch_stub_state.current_is_video = TRUE;
     g_usleep(160000); /* Protocol keys share a debounce across dispatch calls. */
     input_dispatch_handle_key_press_single(&app, NULL, &event);
-    g_assert_cmpint(app.last_error, ==, ERROR_INVALID_IMAGE);
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    g_assert_false(video_player_is_playing(player));
+    video_player_destroy(player);
+}
+
+static void test_protocol_resume_output_failure_is_recorded(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    player->is_playing = TRUE;
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    resume_calls = 0;
+    resume_result = ERROR_OUTPUT_IO;
+    g_usleep(160000);
+    spy_handle_key_press_single(&app, NULL, &event);
+    resume_result = ERROR_NONE;
+    g_assert_cmpint(resume_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_false(video_player_is_playing(player));
     video_player_destroy(player);
 }
@@ -952,7 +986,8 @@ void register_input_dispatch_key_single_tests(void) {
     g_test_add_func("/input_dispatch_key_single/video/protocol_redraw_failure_stays_stopped", test_protocol_redraw_failure_stays_stopped);
     g_test_add_func("/input_dispatch_key_single/video/scale_render_failure_stays_stopped", test_video_scale_render_failure_stays_stopped);
     g_test_add_func("/input_dispatch_key_single/video/scale_stop_failure_aborts_redraw", test_video_scale_stop_failure_aborts_redraw);
-    g_test_add_func("/input_dispatch_key_single/video/protocol_resume_failure_is_recorded", test_protocol_resume_failure_is_recorded);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_resume_validation_is_nonfatal", test_protocol_resume_validation_is_nonfatal);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_resume_output_failure_is_recorded", test_protocol_resume_output_failure_is_recorded);
     g_test_add_data_func("/input_dispatch_key_single/errors/preview_entry", GINT_TO_POINTER(TRUE), test_preview_entry_and_render_errors);
     g_test_add_data_func("/input_dispatch_key_single/errors/preview_render", GINT_TO_POINTER(FALSE), test_preview_entry_and_render_errors);
     g_test_add_func("/input_dispatch_key_single/errors/navigation_refresh", test_navigation_refresh_failure_preserves_queued_input);

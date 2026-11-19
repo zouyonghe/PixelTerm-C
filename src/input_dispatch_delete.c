@@ -5,6 +5,18 @@
 #include "input_dispatch_media_internal.h"
 #include "text_utils.h"
 
+static ErrorCode record_dispatch_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
+}
+
+static void enter_file_manager_or_refresh(PixelTermApp *app) {
+    ErrorCode result = record_dispatch_error(app, app_enter_file_manager(app));
+    if (result == ERROR_OUTPUT_IO) return;
+    record_dispatch_error(app, result == ERROR_NONE ? app_render_file_manager(app)
+                                                   : app_refresh_display(app));
+}
+
 static gint delete_prompt_display_width(const char *text) {
     return utf8_display_width(text);
 }
@@ -71,7 +83,7 @@ static void app_clear_delete_prompt(PixelTermApp *app) {
 static void handle_delete_current_in_preview(PixelTermApp *app) {
     if (app_has_images(app)) {
         app->current_index = app->preview.selected;
-        app_delete_current_image(app);
+        if (record_dispatch_error(app, app_delete_current_image(app)) == ERROR_OUTPUT_IO) return;
     }
 
     if (app_has_images(app)) {
@@ -79,15 +91,11 @@ static void handle_delete_current_in_preview(PixelTermApp *app) {
         if (app->current_index >= app->total_images) app->current_index = app->total_images - 1;
         app->preview.selected = app->current_index;
         app->needs_screen_clear = TRUE;
-        app_render_preview_grid(app);
+        record_dispatch_error(app, app_render_preview_grid(app));
     } else {
-        (void)app_transition_mode(app, APP_MODE_SINGLE);
+        if (record_dispatch_error(app, app_transition_mode(app, APP_MODE_SINGLE)) != ERROR_NONE) return;
         app->needs_screen_clear = TRUE;
-        if (app_enter_file_manager(app) == ERROR_NONE) {
-            app_render_file_manager(app);
-        } else {
-            app_refresh_display(app);
-        }
+        enter_file_manager_or_refresh(app);
     }
 }
 
@@ -132,21 +140,18 @@ static void delete_current_image_and_refresh(PixelTermApp *app) {
         return;
     }
 
-    ErrorCode err = app_delete_current_image(app);
+    ErrorCode err = record_dispatch_error(app, app_delete_current_image(app));
+    if (err == ERROR_OUTPUT_IO) return;
     if (err != ERROR_NONE) {
-        app_render_by_mode(app);
+        record_dispatch_error(app, app_render_by_mode(app));
         return;
     }
 
     if (!app_has_images(app)) {
         app->needs_screen_clear = TRUE;
-        if (app_enter_file_manager(app) == ERROR_NONE) {
-            app_render_file_manager(app);
-        } else {
-            app_refresh_display(app);
-        }
+        enter_file_manager_or_refresh(app);
         return;
     }
 
-    app_render_by_mode(app);
+    record_dispatch_error(app, app_render_by_mode(app));
 }
