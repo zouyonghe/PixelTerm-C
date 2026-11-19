@@ -735,8 +735,8 @@ ErrorCode app_enter_book_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    app_prepare_mode_entry(app, TRUE);
-    if (app->last_error != ERROR_NONE) return app->last_error;
+    ErrorCode prepared = app_prepare_mode_entry(app, TRUE);
+    if (prepared != ERROR_NONE) return prepared;
 
     ErrorCode transitioned = app_transition_mode(app, APP_MODE_BOOK_PREVIEW);
     if (transitioned != ERROR_NONE) return transitioned;
@@ -759,8 +759,8 @@ ErrorCode app_enter_book_page(PixelTermApp *app, gint page_index) {
         page_index = MAX(0, app->book.page_count - 1);
     }
 
-    app_prepare_mode_entry(app, TRUE);
-    if (app->last_error != ERROR_NONE) return app->last_error;
+    ErrorCode prepared = app_prepare_mode_entry(app, TRUE);
+    if (prepared != ERROR_NONE) return prepared;
 
     app->book.page = page_index;
     ErrorCode transitioned = app_transition_mode(app, APP_MODE_BOOK);

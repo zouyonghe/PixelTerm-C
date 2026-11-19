@@ -32,6 +32,11 @@ through this owner; UI/input do not depend on its recovery logic.
 Recovery assumes the same terminal session and image-ownership namespace. An
 external terminal reset or reconnect is not detected by a local retry deadline;
 cross-session queued-ID validation requires a separate continuity protocol.
+The two-second readiness limit bounds repeated returned write failures; it does
+not interrupt a kernel-blocked synchronous `fwrite`/`fflush`. Deadline-bounded
+submission for a full pipe or flow-controlled terminal requires a separate
+nonblocking-output change. Session restoration also assumes stdout still names
+the original terminal; redirection during an active session is not reattached.
 Shared-memory frames with failed/ambiguous submissions are discarded and their
 local resources reclaimed. A terminal that received the command but has not yet
 opened the shared-memory object by name may lose that failed frame; no delivery

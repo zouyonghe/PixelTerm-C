@@ -209,6 +209,8 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
 
     if (was_playing) {
         record_output_error(app, video_player_play(app->video_player));
+    } else if (redraw) {
+        record_output_error(app, video_player_refresh_paused_frame(player));
     }
 }
 

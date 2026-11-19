@@ -1,9 +1,10 @@
 #include "input_dispatch_delete_internal.h"
 
-#include <stdio.h>
+#include <string.h>
 
 #include "input_dispatch_media_internal.h"
 #include "text_utils.h"
+#include "terminal_output.h"
 
 static ErrorCode record_dispatch_error(PixelTermApp *app, ErrorCode result) {
     if (result == ERROR_OUTPUT_IO) app->last_error = result;
@@ -53,9 +54,9 @@ static gint delete_prompt_row(const PixelTermApp *app) {
 
 static void delete_current_image_and_refresh(PixelTermApp *app);
 
-static void app_show_delete_prompt(PixelTermApp *app) {
+static ErrorCode app_show_delete_prompt(PixelTermApp *app) {
     if (!app) {
-        return;
+        return ERROR_NONE;
     }
 
     const char *message = "Press r again to delete";
@@ -65,19 +66,23 @@ static void app_show_delete_prompt(PixelTermApp *app) {
     gint message_len = delete_prompt_display_width(message);
     gint col = term_width > message_len ? (term_width - message_len) / 2 + 1 : 1;
 
-    printf("\033[%d;1H\033[2K", row);
-    printf("\033[%d;%dH\033[31m%s\033[0m", row, col, message);
-    fflush(stdout);
+    char *prompt = g_strdup_printf("\033[%d;1H\033[2K\033[%d;%dH\033[31m%s\033[0m",
+                                   row, row, col, message);
+    gboolean submitted = terminal_output_write(prompt, strlen(prompt));
+    g_free(prompt);
+    return record_dispatch_error(app, submitted ? ERROR_NONE : ERROR_OUTPUT_IO);
 }
 
-static void app_clear_delete_prompt(PixelTermApp *app) {
+static ErrorCode app_clear_delete_prompt(PixelTermApp *app) {
     if (!app) {
-        return;
+        return ERROR_NONE;
     }
 
     gint row = delete_prompt_row(app);
-    printf("\033[%d;1H\033[2K", row);
-    fflush(stdout);
+    char prompt[32];
+    gint length = g_snprintf(prompt, sizeof(prompt), "\033[%d;1H\033[2K", row);
+    return record_dispatch_error(app, terminal_output_write(prompt, length)
+                                      ? ERROR_NONE : ERROR_OUTPUT_IO);
 }
 
 static void handle_delete_current_in_preview(PixelTermApp *app) {
@@ -107,7 +112,7 @@ gboolean input_dispatch_handle_delete_request(PixelTermApp *app, const InputEven
     if (app_is_file_manager_mode(app) || app_is_book_preview_mode(app) || app_is_book_mode(app)) {
         if (app->delete_pending) {
             app->delete_pending = FALSE;
-            app_clear_delete_prompt(app);
+            if (app_clear_delete_prompt(app) == ERROR_OUTPUT_IO) return TRUE;
         }
         return FALSE;
     }
@@ -122,13 +127,12 @@ gboolean input_dispatch_handle_delete_request(PixelTermApp *app, const InputEven
             }
             return TRUE;
         }
-        app_clear_delete_prompt(app);
+        if (app_clear_delete_prompt(app) == ERROR_OUTPUT_IO) return TRUE;
         return FALSE;
     }
 
     if (event->key_code == (KeyCode)'r') {
-        app->delete_pending = TRUE;
-        app_show_delete_prompt(app);
+        app->delete_pending = app_show_delete_prompt(app) == ERROR_NONE;
         return TRUE;
     }
 

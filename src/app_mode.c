@@ -102,20 +102,20 @@ static const AppModeDef k_modes[APP_MODE_COUNT] = {
     },
 };
 
-void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+ErrorCode app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
     if (!app) {
-        return;
+        return ERROR_MEMORY_ALLOC;
     }
 
     ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
     if (stopped != ERROR_NONE) {
         app->last_error = stopped;
-        return;
+        return stopped;
     }
-    app->info_visible = FALSE;
     if (clear_preloader_queue) {
         app_preloader_clear_queue(app);
     }
+    return ERROR_NONE;
 }
 
 ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {

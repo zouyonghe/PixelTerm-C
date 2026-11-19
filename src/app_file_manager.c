@@ -354,8 +354,8 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     }
 
     // Stop media before clearing its displayed content; a failed clear cannot restart playback.
-    app_prepare_mode_entry(app, FALSE);
-    if (app->last_error != ERROR_NONE) return app->last_error;
+    ErrorCode prepared = app_prepare_mode_entry(app, FALSE);
+    if (prepared != ERROR_NONE) return prepared;
 
     const char clear_screen[] = "\033[2J\033[H\033[0m";
     if (!terminal_output_write(clear_screen, sizeof(clear_screen) - 1)) {
@@ -603,8 +603,8 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             return ERROR_INVALID_IMAGE;
         }
 
-        ErrorCode error = is_book ? app_open_book(app, selected_path)
-                                  : app_load_single_file(app, selected_path);
+        /* Stop output before clearing; failed output keeps old media but cannot restart playback. */
+        ErrorCode error = app_prepare_mode_entry(app, FALSE);
         if (error != ERROR_NONE) return error;
 
         const char clear_screen[] = "\033[2J\033[H\033[0m";
@@ -612,6 +612,20 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             app->needs_redraw = TRUE;
             app->needs_screen_clear = TRUE;
             return ERROR_OUTPUT_IO;
+        }
+        /* Entries own selected_path until loading finishes and the list is released below. */
+        gboolean info_visible = app->info_visible;
+        gboolean help_visible = app->help_visible;
+        error = is_book ? app_open_book(app, selected_path)
+                        : app_load_single_file(app, selected_path);
+        if (error != ERROR_NONE) {
+            /* Book cleanup can change mode even when opening its replacement fails. */
+            app_set_mode(app, APP_MODE_FILE_MANAGER);
+            app->info_visible = info_visible;
+            app->help_visible = help_visible;
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            return error;
         }
         error = app_transition_mode(app, APP_MODE_SINGLE);
         if (error != ERROR_NONE) return error;

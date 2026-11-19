@@ -28,6 +28,19 @@ typedef struct {
 
 static BookPreviewStubState g_book_preview_stub_state;
 
+ErrorCode app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+    (void)app;
+    (void)clear_preloader_queue;
+    return ERROR_NONE;
+}
+
+ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
+    app->mode = mode;
+    app->info_visible = FALSE;
+    app->help_visible = FALSE;
+    return ERROR_NONE;
+}
+
 static void reset_book_preview_stubs(void) {
     memset(&g_book_preview_stub_state, 0, sizeof(g_book_preview_stub_state));
     g_book_preview_stub_state.term_width = 80;
@@ -62,6 +75,21 @@ static void cleanup_book_preview_app(PixelTermApp *app) {
 
     app->book.doc = NULL;
     app->book.page_count = 0;
+}
+
+static void test_entry_with_previous_error(void) {
+    PixelTermApp app;
+    init_book_preview_app(&app, 4, 20, 80, 30);
+    app.mode = APP_MODE_SINGLE;
+    app.last_error = ERROR_OUTPUT_IO;
+    g_assert_cmpint(app_enter_book_preview(&app), ==, ERROR_NONE);
+    g_assert_cmpint(app.mode, ==, APP_MODE_BOOK_PREVIEW);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app_enter_book_page(&app, 2), ==, ERROR_NONE);
+    g_assert_cmpint(app.mode, ==, APP_MODE_BOOK);
+    g_assert_cmpint(app.book.page, ==, 2);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    cleanup_book_preview_app(&app);
 }
 
 static void test_scroll_pages_keeps_last_page_non_overlapping(void) {
@@ -532,6 +560,7 @@ static void test_book_preview_output(gconstpointer data) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/app_preview_book/entry/previous_error", test_entry_with_previous_error);
     g_test_add_data_func("/app_preview_book/output/full_final_failure", GINT_TO_POINTER(0), test_book_preview_output);
     g_test_add_data_func("/app_preview_book/output/selection_final_failure", GINT_TO_POINTER(1), test_book_preview_output);
     g_test_add_data_func("/app_preview_book/output/full_pending_failure", GINT_TO_POINTER(2), test_book_preview_output);

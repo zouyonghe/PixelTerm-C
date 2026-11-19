@@ -4,6 +4,7 @@
 
 static void test_transition_null_app(void) {
     g_assert_cmpint(app_transition_mode(NULL, APP_MODE_SINGLE), ==, ERROR_MEMORY_ALLOC);
+    g_assert_cmpint(app_prepare_mode_entry(NULL, TRUE), ==, ERROR_MEMORY_ALLOC);
 }
 
 static void test_transition_invalid_mode(void) {
@@ -23,6 +24,12 @@ static void test_transition_same_mode_no_side_effects(void) {
 
 static void test_mode_entry_does_not_consume_previous_error(void) {
     PixelTermApp app = {.mode = APP_MODE_PREVIEW, .last_error = ERROR_OUTPUT_IO};
+    app.info_visible = TRUE;
+    app.help_visible = TRUE;
+    g_assert_cmpint(app_prepare_mode_entry(&app, TRUE), ==, ERROR_NONE);
+    g_assert_true(app.info_visible);
+    g_assert_true(app.help_visible);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(app_transition_mode(&app, APP_MODE_SINGLE), ==, ERROR_NONE);
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
