@@ -293,7 +293,9 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     if (persistent_block) {
         rewind(capture);
         gchar output[512] = {0};
-        fread(output, 1, sizeof(output) - 1, capture);
+        gsize length = fread(output, 1, sizeof(output) - 1, capture);
+        g_assert_cmpuint(length, >, 0);
+        g_assert_false(ferror(capture));
         g_assert_nonnull(strstr(output, "\033[2J\033[H\033[0m"));
     }
     fclose(capture);
