@@ -3691,6 +3691,8 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     GString *expected = render_fixture_blue_frame(fixture_path, expected_renderer);
     g_assert_nonnull(expected);
     g_assert_cmpuint(expected->len, >, 0);
+    /* ST and row-1 cursor prefix; the rendered payload includes its final SGR reset. */
+    g_string_prepend(expected, "\033\\\033[1;1H");
     FILE *capture = tmpfile();
     g_assert_nonnull(capture);
     FILE *saved = stdout;
@@ -3703,6 +3705,7 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     gchar bytes[4096] = {0};
     gsize length = fread(bytes, 1, sizeof(bytes) - 1, capture);
     gboolean read_failed = ferror(capture) != 0;
+    gboolean capture_complete = feof(capture) != 0;
     gboolean playing = video_player_is_playing(player);
     guint timer = player->timer_id;
     gint64 position = video_player_current_position_ms_for_test(player);
@@ -3710,11 +3713,11 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     video_player_destroy(player);
     g_assert_cmpint(result, ==, ERROR_NONE);
     g_assert_false(read_failed);
+    g_assert_true(capture_complete);
     g_assert_false(playing);
     g_assert_cmpuint(timer, ==, 0);
     g_assert_cmpint(position, ==, 2100);
-    g_assert_cmpuint(length, >, expected->len);
-    g_assert_nonnull(g_strstr_len(bytes, length, expected->str));
+    g_assert_cmpmem(bytes, length, expected->str, expected->len);
     g_string_free(expected, TRUE);
     renderer_destroy(expected_renderer);
 }

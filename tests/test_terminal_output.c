@@ -107,6 +107,33 @@ static void test_sync_end_preserves_frame_failure(void) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static void test_buffered_frame_order(gconstpointer data) {
+    gint recovery = GPOINTER_TO_INT(data);
+    OutputSink sink = {.bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    char buffer[256];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    if (recovery == 1) terminal_output_defer_recovery();
+    if (recovery == 2) {
+        terminal_output_defer("RESTORE", TERMINAL_OUTPUT_RESTORE);
+        sink.fail_once = TRUE;
+        g_assert_false(terminal_output_flush());
+    }
+    g_assert_cmpint(fputs("FRAME", stdout), >=, 0);
+    ui_end_sync_update();
+    g_assert_true(terminal_output_flush());
+    stdout = saved;
+    fclose(stream);
+    g_assert_cmpstr(sink.bytes->str, ==, recovery == 2 ?
+        "\033\\RESTORE\033\\\033[?2026l" : recovery == 1 ?
+        "\033\\\033\\\033[?2026l" : "FRAME\033\\\033[?2026l");
+    g_string_free(sink.bytes, TRUE);
+}
+
 static void test_direct_flush_sets_retry_deadline(void) {
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
     FILE *stream = test_output_stream(&sink, sink_write);
@@ -336,6 +363,9 @@ void register_terminal_output_tests(void) {
     g_test_add_data_func("/terminal_output/policy/idempotent_restore", GINT_TO_POINTER(TERMINAL_OUTPUT_RESTORE), test_pending_policy);
     g_test_add_func("/terminal_output/checked_write_and_owned_controls", test_checked_write_and_owned_controls);
     g_test_add_func("/terminal_output/sync_end_preserves_frame_failure", test_sync_end_preserves_frame_failure);
+    g_test_add_data_func("/terminal_output/buffered_frame/normal_sync_end", NULL, test_buffered_frame_order);
+    g_test_add_data_func("/terminal_output/buffered_frame/pending_recovery", GINT_TO_POINTER(1), test_buffered_frame_order);
+    g_test_add_data_func("/terminal_output/buffered_frame/failed_command", GINT_TO_POINTER(2), test_buffered_frame_order);
     g_test_add_func("/terminal_output/direct_flush_sets_retry_deadline", test_direct_flush_sets_retry_deadline);
     g_test_add_data_func("/terminal_output/legacy/stream_error", NULL, test_legacy_stdout_failure_blocks_ready);
     g_test_add_data_func("/terminal_output/legacy/buffered_failure", GINT_TO_POINTER(1), test_legacy_stdout_failure_blocks_ready);
