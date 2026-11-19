@@ -3050,6 +3050,10 @@ static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
     gint next_top = mode == 1 ? 20 : 6;
     player->fixed_frame_top_row = next_top;
     if (mode == 2) player->render_layout_valid = FALSE;
+    if (mode == 3) {
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 30;
+    }
     frame = make_test_frame_with_generation(0, player->playback_generation);
     g_string_assign(frame->rendered, mode == 2 ?
         "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\nthirteen\nfourteen" : "short\nframe");
@@ -3059,14 +3063,13 @@ static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
     output.delivered_but_failed = TRUE;
     g_assert_false(video_player_render_frame_for_test(player));
     g_assert_null(player->last_frame_lines);
-    gint first_row = mode == 2 ? 1 : 4;
+    gint first_row = mode == 2 ? 1 : mode == 3 ? next_top : 4;
     g_assert_cmpint(player->last_frame_top_row, ==, first_row);
-    gint last_row = mode == 1 ? 21 : mode == 2 ? 14 : 11;
+    gint last_row = mode == 1 ? 21 : mode == 2 ? 14 : mode == 3 ? next_top + 1 : 11;
     g_assert_cmpint(player->last_frame_height, ==, last_row - first_row + 1);
 
     /* A moved/shrunken layout must still clear the previously displayed rows. */
-    player->render_area_top_row = next_top;
-    player->render_area_height = 2;
+    video_player_set_render_area(player, 80, 40, next_top, 2, 80, 2);
     g_string_truncate(output.output, 0);
     g_assert_cmpint(video_player_clear_render_area(player), ==, ERROR_NONE);
     for (gint row = first_row; row <= last_row; row++) {
@@ -3076,6 +3079,8 @@ static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
     }
 
     player->render_layout_valid = TRUE;
+    player->fixed_frame_valid = TRUE;
+    player->fixed_frame_top_row = next_top;
     frame = make_test_frame_with_generation(0, player->playback_generation);
     g_string_assign(frame->rendered, "short\nframe");
     frame->rendered_height = 2;
@@ -3793,6 +3798,7 @@ void register_video_player_tests(void) {
     g_test_add_data_func("/video_player/output_bounds/failed_shorter_frame", GINT_TO_POINTER(0), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_moved_frame", GINT_TO_POINTER(1), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_without_layout", GINT_TO_POINTER(2), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_invalid_old_bounds", GINT_TO_POINTER(3), test_failed_frame_retains_clear_bounds);
     g_test_add_func("/video_player/paused_refresh/submits_without_playing", test_refresh_paused_frame_submits_without_playing);
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)

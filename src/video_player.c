@@ -846,8 +846,7 @@ void video_player_set_render_area(VideoPlayer *player,
 
     if (layout_changed) {
         player->fixed_frame_valid = FALSE;
-        player->last_frame_top_row = area_top_row;
-        player->last_frame_height = area_height;
+        /* Layout describes future output; retain delivered/uncertain coverage until clear. */
         video_player_generation_bump(player);
         player->render_layout_generation++;
         video_player_clear_line_cache(player);
@@ -1046,6 +1045,7 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
         clear_height = area_height;
     }
     if (last_top > 0 && last_height > 0) {
+        /* The app owns one contiguous media canvas, including gaps between frames. */
         gint bottom = MAX(clear_top + clear_height, last_top + last_height);
         clear_top = clear_top > 0 ? MIN(clear_top, last_top) : last_top;
         clear_height = bottom - clear_top;
@@ -1069,6 +1069,10 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     /* A failed submission may already have erased some or all cached rows. */
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
+    if (cleared) {
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 0;
+    }
     g_mutex_unlock(&player->state_mutex);
     return cleared ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
@@ -2072,9 +2076,10 @@ output_finished:;
         player->last_frame_height = next_frame_height;
     } else if (next_frame_top_row > 0 && next_frame_height > 0) {
         /* Partial output can leave both the previous and attempted frame visible. */
-        gint bottom = MAX(player->last_frame_top_row + player->last_frame_height,
-                          next_frame_top_row + next_frame_height);
-        player->last_frame_top_row = player->last_frame_height > 0 ?
+        gboolean old_valid = player->last_frame_top_row > 0 && player->last_frame_height > 0;
+        gint bottom = next_frame_top_row + next_frame_height;
+        if (old_valid) bottom = MAX(bottom, player->last_frame_top_row + player->last_frame_height);
+        player->last_frame_top_row = old_valid ?
             MIN(player->last_frame_top_row, next_frame_top_row) : next_frame_top_row;
         player->last_frame_height = bottom - player->last_frame_top_row;
     }
