@@ -17,6 +17,7 @@
 #include "input_dispatch.h"
 #include "common.h"
 #include "kitty_graphics.h"
+#include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
 
@@ -40,6 +41,7 @@ static void run_application_cleanup(InputHandler *input_handler) {
         return;
     }
 
+    terminal_probe_retry_restore();
     kitty_graphics_retry_pending_deletes();
     printf("\033[2J\033[H\033[0m");
     printf("\033[?25h");
@@ -100,6 +102,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     last_term_height = input_handler->terminal_height;
         
     while (app->running && !input_handler->should_exit) {
+        if (!terminal_probe_retry_restore()) {
+            error = ERROR_TERMINAL_SIZE;
+            break;
+        }
         kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time());
         if (g_terminate_requested) {
             app->running = FALSE;

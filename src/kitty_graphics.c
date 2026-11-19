@@ -119,7 +119,11 @@ gboolean kitty_graphics_retry_pending_deletes(void) {
         clearerr(stdout);
         gsize written = fwrite(command->str, 1, command->len, stdout);
         gint flushed = fflush(stdout);
-        if (written != command->len || flushed != 0 || ferror(stdout)) return FALSE;
+        if (written != command->len || flushed != 0 || ferror(stdout)) {
+            /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
+            g_string_assign(command, "\033\\");
+            return FALSE;
+        }
         g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
     }
     next_cleanup_retry_us = 0;

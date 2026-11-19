@@ -167,6 +167,7 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
     }
 
     // Check if stdin is a terminal
+    if (!terminal_probe_retry_restore()) return ERROR_TERMINAL_SIZE;
     if (!isatty(STDIN_FILENO)) {
         return ERROR_NONE;
     }
@@ -222,12 +223,16 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
     // Only restore if stdin is a terminal
     if (isatty(STDIN_FILENO)) {
         if (handler->has_orig_termios) {
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &handler->orig_termios);
+            if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &handler->orig_termios) == 0) {
+                terminal_probe_forget_restore();
+            }
         } else {
             struct termios term;
             if (tcgetattr(STDIN_FILENO, &term) == 0) {
                 term.c_lflag |= (ICANON | ECHO);
-                tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+                if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) == 0) {
+                    terminal_probe_forget_restore();
+                }
             }
         }
     }

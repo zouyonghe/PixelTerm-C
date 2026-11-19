@@ -2969,11 +2969,17 @@ typedef struct {
     guint attempts;
     GString *output;
     gboolean partial;
+    gboolean delivered_but_failed;
 } DeleteOutput;
 
 static ssize_t delete_output_write(void *data, const char *bytes, size_t length) {
     DeleteOutput *output = data;
     if (output->attempts++ == 0) {
+        if (output->delivered_but_failed) {
+            g_string_append_len(output->output, bytes, length);
+            errno = EIO;
+            return -1;
+        }
         if (output->partial) {
             g_string_append_len(output->output, bytes, length / 2);
             return (ssize_t)(length / 2);
@@ -2986,7 +2992,7 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
 }
 
 static void test_deferred_cleanup_retry_deadline(void) {
-    DeleteOutput output = {.output = g_string_new(NULL)};
+    DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
     cookie_io_functions_t hooks = {.write = delete_output_write};
     FILE *capture = fopencookie(&output, "w", hooks);
     g_assert_nonnull(capture);
@@ -3004,7 +3010,7 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_assert_cmpuint(first, ==, 1);
     g_assert_cmpuint(before_deadline, ==, 1);
     g_assert_cmpuint(output.attempts, ==, 2);
-    g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\");
+    g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
     g_string_free(output.output, TRUE);
 }
 
@@ -3022,13 +3028,15 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     fflush(saved_stdout);
     stdout = capture;
     video_player_destroy(player);
+    kitty_graphics_retry_pending_deletes();
     fclose(capture);
     stdout = saved_stdout;
     g_assert_cmpuint(output.attempts, ==, 2);
     if (output.partial) {
-        g_assert_true(g_str_has_suffix(output.output->str, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\"));
+        g_assert_true(g_str_has_suffix(output.output->str, "\033\\"));
+        g_assert_null(strstr(output.output->str, "\033_Ga=d,d=I,i=42,q=2\033\\"));
     } else {
-        g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\");
+        g_assert_cmpstr(output.output->str, ==, "\033\\");
     }
     g_string_free(output.output, TRUE);
 }
@@ -3166,7 +3174,12 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     }
     if (mode == 1) g_assert_false(image_present);
     if (mode == 3) g_assert_false(image_present);
-    g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=42,q=2\033\\"));
+    if (mode == 0 || mode == 4) {
+        g_assert_null(strstr(output, "\033_Ga=d,d=I,i=42,q=2\033\\"));
+        g_assert_nonnull(strstr(output, "\033\\"));
+    } else {
+        g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=42,q=2\033\\"));
+    }
     if (frame_failure) {
         g_assert_true(g_str_has_prefix(output, "\033\\"));
         g_assert_false(rendered);

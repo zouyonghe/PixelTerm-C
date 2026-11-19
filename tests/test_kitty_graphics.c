@@ -17,19 +17,22 @@ typedef struct {
     guint32 request_number;
     VideoPlayer *recovering_player;
     gint setattrs;
+    struct termios state;
 } AllocationTerminal;
 
 static gboolean allocation_tty(gpointer data) { (void)data; return TRUE; }
 static int allocation_getattr(struct termios *state, gpointer data) {
-    (void)data;
-    memset(state, 0, sizeof(*state));
+    *state = ((AllocationTerminal *)data)->state;
     return 0;
 }
 static int allocation_setattr(gint action, const struct termios *state, gpointer data) {
     (void)action; (void)state;
     AllocationTerminal *terminal = data;
     terminal->setattrs++;
-    return terminal->mode == 8 && terminal->setattrs == 2 ? -1 : 0;
+    if ((terminal->mode == 8 && terminal->setattrs == 2) ||
+        (terminal->mode == 10 && terminal->setattrs > 1)) return -1;
+    terminal->state = *state;
+    return 0;
 }
 static int allocation_flush(gint queue, gpointer data) { (void)queue; (void)data; return 0; }
 static ssize_t allocation_write(const char *buf, size_t length, gpointer data) {
@@ -114,6 +117,24 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         }
         terminal_probe_reset_transport_hooks_for_test();
     }
+}
+
+static void test_probe_persistent_restore_failure_recovers(void) {
+    AllocationTerminal terminal = {.next_id = 123, .mode = 10};
+    terminal.state.c_lflag = ICANON | ECHO;
+    terminal.state.c_cc[VMIN] = 1;
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    char response[256];
+    gssize result = terminal_probe_query_response("\033_Ga=t,I=123;AAAAAA==\033\\\033[5n",
+        120, 20, 'n', response, sizeof(response));
+    g_assert_cmpint(result, ==, -1);
+    g_assert_cmpint(terminal.state.c_lflag & ICANON, ==, 0);
+    g_assert_false(terminal_probe_retry_restore());
+    terminal.mode = 0;
+    g_assert_true(terminal_probe_retry_restore());
+    g_assert_cmpint(terminal.state.c_lflag, ==, ICANON | ECHO);
+    g_assert_cmpint(terminal.state.c_cc[VMIN], ==, 1);
+    terminal_probe_reset_transport_hooks_for_test();
 }
 
 static gpointer allocation_stale_worker(gpointer data) {
@@ -543,6 +564,7 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
     g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
+    g_test_add_func("/kitty_graphics/allocation/persistent_restore_recovery", test_probe_persistent_restore_failure_recovers);
     g_test_add_func("/kitty_graphics/allocation/failed_cleanup_recovers", test_kitty_failed_allocation_cleanup_recovers);
     g_test_add_func("/kitty_graphics/allocation/shm_skips_direct", test_kitty_shm_playback_skips_direct_allocation);
     g_test_add_data_func("/kitty_graphics/allocation/player_lifecycle", NULL, test_kitty_player_uses_and_releases_terminal_reservation);

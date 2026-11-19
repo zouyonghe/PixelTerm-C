@@ -46,17 +46,14 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     }
     g_string_prepend(command, "\033\\"); /* End a partial APC before every delete attempt. */
     gboolean deleted = FALSE;
-    for (gint attempt = 0; attempt < (release ? 3 : 1); attempt++) {
-        clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
-        gsize written = fwrite(command->str, 1, command->len, stdout);
-        gint flushed = fflush(stdout);
-        deleted = written == command->len && flushed == 0 && !ferror(stdout);
-        if (deleted) break;
-    }
+    clearerr(stdout);
+    gsize written = fwrite(command->str, 1, command->len, stdout);
+    gint flushed = fflush(stdout);
+    deleted = written == command->len && flushed == 0 && !ferror(stdout);
     g_string_free(command, TRUE);
     if (release) {
         if (!deleted) {
-            kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
+            kitty_graphics_defer_output_recovery();
             video_player_report_output_failure();
         }
         /* Release has one owner, even while this stopped player remains alive. */

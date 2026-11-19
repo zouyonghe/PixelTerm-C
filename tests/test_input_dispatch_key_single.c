@@ -429,6 +429,7 @@ static void test_video_seek_output_failure_does_not_switch_media(void) {
     g_input_dispatch_stub_state.current_is_video = TRUE;
     g_input_dispatch_stub_state.video_seek_result = ERROR_OUTPUT_IO;
     input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    redirect_stdin_bytes(NULL, 0);
     input_dispatch_handle_key_press_single(&app, &handler, &event);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);

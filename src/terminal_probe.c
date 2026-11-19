@@ -2,6 +2,8 @@
 
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <sys/select.h>
 #include <unistd.h>
 
@@ -85,6 +87,24 @@ static const TerminalProbeTransportHooks k_default_hooks = {
 
 static const TerminalProbeTransportHooks *g_terminal_probe_hooks = &k_default_hooks;
 static gpointer g_terminal_probe_user_data = NULL;
+static struct termios g_pending_termios;
+static gboolean g_restore_pending = FALSE;
+static gboolean g_restore_exit_registered = FALSE;
+
+gboolean terminal_probe_retry_restore(void) {
+    if (!g_restore_pending) return TRUE;
+    if (g_terminal_probe_hooks->tcsetattr_fn(TCSANOW, &g_pending_termios, g_terminal_probe_user_data) != 0) return FALSE;
+    g_restore_pending = FALSE;
+    return TRUE;
+}
+
+static void terminal_probe_restore_at_exit(void) {
+    (void)terminal_probe_retry_restore();
+}
+
+void terminal_probe_forget_restore(void) {
+    g_restore_pending = FALSE;
+}
 
 /* Startup probes and event handling run on the main thread. Stop reading when
  * this queue fills so unread keystrokes stay in the terminal's input buffer. */
@@ -167,6 +187,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
     }
 
     buffer[0] = '\0';
+    if (!terminal_probe_retry_restore()) return -1;
 
     const TerminalProbeTransportHooks *hooks = g_terminal_probe_hooks ? g_terminal_probe_hooks : &k_default_hooks;
     gpointer user_data = g_terminal_probe_user_data;
@@ -284,10 +305,16 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
+        g_pending_termios = saved_termios;
+        g_restore_pending = TRUE;
+        if (!g_restore_exit_registered) {
+            g_restore_exit_registered = atexit(terminal_probe_restore_at_exit) == 0;
+        }
         /* Recover transient failures, but reject replies from a failed probe. */
         for (gint retry = 0; retry < 2; retry++) {
-            if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) == 0) break;
+            if (terminal_probe_retry_restore()) break;
         }
+        if (g_restore_pending) fprintf(stderr, "Failed to restore terminal settings; recovery remains pending.\n");
         return -1;
     }
 
@@ -306,6 +333,7 @@ void terminal_probe_set_transport_hooks_for_test(const TerminalProbeTransportHoo
 }
 
 void terminal_probe_reset_transport_hooks_for_test(void) {
+    g_restore_pending = FALSE;
     g_terminal_probe_hooks = &k_default_hooks;
     g_terminal_probe_user_data = NULL;
     g_queue_clear(&g_terminal_probe_pending_input);
