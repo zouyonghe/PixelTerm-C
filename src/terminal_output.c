@@ -55,7 +55,7 @@ static gboolean restore_descriptor(int fd, int flags) {
     return restore_descriptor_flags();
 }
 
-static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length, gboolean *attempted) {
+ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length, gboolean *attempted) {
     if (!restore_descriptor_flags()) return -1;
     int flags = output_fcntl(fd, F_GETFL, 0);
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
@@ -79,7 +79,9 @@ static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize
         if (g_get_monotonic_time() >= deadline) break;
     }
     /* Preserve exact progress even when restoring flags needs a later retry. */
+    int write_errno = errno;
     if (changed) restore_descriptor(fd, flags);
+    errno = write_errno;
     return written || !length ? (ssize_t)written : -1;
 }
 

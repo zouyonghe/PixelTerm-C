@@ -3023,6 +3023,71 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
     return (ssize_t)length;
 }
 
+static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    video_player_set_render_area(player, 80, 40, 4, 30, 80, 30);
+    player->fixed_frame_valid = TRUE;
+    player->fixed_frame_top_row = 4;
+    VideoFrame *frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+    frame->rendered_height = 8;
+    video_player_queue_push(player, frame);
+
+    DeleteOutput output = {.output = g_string_new(NULL), .attempts = 1};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpint(player->last_frame_top_row, ==, 4);
+    g_assert_cmpint(player->last_frame_height, ==, 8);
+
+    gint next_top = mode == 1 ? 20 : 6;
+    player->fixed_frame_top_row = next_top;
+    if (mode == 2) player->render_layout_valid = FALSE;
+    frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "short\nframe");
+    frame->rendered_height = 2;
+    video_player_queue_push(player, frame);
+    output.attempts = 0;
+    output.delivered_but_failed = TRUE;
+    g_assert_false(video_player_render_frame_for_test(player));
+    g_assert_null(player->last_frame_lines);
+    g_assert_cmpint(player->last_frame_top_row, ==, 4);
+    gint last_row = mode == 1 ? 21 : 11;
+    g_assert_cmpint(player->last_frame_height, ==, last_row - 3);
+
+    /* A moved/shrunken layout must still clear the previously displayed rows. */
+    player->render_area_top_row = next_top;
+    player->render_area_height = 2;
+    g_string_truncate(output.output, 0);
+    g_assert_cmpint(video_player_clear_render_area(player), ==, ERROR_NONE);
+    for (gint row = 4; row <= last_row; row++) {
+        gchar *erase = g_strdup_printf("\033[%d;1H\033[2K", row);
+        g_assert_nonnull(strstr(output.output->str, erase));
+        g_free(erase);
+    }
+
+    player->render_layout_valid = TRUE;
+    frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "short\nframe");
+    frame->rendered_height = 2;
+    video_player_queue_push(player, frame);
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpint(player->last_frame_top_row, ==, next_top);
+    g_assert_cmpint(player->last_frame_height, ==, 2);
+    terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    video_player_destroy(player);
+    g_string_free(output.output, TRUE);
+}
+
 static void test_failed_delete_buffer_is_discarded(void) {
     DeleteOutput output = {.output = g_string_new(NULL), .attempted = g_string_new(NULL)};
     FILE *capture = test_output_stream(&output, delete_output_write);
@@ -3723,6 +3788,9 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_data_func("/video_player/output_bounds/failed_shorter_frame", GINT_TO_POINTER(0), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_moved_frame", GINT_TO_POINTER(1), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_without_layout", GINT_TO_POINTER(2), test_failed_frame_retains_clear_bounds);
     g_test_add_func("/video_player/paused_refresh/submits_without_playing", test_refresh_paused_frame_submits_without_playing);
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)
