@@ -1,6 +1,7 @@
 #include "ui_render_utils.h"
 
 #include "text_utils.h"
+#include "terminal_output.h"
 
 void ui_render_centered_row(gint row, gint term_width, const char *text, const char *style) {
     if (row <= 0 || term_width <= 0) {
@@ -166,7 +167,8 @@ void ui_begin_sync_update(void) {
 }
 
 void ui_end_sync_update(void) {
-    printf("\033[?2026l");
+    terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
+    terminal_output_flush();
 }
 
 void ui_clear_screen_for_refresh(const PixelTermApp *app) {
@@ -196,7 +198,13 @@ void ui_clear_kitty_images(const PixelTermApp *app) {
         return;
     }
     // Delete all kitty image placements (quiet) so old images don't linger.
-    printf("\033_Ga=d,q=2\033\\");
+    if (!terminal_output_flush()) return;
+    const char command[] = "\033_Ga=d,q=2\033\\";
+    gsize written = fwrite(command, 1, sizeof(command) - 1, stdout);
+    gint flushed = fflush(stdout);
+    if (written != sizeof(command) - 1 || flushed != 0 || ferror(stdout)) {
+        terminal_output_recover();
+    }
 }
 
 void ui_clear_single_view_lines(const PixelTermApp *app) {

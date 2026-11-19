@@ -16,7 +16,7 @@
 #include "input.h"
 #include "input_dispatch.h"
 #include "common.h"
-#include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
@@ -42,7 +42,7 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     }
 
     terminal_probe_retry_restore();
-    gboolean output_ready = kitty_graphics_retry_pending_deletes();
+    gboolean output_ready = terminal_output_flush();
     if (output_ready) {
         printf("\033[2J\033[H\033[0m");
         printf("\033[?25h");
@@ -54,10 +54,10 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     ErrorCode restore_error = input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
     gboolean restored = terminal_probe_retry_restore();
-    if (!restored || (!original_known && restore_error != ERROR_NONE)) {
+    if (!restored || (!original_known && restore_error == ERROR_TERMINAL_SIZE)) {
         return ERROR_TERMINAL_SIZE;
     }
-    return kitty_graphics_retry_pending_deletes() ? ERROR_NONE : ERROR_OUTPUT_IO;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static ErrorCode finish_application(InputHandler *input_handler, ErrorCode primary_error) {
@@ -69,7 +69,7 @@ static ErrorCode finish_application(InputHandler *input_handler, ErrorCode prima
 }
 
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
-    if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
         return ERROR_MEMORY_ALLOC;
@@ -98,7 +98,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     }
 
     // Initial render
-    if (!kitty_graphics_retry_pending_deletes()) {
+    if (!terminal_output_flush()) {
         return finish_application(input_handler, ERROR_OUTPUT_IO);
     }
     if (input_handler->alt_screen_enabled) {
@@ -130,7 +130,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             input_handler->should_exit = TRUE;
             break;
         }
-        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+        if (!terminal_output_ready(g_get_monotonic_time())) {
             usleep(k_input_poll_sleep_us);
             continue;
         }
@@ -149,7 +149,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
                 gif_player_pause(app->gif_player);
             }
-            if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+            if (!terminal_output_ready(g_get_monotonic_time())) {
                 resize_pending = TRUE;
                 continue;
             }
@@ -157,6 +157,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
                 app->needs_screen_clear = TRUE;
             }
             ui_clear_kitty_images(app);
+            if (!terminal_output_ready(g_get_monotonic_time())) {
+                resize_pending = TRUE;
+                continue;
+            }
             ui_clear_screen_for_refresh(app);
             fflush(stdout);
             resize_pending = TRUE;
@@ -180,7 +184,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         gboolean handled_input = FALSE;
 
         input_dispatch_process_pending(app);
-        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (input_has_pending_input(input_handler)) {
             error = input_get_event(input_handler, &event);
@@ -192,10 +196,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             handled_input = TRUE;
         }
 
-        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
         input_dispatch_process_animations(app);
-        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
         app_process_async_render(app);
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (handled_input) {
             continue;

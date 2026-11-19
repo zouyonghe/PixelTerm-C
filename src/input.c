@@ -1,6 +1,6 @@
 #include "input.h"
 #include "terminal_probe.h"
-#include "kitty_graphics.h"
+#include "terminal_output.h"
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -238,17 +238,14 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
     }
 
     // Restore main screen (if we switched), then show cursor
-    if (kitty_graphics_retry_pending_deletes()) {
-        if (handler->alt_screen_enabled && isatty(STDOUT_FILENO)) {
-            printf("\033[?1049l");
-            handler->alt_screen_enabled = FALSE;
-        }
-        printf("\033[0m\033[?25h");
-        fflush(stdout);
-    }
+    terminal_output_defer(handler->alt_screen_enabled ?
+        "\033[?1049l\033[0m\033[?25h" : "\033[0m\033[?25h", TERMINAL_OUTPUT_RESTORE);
+    /* The queue, rather than raw_mode_enabled, now owns pending screen restoration. */
+    handler->alt_screen_enabled = FALSE;
+    gboolean output_restored = terminal_output_flush();
 
     handler->raw_mode_enabled = !restored;
-    return restored ? ERROR_NONE : ERROR_TERMINAL_SIZE;
+    return !restored ? ERROR_TERMINAL_SIZE : output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 // Enable mouse tracking
@@ -275,18 +272,10 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
         return ERROR_NONE;
     }
 
-    if (!isatty(STDOUT_FILENO)) {
-        handler->mouse_enabled = FALSE;
-        return ERROR_NONE;
-    }
-
     // Disable mouse tracking
-    if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
-    printf("\033[?1002;1006l");
-    fflush(stdout);
-
+    terminal_output_defer("\033[?1002;1006l", TERMINAL_OUTPUT_RESTORE);
     handler->mouse_enabled = FALSE;
-    return ERROR_NONE;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 /* shortcut: ESC/Alt keys and replies share bytes; allow 250 ms idle gaps,

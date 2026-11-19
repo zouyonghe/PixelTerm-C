@@ -8,6 +8,7 @@
 #include "video_player_playback_internal.h"
 #include "video_player_seek_internal.h"
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "media_buffer.h"
 #include "process_env.h"
 
@@ -51,7 +52,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     gint flushed = fflush(stdout);
     deleted = written == command->len && flushed == 0 && !ferror(stdout);
     if (!deleted) {
-        kitty_graphics_recover_failed_output();
+        terminal_output_recover();
     }
     g_string_free(command, TRUE);
     if (release) {
@@ -68,7 +69,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
 }
 
 static gboolean video_player_prepare_direct_kitty_image(VideoPlayer *player) {
-    if (!kitty_graphics_retry_pending_deletes()) return FALSE;
+    if (!terminal_output_flush()) return FALSE;
     if (player->kitty_direct_image_id || player->kitty_shm_enabled || player->kitty_transfer == KITTY_TRANSFER_SHM ||
         pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return TRUE;
     RendererConfig config = video_player_render_worker_config(player);
@@ -2038,7 +2039,7 @@ output_finished:;
     }
     gint64 io_end_us = g_get_monotonic_time();
     if (!output_success) {
-        kitty_graphics_recover_failed_output();
+        terminal_output_recover();
         ErrorCode failure = video_player_report_output_failure();
         if (output_error) *output_error = failure;
         g_mutex_lock(&player->state_mutex);

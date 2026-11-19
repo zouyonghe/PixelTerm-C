@@ -48,16 +48,16 @@ lifecycle owns termios; queued restoration outlives its callers.
   copy owned command, prefix ST, coalesce identical restore controls.
 - `gboolean terminal_output_recover(void)` — purge, queue ST, drain and set deadline.
 
-- [ ] Add tests for once/restore policies, persistent failure coalescing, and
+- [x] Add tests for once/restore policies, persistent failure coalescing, and
   99,999/100,000 us retry boundary. Assert actual sink bytes, not helper counts alone.
-- [ ] Run targeted tests and observe missing or incorrect behavior fail.
-- [ ] Move the existing queue/purge/deadline implementation rather than duplicate it;
+- [x] Run targeted tests and observe missing or incorrect behavior fail.
+- [x] Move the existing queue/purge/deadline implementation rather than duplicate it;
   keep Kitty allocation and command encoders in their current module.
-- [ ] Link the lightweight output module wherever UI/input references it; include
+- [x] Link the lightweight output module wherever UI/input references it; include
   standalone preview/file-manager/book binaries. Keep any transitional adapters
   temporary and remove them in Task 4.
-- [ ] Run `make -j4 EXTRA_CFLAGS=-Werror test`; inspect all test binaries.
-- [ ] Commit only output extraction and its directly dependent migrations.
+- [x] Run `make -j4 EXTRA_CFLAGS=-Werror test`; inspect all test binaries.
+- [x] Commit only output extraction and its directly dependent migrations.
 
 ### Task 2: Make session teardown complete and replay-safe
 
@@ -115,3 +115,10 @@ and only directly affected tests.
 - [ ] Review diff for removed validations, changed geometry, widened inputs and
   lifecycle regressions. Push only after local validation; inspect Linux/macOS CI.
 - [ ] Report remaining risks; do not auto-merge.
+
+## Execution notes
+
+- Phase 1: extracted terminal_output and migrated all old recovery callers (no duplicate adapters).
+- Preserved and incorporated the pre-existing uncommitted policy work; fixed the standalone preview link by linking only the lightweight output module.
+- GIF root submission now returns the original presentation result; successful recovery cannot erase the failed-submit result.
+- Warning-clean full normal suite passed: 515 C tests and 74 Python tests. Tasks 2/3 continue with lifecycle ownership/fault tests and checked presentation.

@@ -3,6 +3,7 @@
 #include "gif_player.h"
 #include "common.h"
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "process_env.h"
 #include "gif_player_test_internal.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
@@ -45,14 +46,14 @@ static gboolean gif_player_write_kitty_command(GString *command) {
     if (!command) {
         return FALSE;
     }
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+    if (!terminal_output_ready(g_get_monotonic_time())) {
         g_string_free(command, TRUE);
         return FALSE;
     }
     size_t written = command->len > 0 ? fwrite(command->str, 1, command->len, stdout) : 0;
     gboolean success = written == command->len && fflush(stdout) == 0;
     if (!success) {
-        kitty_graphics_recover_failed_output();
+        terminal_output_recover();
     }
     g_string_free(command, TRUE);
     return success;
@@ -69,8 +70,9 @@ static void gif_player_reset_kitty_animation(GifPlayer *player, gboolean delete_
         return;
     }
     if (delete_image && player->kitty_animation_prepared && player->kitty_animation_id != 0) {
-        gif_player_write_kitty_command(
-            kitty_graphics_build_delete_image_command(player->kitty_animation_id));
+        /* Not yet sent: transfer ownership behind framing recovery, do not drop it. */
+        kitty_graphics_defer_image_delete(player->kitty_animation_id);
+        terminal_output_ready(g_get_monotonic_time());
     }
     player->kitty_animation_id = 0;
     player->kitty_animation_prepared = FALSE;
@@ -218,15 +220,15 @@ guint gif_player_count_webp_frames_for_test(const guint8 *data, gsize length) {
     return gif_player_count_webp_frames(data, length);
 }
 
-static void gif_player_present_rendered_frame(GifPlayer *player,
+static gboolean gif_player_present_rendered_frame(GifPlayer *player,
                                               const GString *result,
                                               gint rendered_w,
                                               gint rendered_h,
                                               gboolean graphics_mode) {
     if (!player || !result) {
-        return;
+        return FALSE;
     }
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return;
+    if (!terminal_output_ready(g_get_monotonic_time())) return FALSE;
 
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
@@ -364,7 +366,9 @@ static void gif_player_present_rendered_frame(GifPlayer *player,
         player->last_frame_height = 0;
     }
 
-    fflush(stdout);
+    gboolean success = fflush(stdout) == 0 && !ferror(stdout);
+    if (!success) terminal_output_recover();
+    return success;
 }
 
 static gboolean gif_player_is_direct_kitty(const GifPlayer *player) {
@@ -401,19 +405,18 @@ static gboolean gif_player_submit_kitty_frame(GifPlayer *player,
         kitty_graphics_frame_free(frame);
         return FALSE;
     }
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+    if (!terminal_output_ready(g_get_monotonic_time())) {
         kitty_graphics_frame_free(frame);
         return FALSE;
     }
 
     gboolean success = FALSE;
     if (display_root) {
-        gif_player_present_rendered_frame(player,
+        success = gif_player_present_rendered_frame(player,
                                           frame->command,
                                           frame->display_width_cells,
                                           frame->display_height_cells,
                                           TRUE);
-        success = ferror(stdout) == 0;
     } else {
         size_t written = frame->command->len > 0
             ? fwrite(frame->command->str, 1, frame->command->len, stdout)
@@ -425,7 +428,7 @@ static gboolean gif_player_submit_kitty_frame(GifPlayer *player,
         g_ptr_array_add(player->kitty_animation_shm_names, frame->shm_name);
         frame->shm_name = NULL;
     }
-    if (!success) kitty_graphics_recover_failed_output();
+    if (!success) terminal_output_recover();
     kitty_graphics_frame_free(frame);
     return success;
 }
@@ -471,7 +474,7 @@ gboolean gif_player_native_geometry_matches_for_test(const GifPlayer *player,
 }
 
 static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return FALSE;
+    if (!terminal_output_ready(g_get_monotonic_time())) return FALSE;
     if (!gif_player_is_direct_kitty(player) || !player->iter) {
         return FALSE;
     }
@@ -881,7 +884,7 @@ static void render_current_frame_internal(GifPlayer *player) {
     if (!player || !player->iter || !player->renderer) {
         return;
     }
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return;
+    if (!terminal_output_ready(g_get_monotonic_time())) return;
 
     // Update terminal size for renderer to ensure correct scaling
     renderer_update_terminal_size(player->renderer);
@@ -940,7 +943,7 @@ static gboolean render_next_frame(gpointer user_data) {
         player->timer_id = 0;
         return G_SOURCE_REMOVE;
     }
-    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return G_SOURCE_CONTINUE;
+    if (!terminal_output_ready(g_get_monotonic_time())) return G_SOURCE_CONTINUE;
     
     if (player->kitty_animation_prepared && !player->kitty_animation_complete) {
         player->kitty_animation_elapsed_ms += player->kitty_animation_current_delay_ms;

@@ -11,6 +11,7 @@
 
 #include "process_env.h"
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "gif_player.h"
 #include "gif_player_test_internal.h"
 #include "video_player_decode_internal.h"
@@ -1042,7 +1043,7 @@ static void test_paused_seek_reports_output_failure(void) {
     g_assert_cmpint(sink, >=, 0);
     g_assert_cmpint(dup2(sink, STDOUT_FILENO), >=, 0);
     close(sink);
-    g_assert_true(kitty_graphics_retry_pending_deletes());
+    g_assert_true(terminal_output_flush());
     g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
     close(saved);
     video_player_set_seek_hook_for_test(NULL);
@@ -3013,7 +3014,7 @@ static void test_failed_delete_buffer_is_discarded(void) {
     const char *deletion = "\033_Ga=d,d=I,i=42,q=2\033\\";
     /* Model stdio retaining failed delete bytes, as observed on macOS CI. */
     gsize written = fwrite(deletion, 1, strlen(deletion), capture);
-    kitty_graphics_discard_failed_output();
+    terminal_output_discard();
     fwrite("\033\\", 1, 2, capture);
     fflush(capture);
     fclose(capture);
@@ -3032,11 +3033,11 @@ static void test_deferred_cleanup_retry_deadline(void) {
     fflush(saved);
     stdout = capture;
     kitty_graphics_defer_image_delete(42);
-    gboolean ready_after_failure = kitty_graphics_retry_pending_deletes_if_due(1000000);
+    gboolean ready_after_failure = terminal_output_ready(1000000);
     guint first = output.attempts;
-    gboolean ready_before_deadline = kitty_graphics_retry_pending_deletes_if_due(1099999);
+    gboolean ready_before_deadline = terminal_output_ready(1099999);
     guint before_deadline = output.attempts;
-    gboolean ready_after_recovery = kitty_graphics_retry_pending_deletes_if_due(1100000);
+    gboolean ready_after_recovery = terminal_output_ready(1100000);
     fclose(capture);
     stdout = saved;
     g_assert_false(ready_after_failure);
@@ -3068,7 +3069,7 @@ static void test_hide_failure_does_not_emit_frame(void) {
     fflush(saved);
     stdout = capture;
     gboolean rendered = video_player_render_frame_for_test(player);
-    kitty_graphics_retry_pending_deletes();
+    terminal_output_flush();
     fclose(capture);
     stdout = saved;
     player->kitty_direct_image_id = 0;
@@ -3091,11 +3092,11 @@ static void test_gif_delete_failure_discards_buffer(void) {
     fflush(saved);
     stdout = capture;
     gif_player_stop(player);
-    kitty_graphics_retry_pending_deletes();
+    terminal_output_flush();
     fclose(capture);
     stdout = saved;
     gif_player_destroy(player);
-    g_assert_cmpstr(output.output->str, ==, "\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
+    g_assert_cmpstr(output.output->str, ==, "\033\x5c\033_Ga=d,d=I,i=42,q=2\033\x5c\033\x5c");
     g_string_free(output.output, TRUE);
 }
 
@@ -3133,13 +3134,13 @@ static void test_gif_fallback_waits_for_recovery(void) {
     FILE *saved = stdout;
     fflush(saved);
     stdout = capture;
-    kitty_graphics_defer_output_recovery();
+    terminal_output_defer_recovery();
     GString *fallback = g_string_new("GIF-FALLBACK");
     gif_player_present_rendered_frame_for_test(player, fallback, 1, 1, FALSE);
     output.fail_all = FALSE;
     fflush(capture);
     gsize premature_length = output.output->len;
-    gboolean recovered = kitty_graphics_retry_pending_deletes();
+    gboolean recovered = terminal_output_flush();
     gif_player_present_rendered_frame_for_test(player, fallback, 1, 1, FALSE);
     fflush(capture);
     fclose(capture);
@@ -3168,7 +3169,7 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     stdout = capture;
     video_player_destroy(player);
     guint attempts_before_return = output.attempts;
-    kitty_graphics_retry_pending_deletes();
+    terminal_output_flush();
     fclose(capture);
     stdout = saved_stdout;
     g_assert_cmpuint(attempts_before_return, ==, 2);
@@ -3263,7 +3264,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     gboolean resumed_output = FALSE;
     if (mode == 0) {
-        g_assert_true(kitty_graphics_retry_pending_deletes());
+        g_assert_true(terminal_output_flush());
         g_assert_cmpint(ftell(capture), >, 0); /* Cleanup works while the stopped player is alive. */
     }
     if (mode == 4) kitty_graphics_allocate_image_id(); /* A new output owner retries old releases. */

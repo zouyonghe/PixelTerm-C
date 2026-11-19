@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "process_env.h"
 #include "terminal_probe.h"
 #include "input.h"
@@ -232,7 +233,7 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     guint32 blocked = kitty_graphics_allocate_image_id();
     guint32 request_after_blocked = terminal.request_number;
     for (gint retry = 0; retry < 32; retry++) {
-        kitty_graphics_recover_failed_output();
+        terminal_output_recover();
     }
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     terminal.mode = 0;

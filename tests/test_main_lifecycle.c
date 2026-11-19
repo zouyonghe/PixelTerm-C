@@ -7,6 +7,7 @@
 #include "app.h"
 #include "input.h"
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 
 static gboolean gate_test;
 static guint gate_attempts;
@@ -17,7 +18,7 @@ static gboolean lifecycle_has_pending(InputHandler *handler) {
     return gate_test ? FALSE : input_has_pending_input(handler);
 }
 static gboolean lifecycle_cleanup_due(gint64 now_us) {
-    if (!gate_test) return kitty_graphics_retry_pending_deletes_if_due(now_us);
+    if (!gate_test) return terminal_output_ready(now_us);
     if (inject_stage && !recovery_injected) return TRUE;
     if (gate_attempts >= 3) return TRUE;
     return ++gate_attempts >= 3;
@@ -52,14 +53,14 @@ static void lifecycle_event(PixelTermApp *app, InputHandler *input, const InputE
 #define app_render_by_mode lifecycle_render
 #define app_process_async_render lifecycle_async_render
 #define input_has_pending_input lifecycle_has_pending
-#define kitty_graphics_retry_pending_deletes_if_due lifecycle_cleanup_due
+#define terminal_output_ready lifecycle_cleanup_due
 
 #define main pixelterm_main_for_lifecycle_test
 #include "../src/main.c"
 #undef main
 #undef app_render_by_mode
 #undef app_process_async_render
-#undef kitty_graphics_retry_pending_deletes_if_due
+#undef terminal_output_ready
 
 typedef struct {
     gint failures;
@@ -208,7 +209,7 @@ static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) 
     FILE *saved = stdout;
     fflush(saved);
     stdout = capture;
-    kitty_graphics_defer_output_recovery();
+    terminal_output_defer_recovery();
     render_calls = 0;
     ErrorCode result;
     if (cleanup) {
@@ -219,7 +220,7 @@ static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) 
         result = run_application(&app, FALSE);
     }
     sink.writable = TRUE;
-    gboolean recovered = kitty_graphics_retry_pending_deletes();
+    gboolean recovered = terminal_output_flush();
     fclose(capture);
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
