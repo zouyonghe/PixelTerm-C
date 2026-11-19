@@ -1,5 +1,12 @@
 # Changelog
 
+- v1.8.9: Lower Kitty video traffic and safer terminal/view recovery.
+    - **Video Output**: Send eligible opaque Kitty direct video frames as RGB24, reducing pixel payload by 25% compared with RGBA32. Preserve Chafa fallback for transparency, non-default gamma, color enhancement, multiplexers, missing image-ID replies, and conversion failures. Discard already-late frames before pixel conversion and add playback timing diagnostics with a log-summary tool. Throughput improvements depend on output size and terminal bandwidth; no universal FPS increase is claimed.
+    - **Terminal Recovery**: Centralize checked output, retained restoration controls, and retry backoff. Bound stalled writes and probe submissions, preserve input/termios restoration, and avoid replaying destructive image deletes after uncertain delivery. Report failed media output instead of counting it as a submitted frame.
+    - **View Reliability**: Preserve source books, image lists, directories, navigation, and pending input until destination rendering succeeds. Isolate candidate players and preload work, restore failed overlay and TOC changes, and propagate rendering errors through keyboard/mouse handlers without treating ordinary media errors as terminal failures.
+    - **Playback and Cleanup**: Keep paused video frames refreshed after protocol changes, retain native GIF pause intent, and preserve old or partially delivered frame coverage for later clearing. Check stop/cleanup results before protocol or renderer changes and arm deletion only after its confirmation prompt is delivered.
+    - **Verification**: Expand real-PTY, full-pipe, partial-write, probe, player-lifecycle, and view-rollback regressions; validate Linux/macOS builds and sanitizer suites. Physical-terminal visual behavior and actual screen FPS remain separate from automated submission and timing checks.
+
 - v1.8.8: Clear stale Kitty images when entering grid preview.
     - **Preview Cleanup**: Explicitly delete old Kitty image placements before clearing the screen and drawing grid thumbnails. Fix the full-size image remaining underneath the preview grid in Warp over SSH, without changing non-Kitty protocols.
     - **Verification**: Add command-order and real-PTY single-image-to-preview regressions, and confirm the fix in a Warp SSH session on Arch Linux.
