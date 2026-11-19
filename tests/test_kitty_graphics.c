@@ -231,6 +231,9 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     guint32 request = terminal.request_number;
     guint32 blocked = kitty_graphics_allocate_image_id();
     guint32 request_after_blocked = terminal.request_number;
+    for (gint retry = 0; retry < 32; retry++) {
+        kitty_graphics_recover_failed_output();
+    }
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     terminal.mode = 0;
     guint32 second = kitty_graphics_allocate_image_id();
@@ -248,11 +251,8 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     g_assert_cmpuint(blocked, ==, 0);
     g_assert_cmpuint(second, ==, 123);
     g_assert_cmpuint(length, >, 0);
-    /* Some stdio implementations retain failed buffered writes across dup2. */
-    g_assert_cmpuint(length % 2, ==, 0);
-    for (gsize i = 0; i < length; i += 2) {
-        g_assert_cmpmem(output + i, 2, "\033\\", 2);
-    }
+    /* Failed buffers are purged and repeated recovery requests share one ST. */
+    g_assert_cmpstr(output, ==, "\033\\");
 }
 
 static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpointer data) {

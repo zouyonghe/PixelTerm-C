@@ -175,6 +175,8 @@ void kitty_graphics_defer_image_delete(guint32 image_id) {
 }
 
 void kitty_graphics_defer_output_recovery(void) {
+    GString *tail = g_queue_peek_tail(&pending_deletes);
+    if (tail && tail->len == 2 && memcmp(tail->str, "\033\\", 2) == 0) return;
     kitty_graphics_queue_delete(g_string_new("\033\\"));
 }
 
