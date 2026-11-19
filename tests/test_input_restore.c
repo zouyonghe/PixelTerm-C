@@ -8,10 +8,26 @@
 #include "input.h"
 #include "terminal_probe.h"
 
+typedef struct {
+    gboolean fail;
+    guint attempts;
+    guint restored;
+    tcflag_t restored_lflag;
+} RestorePty;
+
 static int restore_pty(gint actions, const struct termios *state, gpointer data) {
-    gboolean *fail = data;
-    if (*fail) return -1;
-    return tcsetattr(STDIN_FILENO, actions, state);
+    RestorePty *pty = data;
+    pty->attempts++;
+    if (pty->fail) return -1;
+    int result = tcsetattr(STDIN_FILENO, actions, state);
+    if (result == 0) {
+        struct termios restored;
+        g_assert_cmpint(actions, ==, TCSAFLUSH);
+        g_assert_cmpint(tcgetattr(STDIN_FILENO, &restored), ==, 0);
+        pty->restored++;
+        pty->restored_lflag = restored.c_lflag;
+    }
+    return result;
 }
 
 static void test_restored_outer_mode_reenters_raw(void) {
@@ -35,11 +51,11 @@ static void test_restored_outer_mode_reenters_raw(void) {
     fflush(stdout);
     g_assert_cmpint(dup2(slave, STDIN_FILENO), >=, 0);
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
-    gboolean fail = TRUE;
+    RestorePty pty = {.fail = TRUE};
     TerminalProbeTransportHooks hooks = {.tcsetattr_fn = restore_pty};
-    terminal_probe_set_transport_hooks_for_test(&hooks, &fail);
+    terminal_probe_set_transport_hooks_for_test(&hooks, &pty);
     gboolean restored = terminal_probe_restore_original(&cooked);
-    fail = FALSE;
+    pty.fail = FALSE;
     InputHandler handler = {.raw_mode_enabled = TRUE, .has_orig_termios = TRUE, .orig_termios = cooked};
     ErrorCode result = input_enable_raw_mode(&handler);
     int read_state = tcgetattr(slave, &after);
@@ -54,6 +70,9 @@ static void test_restored_outer_mode_reenters_raw(void) {
     close(master);
     fclose(capture);
     g_assert_false(restored);
+    g_assert_cmpuint(pty.attempts, ==, 2);
+    g_assert_cmpuint(pty.restored, ==, 1);
+    g_assert_cmpint(pty.restored_lflag & (ICANON | ECHO), ==, ICANON | ECHO);
     g_assert_cmpint(result, ==, ERROR_NONE);
     g_assert_cmpint(read_state, ==, 0);
     g_assert_cmpint(reset_state, ==, 0);
