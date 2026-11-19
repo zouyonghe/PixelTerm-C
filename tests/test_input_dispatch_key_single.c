@@ -446,6 +446,33 @@ static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(v
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static ErrorCode seek_commits_then_fails_output(VideoPlayer *player, gint64 delta_ms) {
+    player->fallback_pts_ms += delta_ms;
+    return ++g_input_dispatch_stub_state.video_seek_calls == 2 ? ERROR_OUTPUT_IO : ERROR_NONE;
+}
+
+static void test_video_seek_repeat_output_failure_is_not_replayed(void) {
+    static const gchar queued_input[] = "\033[C\033[C\033[A";
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputEvent next_event = {0};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    input_dispatch_key_single_set_video_seek_for_test(seek_commits_then_fails_output);
+    redirect_stdin_bytes(queued_input, sizeof(queued_input) - 1);
+    input_dispatch_handle_key_press_single(&app, &handler, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 2);
+    g_assert_cmpint(player.fallback_pts_ms, ==, 2 * input_dispatch_key_single_get_video_seek_step_ms_for_test());
+    g_assert_cmpint(input_get_event(&handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.key_code, ==, KEY_RIGHT);
+    g_assert_cmpint(input_get_event(&handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.key_code, ==, KEY_UP);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
 static void test_video_seek_failure_preserves_queued_repeats_for_retry(void) {
     static const gchar queued_input[] = "\033[C\033[C\033[A";
 
@@ -1150,6 +1177,7 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_right_does_not_switch_media);
     g_test_add_func("/input_dispatch_key_single/video/right_coalesces_queued_repeats_and_preserves_next_event",
                     test_video_right_coalesces_queued_repeats_and_preserves_next_event);
+    g_test_add_func("/input_dispatch_key_single/video/seek_repeat_output_failure_is_not_replayed", test_video_seek_repeat_output_failure_is_not_replayed);
     g_test_add_func("/input_dispatch_key_single/video/seek_failure_preserves_queued_repeats_for_retry",
                     test_video_seek_failure_preserves_queued_repeats_for_retry);
     g_test_add_func("/input_dispatch_key_single/video/seek_output_failure_does_not_switch_media",

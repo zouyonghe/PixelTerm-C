@@ -96,6 +96,7 @@ static void drain_queued_video_seek_repeats(PixelTermApp *app,
             input_unget_event(input_handler, &queued_event);
             break;
         }
+        /* Seek can commit before output fails; replaying this event would seek twice. */
         if (result == ERROR_OUTPUT_IO) break;
     }
 }

@@ -32,8 +32,8 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
             } else {
                 ErrorCode result = app_next_image(app);
                 record_output_error(app, result);
-                if (result != ERROR_NONE) return;
-                if (app->needs_redraw) {
+                if (result == ERROR_OUTPUT_IO) return;
+                if (result == ERROR_NONE && app->needs_redraw) {
                     app->suppress_full_clear = TRUE;
                     app->async.render_request = TRUE;
                     if (record_output_error(app, app_refresh_display(app)) == ERROR_OUTPUT_IO) return;

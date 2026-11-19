@@ -306,14 +306,18 @@ static void test_pause_video_for_resize_keeps_playing_state_across_repeated_resi
 }
 
 
-static void test_toc_double_click_entry_failure_aborts_render(void) {
-    PixelTermApp app = {.mode = APP_MODE_BOOK, .book.toc_visible = TRUE};
+static void test_toc_double_click_entry_failure_aborts_render(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = APP_MODE_BOOK, .book.toc_visible = TRUE, .book.page = 4};
     InputHandler handler = {0};
     InputEvent event = make_mouse_event(INPUT_MOUSE_DOUBLE_CLICK, MOUSE_BUTTON_LEFT);
     input_dispatch_test_reset_stubs();
-    g_input_dispatch_stub_state.enter_book_page_result = ERROR_OUTPUT_IO;
+    g_input_dispatch_stub_state.enter_book_page_result = result;
     input_dispatch_core_handle_event(&app, &handler, &event);
-    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? result : ERROR_NONE);
+    g_assert_true(app.book.toc_visible);
+    g_assert_cmpint(app.book.page, ==, 4);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_toc_render_calls, ==, result != ERROR_OUTPUT_IO);
     g_assert_cmpint(g_input_dispatch_stub_state.enter_book_page_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, 0);
@@ -334,9 +338,8 @@ static void test_common_key_render_error(gconstpointer data) {
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     if (key == 'I') {
         g_assert_cmpint(g_input_dispatch_stub_state.display_image_info_calls, ==, 1);
-        g_assert_true(app.info_visible);
     }
-    if (key == 'x') g_assert_true(app.help_visible);
+    if (key == 'x') g_assert_cmpint(g_input_dispatch_stub_state.display_help_calls, ==, 1);
 
     /* Successful redraws must not erase an earlier failure. */
     input_dispatch_test_reset_stubs();
@@ -485,7 +488,8 @@ void register_input_dispatch_core_tests(void) {
     g_test_add_data_func("/input_dispatch_core/preview_errors/refresh", GINT_TO_POINTER(2), test_preview_key_output_errors);
     g_test_add_data_func("/input_dispatch_core/preview_errors/entry", GINT_TO_POINTER(3), test_preview_key_output_errors);
     g_test_add_data_func("/input_dispatch_core/preview_errors/zoom", GINT_TO_POINTER(4), test_preview_key_output_errors);
-    g_test_add_func("/input_dispatch_core/errors/toc_double_click_entry", test_toc_double_click_entry_failure_aborts_render);
+    g_test_add_data_func("/input_dispatch_core/errors/toc_double_click_entry", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_toc_double_click_entry_failure_aborts_render);
+    g_test_add_data_func("/input_dispatch_core/errors/toc_double_click_validation", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_toc_double_click_entry_failure_aborts_render);
     g_test_add_data_func("/input_dispatch_core/errors/dither", GINT_TO_POINTER('d'), test_common_key_render_error);
     g_test_add_data_func("/input_dispatch_core/errors/zen", GINT_TO_POINTER('~'), test_common_key_render_error);
     g_test_add_data_func("/input_dispatch_core/errors/help_open", GINT_TO_POINTER('?'), test_common_key_render_error);

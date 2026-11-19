@@ -326,6 +326,16 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     return g_input_dispatch_stub_state.file_manager_render_result;
 }
 
+void app_file_manager_clear_listing(PixelTermApp *app) {
+    g_input_dispatch_stub_state.clear_listing_calls++;
+    g_list_free_full(app->file_manager.entries, g_free);
+    app->file_manager.entries = NULL;
+    app->file_manager.entries_count = 0;
+    app->file_manager.selected_link = NULL;
+    app->file_manager.selected_link_index = -1;
+    g_clear_pointer(&app->file_manager.directory, g_free);
+}
+
 ErrorCode app_exit_file_manager(PixelTermApp *app) {
     if (g_input_dispatch_stub_state.exit_file_manager_result == ERROR_NONE) {
         app_set_mode(app, APP_MODE_SINGLE);
@@ -373,6 +383,10 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     (void)app;
     (void)directory;
     g_input_dispatch_stub_state.load_directory_calls++;
+    if (g_input_dispatch_stub_state.require_isolated_directory_load) {
+        g_assert_null(app->preloader);
+        g_assert_false(app->preload_enabled);
+    }
     if (g_input_dispatch_stub_state.load_directory_replaces_media) {
         g_list_free_full(app->image_files, g_free);
         app->image_files = g_list_append(NULL, g_strdup("/candidate/image.jpg"));
@@ -384,6 +398,18 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         app->preview.selected_link_index = 0;
     }
     return g_input_dispatch_stub_state.load_directory_result;
+}
+
+void app_preloader_reset(PixelTermApp *app) {
+    g_input_dispatch_stub_state.preloader_reset_calls++;
+    app->preloader = NULL;
+}
+
+ErrorCode app_preloader_enable(PixelTermApp *app, gboolean queue_tasks) {
+    g_assert_true(app->preload_enabled);
+    g_assert_true(queue_tasks);
+    g_input_dispatch_stub_state.preloader_enable_calls++;
+    return ERROR_NONE;
 }
 
 ErrorCode app_file_manager_enter(PixelTermApp *app) {

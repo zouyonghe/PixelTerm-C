@@ -3,6 +3,7 @@
 
 #include "input_dispatch.h"
 #include "input_dispatch_core.h"
+#include "input_dispatch_book_internal.h"
 #include "input_dispatch_delete_internal.h"
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_media_internal.h"
@@ -113,10 +114,12 @@ static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEve
     gint page = app_book_toc_get_selected_page(app);
     app->book.toc_visible = FALSE;
     if (page >= 0) {
-        ErrorCode result = app_enter_book_page(app, page);
+        ErrorCode result = input_dispatch_book_enter_and_render_page(app, page);
         record_dispatch_error(app, result);
-        if (result != ERROR_NONE) return;
-        record_dispatch_error(app, app_render_book_page(app));
+        if (result != ERROR_NONE) {
+            app->book.toc_visible = TRUE;
+            if (result != ERROR_OUTPUT_IO) record_dispatch_error(app, app_render_book_toc(app));
+        }
     } else if (app_is_book_preview_mode(app)) {
         record_dispatch_error(app, app_render_book_preview(app));
     } else {

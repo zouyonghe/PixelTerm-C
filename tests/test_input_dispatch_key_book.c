@@ -146,6 +146,7 @@ static void test_real_page_entry_error(gconstpointer data) {
     g_assert_cmpint(g_input_dispatch_stub_state.enter_book_page_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
     g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_assert_cmpint(app.book.page, ==, 4);
 }
 
 static void test_real_page_render_error(void) {
@@ -153,9 +154,41 @@ static void test_real_page_render_error(void) {
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.book_page_render_result = ERROR_OUTPUT_IO;
     g_assert_cmpint(real_book_change_page(&app, 1), ==, ERROR_OUTPUT_IO);
-    g_assert_cmpint(app.book.page, ==, 5);
+    g_assert_cmpint(app.book.page, ==, 4);
     g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 1);
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
+static void test_toc_entry_failure_restores_toc(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    PixelTermApp app = make_book_app();
+    BookToc toc = {0};
+    app.book.toc = &toc;
+    app.book.toc_visible = TRUE;
+    app.book.toc_selected = 7;
+    InputEvent event = make_key_event(KEY_ENTER);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_book_page_result = result;
+    input_dispatch_handle_key_press_book(&app, NULL, &event);
+    g_assert_true(app.book.toc_visible);
+    g_assert_cmpint(app.book.page, ==, 4);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_toc_render_calls, ==, result != ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? result : ERROR_NONE);
+}
+
+static void test_jump_page_render_failure_restores_page(void) {
+    PixelTermApp app = make_book_app();
+    app.book.jump_active = app.book.jump_dirty = TRUE;
+    app.book.jump_len = 1;
+    g_strlcpy(app.book.jump_buf, "8", sizeof(app.book.jump_buf));
+    InputEvent event = make_key_event(KEY_ENTER);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.book_page_render_result = ERROR_OUTPUT_IO;
+    g_assert_true(input_dispatch_key_modes_handle_book_jump_input(&app, &event));
+    g_assert_cmpint(app.book.page, ==, 4);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 1);
 }
 
 static void test_jump_prompt_failure_preserves_state(gconstpointer data) {
@@ -216,6 +249,9 @@ static void test_file_manager_recovery_render_failure(void) {
 }
 
 void register_input_dispatch_key_book_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_book/toc/validation_restores_toc", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_toc_entry_failure_restores_toc);
+    g_test_add_data_func("/input_dispatch_key_book/toc/output_restores_toc", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_toc_entry_failure_restores_toc);
+    g_test_add_func("/input_dispatch_key_book/jump/page_render_failure", test_jump_page_render_failure_restores_page);
     g_test_add_func("/input_dispatch_key_book/errors/page_success_keeps_prior_error", test_real_page_success_keeps_prior_error);
     g_test_add_func("/input_dispatch_key_book/errors/file_manager_recovery_render_failure", test_file_manager_recovery_render_failure);
     g_test_add_data_func("/input_dispatch_key_book/errors/file_manager_output_preserves_book", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_file_manager_entry_failure_preserves_book);

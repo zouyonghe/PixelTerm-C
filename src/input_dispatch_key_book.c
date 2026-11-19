@@ -108,10 +108,8 @@ static void book_jump_commit(PixelTermApp *app) {
             return;
         }
         if (book_jump_cancel(app) != ERROR_NONE) return;
-        if (record_output_error(app, app_enter_book_page(app, value - 1)) == ERROR_NONE) {
-            app->suppress_full_clear = TRUE;
-            record_output_error(app, app_render_book_page(app));
-        }
+        app->suppress_full_clear = TRUE;
+        record_output_error(app, input_dispatch_book_enter_and_render_page(app, value - 1));
     }
 }
 
@@ -215,8 +213,11 @@ static void handle_key_press_book_toc(PixelTermApp *app,
             gint page = app_book_toc_get_selected_page(app);
             app->book.toc_visible = FALSE;
             if (page >= 0) {
-                if (record_output_error(app, app_enter_book_page(app, page)) != ERROR_NONE) return;
-                record_output_error(app, app_render_book_page(app));
+                ErrorCode result = record_output_error(app, input_dispatch_book_enter_and_render_page(app, page));
+                if (result != ERROR_NONE) {
+                    app->book.toc_visible = TRUE;
+                    if (result != ERROR_OUTPUT_IO) record_output_error(app, app_render_book_toc(app));
+                }
             } else if (app_is_book_preview_mode(app)) {
                 record_output_error(app, app_render_book_preview(app));
             } else {

@@ -2,6 +2,7 @@
 
 #include "input_dispatch_media_internal.h"
 #include "app_book_transaction_internal.h"
+#include "preload_control.h"
 
 static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
     if (result == ERROR_OUTPUT_IO) app->last_error = result;
@@ -153,9 +154,7 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             if (selected_path && is_valid_book_file(selected_path)) {
                 ErrorCode book_error = record_output_error(app, app_open_book_preview(app, selected_path));
                 if (book_error == ERROR_NONE) {
-                    ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
-                    app_set_mode(app, APP_MODE_BOOK_PREVIEW);
-                    if (exited != ERROR_NONE) break;
+                    app_file_manager_clear_listing(app);
                 } else {
                     app->needs_redraw = TRUE;
                     app->needs_screen_clear = TRUE;
@@ -169,21 +168,18 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 break;
             }
 
-            GList *saved_files = g_list_copy_deep(app->image_files, copy_media_path, NULL);
-            gchar *saved_directory = g_strdup(app->current_directory);
-            gint saved_count = app->total_images;
-            gint saved_index = app->current_index;
-            PreviewState saved_preview = app->preview;
-            saved_preview.selected_link = g_list_nth(saved_files,
-                g_list_position(app->image_files, app->preview.selected_link));
-            ReturnMode saved_return_mode = app->return_to_mode;
-            gint saved_previous = app->file_manager.previous_selected_entry;
-            gboolean info_visible = app->info_visible;
-            gboolean help_visible = app->help_visible;
-            ErrorCode load_error = record_output_error(app, app_load_directory(app, app->file_manager.directory));
+            PixelTermApp staged = *app;
+            staged.image_files = g_list_copy_deep(app->image_files, copy_media_path, NULL);
+            staged.current_directory = g_strdup(app->current_directory);
+            staged.preview.selected_link = NULL;
+            staged.preview.selected_link_index = -1;
+            /* Directory loading destroys its preloader; keep live work until render commits. */
+            staged.preloader = NULL;
+            staged.preload_enabled = FALSE;
+            ErrorCode load_error = record_output_error(app, app_load_directory(&staged, app->file_manager.directory));
             if (load_error != ERROR_NONE) {
-                g_list_free_full(saved_files, g_free);
-                g_free(saved_directory);
+                g_list_free_full(staged.image_files, g_free);
+                g_free(staged.current_directory);
                 if (load_error != ERROR_OUTPUT_IO) record_output_error(app, app_render_file_manager(app));
                 break;
             }
@@ -192,10 +188,10 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                                           g_file_test(selected_path, G_FILE_TEST_IS_REGULAR) &&
                                           is_valid_media_file(selected_path);
             if (selection_is_media) {
-                app->return_to_mode = RETURN_MODE_PREVIEW;
+                staged.return_to_mode = RETURN_MODE_PREVIEW;
                 gint selected_image_index = -1;
                 gint idx = 0;
-                for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
+                for (GList *cur = staged.image_files; cur; cur = cur->next, idx++) {
                     const gchar *image_path = (const gchar*)cur->data;
                     if (g_strcmp0(selected_path, image_path) == 0) {
                         selected_image_index = idx;
@@ -203,41 +199,34 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                     }
                 }
                 if (selected_image_index >= 0) {
-                    app->current_index = selected_image_index;
+                    staged.current_index = selected_image_index;
                 }
             } else {
-                app->return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
-                app->file_manager.previous_selected_entry = app->file_manager.selected_entry;
+                staged.return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+                staged.file_manager.previous_selected_entry = app->file_manager.selected_entry;
             }
-            ErrorCode entered = record_output_error(app, app_enter_preview(app));
+            ErrorCode entered = record_output_error(app, app_enter_preview(&staged));
             if (entered == ERROR_NONE) {
-                if (!selection_is_media) app->preview.selected = 0;
-                entered = record_output_error(app, app_render_preview_grid(app));
+                if (!selection_is_media) staged.preview.selected = 0;
+                entered = record_output_error(app, app_render_preview_grid(&staged));
             }
             if (entered != ERROR_NONE) {
-                g_list_free_full(app->image_files, g_free);
-                g_free(app->current_directory);
-                app->image_files = saved_files;
-                app->current_directory = saved_directory;
-                app->total_images = saved_count;
-                app->preview = saved_preview;
-                app_set_mode(app, APP_MODE_FILE_MANAGER);
-                app->info_visible = info_visible;
-                app->help_visible = help_visible;
-                app->return_to_mode = saved_return_mode;
-                app->current_index = saved_index;
-                app->file_manager.previous_selected_entry = saved_previous;
+                g_list_free_full(staged.image_files, g_free);
+                g_free(staged.current_directory);
                 app->needs_redraw = TRUE;
                 app->needs_screen_clear = TRUE;
                 if (entered != ERROR_OUTPUT_IO)
                     record_output_error(app, app_render_file_manager(app));
                 break;
             }
-            g_list_free_full(saved_files, g_free);
-            g_free(saved_directory);
-            ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
-            app_set_mode(app, APP_MODE_PREVIEW);
-            if (exited != ERROR_NONE) break;
+            app_preloader_reset(app);
+            g_list_free_full(app->image_files, g_free);
+            g_free(app->current_directory);
+            staged.preloader = app->preloader;
+            staged.preload_enabled = app->preload_enabled;
+            *app = staged;
+            if (app->preload_enabled) (void)app_preloader_enable(app, TRUE);
+            app_file_manager_clear_listing(app);
             break;
         }
         case KEY_ENTER:

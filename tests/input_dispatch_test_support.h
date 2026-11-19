@@ -28,6 +28,7 @@ typedef struct {
     gint enter_file_manager_calls;
     gint last_enter_file_manager_index;
     gint exit_file_manager_calls;
+    gint clear_listing_calls;
     gint enter_preview_calls;
     gint preview_zoom_calls;
     gint last_preview_zoom_delta;
@@ -46,6 +47,9 @@ typedef struct {
     gint file_manager_jump_to_letter_calls;
     char last_file_manager_jump_letter;
     gint load_directory_calls;
+    gboolean require_isolated_directory_load;
+    gint preloader_reset_calls;
+    gint preloader_enable_calls;
     gint enter_at_position_calls;
     gint last_mouse_x;
     gint last_mouse_y;

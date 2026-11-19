@@ -85,7 +85,10 @@ static void test_tab_on_book_selection_enters_book_preview(void) {
     input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
 
     g_assert_cmpint(g_input_dispatch_stub_state.open_book_calls, ==, 1);
-    g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.clear_listing_calls, ==, 1);
+    g_assert_null(app.file_manager.entries);
+    g_assert_null(app.file_manager.directory);
     g_assert_cmpint(g_input_dispatch_stub_state.enter_book_preview_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.enter_preview_calls, ==, 0);
@@ -156,6 +159,8 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         BookState old_book = app.book;
         gchar *old_directory = app.current_directory;
         if (kind != 0) {
+            app.preloader = (ImagePreloader *)&app;
+            app.preload_enabled = TRUE;
             app.return_to_mode = RETURN_MODE_NONE;
             app.current_index = 1;
             app.file_manager.previous_selected_entry = 9;
@@ -170,6 +175,7 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         InputEvent event = make_key_event(KEY_TAB);
         input_dispatch_test_reset_stubs();
         g_input_dispatch_stub_state.file_manager_has_images = TRUE;
+        g_input_dispatch_stub_state.require_isolated_directory_load = kind != 0;
         g_input_dispatch_stub_state.load_directory_replaces_media = kind != 0;
         g_input_dispatch_stub_state.enter_book_preview_result = render_failure ? ERROR_NONE : results[i];
         g_input_dispatch_stub_state.enter_preview_result = render_failure ? ERROR_NONE : results[i];
@@ -178,7 +184,15 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         g_input_dispatch_stub_state.file_manager_render_result = redraw_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
         input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
         gboolean success = results[i] == ERROR_NONE;
-        g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, success);
+        g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, 0);
+        g_assert_cmpint(g_input_dispatch_stub_state.clear_listing_calls, ==, success);
+        if (success) {
+            g_assert_null(app.file_manager.entries);
+            g_assert_null(app.file_manager.directory);
+            g_assert_cmpint(app.file_manager.entries_count, ==, 0);
+            g_assert_null(app.file_manager.selected_link);
+            g_assert_cmpint(app.file_manager.selected_link_index, ==, -1);
+        }
         g_assert_cmpint(app.mode, ==, success ? (kind == 0 ? APP_MODE_BOOK_PREVIEW : APP_MODE_PREVIEW) : APP_MODE_FILE_MANAGER);
         g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, (success || render_failure) && kind == 0);
         g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, (success || render_failure) && kind != 0);
@@ -195,6 +209,12 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
             }
         }
         if (!success) {
+            if (kind != 0) {
+                g_assert_true(app.preloader == (ImagePreloader *)&app);
+                g_assert_true(app.preload_enabled);
+                g_assert_cmpint(g_input_dispatch_stub_state.preloader_reset_calls, ==, 0);
+                g_assert_cmpint(g_input_dispatch_stub_state.preloader_enable_calls, ==, 0);
+            }
             g_assert_true(app.needs_redraw);
             g_assert_true(app.info_visible);
             g_assert_true(app.help_visible);
@@ -212,6 +232,11 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
                 g_assert_cmpint(app.preview.selected_link_index, ==, 1);
             }
             g_assert_cmpstr(app.current_directory, ==, "/original");
+        }
+        if (success && kind != 0) {
+            g_assert_true(app.preload_enabled);
+            g_assert_cmpint(g_input_dispatch_stub_state.preloader_reset_calls, ==, 1);
+            g_assert_cmpint(g_input_dispatch_stub_state.preloader_enable_calls, ==, 1);
         }
         g_assert_cmpint(app.last_error, ==, results[i] == ERROR_OUTPUT_IO || (redraw_failure && !success) ? ERROR_OUTPUT_IO : ERROR_NONE);
         g_list_free_full(app.image_files, g_free);
@@ -244,7 +269,7 @@ static void test_navigation_render_result_controls_queue(gconstpointer data) {
     cleanup_file_manager_app(&app);
 }
 
-static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
+static void test_tab_book_open_failure_stops_entry(gconstpointer data) {
     ErrorCode result = GPOINTER_TO_INT(data);
     gchar *dir = create_temp_dir();
     gchar *path = write_book_fixture(dir);
@@ -252,7 +277,6 @@ static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
     app.current_directory = g_strdup("/original");
     app.book.doc = (BookDocument *)0x1;
     app.book.path = g_strdup("/original/old.pdf");
-    GList *entries = app.file_manager.entries;
     InputEvent event = make_key_event(KEY_TAB);
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.open_book_result = result;
@@ -261,10 +285,8 @@ static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
     g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.enter_book_preview_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, 0);
-    g_assert_true(app.book.doc == (BookDocument *)0x1);
-    g_assert_cmpstr(app.book.path, ==, "/original/old.pdf");
-    g_assert_cmpstr(app.current_directory, ==, "/original");
-    g_assert_true(app.file_manager.entries == entries);
+    g_assert_cmpint(g_input_dispatch_stub_state.clear_listing_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, result != ERROR_OUTPUT_IO);
     g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
     g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
     g_free(app.current_directory);
@@ -282,8 +304,8 @@ void register_input_dispatch_key_file_manager_tests(void) {
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_render_recovery_failure", GINT_TO_POINTER(12), test_tab_preserves_source_until_destination_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/media_render_recovery_failure", GINT_TO_POINTER(13), test_tab_preserves_source_until_destination_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/virtual_render_recovery_failure", GINT_TO_POINTER(14), test_tab_preserves_source_until_destination_entry);
-    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_output_keeps_existing_book", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_tab_book_open_failure_keeps_existing_book);
-    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_invalid_keeps_existing_book", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_tab_book_open_failure_keeps_existing_book);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_output_stops_entry", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_tab_book_open_failure_stops_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_invalid_stops_entry", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_tab_book_open_failure_stops_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/navigation/up_render_failure", GINT_TO_POINTER(2), test_navigation_render_result_controls_queue);
     g_test_add_data_func("/input_dispatch_key_file_manager/navigation/down_render_failure", GINT_TO_POINTER(3), test_navigation_render_result_controls_queue);
     g_test_add_data_func("/input_dispatch_key_file_manager/navigation/up_previous_error", GINT_TO_POINTER(0), test_navigation_render_result_controls_queue);
