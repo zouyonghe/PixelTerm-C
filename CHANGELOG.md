@@ -1,5 +1,9 @@
 # Changelog
 
+- v1.8.10: Fix graphics output exiting during temporary SSH backpressure.
+    - **SSH Graphics**: Allow two seconds without write progress instead of 100 milliseconds, resetting the idle deadline after each successful write. Fix `Terminal output failed` exits while displaying images in Warp over SSH, while retaining explicit protocol-probe deadlines and bounded failure for permanently blocked output.
+    - **Verification**: Add byte-exact direct and stdio output regressions with repeated 250-millisecond stalls. Validate all 15 terminal-output tests on Arch Linux, the full 842 C and 74 Python tests on macOS, and image display in a Warp SSH session.
+
 - v1.8.9: Lower Kitty video traffic and safer terminal/view recovery.
     - **Video Output**: Send eligible opaque Kitty direct video frames as RGB24, reducing pixel payload by 25% compared with RGBA32. Preserve Chafa fallback for transparency, non-default gamma, color enhancement, multiplexers, missing image-ID replies, and conversion failures. Discard already-late frames before pixel conversion and add playback timing diagnostics with a log-summary tool. Throughput improvements depend on output size and terminal bandwidth; no universal FPS increase is claimed.
     - **Terminal Recovery**: Centralize checked output, retained restoration controls, and retry backoff. Bound stalled writes and probe submissions, preserve input/termios restoration, and avoid replaying destructive image deletes after uncertain delivery. Report failed media output instead of counting it as a submitted frame.
