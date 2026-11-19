@@ -596,11 +596,13 @@ static void test_info_overlay_bypasses_preloader_cache(void) {
 typedef struct {
     gboolean fail;
     GString *bytes;
+    gint writes;
+    gint allowed_writes;
 } StillOutput;
 
 static ssize_t still_output_write(void *data, const char *bytes, size_t length) {
     StillOutput *sink = data;
-    if (sink->fail) { errno = EIO; return -1; }
+    if (++sink->writes > sink->allowed_writes && sink->fail) { errno = EIO; return -1; }
     g_string_append_len(sink->bytes, bytes, length);
     return (ssize_t)length;
 }
@@ -625,6 +627,9 @@ static void test_still_output_failure(gconstpointer data) {
     fclose(stream);
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
     g_assert_true(recovered);
     if (stage < 3) {
         g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
@@ -652,10 +657,51 @@ static void test_failed_help_clear_keeps_previous_state(void) {
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_false(app.help_visible);
-    g_assert_false(app.needs_screen_clear);
-    g_assert_true(app.suppress_full_clear);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
     g_assert_true(recovered);
     g_string_free(sink.bytes, TRUE);
+}
+
+static void test_single_frame_retains_sync_end(gconstpointer data) {
+    gboolean clear_failure = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.force_kitty = clear_failure;
+    AppSingleRenderTestHooks hooks = k_app_single_render_test_hooks;
+    hooks.ui_begin_sync_update = NULL;
+    hooks.ui_end_sync_update = NULL;
+    hooks.ui_clear_kitty_images = NULL;
+    app_single_render_set_test_hooks(&hooks);
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL),
+                        .allowed_writes = clear_failure ? 1 : 0};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_current_image(&app);
+    gint writes_at_return = sink.writes;
+    gchar *delivered_at_return = g_strdup(sink.bytes->str);
+    g_string_truncate(sink.bytes, 0);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_cmpint(writes_at_return, ==, clear_failure ? 3 : 2);
+    g_assert_cmpstr(delivered_at_return, ==, clear_failure ? "\033[?2026h" : "");
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==, "\033\\\033\\\033[?2026l");
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+    app_single_render_set_test_hooks(&k_app_single_render_test_hooks);
+    g_free(delivered_at_return);
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
 }
 
 static const gchar help_redraw_payload[] = "HELP-REDRAW";
@@ -847,7 +893,7 @@ typedef struct { gint writes; } HelpSubmissionSink;
 static ssize_t help_submission_write(void *data, const char *bytes, size_t length) {
     HelpSubmissionSink *sink = data;
     (void)bytes;
-    if (++sink->writes > 1) { errno = EIO; return -1; }
+    if (++sink->writes == 2) { errno = EIO; return -1; }
     return (ssize_t)length;
 }
 
@@ -862,10 +908,10 @@ static void test_single_help_has_one_submission(void) {
     fflush(saved);
     stdout = stream;
     ErrorCode result = runtime_display_help(&app);
-    stdout = saved;
     /* Recover only if the regression submitted a second overlay. */
     if (result != ERROR_NONE) g_assert_true(terminal_output_flush());
     fclose(stream);
+    stdout = saved;
     g_assert_cmpint(result, ==, ERROR_NONE);
     g_assert_true(app.help_visible);
     g_assert_cmpint(sink.writes, ==, 1);
@@ -874,6 +920,8 @@ static void test_single_help_has_one_submission(void) {
 }
 
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/output/real_begin_retains_sync_end", NULL, test_single_frame_retains_sync_end);
+    g_test_add_data_func("/app_single_render/output/real_clear_retains_sync_end", GINT_TO_POINTER(TRUE), test_single_frame_retains_sync_end);
     g_test_add_func("/app_single_render/runtime/single_help_one_submission", test_single_help_has_one_submission);
     g_test_add_data_func("/app_single_render/runtime/info_open_failure", GINT_TO_POINTER(FALSE), test_info_render_failure_restores_visibility);
     g_test_add_data_func("/app_single_render/runtime/info_close_failure", GINT_TO_POINTER(TRUE), test_info_render_failure_restores_visibility);

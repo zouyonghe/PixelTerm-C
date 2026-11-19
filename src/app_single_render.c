@@ -308,7 +308,7 @@ static void app_apply_info_overlay_render_mode(const PixelTermApp *app,
 }
 
 
-ErrorCode app_render_current_image(PixelTermApp *app) {
+static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
@@ -464,6 +464,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
     if (!APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update)) return ERROR_OUTPUT_IO;
     if (!APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app)) {
+        /* The owner retains sync-end until recovery; do not retry output here. */
         APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
         return ERROR_OUTPUT_IO;
     }
@@ -978,4 +979,15 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     g_string_free(rendered, TRUE);
 
     return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
+}
+
+ErrorCode app_render_current_image(PixelTermApp *app) {
+    ErrorCode result = app_render_current_image_frame(app);
+    if (result == ERROR_OUTPUT_IO) {
+        /* The next explicit render must repair a possibly partial frame. */
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+    }
+    return result;
 }

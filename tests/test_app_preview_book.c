@@ -11,6 +11,9 @@
 #include "terminal_output.h"
 #include "test_output_stream.h"
 
+/* Exercise TOC frame ownership with the same output sink as book pages. */
+#include "../src/app_book_toc.c"
+
 typedef struct {
     gint create_grid_renderer_calls;
     gint grid_render_calls;
@@ -24,6 +27,10 @@ typedef struct {
     gboolean renderer_fail;
     gint renderer_destroy_calls;
     gint help_calls;
+    gboolean real_frame_controls;
+    gboolean double_page;
+    gint full_clears;
+    gint partial_clears;
 } BookPreviewStubState;
 
 static BookPreviewStubState g_book_preview_stub_state;
@@ -405,7 +412,7 @@ RendererConfig app_renderer_config_from_app(const PixelTermApp *app, gint max_wi
 
 gboolean app_book_use_double_page(const PixelTermApp *app) {
     (void)app;
-    return FALSE;
+    return g_book_preview_stub_state.double_page;
 }
 
 void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height) {
@@ -419,25 +426,37 @@ void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, g
 }
 
 gboolean ui_begin_sync_update(void) {
+    if (g_book_preview_stub_state.real_frame_controls) {
+        if (terminal_output_write("\033[?2026h", 8)) return TRUE;
+        terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
+        return FALSE;
+    }
     return TRUE;
 }
 
 void ui_end_sync_update(void) {
+    if (g_book_preview_stub_state.real_frame_controls)
+        terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
 }
 
 gboolean ui_clear_kitty_images(const PixelTermApp *app) {
-    (void)app;
+    if (g_book_preview_stub_state.real_frame_controls && app->force_kitty) {
+        const char command[] = "\033_Ga=d,q=2\033\\";
+        return terminal_output_write(command, sizeof(command) - 1);
+    }
     return TRUE;
 }
 
 void ui_clear_screen_for_refresh(const PixelTermApp *app) {
     (void)app;
+    g_book_preview_stub_state.full_clears++;
 }
 
 void ui_clear_area(const PixelTermApp *app, gint top_row, gint height) {
     (void)app;
     (void)top_row;
     (void)height;
+    g_book_preview_stub_state.partial_clears++;
 }
 
 gchar *sanitize_for_terminal(const gchar *text) {
@@ -445,6 +464,11 @@ gchar *sanitize_for_terminal(const gchar *text) {
 }
 
 gchar *truncate_utf8_middle_keep_suffix(const gchar *text, gint max_width) {
+    (void)max_width;
+    return g_strdup(text ? text : "");
+}
+
+gchar *truncate_utf8_for_display(const gchar *text, gint max_width) {
     (void)max_width;
     return g_strdup(text ? text : "");
 }
@@ -580,6 +604,7 @@ static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
     FILE *saved = stdout;
     fflush(saved);
     stdout = stream;
+    gint64 before_failure = g_get_monotonic_time();
     if (backoff) {
         terminal_output_defer("pending-book", TERMINAL_OUTPUT_RESTORE);
         g_assert_false(terminal_output_flush());
@@ -595,7 +620,9 @@ static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(app.needs_redraw);
     g_assert_true(app.needs_screen_clear);
-    if (backoff) g_assert_cmpuint(sink.attempted->len, ==, attempted);
+    /* A descheduled test may legitimately outlive the 100 ms retry window. */
+    if (backoff && g_get_monotonic_time() - before_failure < 100000)
+        g_assert_cmpuint(sink.attempted->len, ==, attempted);
     sink.fail = FALSE;
     g_assert_true(terminal_output_flush());
     fclose(stream);
@@ -606,8 +633,89 @@ static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
     cleanup_book_preview_app(&app);
 }
 
+typedef struct {
+    gint writes;
+    gint successful_writes;
+    gboolean recovered;
+    GString *delivered;
+} PageOutput;
+
+static ssize_t page_output_write(void *data, const char *bytes, size_t length) {
+    PageOutput *sink = data;
+    if (++sink->writes > sink->successful_writes && !sink->recovered) {
+        errno = EIO;
+        return -1;
+    }
+    g_string_append_len(sink->delivered, bytes, length);
+    return (ssize_t)length;
+}
+
+static void test_book_page_frame_failure(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    gint stage = scenario & 3; /* begin, Kitty clear, jump prompt, final flush */
+    PixelTermApp app;
+    init_book_preview_app(&app, 2, 20, 80, 30);
+    app.mode = APP_MODE_BOOK;
+    BookToc toc = {0};
+    gboolean is_toc = scenario & 8;
+    app.book.toc = is_toc ? &toc : NULL;
+    app.force_kitty = stage == 1;
+    app.book.jump_active = stage == 2;
+    app.suppress_full_clear = TRUE;
+    g_book_preview_stub_state.real_frame_controls = TRUE;
+    g_book_preview_stub_state.double_page = scenario & 4;
+    PageOutput sink = {.successful_writes = stage == 0 ? 0 : 1,
+                       .delivered = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, page_output_write);
+    g_assert_nonnull(stream);
+    char buffer[65536];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = is_toc ? app_render_book_toc(&app) : app_render_book_page(&app);
+    gint writes_at_return = sink.writes;
+    gchar *delivered_at_return = g_strdup(sink.delivered->str);
+    g_string_truncate(sink.delivered, 0);
+    sink.recovered = TRUE;
+    gboolean recovered = terminal_output_flush();
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_true(recovered);
+    /* No eager retry after the failing helper; sync-end remains owned by the queue. */
+    g_assert_cmpint(writes_at_return, ==, stage == 1 ? 3 : 2);
+    g_assert_cmpstr(delivered_at_return, ==, stage == 0 ? "" : "\033[?2026h");
+    g_assert_cmpstr(sink.delivered->str, ==, stage == 3
+        ? "\033\\\033[?2026l\033\\" : "\033\\\033\\\033[?2026l");
+    gint full_clears = g_book_preview_stub_state.full_clears;
+    app.suppress_full_clear = TRUE;
+    app.book.jump_active = FALSE;
+    g_assert_cmpint(is_toc ? app_render_book_toc(&app) : app_render_book_page(&app), ==, ERROR_NONE);
+    g_assert_cmpint(g_book_preview_stub_state.full_clears, ==, full_clears + 1);
+    g_assert_false(app.needs_screen_clear);
+    fclose(stream);
+    stdout = saved;
+    g_free(delivered_at_return);
+    g_string_free(sink.delivered, TRUE);
+    app.book.toc = NULL;
+    cleanup_book_preview_app(&app);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_book_toc/output/begin_failure", GINT_TO_POINTER(8), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_toc/output/clear_failure", GINT_TO_POINTER(9), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_toc/output/final_failure", GINT_TO_POINTER(11), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/begin_failure", GINT_TO_POINTER(0), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/clear_failure", GINT_TO_POINTER(1), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/prompt_failure", GINT_TO_POINTER(2), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/final_failure", GINT_TO_POINTER(3), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/spread_begin_failure", GINT_TO_POINTER(4), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/spread_clear_failure", GINT_TO_POINTER(5), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/spread_prompt_failure", GINT_TO_POINTER(6), test_book_page_frame_failure);
+    g_test_add_data_func("/app_book_page/output/spread_final_failure", GINT_TO_POINTER(7), test_book_page_frame_failure);
     g_test_add_data_func("/app_preview_book/output/prompt_render_failure", GINT_TO_POINTER(0), test_book_output_backoff_and_prompt_failure);
     g_test_add_data_func("/app_preview_book/output/prompt_clear_failure", GINT_TO_POINTER(1), test_book_output_backoff_and_prompt_failure);
     g_test_add_data_func("/app_preview_book/output/prompt_render_backoff", GINT_TO_POINTER(4), test_book_output_backoff_and_prompt_failure);

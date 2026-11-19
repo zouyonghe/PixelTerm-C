@@ -9,6 +9,7 @@
 
 #include "app.h"
 #include "app_media_session.h"
+#include "media_utils.h"
 
 #include "browser.h"
 #include "preload_control.h"
@@ -35,6 +36,67 @@ static ErrorCode g_browser_scan_error;
 static gboolean g_browser_create_failure;
 static gint g_preloader_reset_calls;
 static gint g_live_preloader_resets, g_preloader_enables;
+static gboolean g_render_play_candidate;
+static gint g_candidate_sources;
+static guint g_candidate_timer;
+
+/* The regular file-manager target isolates decoding; an integration build can
+ * link the real players with -DPIXELTERM_FILE_MANAGER_REAL_PLAYERS. */
+#ifndef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+MediaKind media_classify(const char *path) {
+    return is_animated_image_candidate(path) ? MEDIA_KIND_ANIMATED_IMAGE :
+           is_video_file(path) ? MEDIA_KIND_VIDEO : MEDIA_KIND_IMAGE;
+}
+
+GifPlayer *gif_player_new(gint work, gboolean text, gboolean sixel, gboolean kitty,
+                         gboolean iterm, TextSymbolMode symbols, gdouble gamma) {
+    (void)work; (void)text; (void)sixel; (void)kitty;
+    (void)iterm; (void)symbols; (void)gamma;
+    return g_new0(GifPlayer, 1);
+}
+
+VideoPlayer *video_player_new(gint work, gboolean text, gboolean sixel, gboolean kitty,
+                             gboolean iterm, TextSymbolMode symbols, gdouble gamma,
+                             KittyTransferMode transfer) {
+    (void)work; (void)text; (void)sixel; (void)kitty;
+    (void)iterm; (void)symbols; (void)gamma; (void)transfer;
+    return g_new0(VideoPlayer, 1);
+}
+
+void gif_player_set_color_enhance(GifPlayer *player, ColorEnhanceMode mode) {
+    (void)player; (void)mode;
+}
+
+void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode mode) {
+    (void)player; (void)mode;
+}
+
+void gif_player_destroy(GifPlayer *player) {
+    if (!player) return;
+    if (player->timer_id) g_source_remove(player->timer_id);
+    g_free(player->filepath);
+    g_free(player);
+}
+
+void video_player_destroy(VideoPlayer *player) {
+    if (!player) return;
+    if (player->timer_id) g_source_remove(player->timer_id);
+    g_free(player->filepath);
+    g_free(player);
+}
+#endif
+
+#ifndef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+static gboolean candidate_tick(gpointer data) {
+    (void)data;
+    return G_SOURCE_CONTINUE;
+}
+
+static void candidate_source_removed(gpointer data) {
+    (void)data;
+    g_candidate_sources--;
+}
+#endif
 
 typedef void (*RenderCaptureFunc)(gpointer user_data);
 
@@ -192,6 +254,43 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     g_assert_cmpint(g_live_preloader_resets, ==, 0);
     g_assert_cmpint(g_preloader_enables, ==, 0);
     g_render_calls++;
+    if (g_render_play_candidate) {
+        const char *path = app_get_current_filepath(app);
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+        if (app->gif_player) {
+            g_assert_null(app->gif_player->filepath);
+            g_assert_cmpint(gif_player_load(app->gif_player, path), ==, ERROR_NONE);
+            g_assert_true(gif_player_is_animated(app->gif_player));
+            g_assert_cmpint(gif_player_set_render_area(app->gif_player, 80, 24, 4, 16, 40, 16), ==, ERROR_NONE);
+            g_assert_cmpint(gif_player_play(app->gif_player), ==, ERROR_NONE);
+            g_candidate_timer = app->gif_player->timer_id;
+        } else {
+            g_assert_nonnull(app->video_player);
+            g_assert_null(app->video_player->filepath);
+            g_assert_cmpint(video_player_load(app->video_player, path), ==, ERROR_NONE);
+            video_player_set_render_area(app->video_player, 80, 24, 4, 16, 40, 16);
+            g_assert_cmpint(video_player_play(app->video_player), ==, ERROR_NONE);
+            g_candidate_timer = app->video_player->timer_id;
+        }
+        g_assert_cmpuint(g_candidate_timer, !=, 0);
+#else
+        if (app->gif_player) {
+            g_assert_cmpstr(app->gif_player->filepath, !=, "old.gif");
+            app->gif_player->filepath = g_strdup(path);
+            app->gif_player->is_playing = TRUE;
+            app->gif_player->timer_id = g_timeout_add_full(G_PRIORITY_DEFAULT, 1000,
+                candidate_tick, app->gif_player, candidate_source_removed);
+        } else {
+            g_assert_nonnull(app->video_player);
+            g_assert_cmpstr(app->video_player->filepath, !=, "old.mp4");
+            app->video_player->filepath = g_strdup(path);
+            app->video_player->is_playing = TRUE;
+            app->video_player->timer_id = g_timeout_add_full(G_PRIORITY_DEFAULT, 1000,
+                candidate_tick, app->video_player, candidate_source_removed);
+        }
+        g_candidate_sources++;
+#endif
+    }
     if (g_render_error == ERROR_OUTPUT_IO) terminal_output_write("partial-render", 14);
     return g_render_error;
 }
@@ -292,6 +391,38 @@ static void clear_browser_test_files(gpointer data) {
     (void)data;
     g_list_free_full(g_browser_test_files, g_free);
     g_browser_test_files = NULL;
+}
+
+static void test_clear_listing_preserves_view(gconstpointer data) {
+    PixelTermApp app = {0};
+    init_file_manager_app(&app, "/listing", 24);
+    app.mode = GPOINTER_TO_INT(data);
+    app.file_manager.entries = g_list_append(NULL, g_strdup("/listing/image.png"));
+    app.file_manager.entries_count = 1;
+    app.file_manager.selected_link = app.file_manager.entries;
+    app.file_manager.selected_link_index = 0;
+    app.current_directory = g_strdup("/viewer");
+    gchar *directory = app.current_directory;
+    app.info_visible = app.help_visible = TRUE;
+    app.input.single_click.pending = app.input.preview_click.pending = TRUE;
+    app.input.file_manager_click.pending = TRUE;
+    InputState input = app.input;
+    app_file_manager_clear_listing(&app);
+    g_assert_cmpint(app.mode, ==, GPOINTER_TO_INT(data));
+    g_assert_true(app.current_directory == directory);
+    g_assert_null(app.file_manager.entries);
+    g_assert_null(app.file_manager.directory);
+    g_assert_cmpint(app.file_manager.entries_count, ==, 0);
+    g_assert_null(app.file_manager.selected_link);
+    g_assert_cmpint(app.file_manager.selected_link_index, ==, -1);
+    g_assert_cmpmem(&app.input, sizeof(app.input), &input, sizeof(input));
+    g_assert_true(app.info_visible);
+    g_assert_true(app.help_visible);
+    g_assert_false(app.needs_redraw);
+    g_assert_false(app.needs_screen_clear);
+    app_file_manager_clear_listing(&app);
+    app_file_manager_clear_listing(NULL);
+    g_free(app.current_directory);
 }
 
 static const gchar *selected_path(const PixelTermApp *app) {
@@ -991,6 +1122,8 @@ static void test_open_loaded_file_output(gconstpointer data) {
     app.file_manager.selected_link = entries;
     app.file_manager.selected_link_index = 0;
     gchar *listing_directory = app.file_manager.directory;
+    app.input.file_manager_click = (ClickTracker){.pending = TRUE, .pending_time = 42, .x = 3, .y = 5};
+    InputState old_input = app.input;
     app.last_error = ERROR_OUTPUT_IO;
     app.info_visible = TRUE;
     app.help_visible = TRUE;
@@ -1106,6 +1239,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_assert_cmpint(g_book_entry_calls, ==, book && !clear_failure && !preparation_failure && !load_failure ? 1 : 0);
     g_assert_cmpint(g_render_calls, ==, !clear_failure && !entry_failure && !preparation_failure && !load_failure ? 1 : 0);
     if (clear_failure || preparation_failure || load_failure || entry_failure || render_failure) {
+        g_assert_cmpmem(&app.input, sizeof(app.input), &old_input, sizeof(old_input));
         g_assert_true(app.preloader == (ImagePreloader *)0x1);
         g_assert_true(app.preload_enabled);
         g_assert_cmpint(g_live_preloader_resets, ==, 0);
@@ -1187,8 +1321,138 @@ static void test_render_output_failure(gconstpointer data) {
     cleanup_file_manager_app(&app);
 }
 
+static void test_candidate_player_transaction(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    gboolean video = scenario & 1, success = scenario & 2;
+    gchar *dir = create_temp_dir();
+    gchar *path = write_file_in_dir(dir, video ? "candidate.mp4" : "candidate.gif", k_png_data, sizeof(k_png_data));
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+    /* Integration runs supply valid animated GIF/video fixtures; no external
+     * encoder is required by the ordinary isolated file-manager suite. */
+    const char *gif_fixture = g_getenv("PIXELTERM_TEST_GIF_FIXTURE");
+    const char *video_fixture = g_getenv("PIXELTERM_TEST_VIDEO_FIXTURE");
+    g_assert_nonnull(gif_fixture);
+    g_assert_nonnull(video_fixture);
+    gchar *contents = NULL;
+    gsize length = 0;
+    g_assert_true(g_file_get_contents(video ? video_fixture : gif_fixture, &contents, &length, NULL));
+    g_assert_true(g_file_set_contents(path, contents, length, NULL));
+    g_free(contents);
+#endif
+    PixelTermApp app = {.force_text = TRUE, .render_work_factor = 1, .gamma = 1.0};
+    init_file_manager_app(&app, dir, 24);
+    app.file_manager.entries = g_list_append(NULL, g_strdup(path));
+    app.file_manager.entries_count = 1;
+    app.image_files = g_list_append(NULL, g_strdup(video ? "old.mp4" : "old.gif"));
+    app.total_images = 1;
+    app.current_directory = g_strdup("/old");
+    app.gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    app.video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(app.gif_player);
+    g_assert_nonnull(app.video_player);
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+    g_assert_cmpint(gif_player_load(app.gif_player, gif_fixture), ==, ERROR_NONE);
+    g_assert_cmpint(video_player_load(app.video_player, video_fixture), ==, ERROR_NONE);
+    GdkPixbufAnimation *old_animation = app.gif_player->animation;
+    struct AVFormatContext *old_format = app.video_player->format_context;
+    struct AVCodecContext *old_codec = app.video_player->codec_context;
+    g_assert_nonnull(old_animation);
+    g_assert_nonnull(old_format);
+    g_assert_nonnull(old_codec);
+#else
+    app.gif_player->filepath = g_strdup("old.gif");
+    app.video_player->filepath = g_strdup("old.mp4");
+#endif
+    GifPlayer *old_gif = app.gif_player;
+    VideoPlayer *old_video = app.video_player;
+    gchar *old_gif_path = old_gif->filepath, *old_video_path = old_video->filepath;
+    clear_browser_test_files(NULL);
+    g_browser_test_files = g_list_append(NULL, g_strdup(path));
+    g_render_play_candidate = TRUE;
+    g_render_error = success ? ERROR_NONE : scenario & 4 ? ERROR_INVALID_IMAGE : ERROR_OUTPUT_IO;
+    g_candidate_sources = g_live_preloader_resets = g_preloader_enables = 0;
+    g_candidate_timer = 0;
+    FileManagerOutput sink = {.attempted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, file_manager_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_file_manager_enter(&app);
+    g_assert_cmpint(result, ==, g_render_error);
+    g_assert_true(terminal_output_flush());
+    if (!success) {
+        g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
+        g_assert_true(app.gif_player == old_gif);
+        g_assert_true(app.video_player == old_video);
+        g_assert_true(old_gif->filepath == old_gif_path);
+        g_assert_true(old_video->filepath == old_video_path);
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+        g_assert_cmpstr(old_gif->filepath, ==, gif_fixture);
+        g_assert_cmpstr(old_video->filepath, ==, video_fixture);
+        g_assert_true(old_gif->animation == old_animation);
+        g_assert_true(old_video->format_context == old_format);
+        g_assert_true(old_video->codec_context == old_codec);
+        g_assert_null(g_main_context_find_source_by_id(NULL, g_candidate_timer));
+#else
+        g_assert_cmpstr(old_gif->filepath, ==, "old.gif");
+        g_assert_cmpstr(old_video->filepath, ==, "old.mp4");
+#endif
+        g_assert_false(old_gif->is_playing);
+        g_assert_false(old_video->is_playing);
+        g_assert_cmpuint(old_gif->timer_id, ==, 0);
+        g_assert_cmpuint(old_video->timer_id, ==, 0);
+        g_assert_cmpint(g_candidate_sources, ==, 0);
+    } else {
+        g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+        g_assert_nonnull(g_main_context_find_source_by_id(NULL, g_candidate_timer));
+#else
+        g_assert_cmpint(g_candidate_sources, ==, 1);
+#endif
+        if (video) {
+            g_assert_true(app.gif_player == old_gif);
+            g_assert_true(app.video_player != old_video);
+            g_assert_cmpstr(app.video_player->filepath, ==, path);
+            g_assert_true(app.video_player->is_playing);
+        } else {
+            g_assert_true(app.video_player == old_video);
+            g_assert_true(app.gif_player != old_gif);
+            g_assert_cmpstr(app.gif_player->filepath, ==, path);
+            g_assert_true(app.gif_player->is_playing);
+        }
+    }
+    gif_player_destroy(app.gif_player);
+    video_player_destroy(app.video_player);
+    g_assert_cmpint(g_candidate_sources, ==, 0);
+#ifdef PIXELTERM_FILE_MANAGER_REAL_PLAYERS
+    g_assert_null(g_main_context_find_source_by_id(NULL, g_candidate_timer));
+#endif
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_render_play_candidate = FALSE;
+    g_render_error = ERROR_NONE;
+    g_string_free(sink.attempted, TRUE);
+    cleanup_file_manager_app(&app);
+    g_list_free_full(app.image_files, g_free);
+    g_free(app.current_directory);
+    g_free(app.async.image_path);
+    clear_browser_test_files(NULL);
+    g_free(path);
+    g_free(dir);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_file_manager/clear_listing/preserves_preview", GINT_TO_POINTER(APP_MODE_PREVIEW), test_clear_listing_preserves_view);
+    g_test_add_data_func("/app_file_manager/clear_listing/preserves_book_preview", GINT_TO_POINTER(APP_MODE_BOOK_PREVIEW), test_clear_listing_preserves_view);
+    g_test_add_data_func("/app_file_manager/player/gif_output_failure", GINT_TO_POINTER(0), test_candidate_player_transaction);
+    g_test_add_data_func("/app_file_manager/player/video_output_failure", GINT_TO_POINTER(1), test_candidate_player_transaction);
+    g_test_add_data_func("/app_file_manager/player/gif_success", GINT_TO_POINTER(2), test_candidate_player_transaction);
+    g_test_add_data_func("/app_file_manager/player/video_success", GINT_TO_POINTER(3), test_candidate_player_transaction);
+    g_test_add_data_func("/app_file_manager/player/gif_invalid_render", GINT_TO_POINTER(4), test_candidate_player_transaction);
+    g_test_add_data_func("/app_file_manager/player/video_invalid_render", GINT_TO_POINTER(5), test_candidate_player_transaction);
     g_test_add_func("/app_file_manager/enter/unreadable_preserves_selection", test_enter_unreadable_directory_preserves_selection);
     g_test_add_func("/app_core/load_single_file/missing_from_scan_preserves_media", test_load_single_file_missing_from_scan_preserves_media);
     g_test_add_data_func("/app_file_manager/load_directory/create_failure", GINT_TO_POINTER(0), test_load_directory_atomic);

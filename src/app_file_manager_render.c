@@ -333,6 +333,7 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
         return ERROR_INVALID_ARGS;
     }
     if (!terminal_output_ready(g_get_monotonic_time())) {
+        /* Repair state for the next explicit render; callers handle the I/O error. */
         app->needs_redraw = TRUE;
         app->needs_screen_clear = TRUE;
         return ERROR_OUTPUT_IO;
