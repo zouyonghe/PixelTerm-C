@@ -1,4 +1,5 @@
 #include "terminal_probe.h"
+#include "terminal_output.h"
 
 #include <errno.h>
 #include <string.h>
@@ -34,8 +35,8 @@ static int terminal_probe_default_tcflush(gint queue_selector, gpointer user_dat
 }
 
 static ssize_t terminal_probe_default_write(const char *buf, size_t len, gpointer user_data) {
-    (void)user_data;
-    return write(STDOUT_FILENO, buf, len);
+    return terminal_output_descriptor_write_until(STDOUT_FILENO, buf, len, NULL,
+                                                   *(const gint64 *)user_data);
 }
 
 static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
@@ -230,6 +231,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
         gboolean query_sent = FALSE;
         gboolean sequence_before_query = FALSE;
         gboolean read_failed = FALSE;
+        gboolean descriptor_restore_failed = FALSE;
 
         while (offset + 1 < buffer_size && sequence_length + 1 < sizeof(sequence) &&
                g_terminal_probe_pending_input.length + sequence_length < TERMINAL_PROBE_PENDING_LIMIT) {
@@ -254,12 +256,22 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
                 if (!query_sent) {
                     /* Establish a non-flushing boundary; preserve queued keys but
                      * never use replies that started before this query. */
-                    ssize_t written = hooks->write_fn(query, query_len, user_data);
+                    gboolean default_transport = hooks == &k_default_hooks;
+                    ssize_t written = hooks->write_fn(query, query_len,
+                        default_transport ? &deadline_us : user_data);
                     if (query_written && written > 0) *query_written = TRUE;
+                    if (default_transport) {
+                        if (written > 0 && written != (ssize_t)query_len)
+                            terminal_output_defer_recovery();
+                        descriptor_restore_failed = !terminal_output_retry_descriptor_restore();
+                    }
                     if (written != (ssize_t)query_len) {
                         break;
                     }
                     query_sent = TRUE;
+                    /* Read a fully sent query's bounded reply for ownership cleanup,
+                     * but never report success while descriptor restoration failed. */
+                    /* Replies retain their full budget after queued input/query submission. */
                     deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
                 }
                 continue;
@@ -315,7 +327,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
         }
 
         buffer[offset] = '\0';
-        length = query_sent && !read_failed ? (gssize)offset : -1;
+        length = query_sent && !read_failed && !descriptor_restore_failed ? (gssize)offset : -1;
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {

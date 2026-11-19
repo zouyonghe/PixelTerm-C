@@ -216,6 +216,24 @@ static void test_partial_session_preserves_progress(void) {
         int pipefd[2];
         g_assert_cmpint(pipe(pipefd), ==, 0);
         g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
+        int flags = fcntl(pipefd[1], F_GETFL);
+        g_assert_cmpint(flags, >=, 0);
+        g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
+        guchar bytes[4096] = {0};
+        gsize filled = 0;
+        ssize_t count;
+        while ((count = write(pipefd[1], bytes, sizeof(bytes))) > 0) filled += (gsize)count;
+        while ((count = write(pipefd[1], bytes, 1)) > 0) filled += (gsize)count;
+        g_assert_true(errno == EAGAIN || errno == EWOULDBLOCK);
+        gsize drained = 0;
+        while (drained < sizeof(bytes)) {
+            count = read(pipefd[0], bytes, sizeof(bytes) - drained);
+            if (count < 0 && errno == EINTR) continue;
+            g_assert_cmpint(count, >, 0); /* EOF or another error invalidates setup. */
+            drained += (gsize)count;
+        }
+        gsize prefix = filled - sizeof(bytes);
+        g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags), ==, 0);
         FILE *stream = fdopen(pipefd[1], "w");
         g_assert_nonnull(stream);
         FILE *saved = stdout;
@@ -223,18 +241,17 @@ static void test_partial_session_preserves_progress(void) {
         stdout = stream;
         g_assert_true(terminal_output_begin_session());
         g_assert_cmpint(setvbuf(stdout, NULL, _IONBF, 0), ==, 0);
-        gsize length = 256 * 1024;
+        gsize length = filled + 256 * 1024;
         gchar *payload = g_malloc(length);
         for (gsize i = 0; i < length; i++) payload[i] = (gchar)(i % 251);
         gsize accepted = fwrite(payload, 1, length, stdout);
         g_assert_cmpuint(accepted, >, 0);
         g_assert_cmpuint(accepted, <, length);
         GByteArray *received = g_byte_array_new();
-        guchar bytes[4096];
-        ssize_t count;
         while ((count = read(pipefd[0], bytes, sizeof(bytes))) > 0)
             g_byte_array_append(received, bytes, (guint)count);
-        g_assert_cmpmem(received->data, received->len, payload, accepted);
+        g_assert_cmpuint(received->len, ==, prefix + accepted);
+        g_assert_cmpmem(received->data + prefix, received->len - prefix, payload, accepted);
         fputs("LATER", stdout);
         fflush(stdout);
         g_assert_true(ferror(stdout) != 0);

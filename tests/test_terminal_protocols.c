@@ -773,7 +773,10 @@ static void test_terminal_protocol_env_restoration_preserves_original_values(Ter
     g_assert_cmpstr(g_getenv("TERM_PROGRAM"), ==, g_terminal_protocol_baseline_term_program);
 }
 
+void register_terminal_probe_tests(void);
+
 void register_terminal_protocols_tests(void) {
+    register_terminal_probe_tests();
     g_test_add_data_func("/terminal_protocols/probe/preserves_nul_after_query",
                          GINT_TO_POINTER(6), test_terminal_probe_preserves_keys);
     g_test_add_data_func("/terminal_protocols/probe/preserves_nul_before_query",

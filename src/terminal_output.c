@@ -55,19 +55,34 @@ static gboolean restore_descriptor(int fd, int flags) {
     return restore_descriptor_flags();
 }
 
-static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length, gboolean *attempted) {
+gboolean terminal_output_retry_descriptor_restore(void) {
+    return restore_descriptor_flags();
+}
+
+ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length, gboolean *attempted) {
+    return terminal_output_descriptor_write_until(fd, bytes, length, attempted, 0);
+}
+
+ssize_t terminal_output_descriptor_write_until(int fd, const char *bytes, gsize length,
+                                               gboolean *attempted, gint64 deadline_us) {
     if (!restore_descriptor_flags()) return -1;
     int flags = output_fcntl(fd, F_GETFL, 0);
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
     if (flags < 0 || (changed && output_fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)) return -1;
     gsize written = 0;
     gint64 deadline = g_get_monotonic_time() + 100000;
+    if (deadline_us > 0) deadline = MIN(deadline, deadline_us);
     while (written < length) {
+        if (g_get_monotonic_time() >= deadline) {
+            errno = EAGAIN;
+            break;
+        }
         if (attempted) *attempted = TRUE;
         ssize_t count = write(fd, bytes + written, length - written);
         if (count > 0) {
             written += (gsize)count;
             deadline = g_get_monotonic_time() + 100000;
+            if (deadline_us > 0) deadline = MIN(deadline, deadline_us);
         } else if (count < 0 && errno == EINTR) {
             /* Interrupted writes still share the no-progress deadline. */
         } else if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -79,7 +94,9 @@ static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize
         if (g_get_monotonic_time() >= deadline) break;
     }
     /* Preserve exact progress even when restoring flags needs a later retry. */
+    int write_errno = errno;
     if (changed) restore_descriptor(fd, flags);
+    errno = write_errno;
     return written || !length ? (ssize_t)written : -1;
 }
 

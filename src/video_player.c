@@ -846,8 +846,7 @@ void video_player_set_render_area(VideoPlayer *player,
 
     if (layout_changed) {
         player->fixed_frame_valid = FALSE;
-        player->last_frame_top_row = area_top_row;
-        player->last_frame_height = area_height;
+        /* Layout describes future output; retain delivered/uncertain coverage until clear. */
         video_player_generation_bump(player);
         player->render_layout_generation++;
         video_player_clear_line_cache(player);
@@ -1044,9 +1043,12 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     if (layout_valid && area_top > 0 && area_height > 0) {
         clear_top = area_top;
         clear_height = area_height;
-    } else if (last_top > 0 && last_height > 0) {
-        clear_top = last_top;
-        clear_height = last_height;
+    }
+    if (last_top > 0 && last_height > 0) {
+        /* The app owns one contiguous media canvas, including gaps between frames. */
+        gint bottom = MAX(clear_top + clear_height, last_top + last_height);
+        clear_top = clear_top > 0 ? MIN(clear_top, last_top) : last_top;
+        clear_height = bottom - clear_top;
     }
 
     if (clear_top <= 0 || clear_height <= 0) {
@@ -1067,6 +1069,10 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     /* A failed submission may already have erased some or all cached rows. */
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
+    if (cleared) {
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 0;
+    }
     g_mutex_unlock(&player->state_mutex);
     return cleared ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
@@ -1879,6 +1885,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     gint rendered_h = frame->rendered_height;
     gboolean graphics_mode = (frame->pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS);
     gboolean kitty_shm_written = FALSE;
+    gint next_frame_top_row = 0;
+    gint next_frame_height = 0;
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
@@ -1997,13 +2005,13 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
             player->last_frame_lines = new_lines;
         }
 
-        if (player->last_frame_height > 0) {
+        if (player->last_frame_top_row > 0 && player->last_frame_height > 0) {
             gint prev_top = player->last_frame_top_row;
             gint prev_bottom = prev_top + player->last_frame_height - 1;
             gint new_top = image_top_row;
             gint new_bottom = image_top_row + (lines_printed > 0 ? (lines_printed - 1) : -1);
-            if (prev_top < area_top) prev_top = area_top;
-            if (prev_bottom > area_bottom) prev_bottom = area_bottom;
+            /* Retained coverage may lie outside the replacement layout. */
+            if (term_h > 0 && prev_bottom > term_h) prev_bottom = term_h;
             for (gint r = prev_top; r <= prev_bottom; r++) {
                 if (r < new_top || r > new_bottom) {
                     g_string_append_printf(output, "\033[%d;1H\033[2K", r);
@@ -2011,8 +2019,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
             }
         }
 
-        player->last_frame_top_row = image_top_row;
-        player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
+        next_frame_top_row = image_top_row;
+        next_frame_height = lines_printed > 0 ? lines_printed : 0;
 
         if (player->show_stats) {
             gint stats_row = VIDEO_PLAYER_STATS_ROW;
@@ -2050,18 +2058,32 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         }
     } else {
         video_player_clear_line_cache(player);
+        next_frame_top_row = 1;
+        next_frame_height = rendered_h > 0 ? rendered_h : 1;
         g_string_append_printf(output, "\033[H");
         g_string_append_len(output, result->str, result->len);
         kitty_shm_written = frame->kitty_shm_name != NULL;
         g_string_append_printf(output, "\033[J");
-        player->last_frame_top_row = 0;
-        player->last_frame_height = 0;
     }
     g_mutex_unlock(&player->state_mutex);
 
 output_finished:;
     if (output_success) output_success = terminal_output_write(output->str, output->len);
     g_string_free(output, TRUE);
+    g_mutex_lock(&player->state_mutex);
+    if (output_success) {
+        player->last_frame_top_row = next_frame_top_row;
+        player->last_frame_height = next_frame_height;
+    } else if (next_frame_top_row > 0 && next_frame_height > 0) {
+        /* Partial output can leave both the previous and attempted frame visible. */
+        gboolean old_valid = player->last_frame_top_row > 0 && player->last_frame_height > 0;
+        gint bottom = next_frame_top_row + next_frame_height;
+        if (old_valid) bottom = MAX(bottom, player->last_frame_top_row + player->last_frame_height);
+        player->last_frame_top_row = old_valid ?
+            MIN(player->last_frame_top_row, next_frame_top_row) : next_frame_top_row;
+        player->last_frame_height = bottom - player->last_frame_top_row;
+    }
+    g_mutex_unlock(&player->state_mutex);
     if (output_success && kitty_shm_written) {
         video_frame_mark_kitty_shm_submitted(frame);
     }
@@ -2273,8 +2295,6 @@ ErrorCode video_player_play(VideoPlayer *player) {
     g_mutex_lock(&player->state_mutex);
     player->is_playing = TRUE;
     player->fixed_frame_valid = FALSE;
-    player->last_frame_top_row = 0;
-    player->last_frame_height = 0;
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
     video_player_reset_timing_state(player);
@@ -2403,8 +2423,6 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     player->fallback_pts_ms = target_ms;
     player->rewind_needs_resync = TRUE;
     player->fixed_frame_valid = FALSE;
-    player->last_frame_top_row = 0;
-    player->last_frame_height = 0;
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
 

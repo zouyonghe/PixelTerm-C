@@ -1254,8 +1254,8 @@ static void test_seek_relative_resets_visual_state_under_state_mutex(void) {
     g_assert_cmpint(player->fallback_pts_ms, ==, 5000);
     g_assert_true(player->rewind_needs_resync);
     g_assert_false(player->fixed_frame_valid);
-    g_assert_cmpint(player->last_frame_top_row, ==, 0);
-    g_assert_cmpint(player->last_frame_height, ==, 0);
+    g_assert_cmpint(player->last_frame_top_row, ==, 12);
+    g_assert_cmpint(player->last_frame_height, ==, 8);
     g_mutex_unlock(&player->state_mutex);
 
     video_player_set_seek_preview_hook_for_test(NULL);
@@ -3023,6 +3023,146 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
     return (ssize_t)length;
 }
 
+static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    video_player_set_render_area(player, 80, 40, 4, 30, 80, 30);
+    player->fixed_frame_valid = TRUE;
+    player->fixed_frame_top_row = 4;
+    VideoFrame *frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+    frame->rendered_height = 8;
+    video_player_queue_push(player, frame);
+
+    DeleteOutput output = {.output = g_string_new(NULL), .attempts = 1};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpint(player->last_frame_top_row, ==, 4);
+    g_assert_cmpint(player->last_frame_height, ==, 8);
+
+    gint next_top = mode == 1 ? 20 : 6;
+    player->fixed_frame_top_row = next_top;
+    if (mode == 2) player->render_layout_valid = FALSE;
+    if (mode == 3) {
+        player->last_frame_top_row = 0;
+        player->last_frame_height = 30;
+    }
+    frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, mode == 2 ?
+        "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\nthirteen\nfourteen" : "short\nframe");
+    frame->rendered_height = mode == 2 ? 14 : 2;
+    video_player_queue_push(player, frame);
+    output.attempts = 0;
+    output.delivered_but_failed = TRUE;
+    g_assert_false(video_player_render_frame_for_test(player));
+    g_assert_null(player->last_frame_lines);
+    gint first_row = mode == 2 ? 1 : mode == 3 ? next_top : 4;
+    g_assert_cmpint(player->last_frame_top_row, ==, first_row);
+    gint last_row = mode == 1 ? 21 : mode == 2 ? 14 : mode == 3 ? next_top + 1 : 11;
+    g_assert_cmpint(player->last_frame_height, ==, last_row - first_row + 1);
+
+    /* A moved/shrunken layout must still clear the previously displayed rows. */
+    video_player_set_render_area(player, 80, 40, next_top, 2, 80, 2);
+    g_string_truncate(output.output, 0);
+    g_assert_cmpint(video_player_clear_render_area(player), ==, ERROR_NONE);
+    for (gint row = first_row; row <= last_row; row++) {
+        gchar *erase = g_strdup_printf("\033[%d;1H\033[2K", row);
+        g_assert_nonnull(strstr(output.output->str, erase));
+        g_free(erase);
+    }
+
+    player->render_layout_valid = TRUE;
+    player->fixed_frame_valid = TRUE;
+    player->fixed_frame_top_row = next_top;
+    frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "short\nframe");
+    frame->rendered_height = 2;
+    video_player_queue_push(player, frame);
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpint(player->last_frame_top_row, ==, next_top);
+    g_assert_cmpint(player->last_frame_height, ==, 2);
+    terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    video_player_destroy(player);
+    g_string_free(output.output, TRUE);
+}
+
+static void test_layout_replacement_clears_old_coverage(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    video_player_set_render_area(player, 80, 40, 4, 8, 80, 8);
+    player->fixed_frame_valid = TRUE;
+    player->fixed_frame_top_row = 4;
+    DeleteOutput output = {.output = g_string_new(NULL), .attempts = 1};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    VideoFrame *frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+    frame->rendered_height = 8;
+    video_player_queue_push(player, frame);
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpint(player->last_frame_top_row, ==, 4);
+    g_assert_cmpint(player->last_frame_height, ==, 8);
+
+    gint next_top = mode == 1 ? 6 : 20;
+    video_player_set_render_area(player, 80, 40, next_top, 2, 80, 2);
+    g_string_truncate(output.output, 0);
+    if (mode < 2) {
+        player->fixed_frame_valid = TRUE;
+        player->fixed_frame_top_row = next_top;
+        frame = make_test_frame_with_generation(0, player->playback_generation);
+        g_string_assign(frame->rendered, "new\nframe");
+        frame->rendered_height = 2;
+        video_player_queue_push(player, frame);
+        g_assert_true(video_player_render_frame_for_test(player));
+        g_assert_cmpint(player->last_frame_top_row, ==, next_top);
+        g_assert_cmpint(player->last_frame_height, ==, 2);
+    } else {
+        output.attempts = 0;
+        output.delivered_but_failed = TRUE;
+        if (mode == 2) {
+            /* Decode and render a real paused seek preview through the public path. */
+            g_assert_cmpint(video_player_seek_relative_ms(player, 1000), ==, ERROR_OUTPUT_IO);
+            g_assert_cmpuint(output.output->len, >, 2);
+            g_assert_cmpint(player->last_frame_top_row + player->last_frame_height, >, next_top);
+        } else {
+            output.fail_all = TRUE;
+            terminal_output_defer_recovery();
+            g_assert_cmpint(video_player_play(player), ==, ERROR_OUTPUT_IO);
+            output.fail_all = FALSE;
+        }
+        g_assert_cmpint(player->last_frame_top_row, ==, 4);
+        g_assert_cmpint(player->last_frame_height, >=, 8);
+        g_string_truncate(output.output, 0);
+        g_assert_cmpint(video_player_clear_render_area(player), ==, ERROR_NONE);
+    }
+    for (gint row = 4; row <= 11; row++) {
+        if (mode < 2 && row >= next_top && row < next_top + 2) continue;
+        gchar *erase = g_strdup_printf("\033[%d;1H\033[2K", row);
+        g_assert_nonnull(strstr(output.output->str, erase));
+        g_free(erase);
+    }
+    g_assert_true(terminal_output_flush());
+    fclose(capture);
+    stdout = saved;
+    video_player_destroy(player);
+    g_string_free(output.output, TRUE);
+}
+
 static void test_failed_delete_buffer_is_discarded(void) {
     DeleteOutput output = {.output = g_string_new(NULL), .attempted = g_string_new(NULL)};
     FILE *capture = test_output_stream(&output, delete_output_write);
@@ -3723,6 +3863,14 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_data_func("/video_player/output_bounds/failed_shorter_frame", GINT_TO_POINTER(0), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_moved_frame", GINT_TO_POINTER(1), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_without_layout", GINT_TO_POINTER(2), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/failed_invalid_old_bounds", GINT_TO_POINTER(3), test_failed_frame_retains_clear_bounds);
+    g_test_add_data_func("/video_player/output_bounds/success_moved_layout", GINT_TO_POINTER(0), test_layout_replacement_clears_old_coverage);
+    g_test_add_data_func("/video_player/output_bounds/success_shrunken_layout", GINT_TO_POINTER(1), test_layout_replacement_clears_old_coverage);
+    g_test_add_data_func("/video_player/output_bounds/failed_seek_preview", GINT_TO_POINTER(2), test_layout_replacement_clears_old_coverage);
+    g_test_add_data_func("/video_player/output_bounds/failed_play_restart", GINT_TO_POINTER(3), test_layout_replacement_clears_old_coverage);
     g_test_add_func("/video_player/paused_refresh/submits_without_playing", test_refresh_paused_frame_submits_without_playing);
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)
