@@ -371,6 +371,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    gint previous_scroll = app->book.toc_scroll;
     get_terminal_size(&app->term_width, &app->term_height);
     if (!ui_begin_sync_update()) goto output_failure;
     if (!ui_clear_kitty_images(app)) {
@@ -552,6 +553,7 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     if (terminal_output_flush()) return ERROR_NONE;
 
 output_failure:
+    app->book.toc_scroll = previous_scroll;
     app->needs_redraw = TRUE;
     app->needs_screen_clear = TRUE;
     app->suppress_full_clear = FALSE;

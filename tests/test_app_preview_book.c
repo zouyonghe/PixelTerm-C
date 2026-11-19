@@ -604,12 +604,10 @@ static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
     FILE *saved = stdout;
     fflush(saved);
     stdout = stream;
-    gint64 before_failure = g_get_monotonic_time();
     if (backoff) {
         terminal_output_defer("pending-book", TERMINAL_OUTPUT_RESTORE);
         g_assert_false(terminal_output_flush());
     }
-    gsize attempted = sink.attempted->len;
     ErrorCode result;
     switch (operation) {
         case 0: result = app_book_jump_render_prompt(&app); break;
@@ -620,9 +618,8 @@ static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(app.needs_redraw);
     g_assert_true(app.needs_screen_clear);
-    /* A descheduled test may legitimately outlive the 100 ms retry window. */
-    if (backoff && g_get_monotonic_time() - before_failure < 100000)
-        g_assert_cmpuint(sink.attempted->len, ==, attempted);
+    /* Retry timing is covered deterministically by test_terminal_output.c;
+     * this integration checks error flags and retained recovery controls. */
     sink.fail = FALSE;
     g_assert_true(terminal_output_flush());
     fclose(stream);
@@ -657,8 +654,19 @@ static void test_book_page_frame_failure(gconstpointer data) {
     init_book_preview_app(&app, 2, 20, 80, 30);
     app.mode = APP_MODE_BOOK;
     BookToc toc = {0};
+    BookTocItem items[40] = {0};
     gboolean is_toc = scenario & 8;
     app.book.toc = is_toc ? &toc : NULL;
+    if (is_toc) {
+        for (gsize i = 0; i < G_N_ELEMENTS(items); i++) {
+            items[i].title = "Chapter";
+            items[i].next = i + 1 < G_N_ELEMENTS(items) ? &items[i + 1] : NULL;
+        }
+        toc.items = items;
+        toc.count = G_N_ELEMENTS(items);
+        app.book.toc_selected = 30;
+        app.book.toc_scroll = 2;
+    }
     app.force_kitty = stage == 1;
     app.book.jump_active = stage == 2;
     app.suppress_full_clear = TRUE;
@@ -680,6 +688,7 @@ static void test_book_page_frame_failure(gconstpointer data) {
     sink.recovered = TRUE;
     gboolean recovered = terminal_output_flush();
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    if (is_toc) g_assert_cmpint(app.book.toc_scroll, ==, 2);
     g_assert_true(app.needs_redraw);
     g_assert_true(app.needs_screen_clear);
     g_assert_false(app.suppress_full_clear);
@@ -693,6 +702,7 @@ static void test_book_page_frame_failure(gconstpointer data) {
     app.suppress_full_clear = TRUE;
     app.book.jump_active = FALSE;
     g_assert_cmpint(is_toc ? app_render_book_toc(&app) : app_render_book_page(&app), ==, ERROR_NONE);
+    if (is_toc) g_assert_cmpint(app.book.toc_scroll, ==, 19);
     g_assert_cmpint(g_book_preview_stub_state.full_clears, ==, full_clears + 1);
     g_assert_false(app.needs_screen_clear);
     fclose(stream);
