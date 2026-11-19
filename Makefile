@@ -184,6 +184,7 @@ MAINTENANCE_SCRIPT_TESTS = \
 	$(PYTHON_TEST_ENV) python3 scripts/test_install_script.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_generate_release_notes.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_sync_version_refs.py && \
+	$(PYTHON_TEST_ENV) python3 scripts/test_summarize_video_log.py && \
 	$(PYTHON_TEST_ENV) python3 scripts/test_terminal_startup.py --binary "$(abspath $(TARGET))"
 TEST_SOURCES = $(filter-out tests/test_app_file_manager.c tests/test_app_preview_grid.c tests/test_app_preview_book.c, $(wildcard tests/test_*.c))
 TEST_OBJECTS = $(TEST_SOURCES:tests/%.c=$(OBJDIR)/%.o)
@@ -293,6 +294,10 @@ tsan-suite: $(TEST_TARGET)
 		/video_player/decode_queue/sixel_mode_waits_instead_of_replacing_oldest \
 		/video_player/decode_queue/text_mode_waits_instead_of_replacing_oldest \
 		/video_player/decode_queue/wait_and_take_blocks_until_item_arrives \
+		/video_player/decode_worker/skips_conversion_for_late_frames \
+		/video_player/decode_worker/converts_frames_without_clock \
+		/video_player/decode_worker/converts_frames_after_silence \
+		/video_player/decode_worker/converts_frames_before_rewind_resync \
 		/video_player/queue_push/waits_for_capacity_instead_of_dropping_new_frame \
 		/video_player/seek_relative/after_eof_stops_parked_workers_before_preview \
 		/video_player/public_api/layout_accessors_return_consistent_snapshots \

@@ -16,6 +16,7 @@
 #include "input.h"
 #include "input_dispatch.h"
 #include "common.h"
+#include "kitty_graphics.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
 
@@ -39,6 +40,7 @@ static void run_application_cleanup(InputHandler *input_handler) {
         return;
     }
 
+    kitty_graphics_retry_pending_deletes();
     printf("\033[2J\033[H\033[0m");
     printf("\033[?25h");
     fflush(stdout);
@@ -98,6 +100,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     last_term_height = input_handler->terminal_height;
         
     while (app->running && !input_handler->should_exit) {
+        kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time());
         if (g_terminate_requested) {
             app->running = FALSE;
             input_handler->should_exit = TRUE;
@@ -188,6 +191,8 @@ int main(int argc, char *argv[]) {
     // Setup signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    /* Ignore SIGPIPE so broken pipe writes return EPIPE instead of terminating. */
+    signal(SIGPIPE, SIG_IGN);
 
     // Parse command line arguments
     char *path = NULL;

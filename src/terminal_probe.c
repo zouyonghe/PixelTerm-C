@@ -152,6 +152,15 @@ gssize terminal_probe_query_response(const char *query,
                                      gchar terminator,
                                      char *buffer,
                                      gsize buffer_size) {
+    return terminal_probe_query_response_tracked(query, timeout_ms, poll_timeout_ms,
+                                                  terminator, buffer, buffer_size, NULL);
+}
+
+gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
+                                             gint poll_timeout_ms, gchar terminator,
+                                             char *buffer, gsize buffer_size,
+                                             gboolean *query_written) {
+    if (query_written) *query_written = FALSE;
     if (!query || query[0] == '\0' || !buffer || buffer_size == 0 ||
         timeout_ms <= 0 || poll_timeout_ms <= 0) {
         return -1;
@@ -210,7 +219,9 @@ gssize terminal_probe_query_response(const char *query,
                 if (!query_sent) {
                     /* Establish a non-flushing boundary; preserve queued keys but
                      * never use replies that started before this query. */
-                    if (hooks->write_fn(query, query_len, user_data) != (ssize_t)query_len) {
+                    ssize_t written = hooks->write_fn(query, query_len, user_data);
+                    if (query_written && written > 0) *query_written = TRUE;
+                    if (written != (ssize_t)query_len) {
                         break;
                     }
                     query_sent = TRUE;
@@ -273,6 +284,10 @@ gssize terminal_probe_query_response(const char *query,
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
+        /* Recover transient failures, but reject replies from a failed probe. */
+        for (gint retry = 0; retry < 2; retry++) {
+            if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) == 0) break;
+        }
         return -1;
     }
 

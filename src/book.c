@@ -133,6 +133,9 @@ BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
     fz_set_warning_callback(ctx, book_mupdf_warn, NULL);
 
     fz_document *doc = NULL;
+    fz_stream *stream = NULL;
+    fz_var(doc);
+    fz_var(stream);
     gint page_count = 0;
     gboolean suppress_warnings = book_should_suppress_warnings(filepath);
     StderrSilencer silencer = {0};
@@ -142,8 +145,13 @@ BookDocument* book_open(const char *filepath, ErrorCode *out_error) {
 
     fz_try(ctx) {
         fz_register_document_handlers(ctx);
-        doc = fz_open_document(ctx, filepath);
+        /* Own the stream across parse failures; MuPDF's path opener can leak it. */
+        stream = fz_open_file(ctx, filepath);
+        doc = fz_open_document_with_stream(ctx, filepath, stream);
         page_count = fz_count_pages(ctx, doc);
+    }
+    fz_always(ctx) {
+        fz_drop_stream(ctx, stream);
     }
     fz_catch(ctx) {
         if (silencer.active) {

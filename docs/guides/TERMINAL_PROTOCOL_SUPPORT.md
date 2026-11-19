@@ -67,10 +67,11 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 
 ## Kitty transfer modes
 
-- `auto`: default. PixelTerm-C uses conservative shared-memory detection for kitty video and otherwise keeps the direct inline path.
-- `direct`: always use Chafa's inline kitty output. This is useful for comparing behavior or avoiding terminal-specific shared-memory issues.
-- `shm`: force the kitty shared-memory path for video frames. If shared-memory setup fails for a frame, PixelTerm-C falls back to direct rendering.
+- `auto`: default. PixelTerm-C uses conservative shared-memory detection for kitty video. When shared memory is not selected, eligible frames use the same RGB24 inline path as `direct`. When shared memory is selected but fails for a frame, it falls back to Chafa inline output without reserving an unused RGB24 image ID.
+- `direct`: avoid shared memory and send eligible opaque video frames as inline RGB24. Frames are proportionally scaled to terminal bounds and an 8 MiB pixel-data budget using bilinear scaling. Stretch mode (aspect preservation disabled), alpha, non-default gamma, color enhancement, tmux/screen, or conversion failure retains Chafa inline output. RGB24 is not guaranteed pixel-identical to Chafa scaling; use this mode to avoid terminal-specific shared-memory issues, not as a forced-Chafa reference.
+- `shm`: force the kitty shared-memory path for video frames. If shared-memory setup fails for a frame, PixelTerm-C falls back to Chafa inline output, not the RGB24 optimization.
 - `PIXELTERM_KITTY_SHM=1` remains available as a debug override for `auto`, but `config.ini` or `--kitty-transfer` is preferred for normal use.
+- RGB24 optimization requires a validated terminal-assigned image-ID reservation before workers start. Allocation uses an invisible 1×1 pixel and a bounded reply wait (120 ms local, 500 ms SSH); missing or malformed replies retain Chafa output. Without a confirmed image ID, PixelTerm-C does not delete by image number, since numbers are shared across clients. An unacknowledged placeholder can remain until terminal eviction or reset. Pause keeps a confirmed reservation; stop, leaving Kitty, or switching to a non-Kitty renderer releases it. Failed releases of known IDs are retried by the main-context cleanup queue. Cleanup cannot be guaranteed after a permanent terminal disconnection. A play request blocked by failed reservation cleanup reports a terminal-output error rather than success.
 - If a kitty-compatible terminal becomes sluggish outside PixelTerm-C itself, for example, if the mouse cursor changes to a loading state or tabs become hard to switch, use `kitty_transfer = direct`. That usually means the terminal's own shared-memory graphics consumer is overloaded.
 
 ## Scope notes

@@ -321,6 +321,7 @@ static void test_cleanup_helpers(void) {
 static void test_error_code_to_string(void) {
     g_assert_cmpstr(error_code_to_string(ERROR_NONE), ==, "No error");
     g_assert_cmpstr(error_code_to_string(ERROR_INVALID_ARGS), ==, "Invalid arguments");
+    g_assert_cmpstr(error_code_to_string(ERROR_OUTPUT_IO), ==, "Terminal output failed");
     g_assert_cmpstr(error_code_to_string((ErrorCode)999), ==, "Unknown error");
 }
 

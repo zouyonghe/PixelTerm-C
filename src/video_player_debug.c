@@ -124,6 +124,8 @@ static gboolean video_player_debug_should_log(const gchar *event) {
            g_strcmp0(event, "worker-eof-stop") == 0 ||
            g_strcmp0(event, "worker-frame-ready") == 0 ||
            g_strcmp0(event, "worker-decode-time") == 0 ||
+           g_strcmp0(event, "worker-convert-time") == 0 ||
+           g_strcmp0(event, "worker-copy-time") == 0 ||
            g_strcmp0(event, "worker-render-time") == 0 ||
            g_strcmp0(event, "worker-push") == 0 ||
            g_strcmp0(event, "worker-drop-stale") == 0 ||
@@ -135,6 +137,8 @@ static gboolean video_player_debug_should_log(const gchar *event) {
            g_strcmp0(event, "render-time") == 0 ||
            g_strcmp0(event, "render-frame") == 0 ||
            g_strcmp0(event, "render-draw-time") == 0 ||
+           g_strcmp0(event, "render-submit") == 0 ||
+           g_strcmp0(event, "render-output-error") == 0 ||
            g_strcmp0(event, "render-wait") == 0;
 }
 

@@ -1,8 +1,12 @@
 #include "kitty_graphics.h"
 #include "process_env.h"
+#include "media_buffer.h"
+#include "terminal_probe.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -97,6 +101,113 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
     }
     return kitty_graphics_shm_auto_enabled();
 #endif
+}
+
+/* The main input/output owner services this queue; render workers never use it. */
+static GQueue pending_deletes = G_QUEUE_INIT;
+static gboolean cleanup_registered = FALSE;
+static gint64 next_cleanup_retry_us = 0;
+
+void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
+    if (now_us < next_cleanup_retry_us) return;
+    if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;
+}
+
+gboolean kitty_graphics_retry_pending_deletes(void) {
+    while (!g_queue_is_empty(&pending_deletes)) {
+        GString *command = g_queue_peek_head(&pending_deletes);
+        clearerr(stdout);
+        gsize written = fwrite(command->str, 1, command->len, stdout);
+        gint flushed = fflush(stdout);
+        if (written != command->len || flushed != 0 || ferror(stdout)) return FALSE;
+        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
+    }
+    next_cleanup_retry_us = 0;
+    return TRUE;
+}
+
+static void kitty_graphics_cleanup_at_exit(void) {
+    kitty_graphics_retry_pending_deletes();
+    /* Process exit is the last retry opportunity, even if the terminal is gone. */
+    while (!g_queue_is_empty(&pending_deletes)) {
+        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
+    }
+}
+
+static void kitty_graphics_queue_delete(GString *command) {
+    if (!cleanup_registered) {
+        cleanup_registered = atexit(kitty_graphics_cleanup_at_exit) == 0;
+    }
+    g_queue_push_tail(&pending_deletes, command);
+}
+
+void kitty_graphics_defer_image_delete(guint32 image_id) {
+    if (!image_id) return;
+    GString *command = kitty_graphics_build_delete_image_command(image_id);
+    g_string_prepend(command, "\033\\"); /* Finish an interrupted graphics command first. */
+    kitty_graphics_queue_delete(command);
+}
+
+void kitty_graphics_defer_output_recovery(void) {
+    kitty_graphics_queue_delete(g_string_new("\033\\"));
+}
+
+guint32 kitty_graphics_allocate_image_id(void) {
+    if (!kitty_graphics_retry_pending_deletes()) return 0;
+    /* I= requests a fresh terminal-assigned i=; the nonce only correlates replies. */
+    guint32 nonce = g_random_int();
+    if (!nonce) nonce = 1;
+    gchar query[160], response[1024] = {0};
+    gboolean query_written = FALSE;
+    g_snprintf(query, sizeof(query),
+               "\033_Ga=t,f=32,s=1,v=1,I=%u;AAAAAA==\033\\\033[5n", nonce);
+    gint timeout = pixelterm_getenv("SSH_CONNECTION") || pixelterm_getenv("SSH_CLIENT") ?
+        TERMINAL_PROBE_SSH_TIMEOUT_MS : TERMINAL_PROBE_DEFAULT_TIMEOUT_MS;
+    if (fflush(stdout) != 0) {
+        return 0;
+    }
+    gssize response_length = terminal_probe_query_response_tracked(query, timeout,
+        TERMINAL_PROBE_POLL_TIMEOUT_MS, 'n', response, sizeof(response), &query_written);
+    const gchar *cursor = response;
+    while ((cursor = strstr(cursor, "\033_G")) != NULL) {
+        const gchar *end = strstr(cursor, "\033\\");
+        const gchar *separator = strchr(cursor, ';');
+        if (!end || !separator) break;
+        if (separator < end && end - separator == 3 && memcmp(separator + 1, "OK", 2) == 0) {
+            gchar *control = g_strndup(cursor + 3, separator - (cursor + 3));
+            gchar **fields = g_strsplit(control, ",", -1);
+            guint64 id = 0, number = 0;
+            gboolean valid = TRUE;
+            for (gsize i = 0; fields[i]; i++) {
+                if (g_str_has_prefix(fields[i], "i=") || g_str_has_prefix(fields[i], "I=")) {
+                    guint64 *value = fields[i][0] == 'i' ? &id : &number;
+                    if (*value || !g_ascii_string_to_unsigned(fields[i] + 2, 10, 1,
+                                                              G_MAXUINT32, value, NULL)) {
+                        valid = FALSE;
+                        break;
+                    }
+                }
+            }
+            g_strfreev(fields);
+            g_free(control);
+            if (valid && id && number == nonce) {
+                if (response_length > 0) return (guint32)id;
+                /* A failed restore invalidates use, not ownership of a complete reply.
+                 * defer_image_delete prepends \033\\ for recovery, so skip the separate defer. */
+                kitty_graphics_defer_image_delete((guint32)id);
+                kitty_graphics_retry_pending_deletes();
+                return 0;
+            }
+        }
+        cursor = end + 2;
+    }
+    if (query_written) {
+        /* Image numbers are shared across clients; without a confirmed i=, a
+         * d=N delete could target another client's newer image. Only end the APC. */
+        kitty_graphics_defer_output_recovery();
+        kitty_graphics_retry_pending_deletes();
+    }
+    return 0;
 }
 
 GString *kitty_graphics_build_shm_command(const gchar *shm_name,
@@ -459,6 +570,90 @@ KittyGraphicsFrame *kitty_graphics_frame_new_shm_rgba(const guint8 *pixels,
                                                       0,
                                                       0,
                                                       FALSE);
+}
+
+void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
+                                    gint64 bound_height, gint *width_out, gint *height_out) {
+    gdouble scale = 1.0;
+    if (width <= 0 || height <= 0) {
+        *width_out = *height_out = 0;
+        return;
+    }
+    if (bound_width > 0) scale = MIN(scale, (gdouble)bound_width / width);
+    if (bound_height > 0) scale = MIN(scale, (gdouble)bound_height / height);
+    scale = MIN(scale, sqrt((gdouble)KITTY_GRAPHICS_DIRECT_MAX_BYTES / (3.0 * width * height)));
+    /* Dimensionless scale bound for extreme aspect ratios rounding up to one pixel. */
+    scale = MIN(scale, (KITTY_GRAPHICS_DIRECT_MAX_BYTES / 3.0) / MAX(width, height));
+    *width_out = MAX(1, (gint)(width * scale));
+    *height_out = MAX(1, (gint)(height * scale));
+}
+
+KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
+                                                        gint width,
+                                                        gint height,
+                                                        gint rowstride,
+                                                        gint display_width_cells,
+                                                        gint display_height_cells,
+                                                        guint32 image_id) {
+    gsize min_rowstride = 0;
+    gsize payload_size = 0;
+    if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
+        display_width_cells <= 0 || display_height_cells <= 0 || image_id == 0 ||
+        !g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)3) ||
+        min_rowstride > G_MAXINT || (gsize)rowstride < min_rowstride ||
+        !g_size_checked_mul(&payload_size, min_rowstride, (gsize)height) ||
+        payload_size > KITTY_GRAPHICS_DIRECT_MAX_BYTES ||
+        !media_buffer_validate_layout(width, height, rowstride, 3, 1, NULL)) {
+        return NULL;
+    }
+
+    GByteArray *packed = NULL;
+    if ((gsize)rowstride != min_rowstride) {
+        packed = g_byte_array_sized_new(payload_size);
+        for (gint y = 0; y < height; y++) {
+            g_byte_array_append(packed, pixels + (gsize)y * rowstride, (guint)min_rowstride);
+        }
+        pixels = packed->data;
+    }
+    gchar *encoded = g_base64_encode(pixels, payload_size);
+    if (packed) g_byte_array_unref(packed);
+    if (!encoded) {
+        return NULL;
+    }
+
+    GString *command = g_string_sized_new(strlen(encoded) + 128);
+    gsize encoded_len = strlen(encoded);
+    for (gsize offset = 0; offset < encoded_len;) {
+        gsize remaining = encoded_len - offset;
+        gsize chunk_size = MIN(remaining, (gsize)4096);
+        gboolean more = offset + chunk_size < encoded_len;
+        if (more) {
+            chunk_size -= chunk_size % 4;
+        }
+
+        if (offset == 0) {
+            g_string_append_printf(command,
+                                   "\033_Ga=T,f=24,s=%d,v=%d,c=%d,r=%d,i=%u,C=1,m=%d,q=2;",
+                                   width, height, display_width_cells,
+                                   display_height_cells, image_id, more ? 1 : 0);
+        } else {
+            g_string_append_printf(command, "\033_Gm=%d;", more ? 1 : 0);
+        }
+        g_string_append_len(command, encoded + offset, chunk_size);
+        g_string_append(command, "\033\\");
+        offset += chunk_size;
+    }
+    g_free(encoded);
+
+    KittyGraphicsFrame *frame = g_new0(KittyGraphicsFrame, 1);
+    if (!frame) {
+        g_string_free(command, TRUE);
+        return NULL;
+    }
+    frame->command = command;
+    frame->display_width_cells = display_width_cells;
+    frame->display_height_cells = display_height_cells;
+    return frame;
 }
 
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,

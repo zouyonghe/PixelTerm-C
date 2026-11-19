@@ -562,8 +562,16 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             app_render_info_overlay(app, filepath, image_area_top_row, target_height);
             app_render_help_overlay(app);
         } else if (app->video_player) {
-            APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
-            app->needs_redraw = FALSE;
+            ErrorCode play_result = APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
+            app->needs_redraw = play_result != ERROR_NONE;
+            if (play_result != ERROR_NONE) {
+                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+                fflush(stdout);
+                if (play_result != ERROR_OUTPUT_IO) {
+                    fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(play_result));
+                }
+                return play_result;
+            }
         } else {
             APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return ERROR_INVALID_IMAGE;

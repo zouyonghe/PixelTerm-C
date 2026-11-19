@@ -420,6 +420,21 @@ static void test_video_seek_failure_preserves_queued_repeats_for_retry(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static void test_video_seek_output_failure_does_not_switch_media(void) {
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(KEY_RIGHT);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    g_input_dispatch_stub_state.video_seek_result = ERROR_OUTPUT_IO;
+    input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    input_dispatch_handle_key_press_single(&app, &handler, &event);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
+}
+
 static void test_video_up_and_down_keep_media_switching(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
@@ -674,6 +689,8 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_right_coalesces_queued_repeats_and_preserves_next_event);
     g_test_add_func("/input_dispatch_key_single/video/seek_failure_preserves_queued_repeats_for_retry",
                     test_video_seek_failure_preserves_queued_repeats_for_retry);
+    g_test_add_func("/input_dispatch_key_single/video/seek_output_failure_does_not_switch_media",
+                    test_video_seek_output_failure_does_not_switch_media);
     g_test_add_func("/input_dispatch_key_single/video/up_and_down_keep_media_switching",
                     test_video_up_and_down_keep_media_switching);
     g_test_add_func("/input_dispatch_key_single/video/scale_keeps_paused_video_paused",

@@ -209,8 +209,10 @@ static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
     if (!can_handle_video_seek(app)) {
         return FALSE;
     }
+    if (!g_video_seek_func) return FALSE;
 
-    return g_video_seek_func && g_video_seek_func(app->video_player, delta_ms) == ERROR_NONE;
+    ErrorCode result = g_video_seek_func(app->video_player, delta_ms);
+    return result == ERROR_NONE || result == ERROR_OUTPUT_IO;
 }
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,
