@@ -42,13 +42,21 @@ static void test_full_pipe_returns(gconstpointer data) {
         fflush(saved);
         stdout = stream;
         gboolean submitted;
-        gboolean session = GPOINTER_TO_INT(data) == 3;
+        gboolean session = GPOINTER_TO_INT(data) >= 3;
         if (session) g_assert_true(terminal_output_begin_session());
         if (GPOINTER_TO_INT(data) == 1 || session) {
             g_assert_cmpint(fputs("BUFFERED", stdout), >=, 0);
-            submitted = terminal_output_flush();
+            submitted = GPOINTER_TO_INT(data) == 4 ? fflush(stdout) == 0 : terminal_output_flush();
         } else {
             submitted = terminal_output_write("FRAME", 5);
+        }
+        if (GPOINTER_TO_INT(data) == 4) {
+            g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
+            while (read(pipefd[0], bytes, sizeof(bytes)) > 0) {}
+            fputs("LATER", stdout);
+            g_assert_cmpint(fflush(stdout), !=, 0);
+            g_assert_cmpint(read(pipefd[0], bytes, sizeof(bytes)), ==, -1);
+            g_assert_true(errno == EAGAIN || errno == EWOULDBLOCK);
         }
         if (session) {
             g_assert_false(terminal_output_end_session());
@@ -119,5 +127,6 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/full_pipe/payload", GINT_TO_POINTER(0), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/full_pipe/buffered", GINT_TO_POINTER(1), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/full_pipe/legacy_session", GINT_TO_POINTER(3), test_full_pipe_returns);
+    g_test_add_data_func("/terminal_output/full_pipe/legacy_stops_after_failure", GINT_TO_POINTER(4), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/stopped_terminal", GINT_TO_POINTER(2), test_full_pipe_returns);
 }
