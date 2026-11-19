@@ -27,6 +27,7 @@ static gint64 next_cleanup_retry_us = 0;
 static FILE *session_stdout;
 static FILE *session_stream;
 static int session_fd;
+static gboolean session_write_failed;
 
 static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length) {
     int flags = fcntl(fd, F_GETFL);
@@ -56,12 +57,17 @@ static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize
 #ifdef __APPLE__
 static int terminal_output_session_write(void *data, const char *bytes, int length) {
     (void)data;
-    return (int)terminal_output_descriptor_write(session_fd, bytes, (gsize)length);
+    if (session_write_failed) return -1;
+    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, (gsize)length);
+    if (written != length) session_write_failed = TRUE;
+    return (int)written;
 }
 #else
 static ssize_t terminal_output_session_write(void *data, const char *bytes, size_t length) {
     (void)data;
+    if (session_write_failed) return 0;
     ssize_t written = terminal_output_descriptor_write(session_fd, bytes, length);
+    if (written < 0 || (gsize)written != length) session_write_failed = TRUE;
     return written < 0 ? 0 : written;
 }
 #endif
@@ -80,6 +86,7 @@ gboolean terminal_output_begin_session(void) {
     if (!stream) return FALSE;
     session_stdout = stdout;
     session_stream = stream;
+    session_write_failed = FALSE;
     stdout = stream;
     return TRUE;
 }
@@ -119,6 +126,7 @@ static gboolean terminal_output_submit(const char *bytes, gsize length) {
 }
 
 void terminal_output_discard(void) {
+    if (stdout == session_stream) session_write_failed = FALSE;
 #ifdef __linux__
     __fpurge(stdout);
 #else
