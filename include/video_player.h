@@ -164,7 +164,9 @@ void video_player_set_render_area(VideoPlayer *player,
 /**
  * @brief Clears the most recently rendered video area from the terminal.
  *
- * @return ERROR_OUTPUT_IO on failed submission. Any attempted submission
+ * @return ERROR_NONE after a successful clear or when no area exists;
+ * ERROR_INVALID_IMAGE for a NULL player; ERROR_OUTPUT_IO on failed submission.
+ * Any attempted submission
  * invalidates the previous line cache because delivery may have succeeded.
  * @note Call from the player-owning main context because this writes stdout.
  */

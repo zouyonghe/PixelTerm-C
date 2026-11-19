@@ -72,7 +72,10 @@ gboolean terminal_output_flush(void) {
 }
 
 static void terminal_output_cleanup_at_exit(void) {
-    terminal_output_flush();
+    if (!terminal_output_flush()) {
+        /* A sticky/buffered frame error must not consume the final restore attempt. */
+        terminal_output_flush();
+    }
     /* Process exit is the last retry opportunity, even if the terminal is gone. */
     while (!g_queue_is_empty(&pending_output)) {
         PendingOutput *pending = g_queue_pop_head(&pending_output);

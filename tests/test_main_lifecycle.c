@@ -195,7 +195,7 @@ static ErrorCode lifecycle_enable_mouse(InputHandler *handler) {
 }
 
 static int cleanup_setattr(gint action, const struct termios *state, gpointer data) {
-    (void)action;
+    g_assert_cmpint(action, ==, TCSAFLUSH);
     CleanupTerminal *terminal = data;
     terminal->calls++;
     if (terminal->failures-- > 0) return -1;
