@@ -150,7 +150,6 @@ typedef struct {
 static ssize_t preview_output_write(void *data, const char *bytes, size_t length) {
     PreviewOutput *sink = data;
     if (++sink->writes == sink->fail_at) {
-        if (sink->delivered) g_string_truncate(sink->delivered, 0);
         errno = EIO;
         return -1;
     }
@@ -179,7 +178,10 @@ static void test_enter_preview_output_failure_preserves_mode(gconstpointer data)
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(recovered);
-    g_assert_cmpstr(sink.delivered->str, ==, "\033\\");
+    g_assert_cmpstr(sink.delivered->str, ==, GPOINTER_TO_UINT(data) == 1 ?
+        "\033\\" : "\033_Ga=d,q=2\033\\\033\\");
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
     g_string_free(sink.delivered, TRUE);
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_true(app.image_files == original_images);

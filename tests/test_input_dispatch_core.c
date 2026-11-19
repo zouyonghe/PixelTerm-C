@@ -363,8 +363,11 @@ static void test_preview_key_output_errors(gconstpointer data) {
     if (path == 0) g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, 1);
     if (path == 1) g_assert_cmpint(g_input_dispatch_stub_state.preview_selection_render_calls, ==, 1);
     if (path == 2) g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 1);
-    if (path == 3) g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
-    if (path == 2 || path == 3) {
+    if (path == 3) {
+        g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
+        g_assert_cmpint(g_input_dispatch_stub_state.exit_preview_calls, ==, 0);
+    }
+    if (path == 2) {
         g_assert_cmpint(g_input_dispatch_stub_state.exit_preview_calls, ==, 1);
         g_assert_true(g_input_dispatch_stub_state.last_exit_preview_open_selected);
     }

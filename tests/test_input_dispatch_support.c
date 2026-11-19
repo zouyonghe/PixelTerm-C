@@ -152,7 +152,9 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
 }
 
 ErrorCode app_enter_book_preview(PixelTermApp *app) {
-    (void)app;
+    if (g_input_dispatch_stub_state.enter_book_preview_result == ERROR_NONE) {
+        app_set_mode(app, APP_MODE_BOOK_PREVIEW);
+    }
     g_input_dispatch_stub_state.enter_book_preview_calls++;
     return g_input_dispatch_stub_state.enter_book_preview_result;
 }
@@ -242,7 +244,9 @@ ErrorCode app_book_jump_clear_prompt(PixelTermApp *app) {
 }
 
 void app_close_book(PixelTermApp *app) {
-    (void)app;
+    app->book.doc = NULL;
+    g_clear_pointer(&app->book.path, g_free);
+    app_set_mode(app, APP_MODE_SINGLE);
     g_input_dispatch_stub_state.close_book_calls++;
 }
 
@@ -254,7 +258,7 @@ ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
 }
 
 ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
-    (void)app;
+    app_set_mode(app, APP_MODE_SINGLE);
     (void)filepath;
     g_input_dispatch_stub_state.open_book_calls++;
     return g_input_dispatch_stub_state.open_book_result;
@@ -313,7 +317,9 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
 }
 
 ErrorCode app_exit_file_manager(PixelTermApp *app) {
-    (void)app;
+    if (g_input_dispatch_stub_state.exit_file_manager_result == ERROR_NONE) {
+        app_set_mode(app, APP_MODE_SINGLE);
+    }
     g_input_dispatch_stub_state.exit_file_manager_calls++;
     return g_input_dispatch_stub_state.exit_file_manager_result;
 }
@@ -331,8 +337,7 @@ ErrorCode app_file_manager_left(PixelTermApp *app) {
 }
 
 ErrorCode app_file_manager_right(PixelTermApp *app) {
-    (void)app;
-    return ERROR_NONE;
+    return app_file_manager_enter(app);
 }
 
 ErrorCode app_file_manager_up(PixelTermApp *app) {
@@ -362,8 +367,11 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
 }
 
 ErrorCode app_file_manager_enter(PixelTermApp *app) {
-    (void)app;
     g_input_dispatch_stub_state.file_manager_enter_calls++;
+    if (g_input_dispatch_stub_state.file_manager_enter_renders_error) {
+        ErrorCode rendered = app_render_file_manager(app);
+        if (rendered != ERROR_NONE) return rendered;
+    }
     return g_input_dispatch_stub_state.file_manager_enter_result;
 }
 
@@ -422,7 +430,10 @@ ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
 }
 
 ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
-    (void)app;
+    g_assert_true(app_is_preview_mode(app));
+    if (g_input_dispatch_stub_state.exit_preview_result == ERROR_NONE) {
+        app_set_mode(app, APP_MODE_SINGLE);
+    }
     g_input_dispatch_stub_state.exit_preview_calls++;
     g_input_dispatch_stub_state.last_exit_preview_open_selected = open_selected;
     return g_input_dispatch_stub_state.exit_preview_result;
@@ -441,13 +452,18 @@ ErrorCode app_render_by_mode(PixelTermApp *app) {
 }
 
 ErrorCode app_enter_file_manager(PixelTermApp *app) {
-    (void)app;
+    g_input_dispatch_stub_state.last_enter_file_manager_index = app->current_index;
+    if (g_input_dispatch_stub_state.enter_file_manager_result == ERROR_NONE) {
+        app_set_mode(app, APP_MODE_FILE_MANAGER);
+    }
     g_input_dispatch_stub_state.enter_file_manager_calls++;
     return g_input_dispatch_stub_state.enter_file_manager_result;
 }
 
 ErrorCode app_enter_preview(PixelTermApp *app) {
-    (void)app;
+    if (g_input_dispatch_stub_state.enter_preview_result == ERROR_NONE) {
+        app_set_mode(app, APP_MODE_PREVIEW);
+    }
     g_input_dispatch_stub_state.enter_preview_calls++;
     return g_input_dispatch_stub_state.enter_preview_result;
 }

@@ -10,7 +10,8 @@ in `src/video_player*.c`.
 failed stdio buffer disposal, APC framing, deferred command lifetime and the
 100 ms background retry deadline. `kitty_graphics.c` encodes Kitty commands,
 runs the image-ID allocation probe, and queues deferred deletes and ST recovery
-through this owner; UI/input do not depend on its recovery logic.
+through this owner. UI/input depend on the output owner's readiness contract,
+but do not implement its recovery queue, buffer disposal or retry policy.
 Legacy UI rows still assemble bytes with `printf`/`fwrite`; their checked frame
 boundaries use `terminal_output_flush`. This module owns checking and recovery,
 not every individual formatting call. Remaining legacy prompt flushes require
@@ -33,6 +34,8 @@ their own checked integration; the contract does not make raw stdio checked.
   Void input-dispatch paths record failures in `app->last_error` for the main loop.
   GIF timers wait during recovery backoff; failed frame submissions stop playback
   and report the error instead of scheduling another frame.
+  Native GIF pause transfers its idempotent STOP to retained restoration so
+  logical pause does not silently discard the terminal-side stop after failure.
 
 Recovery assumes the same terminal session and image-ownership namespace. An
 external terminal reset or reconnect is not detected by a local retry deadline;

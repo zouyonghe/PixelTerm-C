@@ -570,15 +570,23 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         /* Stop media before clearing its content; commit the list only after output succeeds. */
         ErrorCode prepared = app_prepare_mode_entry(app, TRUE);
         if (prepared != ERROR_NONE) {
+            if (prepared == ERROR_OUTPUT_IO) {
+                app->needs_redraw = TRUE;
+                app->needs_screen_clear = TRUE;
+            }
             g_list_free_full(valid_images, g_free);
             return prepared;
         }
         if (!ui_clear_kitty_images(app)) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
         }
         ui_clear_screen_for_refresh(app);
         if (!terminal_output_flush()) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
         }
@@ -747,7 +755,10 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
 
     gboolean output_success = terminal_output_flush();
     renderer_destroy(renderer);
-    if (!output_success) app->needs_screen_clear = TRUE;
+    if (!output_success) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+    }
     return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 

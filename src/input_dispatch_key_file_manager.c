@@ -119,8 +119,6 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 if (state_changed) {
                     record_output_error(app, app_render_file_manager(app));
                 }
-            } else if (app_is_file_manager_mode(app)) {
-                record_output_error(app, app_render_file_manager(app));
             }
             break;
         }
@@ -148,14 +146,19 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             const gchar *selected_path = file_manager_selected_path(app);
             if (selected_path && is_valid_book_file(selected_path)) {
                 ErrorCode book_error = record_output_error(app, app_open_book(app, selected_path));
+                /* Opening a book can reset mode; retain the listing until entry succeeds. */
+                app_set_mode(app, APP_MODE_FILE_MANAGER);
                 if (book_error == ERROR_OUTPUT_IO) break;
                 if (book_error == ERROR_NONE) {
-                    if (record_output_error(app, app_exit_file_manager(app)) != ERROR_NONE) break;
                     ErrorCode entry = record_output_error(app, app_enter_book_preview(app));
                     if (entry == ERROR_NONE) {
+                        ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
+                        app_set_mode(app, APP_MODE_BOOK_PREVIEW);
+                        if (exited != ERROR_NONE) break;
                         record_output_error(app, app_render_book_preview(app));
-                    } else if (entry != ERROR_OUTPUT_IO) {
-                        record_output_error(app, app_refresh_display(app));
+                    } else {
+                        app_set_mode(app, APP_MODE_FILE_MANAGER);
+                        app->needs_redraw = TRUE;
                     }
                 } else {
                     record_output_error(app, app_render_file_manager(app));
@@ -176,6 +179,9 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             gboolean selection_is_media = selected_path &&
                                           g_file_test(selected_path, G_FILE_TEST_IS_REGULAR) &&
                                           is_valid_media_file(selected_path);
+            ReturnMode saved_return_mode = app->return_to_mode;
+            gint saved_index = app->current_index;
+            gint saved_previous = app->file_manager.previous_selected_entry;
             if (selection_is_media) {
                 app->return_to_mode = RETURN_MODE_PREVIEW;
                 gint selected_image_index = -1;
@@ -190,25 +196,23 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 if (selected_image_index >= 0) {
                     app->current_index = selected_image_index;
                 }
-                if (record_output_error(app, app_exit_file_manager(app)) != ERROR_NONE) break;
-                ErrorCode entry = record_output_error(app, app_enter_preview(app));
-                if (entry == ERROR_NONE) {
-                    record_output_error(app, app_render_preview_grid(app));
-                } else if (entry != ERROR_OUTPUT_IO) {
-                    record_output_error(app, app_refresh_display(app));
-                }
             } else {
                 app->return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
                 app->file_manager.previous_selected_entry = app->file_manager.selected_entry;
-                if (record_output_error(app, app_exit_file_manager(app)) != ERROR_NONE) break;
-                ErrorCode entry = record_output_error(app, app_enter_preview(app));
-                if (entry == ERROR_NONE) {
-                    app->preview.selected = 0;
-                    record_output_error(app, app_render_preview_grid(app));
-                } else if (entry != ERROR_OUTPUT_IO) {
-                    record_output_error(app, app_refresh_display(app));
-                }
             }
+            if (record_output_error(app, app_enter_preview(app)) != ERROR_NONE) {
+                app_set_mode(app, APP_MODE_FILE_MANAGER);
+                app->return_to_mode = saved_return_mode;
+                app->current_index = saved_index;
+                app->file_manager.previous_selected_entry = saved_previous;
+                app->needs_redraw = TRUE;
+                break;
+            }
+            ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
+            app_set_mode(app, APP_MODE_PREVIEW);
+            if (exited != ERROR_NONE) break;
+            if (!selection_is_media) app->preview.selected = 0;
+            record_output_error(app, app_render_preview_grid(app));
             break;
         }
         case KEY_ENTER:
@@ -218,9 +222,7 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 input_flush_buffer(input_handler);
                 error = record_output_error(app, app_file_manager_enter(app));
                 if (error == ERROR_OUTPUT_IO) break;
-                if (error != ERROR_NONE) {
-                    record_output_error(app, app_render_file_manager(app));
-                } else if (app_is_file_manager_mode(app)) {
+                if (error == ERROR_NONE && app_is_file_manager_mode(app)) {
                     record_output_error(app, app_render_file_manager(app));
                 }
             }

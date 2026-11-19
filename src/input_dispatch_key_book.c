@@ -433,12 +433,16 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
             break;
         case KEY_TAB: {
             gchar *book_path = app->book.path ? g_strdup(app->book.path) : NULL;
-            app_close_book(app);
             ErrorCode entry = record_output_error(app, app_enter_file_manager(app));
             if (entry != ERROR_NONE) {
+                app_set_mode(app, APP_MODE_BOOK);
+                app->needs_redraw = TRUE;
                 g_free(book_path);
                 break;
             }
+            app_close_book(app);
+            /* Book cleanup resets mode; destination entry already succeeded. */
+            app_set_mode(app, APP_MODE_FILE_MANAGER);
             if (book_path) {
                 app_file_manager_select_path(app, book_path);
                 g_free(book_path);

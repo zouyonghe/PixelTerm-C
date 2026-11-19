@@ -24,6 +24,7 @@ typedef struct {
     gint open_book_calls;
     gint close_book_calls;
     gint enter_file_manager_calls;
+    gint last_enter_file_manager_index;
     gint exit_file_manager_calls;
     gint enter_preview_calls;
     gint preview_zoom_calls;
@@ -59,6 +60,7 @@ typedef struct {
     ErrorCode enter_book_preview_result;
     ErrorCode enter_book_page_result;
     ErrorCode file_manager_enter_result;
+    gboolean file_manager_enter_renders_error;
     ErrorCode file_manager_toggle_hidden_result;
     ErrorCode load_directory_result;
     ErrorCode enter_at_position_result;

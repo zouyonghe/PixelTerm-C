@@ -806,7 +806,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     gboolean clear_failure = scenario & 2;
     gboolean entry_failure = scenario & 4;
     gboolean render_failure = scenario & 8;
-    gboolean transition_failure = scenario & 16;
+    gboolean preparation_failure = scenario & 16;
     gboolean load_failure = scenario & 32;
     gboolean redraw_failure = scenario & 64;
     gchar *dir = create_temp_dir();
@@ -831,7 +831,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_browser_scan_error = load_failure ? ERROR_FILE_NOT_FOUND : ERROR_NONE;
     g_book_entry_error = entry_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
     g_render_error = render_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
-    g_media_stop_error = transition_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
+    g_media_stop_error = preparation_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
     g_book_entry_calls = g_render_calls = 0;
     g_book_open_calls = g_book_close_calls = g_browser_scan_calls = 0;
     FileManagerOutput sink = {.fail = clear_failure, .fail_after_clear = redraw_failure,
@@ -848,12 +848,12 @@ static void test_open_loaded_file_output(gconstpointer data) {
     gboolean recovered = terminal_output_flush();
     fclose(stream);
     stdout = saved;
-    ErrorCode expected = (clear_failure || entry_failure || render_failure || transition_failure || redraw_failure)
+    ErrorCode expected = (clear_failure || entry_failure || render_failure || preparation_failure || redraw_failure)
                          ? ERROR_OUTPUT_IO : load_failure
                          ? (book ? ERROR_INVALID_IMAGE : ERROR_FILE_NOT_FOUND) : ERROR_NONE;
     g_assert_cmpint(result, ==, expected);
     g_assert_true(recovered);
-    if (clear_failure || transition_failure) {
+    if (clear_failure || preparation_failure) {
         g_assert_true(app.image_files == old_images);
         g_assert_cmpstr(app.image_files->data, ==, "old.png");
         g_assert_true(app.book.doc == (BookDocument *)0x2);
@@ -886,20 +886,20 @@ static void test_open_loaded_file_output(gconstpointer data) {
         g_assert_cmpint(app.total_images, ==, 1);
         g_assert_cmpstr(app.image_files->data, ==, path);
     }
-    g_assert_cmpint(g_book_open_calls, ==, book && !clear_failure && !transition_failure ? 1 : 0);
-    g_assert_cmpint(g_browser_scan_calls, ==, !book && !clear_failure && !transition_failure ? 1 : 0);
-    g_assert_cmpint(g_book_entry_calls, ==, book && !clear_failure && !transition_failure && !load_failure ? 1 : 0);
-    g_assert_cmpint(g_render_calls, ==, !clear_failure && !entry_failure && !transition_failure && !load_failure ? 1 : 0);
-    if (clear_failure || transition_failure || load_failure) {
+    g_assert_cmpint(g_book_open_calls, ==, book && !clear_failure && !preparation_failure ? 1 : 0);
+    g_assert_cmpint(g_browser_scan_calls, ==, !book && !clear_failure && !preparation_failure ? 1 : 0);
+    g_assert_cmpint(g_book_entry_calls, ==, book && !clear_failure && !preparation_failure && !load_failure ? 1 : 0);
+    g_assert_cmpint(g_render_calls, ==, !clear_failure && !entry_failure && !preparation_failure && !load_failure ? 1 : 0);
+    if (clear_failure || preparation_failure || load_failure) {
         g_assert_true(app.info_visible);
         g_assert_true(app.help_visible);
         g_assert_true(app.file_manager.entries == entries);
         g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
-        g_assert_cmpstr(attempted, ==, transition_failure ? "" : "\033[2J\033[H\033[0m");
+        g_assert_cmpstr(attempted, ==, preparation_failure ? "" : "\033[2J\033[H\033[0m");
     } else {
         g_assert_null(app.file_manager.entries);
         g_assert_null(app.file_manager.directory);
-        g_assert_cmpint(app.mode, ==, book && !entry_failure && !transition_failure ? APP_MODE_BOOK_PREVIEW : APP_MODE_SINGLE);
+        g_assert_cmpint(app.mode, ==, book && !entry_failure && !preparation_failure ? APP_MODE_BOOK_PREVIEW : APP_MODE_SINGLE);
     }
     g_free(attempted);
     g_string_free(sink.attempted, TRUE);
@@ -969,7 +969,7 @@ int main(int argc, char **argv) {
     g_test_add_data_func("/app_file_manager/open/book_entry_failure", GINT_TO_POINTER(5), test_open_loaded_file_output);
     g_test_add_data_func("/app_file_manager/open/image_render_failure", GINT_TO_POINTER(8), test_open_loaded_file_output);
     g_test_add_data_func("/app_file_manager/open/book_render_failure", GINT_TO_POINTER(9), test_open_loaded_file_output);
-    g_test_add_data_func("/app_file_manager/open/book_transition_failure", GINT_TO_POINTER(17), test_open_loaded_file_output);
+    g_test_add_data_func("/app_file_manager/open/book_preparation_failure", GINT_TO_POINTER(17), test_open_loaded_file_output);
 
     g_test_add_func("/app_file_manager/entry/output_failure_preserves_state",
                     test_enter_output_failure_preserves_state);

@@ -135,9 +135,23 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
                 record_output_error(app, app_refresh_display(app));
             } else {
                 ReturnMode saved_return_mode = app->return_to_mode;
+                gint saved_index = app->current_index;
+                if (app->preview.selected >= 0 && app->preview.selected < app->total_images) {
+                    app->current_index = app->preview.selected;
+                }
                 app->return_to_mode = RETURN_MODE_PREVIEW;
-                if (record_output_error(app, app_exit_preview(app, TRUE)) != ERROR_NONE) break;
-                if (record_output_error(app, app_enter_file_manager(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_enter_file_manager(app)) != ERROR_NONE) {
+                    app_set_mode(app, APP_MODE_PREVIEW);
+                    app->current_index = saved_index;
+                    app->return_to_mode = saved_return_mode;
+                    app->needs_redraw = TRUE;
+                    break;
+                }
+                /* Exit applies the selected image and resets view state only after entry succeeds. */
+                app_set_mode(app, APP_MODE_PREVIEW);
+                ErrorCode exited = record_output_error(app, app_exit_preview(app, TRUE));
+                app_set_mode(app, APP_MODE_FILE_MANAGER);
+                if (exited != ERROR_NONE) break;
                 if (saved_return_mode == RETURN_MODE_PREVIEW_VIRTUAL && app->file_manager.previous_selected_entry >= 0) {
                     app->file_manager.selected_entry = app->file_manager.previous_selected_entry;
                     app->file_manager.previous_selected_entry = -1;
