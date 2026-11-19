@@ -48,9 +48,7 @@ static gboolean gif_player_write_kitty_command(GString *command) {
     size_t written = command->len > 0 ? fwrite(command->str, 1, command->len, stdout) : 0;
     gboolean success = written == command->len && fflush(stdout) == 0;
     if (!success) {
-        kitty_graphics_discard_failed_output();
-        kitty_graphics_defer_output_recovery();
-        kitty_graphics_retry_pending_deletes();
+        kitty_graphics_recover_failed_output();
     }
     g_string_free(command, TRUE);
     return success;
@@ -418,8 +416,13 @@ static gboolean gif_player_submit_kitty_frame(GifPlayer *player,
         g_ptr_array_add(player->kitty_animation_shm_names, frame->shm_name);
         frame->shm_name = NULL;
     }
+    if (!success) kitty_graphics_recover_failed_output();
     kitty_graphics_frame_free(frame);
     return success;
+}
+
+gboolean gif_player_submit_kitty_frame_for_test(GifPlayer *player, KittyGraphicsFrame *frame, gboolean root) {
+    return gif_player_submit_kitty_frame(player, frame, root);
 }
 
 static gboolean gif_player_native_frame_fits_budget(const GifPlayer *player,

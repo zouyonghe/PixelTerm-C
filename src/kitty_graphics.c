@@ -123,6 +123,12 @@ void kitty_graphics_discard_failed_output(void) {
     clearerr(stdout);
 }
 
+gboolean kitty_graphics_recover_failed_output(void) {
+    kitty_graphics_discard_failed_output();
+    kitty_graphics_defer_output_recovery();
+    return kitty_graphics_retry_pending_deletes();
+}
+
 void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
     if (now_us < next_cleanup_retry_us) return;
     if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;

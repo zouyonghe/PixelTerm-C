@@ -51,9 +51,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     gint flushed = fflush(stdout);
     deleted = written == command->len && flushed == 0 && !ferror(stdout);
     if (!deleted) {
-        kitty_graphics_discard_failed_output();
-        kitty_graphics_defer_output_recovery();
-        kitty_graphics_retry_pending_deletes();
+        kitty_graphics_recover_failed_output();
     }
     g_string_free(command, TRUE);
     if (release) {
@@ -2040,11 +2038,9 @@ output_finished:;
     }
     gint64 io_end_us = g_get_monotonic_time();
     if (!output_success) {
-        kitty_graphics_discard_failed_output();
+        kitty_graphics_recover_failed_output();
         ErrorCode failure = video_player_report_output_failure();
         if (output_error) *output_error = failure;
-        kitty_graphics_defer_output_recovery();
-        kitty_graphics_retry_pending_deletes();
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
         player->is_playing = FALSE;

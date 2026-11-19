@@ -12,6 +12,7 @@
 #include "process_env.h"
 #include "kitty_graphics.h"
 #include "gif_player.h"
+#include "gif_player_test_internal.h"
 #include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
@@ -3090,6 +3091,30 @@ static void test_gif_delete_failure_discards_buffer(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_gif_frame_failure_recovers(gconstpointer data) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    KittyGraphicsFrame *frame = g_new0(KittyGraphicsFrame, 1);
+    frame->command = g_string_new("\033_Ga=T,f=24,s=1,v=1;AAAA\033\\");
+    frame->display_width_cells = frame->display_height_cells = 1;
+    DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    gboolean success = gif_player_submit_kitty_frame_for_test(player, frame, GPOINTER_TO_INT(data));
+    guint attempts = output.attempts;
+    fclose(capture);
+    stdout = saved;
+    gif_player_destroy(player);
+    g_assert_false(success);
+    g_assert_cmpuint(attempts, >=, 2);
+    g_assert_true(g_str_has_suffix(output.output->str, "\033\\"));
+    g_string_free(output.output, TRUE);
+}
+
 static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                            TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -3327,6 +3352,8 @@ void register_video_player_tests(void) {
     g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
     g_test_add_func("/video_player/direct_kitty/hide_failure_blocks_frame", test_hide_failure_does_not_emit_frame);
     g_test_add_func("/gif_player/native_animation/delete_failure_discards_buffer", test_gif_delete_failure_discards_buffer);
+    g_test_add_data_func("/gif_player/native_animation/root_failure_recovers", GINT_TO_POINTER(1), test_gif_frame_failure_recovers);
+    g_test_add_data_func("/gif_player/native_animation/frame_failure_recovers", NULL, test_gif_frame_failure_recovers);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_failed_flush", NULL,
                          test_direct_kitty_destroy_retries_failed_flush);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_partial_delete", GINT_TO_POINTER(1),

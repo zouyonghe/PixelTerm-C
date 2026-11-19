@@ -53,10 +53,17 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     input_handler_destroy(input_handler);
     gboolean restored = terminal_probe_retry_restore();
     if (!restored || (!original_known && restore_error != ERROR_NONE)) {
-        fprintf(stderr, "Terminal restoration failed: %s\n", error_code_to_string(ERROR_TERMINAL_SIZE));
         return ERROR_TERMINAL_SIZE;
     }
     return ERROR_NONE;
+}
+
+static ErrorCode finish_application(InputHandler *input_handler, ErrorCode primary_error) {
+    ErrorCode cleanup_error = run_application_cleanup(input_handler);
+    if (primary_error != ERROR_NONE && cleanup_error != ERROR_NONE) {
+        fprintf(stderr, "Terminal restoration failed: %s\n", error_code_to_string(cleanup_error));
+    }
+    return primary_error != ERROR_NONE ? primary_error : cleanup_error;
 }
 
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
@@ -96,8 +103,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         app->suppress_full_clear = FALSE;
     }
     if (error != ERROR_NONE) {
-        run_application_cleanup(input_handler);
-        return error;
+        return finish_application(input_handler, error);
     }
 
     // Main event loop
@@ -192,8 +198,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
-    ErrorCode cleanup_error = run_application_cleanup(input_handler);
-    return error != ERROR_NONE ? error : cleanup_error;
+    return finish_application(input_handler, error);
 }
 
 int main(int argc, char *argv[]) {

@@ -81,8 +81,7 @@ static void test_cleanup_reports_final_restore_state(gconstpointer data) {
     terminal_probe_reset_transport_hooks_for_test();
     g_assert_cmpint(result, ==, failures >= 10 ? ERROR_TERMINAL_SIZE : ERROR_NONE);
     g_assert_cmpint(terminal.restored.c_lflag, ==, ICANON | ECHO);
-    if (failures >= 10) g_assert_nonnull(strstr(diagnostic, "Terminal restoration failed"));
-    else g_assert_cmpstr(diagnostic, ==, "");
+    g_assert_cmpstr(diagnostic, ==, "");
 }
 
 static void test_render_error_keeps_primary_and_reports_cleanup_failure(void) {
