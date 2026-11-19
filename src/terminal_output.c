@@ -35,10 +35,8 @@ gboolean terminal_output_recover(void) {
 }
 
 gboolean terminal_output_ready(gint64 now_us) {
-    if (g_queue_is_empty(&pending_output)) return TRUE;
     if (now_us < next_cleanup_retry_us) return FALSE;
-    if (terminal_output_flush()) return TRUE;
-    return FALSE;
+    return terminal_output_flush();
 }
 
 gboolean terminal_output_flush(void) {

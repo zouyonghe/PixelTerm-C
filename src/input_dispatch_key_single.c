@@ -184,12 +184,15 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     }
 
     gboolean was_playing = video_player_is_playing(app->video_player);
-    if (was_playing) {
-        video_player_stop(app->video_player);
+    if (app->force_kitty && !ui_clear_kitty_images(app)) {
+        app->last_error = ERROR_OUTPUT_IO;
+        return;
     }
-
-    if (app->force_kitty) {
-        if (!ui_clear_kitty_images(app)) return;
+    if (was_playing) {
+        if (video_player_stop(app->video_player) != ERROR_NONE) {
+            app->last_error = ERROR_OUTPUT_IO;
+            return;
+        }
     }
     if (video_player_cycle_protocol(app->video_player)) {
         video_player_clear_render_area(app->video_player);

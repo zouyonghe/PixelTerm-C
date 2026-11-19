@@ -83,6 +83,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
     error = input_enable_raw_mode(input_handler);
     if (error != ERROR_NONE) {
+        if (!input_handler->raw_mode_enabled) {
+            input_handler_destroy(input_handler);
+            return error;
+        }
         return finish_application(input_handler, error);
     }
 
@@ -115,6 +119,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     last_term_height = input_handler->terminal_height;
         
     while (app->running && !input_handler->should_exit) {
+        if (app->last_error != ERROR_NONE) break;
         if (!terminal_probe_retry_restore()) {
             error = ERROR_TERMINAL_SIZE;
             break;
@@ -182,6 +187,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         gboolean handled_input = FALSE;
 
         input_dispatch_process_pending(app);
+        if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (input_has_pending_input(input_handler)) {
@@ -194,6 +200,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             handled_input = TRUE;
         }
 
+        if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
         input_dispatch_process_animations(app);
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
@@ -217,6 +224,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
+    if (error == ERROR_NONE) error = app->last_error;
     return finish_application(input_handler, error);
 }
 

@@ -1,6 +1,9 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
 #include "common.h"
 #include "media_utils.h"
@@ -61,9 +64,12 @@ static void remove_path(gpointer data) {
     g_free(data);
 }
 
+static gint (*fixture_mkstemp)(gchar *) = g_mkstemp;
+
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
+    /* GLib permits suffixes after XXXXXX, reserving the final name atomically. */
     gchar *template = g_strdup_printf("%s/pixelterm-test-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
-    int fd = g_mkstemp(template);
+    int fd = fixture_mkstemp(template);
     if (fd < 0) {
         g_error("Failed to create temp file");
     }
@@ -194,16 +200,42 @@ static void test_is_valid_video_file_by_content(void) {
     g_assert_false(is_valid_video_file(invalid_path));
 }
 
-static void test_temp_fixtures_do_not_replace_each_other(void) {
-    GHashTable *paths = g_hash_table_new(g_str_hash, g_str_equal);
-    const guint8 data[] = {1};
-    for (gint i = 0; i < 1024; i++) {
-        gchar *path = write_temp_file(".png", data, sizeof(data));
-        g_assert_true(g_str_has_suffix(path, ".png"));
-        g_assert_false(g_hash_table_contains(paths, path));
-        g_hash_table_add(paths, path);
+static gchar *collision_candidate;
+static gboolean collision_seen;
+
+static gint reserve_colliding_fixture(gchar *template) {
+    if (collision_candidate) {
+        gint fd = g_open(collision_candidate, O_RDWR | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0) {
+            g_assert_cmpuint(strlen(template), ==, strlen(collision_candidate));
+            memcpy(template, collision_candidate, strlen(template) + 1);
+            return fd;
+        }
+        g_assert_cmpint(errno, ==, EEXIST);
+        collision_seen = TRUE;
     }
-    g_hash_table_destroy(paths);
+    gint fd = g_mkstemp(template);
+    if (!collision_candidate) collision_candidate = g_strdup(template);
+    return fd;
+}
+
+static void test_temp_fixtures_do_not_replace_each_other(void) {
+    const guint8 first_bytes[] = {1, 2, 3}, second_bytes[] = {4, 5, 6};
+    collision_seen = FALSE;
+    fixture_mkstemp = reserve_colliding_fixture;
+    gchar *first = write_temp_file(".png", first_bytes, sizeof(first_bytes));
+    gchar *second = write_temp_file(".png", second_bytes, sizeof(second_bytes));
+    fixture_mkstemp = g_mkstemp;
+    g_clear_pointer(&collision_candidate, g_free);
+    gchar *contents = NULL;
+    gsize length = 0;
+    g_assert_true(g_file_get_contents(first, &contents, &length, NULL));
+    g_assert_cmpmem(contents, length, first_bytes, sizeof(first_bytes));
+    g_free(contents);
+    g_assert_true(collision_seen);
+    g_assert_cmpstr(first, !=, second);
+    g_assert_true(g_str_has_suffix(first, ".png"));
+    g_assert_true(g_str_has_suffix(second, ".png"));
 }
 
 static void test_is_animated_image_candidate(void) {

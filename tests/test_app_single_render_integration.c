@@ -15,6 +15,17 @@
 #include <errno.h>
 #include "../src/app_single_render_internal.h"
 
+/* Exercise runtime control flow with the real renderer and existing test hooks. */
+#define app_display_image_info runtime_display_image_info
+#define app_display_help runtime_display_help
+#define app_refresh_display runtime_refresh_display
+#define app_process_async_render runtime_process_async_render
+#include "../src/app_single_render_runtime.c"
+#undef app_display_image_info
+#undef app_display_help
+#undef app_refresh_display
+#undef app_process_async_render
+
 typedef struct {
     gint gif_load_calls;
     gint gif_play_calls;
@@ -626,7 +637,71 @@ static void test_still_output_failure(gconstpointer data) {
     destroy_render_test_app(&app);
 }
 
+static void test_failed_help_clear_keeps_previous_state(void) {
+    PixelTermApp app = {.force_kitty = TRUE, .suppress_full_clear = TRUE};
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_false(app.help_visible);
+    g_assert_false(app.needs_screen_clear);
+    g_assert_true(app.suppress_full_clear);
+    g_assert_true(recovered);
+    g_string_free(sink.bytes, TRUE);
+}
+
+static void test_failed_async_frame_retries_after_recovery(void) {
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.preload_enabled = TRUE;
+    app.preloader = preloader_create();
+    g_assert_nonnull(app.preloader);
+    gint width, height;
+    app_get_image_target_dimensions(&app, &width, &height);
+    GString *cached = g_string_new("CACHED-ASYNC");
+    preloader_cache_add(app.preloader, "still.png", cached, 12, 1, FALSE, width, height);
+    g_string_free(cached, TRUE);
+    app.async.image_pending = TRUE;
+    app.async.image_index = 2;
+    app.async.image_path = g_strdup("still.png");
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    runtime_process_async_render(&app);
+    gboolean pending_after_failure = app.async.image_pending;
+    gchar *pending_path = g_strdup(app.async.image_path);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    runtime_process_async_render(&app);
+    fclose(stream);
+    stdout = saved;
+    g_assert_true(pending_after_failure);
+    g_assert_cmpstr(pending_path, ==, "still.png");
+    g_assert_true(recovered);
+    g_assert_false(app.async.image_pending);
+    g_assert_null(app.async.image_path);
+    g_assert_nonnull(strstr(sink.bytes->str, "CACHED-ASYNC"));
+    g_free(pending_path);
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_func("/app_single_render/runtime/help_clear_failure", test_failed_help_clear_keeps_previous_state);
+    g_test_add_func("/app_single_render/runtime/async_failure_retries", test_failed_async_frame_retries_after_recovery);
     g_test_add_data_func("/app_single_render/output/begin_failure", GINT_TO_POINTER(1), test_still_output_failure);
     g_test_add_data_func("/app_single_render/output/clear_failure", GINT_TO_POINTER(2), test_still_output_failure);
     g_test_add_data_func("/app_single_render/output/still_frame_failure", GINT_TO_POINTER(3), test_still_output_failure);

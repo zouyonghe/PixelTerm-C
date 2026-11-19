@@ -139,6 +139,7 @@ static gchar *make_temp_dir(void) {
 }
 
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
+    /* GLib permits suffixes after XXXXXX; no rename is needed. */
     gchar *template = g_strdup_printf("%s/pixelterm-book-test-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
     int fd = g_mkstemp(template);
     if (fd < 0) {

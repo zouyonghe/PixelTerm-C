@@ -14,6 +14,14 @@
 static gint startup_failure_stage;
 static gboolean resize_test;
 static guint resume_calls;
+static guint initialize_calls;
+static guint raw_mode_calls;
+static gboolean dispatch_output_error;
+static guint error_dispatches;
+static ErrorCode lifecycle_initialize(InputHandler *handler) {
+    initialize_calls++;
+    return input_handler_initialize(handler);
+}
 static ErrorCode lifecycle_enable_raw_mode(InputHandler *handler);
 static ErrorCode lifecycle_enable_mouse(InputHandler *handler);
 static void lifecycle_update_size(InputHandler *handler) {
@@ -57,6 +65,11 @@ static void lifecycle_async_render(PixelTermApp *app) {
     }
 }
 static void lifecycle_dispatch(PixelTermApp *app) {
+    if (dispatch_output_error) {
+        app->last_error = ERROR_OUTPUT_IO;
+        if (++error_dispatches > 1) app->running = FALSE;
+        return;
+    }
     if (gate_test) {
         if (inject_stage) {
             if (inject_stage == 1 && !recovery_injected) recovery_injected = recovery_blocked = TRUE;
@@ -68,6 +81,7 @@ static void lifecycle_dispatch(PixelTermApp *app) {
     }
 }
 static void lifecycle_animation(PixelTermApp *app) {
+    if (dispatch_output_error && app->last_error != ERROR_NONE) premature_dispatches++;
     if (gate_test && inject_stage == 2 && !recovery_injected) {
         recovery_injected = recovery_blocked = TRUE;
     } else if (gate_test && inject_stage) {
@@ -94,6 +108,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #define input_get_event lifecycle_get_event
 #define terminal_output_ready lifecycle_cleanup_due
 #define input_enable_raw_mode lifecycle_enable_raw_mode
+#define input_handler_initialize lifecycle_initialize
 #define input_enable_mouse lifecycle_enable_mouse
 #define input_update_terminal_size lifecycle_update_size
 #define video_player_play lifecycle_play
@@ -105,6 +120,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #undef app_process_async_render
 #undef terminal_output_ready
 #undef input_enable_raw_mode
+#undef input_handler_initialize
 #undef input_enable_mouse
 #undef input_update_terminal_size
 #undef video_player_play
@@ -136,6 +152,8 @@ static void enable_owned_raw_mode(InputHandler *handler, gpointer data) {
 }
 
 static ErrorCode lifecycle_enable_raw_mode(InputHandler *handler) {
+    raw_mode_calls++;
+    if (startup_failure_stage == 3) return ERROR_TERMINAL_SIZE;
     if (!startup_failure_stage) return input_enable_raw_mode(handler);
     enable_owned_raw_mode(handler, NULL);
     handler->alt_screen_enabled = TRUE;
@@ -282,9 +300,15 @@ static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) 
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
+    int saved_input = dup(STDIN_FILENO);
+    FILE *input = fopen("/dev/null", "r");
+    g_assert_cmpint(saved_input, >=, 0);
+    g_assert_nonnull(input);
+    g_assert_cmpint(dup2(fileno(input), STDIN_FILENO), >=, 0);
     stdout = capture;
     terminal_output_defer_recovery();
     render_calls = 0;
+    initialize_calls = raw_mode_calls = 0;
     ErrorCode result;
     if (cleanup) {
         InputHandler *handler = input_handler_create();
@@ -297,8 +321,13 @@ static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) 
     gboolean recovered = terminal_output_flush();
     fclose(capture);
     stdout = saved;
+    g_assert_cmpint(dup2(saved_input, STDIN_FILENO), >=, 0);
+    close(saved_input);
+    fclose(input);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_cmpuint(render_calls, ==, 0);
+    g_assert_cmpuint(initialize_calls, ==, 0);
+    g_assert_cmpuint(raw_mode_calls, ==, 0);
     g_assert_true(recovered);
     g_assert_false(sink.unsafe_output);
     g_assert_cmpstr(sink.output->str, ==, "\033\\");
@@ -349,6 +378,24 @@ static void test_cleanup_preserves_clear_failure(void) {
     g_assert_true(recovered);
     g_string_free(sink.output, TRUE);
 }
+
+static void test_raw_setup_failure_preserves_shell_output(void) {
+    LifecycleOutput sink = {.output = g_string_new(NULL), .writable = TRUE};
+    FILE *capture = test_output_stream(&sink, lifecycle_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    PixelTermApp app = {0};
+    startup_failure_stage = 3;
+    ErrorCode result = run_application(&app, TRUE);
+    startup_failure_stage = 0;
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_TERMINAL_SIZE);
+    g_assert_cmpuint(sink.output->len, ==, 0);
+    g_string_free(sink.output, TRUE);
+}
 #endif
 
 static void test_resize_render_failure_does_not_resume(void) {
@@ -360,18 +407,55 @@ static void test_resize_render_failure_does_not_resume(void) {
     g_terminate_requested = 0;
     FILE *saved = stdout, *capture = tmpfile();
     g_assert_nonnull(capture);
+    int saved_input = dup(STDIN_FILENO);
+    FILE *input = fopen("/dev/null", "r");
+    g_assert_cmpint(saved_input, >=, 0);
+    g_assert_nonnull(input);
+    g_assert_cmpint(dup2(fileno(input), STDIN_FILENO), >=, 0);
     stdout = capture;
     ErrorCode result = run_application(&app, FALSE);
     stdout = saved;
     fclose(capture);
+    g_assert_cmpint(dup2(saved_input, STDIN_FILENO), >=, 0);
+    close(saved_input);
+    fclose(input);
     resize_test = FALSE;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_cmpuint(resume_calls, ==, 0);
     g_assert_cmpuint(render_calls, ==, 2);
 }
 
+static void test_dispatch_output_error_reaches_application(void) {
+    PixelTermApp app = {.running = TRUE};
+    dispatch_output_error = TRUE;
+    error_dispatches = premature_dispatches = 0;
+    render_result = ERROR_NONE;
+    g_terminate_requested = 0;
+    int saved_input = dup(STDIN_FILENO);
+    FILE *input = fopen("/dev/null", "r");
+    FILE *capture = tmpfile();
+    g_assert_cmpint(saved_input, >=, 0);
+    g_assert_nonnull(input);
+    g_assert_nonnull(capture);
+    g_assert_cmpint(dup2(fileno(input), STDIN_FILENO), >=, 0);
+    FILE *saved = stdout;
+    stdout = capture;
+    ErrorCode result = run_application(&app, FALSE);
+    stdout = saved;
+    fclose(capture);
+    g_assert_cmpint(dup2(saved_input, STDIN_FILENO), >=, 0);
+    close(saved_input);
+    fclose(input);
+    dispatch_output_error = FALSE;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpuint(error_dispatches, ==, 1);
+    g_assert_cmpuint(premature_dispatches, ==, 0);
+}
+
 void register_main_lifecycle_tests(void) {
+    g_test_add_func("/main/output/dispatch_error_reaches_application", test_dispatch_output_error_reaches_application);
 #if defined(__GLIBC__) || defined(__APPLE__)
+    g_test_add_func("/main/startup/raw_setup_failure_preserves_shell", test_raw_setup_failure_preserves_shell_output);
     g_test_add_data_func("/main/startup/raw_failure_unwinds", GINT_TO_POINTER(1), test_startup_failure_unwinds_controls);
     g_test_add_data_func("/main/startup/mouse_failure_unwinds", GINT_TO_POINTER(2), test_startup_failure_unwinds_controls);
     g_test_add_func("/main/cleanup/preserves_clear_failure", test_cleanup_preserves_clear_failure);

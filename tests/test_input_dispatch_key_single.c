@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 
@@ -5,6 +7,9 @@
 
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_test_support.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include <errno.h>
 
 static PixelTermApp make_single_app(VideoPlayer *player) {
     PixelTermApp app = {0};
@@ -456,6 +461,42 @@ static void test_video_up_and_down_keep_media_switching(void) {
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
 
+static ssize_t failed_protocol_clear(void *data, const char *bytes, size_t length) {
+    (void)data; (void)bytes; (void)length;
+    errno = EIO;
+    return -1;
+}
+
+static void test_protocol_clear_failure_preserves_playback(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.force_kitty = TRUE;
+    player->is_playing = TRUE;
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    FILE *stream = test_output_stream(NULL, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    gboolean playing = video_player_is_playing(player);
+    stdout = recovery;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    video_player_destroy(player);
+    g_assert_true(playing);
+    g_assert_true(recovered);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
 static void test_video_scale_keeps_paused_video_paused(void) {
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
@@ -643,6 +684,7 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 }
 
 void register_input_dispatch_key_single_tests(void) {
+    g_test_add_func("/input_dispatch_key_single/video/protocol_clear_failure_preserves_playback", test_protocol_clear_failure_preserves_playback);
     g_test_add_func("/input/discards_late_terminal_identity_reply",
                     test_input_discards_late_terminal_identity_reply);
     g_test_add_func("/input/alt_upper_p_keeps_following_key",

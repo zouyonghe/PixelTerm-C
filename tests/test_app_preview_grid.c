@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 
@@ -8,11 +10,16 @@
 #include "app.h"
 #include "app_preview_render_internal.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include <errno.h>
 
 typedef struct {
     gint create_grid_renderer_calls;
     gint term_width;
     gint term_height;
+    gint prepare_calls;
+    gint transition_calls;
 } PreviewGridStubState;
 
 typedef void (*PreviewGridCaptureFunc)(gpointer user_data);
@@ -131,6 +138,47 @@ static void test_enter_preview_other_protocols_skip_kitty_delete(void) {
         g_free(output);
         cleanup_preview_app(&app);
     }
+}
+
+typedef struct {
+    guint writes;
+    guint fail_at;
+} PreviewOutput;
+
+static ssize_t preview_output_write(void *data, const char *bytes, size_t length) {
+    (void)bytes;
+    PreviewOutput *sink = data;
+    if (++sink->writes == sink->fail_at) { errno = EIO; return -1; }
+    return (ssize_t)length;
+}
+
+static void test_enter_preview_output_failure_preserves_mode(gconstpointer data) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.mode = APP_MODE_SINGLE;
+    app.force_kitty = TRUE;
+    app.current_index = 1;
+    app.info_visible = TRUE;
+    GList *original_images = app.image_files;
+    PreviewOutput sink = {.fail_at = GPOINTER_TO_UINT(data)};
+    FILE *stream = test_output_stream(&sink, preview_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_enter_preview(&app);
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_true(app.image_files == original_images);
+    g_assert_cmpint(app.current_index, ==, 1);
+    g_assert_true(app.info_visible);
+    g_assert_cmpint(g_preview_grid_stub_state.prepare_calls, ==, 0);
+    g_assert_cmpint(g_preview_grid_stub_state.transition_calls, ==, 0);
+    cleanup_preview_app(&app);
 }
 
 static void test_move_selection_normalizes_selection_and_scroll_before_moving(void) {
@@ -466,6 +514,7 @@ void app_preview_render_selected_filename(PixelTermApp *app) {
 }
 
 ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
+    g_preview_grid_stub_state.transition_calls++;
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -474,6 +523,7 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
 }
 
 void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+    g_preview_grid_stub_state.prepare_calls++;
     (void)app;
     (void)clear_preloader_queue;
 }
@@ -521,6 +571,8 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_preview_grid/entry/clear_failure_preserves_mode", GUINT_TO_POINTER(1), test_enter_preview_output_failure_preserves_mode);
+    g_test_add_data_func("/app_preview_grid/entry/screen_failure_preserves_mode", GUINT_TO_POINTER(2), test_enter_preview_output_failure_preserves_mode);
     g_test_add_func("/app_preview_grid/entry/clears_kitty_before_screen",
                     test_enter_preview_clears_kitty_before_screen);
     g_test_add_func("/app_preview_grid/entry/other_protocols_skip_kitty_delete",

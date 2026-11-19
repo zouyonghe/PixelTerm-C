@@ -21,9 +21,9 @@ ErrorCode app_display_help(PixelTermApp *app) {
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
+    if (!app->help_visible && !ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
     app->help_visible = !app->help_visible;
     if (app->help_visible) {
-        if (!ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
         app->needs_screen_clear = TRUE;
         app->suppress_full_clear = FALSE;
     }
@@ -106,5 +106,9 @@ void app_process_async_render(PixelTermApp *app) {
     app->async.render_force_sync = TRUE;
     app->suppress_full_clear = TRUE;
     app_clear_async_render_state(app);
-    app_render_current_image(app);
+    if (app_render_current_image(app) == ERROR_OUTPUT_IO) {
+        app->async.image_pending = TRUE;
+        app->async.image_index = app->current_index;
+        app->async.image_path = g_strdup(filepath);
+    }
 }

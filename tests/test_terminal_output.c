@@ -121,6 +121,35 @@ static void test_direct_flush_sets_retry_deadline(void) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static void test_legacy_stdout_failure_blocks_ready(gconstpointer data) {
+    gboolean buffered = GPOINTER_TO_INT(data);
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    char buffer[256];
+    g_assert_cmpint(setvbuf(stream, buffer, buffered ? _IOFBF : _IONBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    int written = fputs("LEGACY", stdout);
+    if (!buffered) fflush(stdout);
+    gboolean ready = terminal_output_ready(g_get_monotonic_time());
+    guint attempts = sink.writes;
+    gboolean waiting = terminal_output_ready(g_get_monotonic_time());
+    guint waiting_attempts = sink.writes;
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_ready(g_get_monotonic_time() + 100000);
+    fclose(stream);
+    stdout = saved;
+    (void)written;
+    g_assert_false(ready);
+    g_assert_false(waiting);
+    g_assert_cmpuint(waiting_attempts, ==, attempts);
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
+    g_string_free(sink.bytes, TRUE);
+}
+
 static void test_ui_controls_report_failed_submission(gconstpointer data) {
     gboolean clear = GPOINTER_TO_INT(data);
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
@@ -216,6 +245,8 @@ void register_terminal_output_tests(void) {
     g_test_add_func("/terminal_output/checked_write_and_owned_controls", test_checked_write_and_owned_controls);
     g_test_add_func("/terminal_output/sync_end_preserves_frame_failure", test_sync_end_preserves_frame_failure);
     g_test_add_func("/terminal_output/direct_flush_sets_retry_deadline", test_direct_flush_sets_retry_deadline);
+    g_test_add_data_func("/terminal_output/legacy/stream_error", NULL, test_legacy_stdout_failure_blocks_ready);
+    g_test_add_data_func("/terminal_output/legacy/buffered_failure", GINT_TO_POINTER(1), test_legacy_stdout_failure_blocks_ready);
     g_test_add_data_func("/terminal_output/ui/begin_failure", NULL, test_ui_controls_report_failed_submission);
     g_test_add_data_func("/terminal_output/ui/clear_failure", GINT_TO_POINTER(1), test_ui_controls_report_failed_submission);
     g_test_add_func("/terminal_output/session/controls_outlive_handler", test_cleanup_controls_outlive_handler);

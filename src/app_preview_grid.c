@@ -567,6 +567,16 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     // If we found valid images, replace the image list
     if (valid_images && valid_count > 0) {
+        /* Complete fallible output before committing the new mode and image list. */
+        if (!ui_clear_kitty_images(app)) {
+            g_list_free_full(valid_images, g_free);
+            return ERROR_OUTPUT_IO;
+        }
+        ui_clear_screen_for_refresh(app);
+        if (!terminal_output_flush()) {
+            g_list_free_full(valid_images, g_free);
+            return ERROR_OUTPUT_IO;
+        }
         // Free the old image list
         if (app->image_files) {
             g_list_free_full(app->image_files, (GDestroyNotify)g_free);
@@ -601,10 +611,7 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     app->needs_redraw = TRUE;
 
-    // Text clears do not reliably remove Kitty placements (e.g. Warp over SSH).
-    if (!ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
-    ui_clear_screen_for_refresh(app);
-    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
+    return ERROR_NONE;
 }
 
 
