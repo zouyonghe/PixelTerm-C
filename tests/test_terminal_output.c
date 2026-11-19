@@ -234,7 +234,15 @@ static int restore_mode(gint action, const struct termios *state, gpointer data)
 
 static ssize_t selective_exit_write(void *data, const char *bytes, size_t length) {
     (void)data;
-    if (g_strstr_len(bytes, length, "BLOCKED")) { errno = EIO; return -1; }
+    if (g_strstr_len(bytes, length, "BLOCKED")) {
+        errno = EIO;
+#ifdef __GLIBC__
+        /* fopencookie requires zero on failure; -1 triggers byte retries. */
+        return 0;
+#else
+        return -1;
+#endif
+    }
     return write(STDOUT_FILENO, bytes, length);
 }
 
