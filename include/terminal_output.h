@@ -27,6 +27,12 @@ gboolean terminal_output_write(const char *bytes, gsize length);
  * attempted may be NULL; otherwise becomes TRUE when write is called. */
 ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length,
                                         gboolean *attempted);
+/* Same progress contract, additionally capped by an absolute monotonic deadline.
+ * A zero deadline retains the ordinary 100 ms no-progress bound. */
+ssize_t terminal_output_descriptor_write_until(int fd, const char *bytes, gsize length,
+                                               gboolean *attempted, gint64 deadline_us);
+/* Retry pending descriptor flag restoration independently of stdout/queued output. */
+gboolean terminal_output_retry_descriptor_restore(void);
 /* Copies bytes and prefixes ST. ONCE stays queued if no write was attempted,
  * and becomes ST-only after uncertain delivery;
  * RESTORE is retained until success or process exit (one final attempt).

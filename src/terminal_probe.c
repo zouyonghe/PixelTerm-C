@@ -35,8 +35,8 @@ static int terminal_probe_default_tcflush(gint queue_selector, gpointer user_dat
 }
 
 static ssize_t terminal_probe_default_write(const char *buf, size_t len, gpointer user_data) {
-    (void)user_data;
-    return terminal_output_descriptor_write(STDOUT_FILENO, buf, len, NULL);
+    return terminal_output_descriptor_write_until(STDOUT_FILENO, buf, len, NULL,
+                                                   *(const gint64 *)user_data);
 }
 
 static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
@@ -255,12 +255,16 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
                 if (!query_sent) {
                     /* Establish a non-flushing boundary; preserve queued keys but
                      * never use replies that started before this query. */
-                    ssize_t written = hooks->write_fn(query, query_len, user_data);
+                    gboolean default_transport = hooks == &k_default_hooks;
+                    ssize_t written = hooks->write_fn(query, query_len,
+                        default_transport ? &deadline_us : user_data);
                     if (query_written && written > 0) *query_written = TRUE;
+                    if (default_transport && !terminal_output_retry_descriptor_restore()) break;
                     if (written != (ssize_t)query_len) {
                         break;
                     }
                     query_sent = TRUE;
+                    /* Replies retain their full budget after queued input/query submission. */
                     deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
                 }
                 continue;
