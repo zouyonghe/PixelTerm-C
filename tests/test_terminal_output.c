@@ -232,6 +232,29 @@ static int restore_mode(gint action, const struct termios *state, gpointer data)
     return 0;
 }
 
+static ssize_t selective_exit_write(void *data, const char *bytes, size_t length) {
+    (void)data;
+    if (g_strstr_len(bytes, length, "BLOCKED")) { errno = EIO; return -1; }
+    return write(STDOUT_FILENO, bytes, length);
+}
+
+static void test_exit_attempts_later_restores(void) {
+    if (g_test_subprocess()) {
+        FILE *stream = test_output_stream(NULL, selective_exit_write);
+        g_assert_nonnull(stream);
+        g_assert_cmpint(setvbuf(stream, NULL, _IONBF, 0), ==, 0);
+        fflush(stdout);
+        stdout = stream;
+        terminal_output_defer("BLOCKED", TERMINAL_OUTPUT_RESTORE);
+        terminal_output_defer("LATER-RESTORE", TERMINAL_OUTPUT_RESTORE);
+        exit(0);
+    }
+    g_test_trap_subprocess(NULL, 3 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_assert_passed();
+    g_test_trap_assert_stdout("*\033\\LATER-RESTORE*");
+    g_test_trap_assert_stdout_unmatched("*BLOCKED*");
+}
+
 static void test_cleanup_controls_outlive_handler(void) {
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
     FILE *stream = test_output_stream(&sink, sink_write);
@@ -294,6 +317,7 @@ static void test_unsent_gif_delete_outlives_player(void) {
 
 void register_terminal_output_tests(void) {
 #if defined(__GLIBC__) || defined(__APPLE__)
+    g_test_add_func("/terminal_output/exit/attempts_later_restores", test_exit_attempts_later_restores);
     g_test_add_data_func("/terminal_output/policy/destructive_once", GINT_TO_POINTER(TERMINAL_OUTPUT_ONCE), test_pending_policy);
     g_test_add_data_func("/terminal_output/policy/idempotent_restore", GINT_TO_POINTER(TERMINAL_OUTPUT_RESTORE), test_pending_policy);
     g_test_add_func("/terminal_output/checked_write_and_owned_controls", test_checked_write_and_owned_controls);

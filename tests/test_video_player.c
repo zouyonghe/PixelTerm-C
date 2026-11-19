@@ -3544,11 +3544,69 @@ static void test_protocol_cycle_restarts_active_workers(void) {
     video_player_destroy(player);
 }
 
+static GString *render_fixture_blue_frame(const gchar *path, ImageRenderer *renderer) {
+    AVFormatContext *format = NULL;
+    g_assert_cmpint(avformat_open_input(&format, path, NULL, NULL), ==, 0);
+    g_assert_cmpint(avformat_find_stream_info(format, NULL), >=, 0);
+    const AVCodec *codec = NULL;
+    gint stream = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
+    g_assert_cmpint(stream, >=, 0);
+    AVCodecContext *decoder = avcodec_alloc_context3(codec);
+    g_assert_nonnull(decoder);
+    g_assert_cmpint(avcodec_parameters_to_context(decoder, format->streams[stream]->codecpar), ==, 0);
+    g_assert_cmpint(avcodec_open2(decoder, codec, NULL), ==, 0);
+    AVPacket *packet = av_packet_alloc();
+    AVFrame *frame = av_frame_alloc();
+    AVFrame *rgba = av_frame_alloc();
+    g_assert_nonnull(packet);
+    g_assert_nonnull(frame);
+    g_assert_nonnull(rgba);
+
+    /* Decode from the start, independently of the production seek/preview path. */
+    for (guint index = 0; index <= 2; index++) {
+        gint result;
+        while ((result = avcodec_receive_frame(decoder, frame)) == AVERROR(EAGAIN)) {
+            g_assert_cmpint(av_read_frame(format, packet), ==, 0);
+            g_assert_cmpint(packet->stream_index, ==, stream);
+            g_assert_cmpint(avcodec_send_packet(decoder, packet), ==, 0);
+            av_packet_unref(packet);
+        }
+        g_assert_cmpint(result, ==, 0);
+        g_assert_cmpint(av_rescale_q(frame->best_effort_timestamp,
+                                   format->streams[stream]->time_base,
+                                   (AVRational){1, 1000}), ==, index * 1000);
+    }
+    g_assert_cmpint(frame->width, ==, 2);
+    g_assert_cmpint(frame->height, ==, 2);
+    rgba->format = AV_PIX_FMT_RGBA;
+    rgba->width = frame->width;
+    rgba->height = frame->height;
+    g_assert_cmpint(av_frame_get_buffer(rgba, 32), ==, 0);
+    struct SwsContext *sws = sws_getContext(frame->width, frame->height, frame->format,
+        rgba->width, rgba->height, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+    g_assert_nonnull(sws);
+    g_assert_cmpint(sws_scale(sws, (const guint8 * const *)frame->data, frame->linesize,
+                             0, frame->height, rgba->data, rgba->linesize), ==, rgba->height);
+    DecodedFrame decoded = {.pixels = rgba->data[0], .width = rgba->width,
+        .height = rgba->height, .rowstride = rgba->linesize[0], .pts_ms = 2000};
+    assert_converted_fixture_pixels(&decoded);
+    GString *rendered = renderer_render_image_data(renderer, decoded.pixels,
+        decoded.width, decoded.height, decoded.rowstride, 4);
+    sws_freeContext(sws);
+    av_frame_free(&rgba);
+    av_frame_free(&frame);
+    av_packet_free(&packet);
+    avcodec_free_context(&decoder);
+    avformat_close_input(&format);
+    return rendered;
+}
+
 static void test_refresh_paused_frame_submits_without_playing(void) {
     VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
-    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    const gchar *fixture_path = write_seek_preview_video_fixture();
+    g_assert_cmpint(video_player_load(player, fixture_path), ==, ERROR_NONE);
     video_player_set_render_area(player, 1, 1, 1, 1, 1, 1);
     player->renderer->config.preserve_aspect_ratio = FALSE;
     player->last_presented_pts_ms = 2100;
@@ -3558,9 +3616,8 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     RendererConfig config = player->renderer->config;
     config.max_width = config.max_height = 1;
     g_assert_cmpint(renderer_initialize(expected_renderer, &config), ==, ERROR_NONE);
-    /* Independently decoded fixture pixel: the 2-second keyframe is solid blue. */
-    const guint8 blue[] = {0, 0, 253, 255};
-    GString *expected = renderer_render_image_data(expected_renderer, blue, 1, 1, 4, 4);
+    /* A backward seek to 2100 ms selects the solid-blue keyframe at 2000 ms. */
+    GString *expected = render_fixture_blue_frame(fixture_path, expected_renderer);
     g_assert_nonnull(expected);
     g_assert_cmpuint(expected->len, >, 0);
     FILE *capture = tmpfile();

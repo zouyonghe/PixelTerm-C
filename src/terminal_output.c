@@ -79,6 +79,13 @@ static void terminal_output_cleanup_at_exit(void) {
     /* Process exit is the last retry opportunity, even if the terminal is gone. */
     while (!g_queue_is_empty(&pending_output)) {
         PendingOutput *pending = g_queue_pop_head(&pending_output);
+        /* A blocked head must not starve later independently ST-framed restores.
+         * Already-attempted ambiguous releases have become ST-only above. */
+        terminal_output_discard();
+        gsize written = fwrite(pending->bytes->str, 1, pending->bytes->len, stdout);
+        gint flushed = fflush(stdout);
+        if (written != pending->bytes->len || flushed != 0 || ferror(stdout))
+            terminal_output_discard();
         g_string_free(pending->bytes, TRUE);
         g_free(pending);
     }
