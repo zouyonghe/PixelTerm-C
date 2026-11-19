@@ -2,6 +2,7 @@
 #define TERMINAL_OUTPUT_H
 
 #include <glib.h>
+#include <sys/types.h>
 
 typedef enum {
     TERMINAL_OUTPUT_ONCE,
@@ -21,6 +22,11 @@ gboolean terminal_output_end_session(void);
  * 100 ms without progress, then restore flags (retry before later submissions if
  * restoration fails). Failed payloads are never replayed. */
 gboolean terminal_output_write(const char *bytes, gsize length);
+/* Internal main-owner transport: bounded write to an explicit descriptor,
+ * independent of stdout sessions/queues. Returns exact progress or -1/errno.
+ * attempted may be NULL; otherwise becomes TRUE when write is called. */
+ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length,
+                                        gboolean *attempted);
 /* Copies bytes and prefixes ST. ONCE stays queued if no write was attempted,
  * and becomes ST-only after uncertain delivery;
  * RESTORE is retained until success or process exit (one final attempt).

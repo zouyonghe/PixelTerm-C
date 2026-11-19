@@ -1,4 +1,5 @@
 #include "terminal_probe.h"
+#include "terminal_output.h"
 
 #include <errno.h>
 #include <string.h>
@@ -35,7 +36,7 @@ static int terminal_probe_default_tcflush(gint queue_selector, gpointer user_dat
 
 static ssize_t terminal_probe_default_write(const char *buf, size_t len, gpointer user_data) {
     (void)user_data;
-    return write(STDOUT_FILENO, buf, len);
+    return terminal_output_descriptor_write(STDOUT_FILENO, buf, len, NULL);
 }
 
 static gint terminal_probe_default_read_char_with_timeout(gint timeout_ms, gpointer user_data) {
