@@ -390,30 +390,30 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
     switch (event->key_code) {
         case KEY_LEFT:
         case (KeyCode)'h':
-            input_dispatch_book_change_page(app, -1);
+            if (input_dispatch_book_change_page(app, -1) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
         case KEY_RIGHT:
         case (KeyCode)'l':
-            input_dispatch_book_change_page(app, 1);
+            if (input_dispatch_book_change_page(app, 1) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
         case KEY_UP:
         case (KeyCode)'k':
-            input_dispatch_book_change_page(app, -page_step);
+            if (input_dispatch_book_change_page(app, -page_step) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
         case KEY_DOWN:
         case (KeyCode)'j':
-            input_dispatch_book_change_page(app, page_step);
+            if (input_dispatch_book_change_page(app, page_step) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
         case KEY_PAGE_UP:
-            input_dispatch_book_change_page(app, -page_step * 10);
+            if (input_dispatch_book_change_page(app, -page_step * 10) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
         case KEY_PAGE_DOWN:
-            input_dispatch_book_change_page(app, page_step * 10);
+            if (input_dispatch_book_change_page(app, page_step * 10) == ERROR_OUTPUT_IO) break;
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
         case (KeyCode)'p':
@@ -437,6 +437,10 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
             if (entry != ERROR_NONE) {
                 app_set_mode(app, APP_MODE_BOOK);
                 app->needs_redraw = TRUE;
+                if (entry != ERROR_OUTPUT_IO) {
+                    app->suppress_full_clear = FALSE;
+                    record_output_error(app, app_render_book_page(app));
+                }
                 g_free(book_path);
                 break;
             }

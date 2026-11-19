@@ -242,9 +242,9 @@ void input_dispatch_handle_mouse_scroll_file_manager(PixelTermApp *app, const In
 void input_dispatch_handle_mouse_scroll_book(PixelTermApp *app, const InputEvent *event) {
     if (event->mouse_button == MOUSE_SCROLL_UP) {
         gint page_step = app_book_use_double_page(app) ? 2 : 1;
-        input_dispatch_book_change_page(app, -page_step);
+        if (input_dispatch_book_change_page(app, -page_step) == ERROR_OUTPUT_IO) return;
     } else if (event->mouse_button == MOUSE_SCROLL_DOWN) {
         gint page_step = app_book_use_double_page(app) ? 2 : 1;
-        input_dispatch_book_change_page(app, page_step);
+        if (input_dispatch_book_change_page(app, page_step) == ERROR_OUTPUT_IO) return;
     }
 }

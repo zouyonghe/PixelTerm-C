@@ -1,6 +1,7 @@
 #include "input_dispatch_test_support.h"
 
 #include "input.h"
+#include "input_dispatch_book_internal.h"
 #include "terminal_output.h"
 
 #include <string.h>
@@ -50,10 +51,13 @@ gboolean app_book_use_double_page(const PixelTermApp *app) {
     return FALSE;
 }
 
-void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
+ErrorCode input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
     (void)app;
     (void)delta;
     g_input_dispatch_stub_state.book_change_page_calls++;
+    if (g_input_dispatch_stub_state.book_change_page_result == ERROR_OUTPUT_IO)
+        app->last_error = ERROR_OUTPUT_IO;
+    return g_input_dispatch_stub_state.book_change_page_result;
 }
 
 ErrorCode app_next_image(PixelTermApp *app) {
@@ -363,6 +367,16 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     (void)app;
     (void)directory;
     g_input_dispatch_stub_state.load_directory_calls++;
+    if (g_input_dispatch_stub_state.load_directory_replaces_media) {
+        g_list_free_full(app->image_files, g_free);
+        app->image_files = g_list_append(NULL, g_strdup("/candidate/image.jpg"));
+        g_free(app->current_directory);
+        app->current_directory = g_strdup(directory);
+        app->total_images = 1;
+        app->current_index = 0;
+        app->preview.selected_link = app->image_files;
+        app->preview.selected_link_index = 0;
+    }
     return g_input_dispatch_stub_state.load_directory_result;
 }
 

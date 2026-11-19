@@ -30,6 +30,8 @@ static gint g_book_open_calls;
 static gint g_book_close_calls;
 static gint g_browser_scan_calls;
 static ErrorCode g_browser_scan_error;
+static gboolean g_browser_create_failure;
+static gint g_preloader_reset_calls;
 
 typedef void (*RenderCaptureFunc)(gpointer user_data);
 
@@ -66,7 +68,7 @@ static void render_file_manager_capture(gpointer user_data) {
 }
 
 FileBrowser *browser_create(void) {
-    return (FileBrowser *)0x1;
+    return g_browser_create_failure ? NULL : (FileBrowser *)0x1;
 }
 
 void browser_destroy(FileBrowser *browser) {
@@ -126,6 +128,7 @@ ErrorCode app_preloader_enable(PixelTermApp *app, gboolean queue_tasks) {
 
 void app_preloader_reset(PixelTermApp *app) {
     (void)app;
+    g_preloader_reset_calls++;
 }
 
 void app_preloader_clear_queue(PixelTermApp *app) {
@@ -800,6 +803,64 @@ static void test_enter_missing_directory_redraw(gconstpointer data) {
     g_free(dir);
 }
 
+static void test_load_directory_atomic(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app.current_directory = g_strdup("/old");
+    app.image_files = g_list_append(NULL, g_strdup("/old/one.png"));
+    app.image_files = g_list_append(app.image_files, g_strdup("/old/two.png"));
+    app.total_images = 2;
+    app.current_index = 1;
+    app.preview.selected_link = app.image_files->next;
+    app.preview.selected_link_index = 1;
+    GList *old_images = app.image_files;
+    GList *old_selection = app.preview.selected_link;
+    gchar *old_directory = app.current_directory;
+    clear_browser_test_files(NULL);
+    if (scenario != 3) {
+        g_browser_test_files = g_list_append(NULL, g_strdup("/old/ten.png"));
+        g_browser_test_files = g_list_append(g_browser_test_files, g_strdup("/old/two.png"));
+    }
+    g_browser_create_failure = scenario == 0;
+    g_browser_scan_error = scenario == 1 ? ERROR_FILE_NOT_FOUND : ERROR_NONE;
+    g_preloader_reset_calls = g_browser_scan_calls = 0;
+
+    ErrorCode result = app_load_directory(&app, app.current_directory);
+
+    g_assert_cmpint(result, ==, scenario == 0 ? ERROR_MEMORY_ALLOC
+                              : scenario == 1 ? ERROR_FILE_NOT_FOUND : ERROR_NONE);
+    g_assert_cmpint(g_browser_scan_calls, ==, scenario == 0 ? 0 : 1);
+    g_assert_cmpint(g_preloader_reset_calls, ==, scenario < 2 ? 0 : 1);
+    if (scenario < 2) {
+        g_assert_true(app.image_files == old_images);
+        g_assert_true(app.current_directory == old_directory);
+        g_assert_cmpstr(app.current_directory, ==, "/old");
+        g_assert_cmpint(app.total_images, ==, 2);
+        g_assert_cmpint(app.current_index, ==, 1);
+        g_assert_true(app.preview.selected_link == old_selection);
+        g_assert_cmpint(app.preview.selected_link_index, ==, 1);
+        g_assert_cmpstr(app_get_current_filepath(&app), ==, "/old/two.png");
+    } else {
+        g_assert_cmpstr(app.current_directory, ==, "/old");
+        g_assert_cmpint(app.total_images, ==, scenario == 3 ? 0 : 2);
+        g_assert_cmpint(app.current_index, ==, 0);
+        g_assert_true(app.preview.selected_link == app.image_files);
+        g_assert_cmpint(app.preview.selected_link_index, ==, scenario == 3 ? -1 : 0);
+        if (scenario == 3) {
+            g_assert_null(app.image_files);
+        } else {
+            clear_browser_test_files(NULL);
+            g_assert_cmpstr(app.image_files->data, ==, "/old/ten.png");
+            g_assert_cmpstr(app.image_files->next->data, ==, "/old/two.png");
+        }
+    }
+    g_browser_create_failure = FALSE;
+    g_browser_scan_error = ERROR_NONE;
+    clear_browser_test_files(NULL);
+    g_list_free_full(app.image_files, g_free);
+    g_free(app.current_directory);
+}
+
 static void test_open_loaded_file_output(gconstpointer data) {
     gint scenario = GPOINTER_TO_INT(data);
     gboolean book = scenario & 1;
@@ -817,12 +878,19 @@ static void test_open_loaded_file_output(gconstpointer data) {
     app.file_manager.entries = g_list_append(NULL, g_strdup(path));
     app.file_manager.entries_count = 1;
     GList *entries = app.file_manager.entries;
+    app.file_manager.selected_link = entries;
+    app.file_manager.selected_link_index = 0;
+    gchar *listing_directory = app.file_manager.directory;
     app.last_error = ERROR_OUTPUT_IO;
     app.info_visible = TRUE;
     app.help_visible = TRUE;
     app.image_files = g_list_append(NULL, g_strdup("old.png"));
     app.total_images = 1;
     GList *old_images = app.image_files;
+    app.preview.selected_link = old_images;
+    app.preview.selected_link_index = 0;
+    app.current_directory = g_strdup("/old");
+    gchar *old_directory = app.current_directory;
     app.book.doc = (BookDocument *)0x2;
     app.book.path = g_strdup("old.pdf");
     clear_browser_test_files(NULL);
@@ -870,10 +938,15 @@ static void test_open_loaded_file_output(gconstpointer data) {
             g_assert_cmpint(app.total_images, ==, 1);
         } else {
             g_assert_cmpint(g_book_close_calls, ==, 0);
-            g_assert_null(app.image_files);
-            /* The scan fails before app_load_directory resets the previous count. */
+            g_assert_true(app.image_files == old_images);
+            g_assert_cmpstr(app.image_files->data, ==, "old.png");
             g_assert_cmpint(app.total_images, ==, 1);
-            g_assert_cmpstr(app.current_directory, ==, dir);
+            g_assert_true(app.current_directory == old_directory);
+            g_assert_cmpstr(app.current_directory, ==, "/old");
+            g_assert_cmpint(app.current_index, ==, 0);
+            g_assert_true(app.preview.selected_link == old_images);
+            g_assert_cmpint(app.preview.selected_link_index, ==, 0);
+            g_assert_cmpstr(app_get_current_filepath(&app), ==, "old.png");
             g_assert_true(app.book.doc == (BookDocument *)0x2);
             g_assert_cmpstr(app.book.path, ==, "old.pdf");
         }
@@ -890,12 +963,23 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_assert_cmpint(g_browser_scan_calls, ==, !book && !clear_failure && !preparation_failure ? 1 : 0);
     g_assert_cmpint(g_book_entry_calls, ==, book && !clear_failure && !preparation_failure && !load_failure ? 1 : 0);
     g_assert_cmpint(g_render_calls, ==, !clear_failure && !entry_failure && !preparation_failure && !load_failure ? 1 : 0);
-    if (clear_failure || preparation_failure || load_failure) {
+    if (clear_failure || preparation_failure || load_failure || entry_failure) {
         g_assert_true(app.info_visible);
         g_assert_true(app.help_visible);
         g_assert_true(app.file_manager.entries == entries);
+        g_assert_true(app.file_manager.directory == listing_directory);
+        g_assert_cmpint(app.file_manager.entries_count, ==, 1);
+        g_assert_cmpint(app.file_manager.selected_entry, ==, 0);
+        g_assert_cmpint(app.file_manager.scroll_offset, ==, 0);
+        g_assert_true(app.file_manager.selected_link == entries);
+        g_assert_cmpint(app.file_manager.selected_link_index, ==, 0);
+        g_assert_cmpstr(selected_path(&app), ==, path);
         g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
         g_assert_cmpstr(attempted, ==, preparation_failure ? "" : "\033[2J\033[H\033[0m");
+        if (load_failure || entry_failure) {
+            g_assert_true(app.needs_redraw);
+            g_assert_true(app.needs_screen_clear);
+        }
     } else {
         g_assert_null(app.file_manager.entries);
         g_assert_null(app.file_manager.directory);
@@ -954,6 +1038,10 @@ static void test_render_output_failure(gconstpointer data) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_file_manager/load_directory/create_failure", GINT_TO_POINTER(0), test_load_directory_atomic);
+    g_test_add_data_func("/app_file_manager/load_directory/scan_failure", GINT_TO_POINTER(1), test_load_directory_atomic);
+    g_test_add_data_func("/app_file_manager/load_directory/replacement", GINT_TO_POINTER(2), test_load_directory_atomic);
+    g_test_add_data_func("/app_file_manager/load_directory/empty", GINT_TO_POINTER(3), test_load_directory_atomic);
     g_test_add_data_func("/app_file_manager/entry/missing_directory_redraw", GINT_TO_POINTER(FALSE), test_enter_missing_directory_redraw);
     g_test_add_data_func("/app_file_manager/entry/missing_directory_redraw_failure", GINT_TO_POINTER(TRUE), test_enter_missing_directory_redraw);
     g_test_add_data_func("/app_file_manager/open/image_load_redraw_failure", GINT_TO_POINTER(96), test_open_loaded_file_output);

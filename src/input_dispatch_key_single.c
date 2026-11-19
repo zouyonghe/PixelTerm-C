@@ -71,7 +71,7 @@ static void handle_single_media_navigation(PixelTermApp *app,
     skip_queued_navigation(input_handler, keys, key_count);
 }
 
-static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms);
+static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms, ErrorCode *result);
 
 static void drain_queued_video_seek_repeats(PixelTermApp *app,
                                             InputHandler *input_handler,
@@ -90,11 +90,12 @@ static void drain_queued_video_seek_repeats(PixelTermApp *app,
             input_unget_event(input_handler, &queued_event);
             break;
         }
-        if (!handle_video_seek(app, delta_ms)) {
+        ErrorCode result;
+        if (!handle_video_seek(app, delta_ms, &result)) {
             input_unget_event(input_handler, &queued_event);
             break;
         }
-        if (app->last_error == ERROR_OUTPUT_IO) break;
+        if (result == ERROR_OUTPUT_IO) break;
     }
 }
 
@@ -174,11 +175,11 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
     if (next_scale == app->video_scale) {
         return;
     }
-    app->video_scale = next_scale;
     gboolean was_playing = app->video_player && video_player_is_playing(app->video_player);
     if (app->video_player) {
         if (record_output_error(app, video_player_stop(app->video_player)) != ERROR_NONE) return;
     }
+    app->video_scale = next_scale;
     if (record_output_error(app, app_render_current_image(app)) != ERROR_NONE) return;
     if (was_playing && app->video_player) {
         record_output_error(app, video_player_play(app->video_player));
@@ -219,15 +220,14 @@ static gboolean can_handle_video_seek(const PixelTermApp *app) {
            video_player_has_video(app->video_player);
 }
 
-static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms) {
+static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms, ErrorCode *result) {
     if (!can_handle_video_seek(app)) {
         return FALSE;
     }
     if (!g_video_seek_func) return FALSE;
 
-    ErrorCode result = g_video_seek_func(app->video_player, delta_ms);
-    if (result == ERROR_OUTPUT_IO) app->last_error = result;
-    return result == ERROR_NONE || result == ERROR_OUTPUT_IO;
+    *result = record_output_error(app, g_video_seek_func(app->video_player, delta_ms));
+    return *result == ERROR_NONE || *result == ERROR_OUTPUT_IO;
 }
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,
@@ -261,8 +261,9 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             }
             break;
         case KEY_LEFT: {
-            if (handle_video_seek(app, -k_video_seek_step_ms)) {
-                if (app->last_error != ERROR_OUTPUT_IO)
+            ErrorCode result;
+            if (handle_video_seek(app, -k_video_seek_step_ms, &result)) {
+                if (result != ERROR_OUTPUT_IO)
                     drain_queued_video_seek_repeats(app, input_handler, KEY_LEFT, -k_video_seek_step_ms);
                 break;
             }
@@ -282,8 +283,9 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         }
         case KEY_RIGHT: {
-            if (handle_video_seek(app, k_video_seek_step_ms)) {
-                if (app->last_error != ERROR_OUTPUT_IO)
+            ErrorCode result;
+            if (handle_video_seek(app, k_video_seek_step_ms, &result)) {
+                if (result != ERROR_OUTPUT_IO)
                     drain_queued_video_seek_repeats(app, input_handler, KEY_RIGHT, k_video_seek_step_ms);
                 break;
             }

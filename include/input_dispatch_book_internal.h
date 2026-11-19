@@ -3,6 +3,6 @@
 
 #include "app.h"
 
-void input_dispatch_book_change_page(PixelTermApp *app, gint delta);
+ErrorCode input_dispatch_book_change_page(PixelTermApp *app, gint delta);
 
 #endif

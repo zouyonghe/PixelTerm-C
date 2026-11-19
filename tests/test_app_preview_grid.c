@@ -21,6 +21,7 @@ typedef struct {
     gint prepare_calls;
     gint transition_calls;
     ErrorCode prepare_error;
+    ErrorCode transition_error;
 } PreviewGridStubState;
 
 typedef void (*PreviewGridCaptureFunc)(gpointer user_data);
@@ -216,6 +217,28 @@ static void test_enter_preview_stop_failure_keeps_display(void) {
     g_assert_true(app.image_files == images);
     g_assert_cmpint(g_preview_grid_stub_state.prepare_calls, ==, 1);
     g_assert_cmpint(g_preview_grid_stub_state.transition_calls, ==, 0);
+    cleanup_preview_app(&app);
+}
+
+static void test_enter_preview_transition_failure_retains_list(void) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.mode = APP_MODE_SINGLE;
+    GList *images = app.image_files;
+    g_preview_grid_stub_state.transition_error = ERROR_OUTPUT_IO;
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    ErrorCode result = app_enter_preview(&app);
+    stdout = saved;
+    fclose(capture);
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.image_files == images);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
     cleanup_preview_app(&app);
 }
 
@@ -613,6 +636,8 @@ void app_preview_render_selected_filename(PixelTermApp *app) {
 
 ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
     g_preview_grid_stub_state.transition_calls++;
+    if (g_preview_grid_stub_state.transition_error != ERROR_NONE)
+        return g_preview_grid_stub_state.transition_error;
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
@@ -677,6 +702,7 @@ int main(int argc, char **argv) {
     g_test_add_data_func("/app_preview_grid/output/selection_backoff", GINT_TO_POINTER(1), test_preview_backoff_blocks_ui);
     g_test_add_func("/app_preview_grid/entry/previous_error", test_enter_preview_with_previous_error);
     g_test_add_func("/app_preview_grid/entry/stop_failure_keeps_display", test_enter_preview_stop_failure_keeps_display);
+    g_test_add_func("/app_preview_grid/entry/transition_failure_retains_list", test_enter_preview_transition_failure_retains_list);
     g_test_add_func("/app_preview_grid/render/full_output_failure", test_full_preview_output_failure_is_reported);
     g_test_add_data_func("/app_preview_grid/entry/clear_failure_preserves_mode", GUINT_TO_POINTER(1), test_enter_preview_output_failure_preserves_mode);
     g_test_add_data_func("/app_preview_grid/entry/screen_failure_preserves_mode", GUINT_TO_POINTER(2), test_enter_preview_output_failure_preserves_mode);

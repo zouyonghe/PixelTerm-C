@@ -624,8 +624,12 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         gboolean help_visible = app->help_visible;
         error = is_book ? app_open_book(app, selected_path)
                         : app_load_single_file(app, selected_path);
+        if (error == ERROR_NONE) {
+            error = is_book ? app_enter_book_preview(app)
+                            : app_transition_mode(app, APP_MODE_SINGLE);
+        }
         if (error != ERROR_NONE) {
-            /* Book cleanup can change mode even when opening its replacement fails. */
+            /* Book cleanup or preview entry can change mode before failing. */
             app_set_mode(app, APP_MODE_FILE_MANAGER);
             app->info_visible = info_visible;
             app->help_visible = help_visible;
@@ -637,9 +641,6 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             }
             return error;
         }
-        error = app_transition_mode(app, APP_MODE_SINGLE);
-        if (error != ERROR_NONE) return error;
-
         g_list_free_full(app->file_manager.entries, g_free);
         app->file_manager.entries = NULL;
         app->file_manager.entries_count = 0;
@@ -649,8 +650,6 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         app->needs_redraw = TRUE;
 
         if (is_book) {
-            error = app_enter_book_preview(app);
-            if (error != ERROR_NONE) return error;
             return app_render_book_preview(app);
         }
         return app_render_current_image(app);

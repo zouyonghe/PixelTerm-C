@@ -400,6 +400,7 @@ static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(v
 
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
+    app.last_error = ERROR_OUTPUT_IO;
     InputEvent event = make_key_event(KEY_RIGHT);
     InputHandler input_handler = {0};
     InputEvent next_event = {0};
@@ -416,6 +417,7 @@ static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(v
     g_assert_cmpint(g_input_dispatch_stub_state.previous_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_total_delta_ms, ==, seek_step_ms * 3);
     g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
     g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
@@ -602,6 +604,7 @@ static void test_video_scale_stop_failure_aborts_redraw(void) {
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_false(video_player_is_playing(player));
     g_assert_cmpint(scale_render_calls, ==, 0);
+    g_assert_cmpfloat_with_epsilon(app.video_scale, 1.0, 0.0001);
     spy_handle_key_press_single(&app, NULL, &event);
     g_assert_cmpint(scale_render_calls, ==, 1);
     video_player_destroy(player);

@@ -28,8 +28,7 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
             app->input.single_click.pending = FALSE;
             if (app_is_book_mode(app)) {
                 gint page_step = app_book_use_double_page(app) ? 2 : 1;
-                input_dispatch_book_change_page(app, page_step);
-                if (app->last_error == ERROR_OUTPUT_IO) return;
+                if (input_dispatch_book_change_page(app, page_step) == ERROR_OUTPUT_IO) return;
             } else {
                 ErrorCode result = app_next_image(app);
                 record_output_error(app, result);

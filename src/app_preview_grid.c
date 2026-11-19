@@ -590,6 +590,13 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
             g_list_free_full(valid_images, g_free);
             return ERROR_OUTPUT_IO;
         }
+        ErrorCode transitioned = app_transition_mode(app, APP_MODE_PREVIEW);
+        if (transitioned != ERROR_NONE) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            g_list_free_full(valid_images, g_free);
+            return transitioned;
+        }
         // Free the old image list
         if (app->image_files) {
             g_list_free_full(app->image_files, (GDestroyNotify)g_free);
@@ -612,8 +619,6 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    ErrorCode transitioned = app_transition_mode(app, APP_MODE_PREVIEW);
-    if (transitioned != ERROR_NONE) return transitioned;
     app_preview_set_selected_index(app, app->current_index >= 0 ? app->current_index : 0);
 
     // For yellow border mode (RETURN_MODE_PREVIEW_VIRTUAL), always select first image

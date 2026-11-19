@@ -103,7 +103,27 @@ static void test_pending_single_output_failure_preserves_other_clicks(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
 }
 
+static void test_pending_book_current_result(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = APP_MODE_BOOK, .last_error = ERROR_OUTPUT_IO};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.book_change_page_result = result;
+    app.input.single_click.pending = TRUE;
+    app.input.single_click.pending_time = g_get_monotonic_time() - 500000;
+    app.input.preview_click.pending = TRUE;
+    app.input.file_manager_click.pending = TRUE;
+    input_dispatch_process_pending_clicks(&app);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_change_page_calls, ==, 1);
+    g_assert_false(app.input.single_click.pending);
+    g_assert_cmpint(app.input.preview_click.pending, ==, result == ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.input.file_manager_click.pending, ==, result == ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
 void register_input_dispatch_pending_clicks_tests(void) {
+    g_test_add_data_func("/input_dispatch_pending_clicks/book/prior_output_error", GINT_TO_POINTER(ERROR_NONE), test_pending_book_current_result);
+    g_test_add_data_func("/input_dispatch_pending_clicks/book/current_output_error", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_pending_book_current_result);
+    g_test_add_data_func("/input_dispatch_pending_clicks/book/current_validation_error", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_pending_book_current_result);
     g_test_add_func("/input_dispatch_pending_clicks/single_click/output_failure_preserves_others", test_pending_single_output_failure_preserves_other_clicks);
     g_test_add_func("/input_dispatch_pending_clicks/preview_click/validation_nonfatal", test_pending_preview_validation_remains_nonfatal);
     g_test_add_func("/input_dispatch_pending_clicks/preview_click/render_output_failure", test_pending_preview_render_output_failure);

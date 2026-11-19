@@ -63,6 +63,8 @@ typedef struct {
     gboolean file_manager_enter_renders_error;
     ErrorCode file_manager_toggle_hidden_result;
     ErrorCode load_directory_result;
+    gboolean load_directory_replaces_media;
+    ErrorCode book_change_page_result;
     ErrorCode enter_at_position_result;
     ErrorCode video_seek_result;
     ErrorCode next_image_result;

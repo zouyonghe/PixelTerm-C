@@ -69,6 +69,7 @@ static void test_file_manager_entry_failure_preserves_book(gconstpointer data) {
     PixelTermApp app = make_book_app();
     app.book.path = g_strdup("/tmp/book.epub");
     app.book.doc = (BookDocument *)&app;
+    app.suppress_full_clear = TRUE;
     InputEvent event = make_key_event(KEY_TAB);
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.enter_file_manager_result = result;
@@ -82,6 +83,8 @@ static void test_file_manager_entry_failure_preserves_book(gconstpointer data) {
     g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
     g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? result : ERROR_NONE);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, result != ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.suppress_full_clear, ==, result == ERROR_OUTPUT_IO);
     g_free(app.book.path);
 }
 
@@ -139,7 +142,7 @@ static void test_real_page_entry_error(gconstpointer data) {
     PixelTermApp app = make_book_app();
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.enter_book_page_result = result;
-    real_book_change_page(&app, 1);
+    g_assert_cmpint(real_book_change_page(&app, 1), ==, result);
     g_assert_cmpint(g_input_dispatch_stub_state.enter_book_page_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
     g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
@@ -149,7 +152,7 @@ static void test_real_page_render_error(void) {
     PixelTermApp app = make_book_app();
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.book_page_render_result = ERROR_OUTPUT_IO;
-    real_book_change_page(&app, 1);
+    g_assert_cmpint(real_book_change_page(&app, 1), ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(app.book.page, ==, 5);
     g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 1);
     g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
@@ -186,7 +189,35 @@ static void test_jump_prompt_failure_preserves_state(gconstpointer data) {
     g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, 0);
 }
 
+static void test_real_page_success_keeps_prior_error(void) {
+    PixelTermApp app = make_book_app();
+    app.last_error = ERROR_OUTPUT_IO;
+    input_dispatch_test_reset_stubs();
+    g_assert_cmpint(real_book_change_page(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app.book.page, ==, 5);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(real_book_change_page(&app, 0), ==, ERROR_NONE);
+    g_assert_cmpint(g_input_dispatch_stub_state.enter_book_page_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
+static void test_file_manager_recovery_render_failure(void) {
+    PixelTermApp app = make_book_app();
+    InputEvent event = make_key_event(KEY_TAB);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_file_manager_result = ERROR_INVALID_IMAGE;
+    g_input_dispatch_stub_state.book_page_render_result = ERROR_OUTPUT_IO;
+    input_dispatch_handle_key_press_book(&app, NULL, &event);
+    g_assert_cmpint(app.mode, ==, APP_MODE_BOOK);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 0);
+}
+
 void register_input_dispatch_key_book_tests(void) {
+    g_test_add_func("/input_dispatch_key_book/errors/page_success_keeps_prior_error", test_real_page_success_keeps_prior_error);
+    g_test_add_func("/input_dispatch_key_book/errors/file_manager_recovery_render_failure", test_file_manager_recovery_render_failure);
     g_test_add_data_func("/input_dispatch_key_book/errors/file_manager_output_preserves_book", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_file_manager_entry_failure_preserves_book);
     g_test_add_data_func("/input_dispatch_key_book/errors/file_manager_validation_preserves_book", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_file_manager_entry_failure_preserves_book);
     g_test_add_data_func("/input_dispatch_key_book/preview_to_file_manager/success", GINT_TO_POINTER(ERROR_NONE), test_preview_to_file_manager_entry);

@@ -7,6 +7,11 @@ static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
     return result;
 }
 
+static gpointer copy_media_path(gconstpointer path, gpointer user_data) {
+    (void)user_data;
+    return g_strdup(path);
+}
+
 static const KeyCode g_nav_keys_ud[] = {
     KEY_UP, KEY_DOWN, KEY_PAGE_UP, KEY_PAGE_DOWN
 };
@@ -170,8 +175,19 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 break;
             }
 
+            GList *saved_files = g_list_copy_deep(app->image_files, copy_media_path, NULL);
+            gchar *saved_directory = g_strdup(app->current_directory);
+            gint saved_count = app->total_images;
+            gint saved_index = app->current_index;
+            PreviewState saved_preview = app->preview;
+            saved_preview.selected_link = g_list_nth(saved_files,
+                g_list_position(app->image_files, app->preview.selected_link));
+            ReturnMode saved_return_mode = app->return_to_mode;
+            gint saved_previous = app->file_manager.previous_selected_entry;
             ErrorCode load_error = record_output_error(app, app_load_directory(app, app->file_manager.directory));
             if (load_error != ERROR_NONE) {
+                g_list_free_full(saved_files, g_free);
+                g_free(saved_directory);
                 if (load_error != ERROR_OUTPUT_IO) record_output_error(app, app_render_file_manager(app));
                 break;
             }
@@ -179,9 +195,6 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             gboolean selection_is_media = selected_path &&
                                           g_file_test(selected_path, G_FILE_TEST_IS_REGULAR) &&
                                           is_valid_media_file(selected_path);
-            ReturnMode saved_return_mode = app->return_to_mode;
-            gint saved_index = app->current_index;
-            gint saved_previous = app->file_manager.previous_selected_entry;
             if (selection_is_media) {
                 app->return_to_mode = RETURN_MODE_PREVIEW;
                 gint selected_image_index = -1;
@@ -201,6 +214,12 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 app->file_manager.previous_selected_entry = app->file_manager.selected_entry;
             }
             if (record_output_error(app, app_enter_preview(app)) != ERROR_NONE) {
+                g_list_free_full(app->image_files, g_free);
+                g_free(app->current_directory);
+                app->image_files = saved_files;
+                app->current_directory = saved_directory;
+                app->total_images = saved_count;
+                app->preview = saved_preview;
                 app_set_mode(app, APP_MODE_FILE_MANAGER);
                 app->return_to_mode = saved_return_mode;
                 app->current_index = saved_index;
@@ -208,6 +227,8 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 app->needs_redraw = TRUE;
                 break;
             }
+            g_list_free_full(saved_files, g_free);
+            g_free(saved_directory);
             ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
             app_set_mode(app, APP_MODE_PREVIEW);
             if (exited != ERROR_NONE) break;

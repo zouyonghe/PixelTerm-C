@@ -143,10 +143,17 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         app.current_index = 1;
         app.file_manager.previous_selected_entry = 9;
         app.image_files = g_list_append(NULL, g_strdup(path));
+        app.image_files = g_list_append(app.image_files, g_strdup("/original/second.jpg"));
+        app.total_images = 2;
+        app.current_directory = g_strdup("/original");
+        app.preview.selected = 1;
+        app.preview.selected_link = app.image_files->next;
+        app.preview.selected_link_index = 1;
         GList *entries = app.file_manager.entries;
         InputEvent event = make_key_event(KEY_TAB);
         input_dispatch_test_reset_stubs();
         g_input_dispatch_stub_state.file_manager_has_images = TRUE;
+        g_input_dispatch_stub_state.load_directory_replaces_media = TRUE;
         g_input_dispatch_stub_state.enter_book_preview_result = results[i];
         g_input_dispatch_stub_state.enter_preview_result = results[i];
         input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
@@ -163,9 +170,17 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
             g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_NONE);
             g_assert_cmpint(app.current_index, ==, 1);
             g_assert_cmpint(app.file_manager.previous_selected_entry, ==, 9);
+            g_assert_cmpint(app.total_images, ==, 2);
+            g_assert_cmpstr(app.current_directory, ==, "/original");
+            g_assert_cmpstr(app.image_files->data, ==, path);
+            g_assert_cmpstr(app.image_files->next->data, ==, "/original/second.jpg");
+            g_assert_cmpint(app.preview.selected, ==, 1);
+            g_assert_true(app.preview.selected_link == app.image_files->next);
+            g_assert_cmpint(app.preview.selected_link_index, ==, 1);
         }
         g_assert_cmpint(app.last_error, ==, results[i] == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
         g_list_free_full(app.image_files, g_free);
+        g_free(app.current_directory);
         cleanup_file_manager_app(&app);
     }
     if (kind != 2) g_remove(path);

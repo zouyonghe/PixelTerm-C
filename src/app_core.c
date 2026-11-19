@@ -51,21 +51,6 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Cleanup existing file list
-    if (app->image_files) {
-        g_list_free_full(app->image_files, (GDestroyNotify)g_free);
-        app->image_files = NULL;
-    }
-    app->preview.selected_link = NULL;
-    app->preview.selected_link_index = -1;
-    // Reset preloader state to avoid leaking threads or stale cache
-    app_preloader_reset(app);
-
-    g_free(app->current_directory);
-    // Normalize path to remove trailing slashes and resolve relative components
-    gchar *normalized_dir = g_canonicalize_filename(directory, NULL);
-    app->current_directory = normalized_dir ? normalized_dir : g_strdup(directory);
-
     // Scan directory for image files
     FileBrowser *browser = browser_create();
     if (!browser) {
@@ -80,30 +65,28 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
 
     GList *file_list_from_browser = browser_get_all_files(browser);
     gint browser_total = browser_get_total_files(browser);
-
-    // Clear existing app->image_files and prepare for new entries
-    if (app->image_files) {
-        g_list_free_full(app->image_files, (GDestroyNotify)g_free);
-        app->image_files = NULL;
-    }
-    app->preview.selected_link = NULL;
-    app->preview.selected_link_index = -1;
-    app->total_images = 0; // Reset count
+    gchar *normalized_dir = g_canonicalize_filename(directory, NULL);
+    GList *image_files = NULL;
 
     // Copy and duplicate file paths from browser's list to app's list
     for (GList *current_node = file_list_from_browser; current_node; current_node = g_list_next(current_node)) {
         gchar *filepath = (gchar*)current_node->data;
-        app->image_files = g_list_prepend(app->image_files, g_strdup(filepath));
+        image_files = g_list_prepend(image_files, g_strdup(filepath));
     }
 
-    // Now sort app->image_files using the custom comparison function
-    app->image_files = g_list_sort(app->image_files, (GCompareFunc)app_file_manager_compare_names);
+    image_files = g_list_sort(image_files, (GCompareFunc)app_file_manager_compare_names);
+    browser_destroy(browser);
+
+    /* Commit only after scanning and copying succeed; directory may alias current_directory. */
+    app_preloader_reset(app);
+    g_list_free_full(app->image_files, g_free);
+    g_free(app->current_directory);
+    app->current_directory = normalized_dir;
+    app->image_files = image_files;
     app->total_images = browser_total;
     app->current_index = 0;
     app->preview.selected_link = app->image_files;
     app->preview.selected_link_index = app->image_files ? 0 : -1;
-
-    browser_destroy(browser);
 
     // Note: We return ERROR_NONE even if no images are found
     // The caller should check app_has_images() to handle this case

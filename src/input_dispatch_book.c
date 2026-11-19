@@ -1,8 +1,8 @@
 #include "input_dispatch_book_internal.h"
 
-void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
+ErrorCode input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
     if (!app_is_book_mode(app)) {
-        return;
+        return ERROR_NONE;
     }
     gint new_page = app->book.page + delta;
     if (new_page < 0) new_page = 0;
@@ -11,10 +11,11 @@ void input_dispatch_book_change_page(PixelTermApp *app, gint delta) {
     }
     if (new_page < 0) new_page = 0;
     if (new_page == app->book.page) {
-        return;
+        return ERROR_NONE;
     }
     app->suppress_full_clear = TRUE;
     ErrorCode result = app_enter_book_page(app, new_page);
     if (result == ERROR_NONE) result = app_render_book_page(app);
     if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
 }
