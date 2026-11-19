@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #ifdef __linux__
 #include <stdio_ext.h>
 #endif
@@ -17,6 +18,20 @@ typedef struct {
 } PendingOutput;
 static gboolean cleanup_registered = FALSE;
 static gint64 next_cleanup_retry_us = 0;
+
+/* Bound kernel writes without changing descriptor flags between submissions. */
+static gboolean terminal_output_submit(const char *bytes, gsize length) {
+    int fd = fileno(stdout);
+    int flags = fd >= 0 ? fcntl(fd, F_GETFL) : -1;
+    gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
+    if (fd >= 0 && (flags < 0 || (changed && fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)))
+        return FALSE;
+    gsize written = length ? fwrite(bytes, 1, length, stdout) : 0;
+    int flushed = fflush(stdout);
+    gboolean success = written == length && flushed == 0 && !ferror(stdout);
+    if (changed && fcntl(fd, F_SETFL, flags) < 0) success = FALSE;
+    return success;
+}
 
 void terminal_output_discard(void) {
 #ifdef __linux__
@@ -41,7 +56,7 @@ gboolean terminal_output_ready(gint64 now_us) {
 
 gboolean terminal_output_flush(void) {
     /* Check buffered UI bytes before clearing errors or submitting queued controls. */
-    if (ferror(stdout) || fflush(stdout) != 0 || ferror(stdout)) {
+    if (ferror(stdout) || !terminal_output_submit(NULL, 0)) {
         terminal_output_discard();
         terminal_output_defer_recovery();
         next_cleanup_retry_us = g_get_monotonic_time() + 100000;
@@ -51,9 +66,7 @@ gboolean terminal_output_flush(void) {
         PendingOutput *pending = g_queue_peek_head(&pending_output);
         GString *command = pending->bytes;
         clearerr(stdout);
-        gsize written = fwrite(command->str, 1, command->len, stdout);
-        gint flushed = fflush(stdout);
-        if (written != command->len || flushed != 0 || ferror(stdout)) {
+        if (!terminal_output_submit(command->str, command->len)) {
             terminal_output_discard();
             /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
             if (!pending->replay_safe) {
@@ -82,9 +95,7 @@ static void terminal_output_cleanup_at_exit(void) {
         /* A blocked head must not starve later independently ST-framed restores.
          * Already-attempted ambiguous releases have become ST-only above. */
         terminal_output_discard();
-        gsize written = fwrite(pending->bytes->str, 1, pending->bytes->len, stdout);
-        gint flushed = fflush(stdout);
-        if (written != pending->bytes->len || flushed != 0 || ferror(stdout))
+        if (!terminal_output_submit(pending->bytes->str, pending->bytes->len))
             terminal_output_discard();
         g_string_free(pending->bytes, TRUE);
         g_free(pending);
@@ -124,9 +135,7 @@ void terminal_output_defer_recovery(void) {
 gboolean terminal_output_write(const char *bytes, gsize length) {
     if (!terminal_output_flush()) return FALSE;
     clearerr(stdout);
-    gsize written = fwrite(bytes, 1, length, stdout);
-    gint flushed = fflush(stdout);
-    if (written == length && flushed == 0 && !ferror(stdout)) return TRUE;
+    if (terminal_output_submit(bytes, length)) return TRUE;
     terminal_output_recover();
     return FALSE;
 }

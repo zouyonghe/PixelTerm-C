@@ -3071,6 +3071,62 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_background_frame_waits_for_restore_deadline(void) {
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, FALSE, TRUE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    VideoFrame *frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "DEFERRED-VIDEO-FRAME");
+    video_player_queue_push(player, frame);
+    player->is_playing = TRUE;
+    ParkedWorkerCall worker;
+    player->worker_thread = start_parked_worker_for_test("deferred-video-worker", &worker, player);
+    DeleteOutput output = {.output = g_string_new(NULL), .attempted = g_string_new(NULL)};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    terminal_output_defer("\033[?25h", TERMINAL_OUTPUT_RESTORE);
+    g_assert_false(terminal_output_ready(g_get_monotonic_time()));
+    guint attempts = output.attempts;
+    video_player_schedule_tick_for_test(player);
+    for (guint i = 0; i < 3; i++) {
+        guint timer_id = player->timer_id;
+        GSource *source = g_main_context_find_source_by_id(NULL, timer_id);
+        g_assert_nonnull(source);
+        g_source_set_ready_time(source, 0);
+        g_assert_true(g_main_context_iteration(NULL, FALSE));
+        g_assert_cmpuint(player->timer_id, !=, 0);
+        g_assert_cmpuint(player->timer_id, !=, timer_id);
+        g_assert_cmpuint(output.attempts, ==, attempts);
+        g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 1);
+        g_assert_true(g_queue_peek_head(player->frame_queue) == frame);
+        g_assert_true(video_player_is_playing(player));
+        g_assert_nonnull(player->worker_thread);
+        g_assert_false(player->clock_started);
+        g_assert_cmpint(player->last_presented_pts_ms, ==, G_MININT64);
+    }
+    g_assert_true(terminal_output_ready(g_get_monotonic_time() + 100000));
+    g_assert_true(video_player_render_frame_for_test(player));
+    g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
+    g_assert_cmpint(player->last_presented_pts_ms, ==, 0);
+    g_assert_true(video_player_is_playing(player));
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpstr(output.output->str, ==,
+        "\033\\\033[?25h\033\\\033[HDEFERRED-VIDEO-FRAME\033[J");
+    const gchar *submitted = strstr(output.attempted->str, "DEFERRED-VIDEO-FRAME");
+    g_assert_nonnull(submitted);
+    g_assert_null(strstr(submitted + strlen("DEFERRED-VIDEO-FRAME"), "DEFERRED-VIDEO-FRAME"));
+    video_player_destroy(player);
+    g_assert_true(g_atomic_int_get(&worker.finished));
+    clear_parked_worker_for_test(&worker);
+    g_string_free(output.output, TRUE);
+    g_string_free(output.attempted, TRUE);
+}
+
 static void test_cleanup_failure_aborts_media_change(gconstpointer cycle) {
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -3399,8 +3455,20 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         frame->kitty_direct_image_id = player->kitty_direct_image_id;
         frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
         video_player_queue_push(player, frame);
-        rendered = mode == 6 ? video_player_render_frame_for_test(player) :
-            video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
+        if (mode == 6) {
+            video_player_schedule_tick_for_test(player);
+            guint timer_id = player->timer_id;
+            GSource *source = g_main_context_find_source_by_id(NULL, timer_id);
+            g_assert_nonnull(source);
+            g_source_set_ready_time(source, 0);
+            g_assert_true(g_main_context_iteration(NULL, FALSE));
+            rendered = video_player_is_playing(player);
+            g_assert_cmpuint(player->timer_id, ==, 0);
+            g_assert_null(g_main_context_find_source_by_id(NULL, timer_id));
+            g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
+        } else {
+            rendered = video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
+        }
     } else if (mode == 1) {
         g_assert_cmpint(video_player_set_renderer(player, NULL), ==, ERROR_NONE);
     } else if (mode == 3) {
@@ -3425,6 +3493,7 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
     }
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
     gboolean resumed_output = FALSE;
+    if (frame_failure) g_assert_true(terminal_output_ready(g_get_monotonic_time() + 100000));
     if (mode == 0) {
         g_assert_true(terminal_output_flush());
         g_assert_cmpint(ftell(capture), >, 0); /* Cleanup works while the stopped player is alive. */
@@ -3662,6 +3731,8 @@ void register_video_player_tests(void) {
     g_test_add_data_func("/video_player/public_api/protocol_cycle_cleanup_failure", GINT_TO_POINTER(1), test_cleanup_failure_aborts_media_change);
     g_test_add_func("/video_player/public_api/protocol_cycle_resume_failure", test_checked_protocol_cycle_reports_resume_failure);
     g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
+    g_test_add_func("/video_player/output/background_frame_waits_for_restore_deadline",
+                    test_background_frame_waits_for_restore_deadline);
     g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
     g_test_add_func("/video_player/direct_kitty/hide_failure_blocks_frame", test_hide_failure_does_not_emit_frame);
     g_test_add_func("/gif_player/native_animation/delete_failure_discards_buffer", test_gif_delete_failure_discards_buffer);

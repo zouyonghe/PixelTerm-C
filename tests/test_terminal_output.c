@@ -32,7 +32,7 @@ static ssize_t sink_write(void *data, const char *bytes, size_t length) {
 
 static void test_pending_policy(gconstpointer data) {
     TerminalOutputPolicy policy = GPOINTER_TO_INT(data);
-    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE, .attempted = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
@@ -43,6 +43,8 @@ static void test_pending_policy(gconstpointer data) {
     gboolean failed = terminal_output_ready(before_failure);
     gboolean waiting = terminal_output_ready(before_failure + 99999);
     guint before = sink.writes;
+    gchar *initial_attempt = g_strdup(sink.attempted->str);
+    g_string_truncate(sink.attempted, 0);
     sink.fail = FALSE;
     gboolean recovered = terminal_output_ready(g_get_monotonic_time() + 100000);
     fclose(stream);
@@ -50,8 +52,12 @@ static void test_pending_policy(gconstpointer data) {
     g_assert_false(failed);
     g_assert_false(waiting);
     g_assert_cmpuint(before, ==, 1);
+    g_assert_cmpstr(initial_attempt, ==, "\033\\CONTROL");
     g_assert_true(recovered);
     g_assert_cmpstr(sink.bytes->str, ==, policy == TERMINAL_OUTPUT_ONCE ? "\033\x5c" : "\033\x5c" "CONTROL");
+    g_assert_cmpstr(sink.attempted->str, ==, sink.bytes->str);
+    g_free(initial_attempt);
+    g_string_free(sink.attempted, TRUE);
     g_string_free(sink.bytes, TRUE);
 }
 

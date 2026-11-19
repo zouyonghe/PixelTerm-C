@@ -1823,6 +1823,9 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         return FALSE;
     }
 
+    /* Background ticks retain frames during recovery; checked actions report I/O errors. */
+    if (!output_error && !terminal_output_ready(g_get_monotonic_time())) return TRUE;
+
     gint64 target_pts_ms = 0;
     gboolean clock_started = video_player_get_target_pts_ms(player, &target_pts_ms);
     VideoFrame *frame = NULL;
@@ -1879,7 +1882,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
-    gboolean output_success = terminal_output_flush();
+    gboolean output_success = output_error ? terminal_output_flush() : TRUE;
     GString *output = g_string_new("\033\x5c");
     if (!frame->kitty_direct_image_id) {
         output_success = video_player_clear_direct_kitty_image(player, FALSE) && output_success;

@@ -32,6 +32,7 @@ void register_app_cli_tests(void);
 void register_app_startup_tests(void);
 void register_book_tests(void);
 void register_terminal_output_tests(void);
+void register_terminal_output_blocking_tests(void);
 void register_main_lifecycle_tests(void);
 void register_input_restore_tests(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
@@ -403,6 +404,7 @@ int main(int argc, char **argv) {
     register_app_startup_tests();
     register_book_tests();
     register_terminal_output_tests();
+    register_terminal_output_blocking_tests();
     register_main_lifecycle_tests();
     register_input_restore_tests();
     register_video_player_tests();
