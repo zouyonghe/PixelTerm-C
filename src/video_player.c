@@ -753,9 +753,9 @@ VideoPlayer* video_player_new(gint work_factor, gboolean force_text, gboolean fo
     return player;
 }
 
-void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
+ErrorCode video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     if (!player) {
-        return;
+        return ERROR_INVALID_IMAGE;
     }
 
     g_mutex_lock(&player->render_mutex);
@@ -796,7 +796,10 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
         (renderer->config.force_kitty ||
          (renderer->canvas_config &&
           chafa_canvas_config_get_pixel_mode(renderer->canvas_config) == CHAFA_PIXEL_MODE_KITTY));
-    if (!next_is_kitty) video_player_clear_direct_kitty_image(player, TRUE);
+    if (!next_is_kitty && !video_player_clear_direct_kitty_image(player, TRUE)) {
+        video_player_pause(player);
+        return ERROR_OUTPUT_IO;
+    }
     g_mutex_lock(&player->render_mutex);
     /* Same-renderer replacement while workers are active: preserve owns_renderer to avoid leak. */
     if (player->renderer && player->renderer != renderer && player->owns_renderer) {
@@ -809,8 +812,9 @@ void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer) {
     g_mutex_unlock(&player->render_mutex);
 
     if (renderer && was_playing) {
-        video_player_resume_playback_loop(player);
+        return video_player_resume_playback_loop(player);
     }
+    return ERROR_NONE;
 }
 
 void video_player_set_render_area(VideoPlayer *player,

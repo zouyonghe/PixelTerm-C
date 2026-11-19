@@ -18,11 +18,13 @@ typedef struct {
     gboolean fail;
     gboolean fail_once;
     guint writes;
+    GString *attempted;
 } OutputSink;
 
 static ssize_t sink_write(void *data, const char *bytes, size_t length) {
     OutputSink *sink = data;
     sink->writes++;
+    if (sink->attempted) g_string_append_len(sink->attempted, bytes, length);
     if (sink->fail || sink->fail_once) { sink->fail_once = FALSE; errno = EIO; return -1; }
     g_string_append_len(sink->bytes, bytes, length);
     return (ssize_t)length;
@@ -153,7 +155,7 @@ static void test_legacy_stdout_failure_blocks_ready(gconstpointer data) {
 
 static void test_ui_controls_report_failed_submission(gconstpointer data) {
     gboolean clear = GPOINTER_TO_INT(data);
-    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE, .attempted = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
@@ -167,11 +169,14 @@ static void test_ui_controls_report_failed_submission(gconstpointer data) {
     fclose(stream);
     stdout = saved;
     g_assert_false(submitted);
+    g_assert_true(g_str_has_prefix(sink.attempted->str,
+        clear ? "\033_Ga=d,q=2\033\\" : "\033[?2026h"));
     g_assert_true(recovered);
     g_assert_null(strstr(sink.bytes->str, "UNSAFE"));
     if (clear) g_assert_null(strstr(sink.bytes->str, "a=d"));
     else g_assert_nonnull(strstr(sink.bytes->str, "\033[?2026l"));
     g_string_free(sink.bytes, TRUE);
+    g_string_free(sink.attempted, TRUE);
 }
 
 static void test_pending_controls_start_with_recovery_framing(void) {

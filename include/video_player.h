@@ -145,8 +145,12 @@ void video_player_destroy(VideoPlayer *player);
  *
  * Active workers are stopped before replacement and restarted when playback
  * was active. The player borrows @p renderer and never destroys it.
+ * Cleanup failure preserves the old renderer and ownership, with playback paused.
+ * A restart failure leaves the replacement installed and playback paused.
+ * @return ERROR_NONE on success, ERROR_INVALID_IMAGE for a NULL player,
+ * or ERROR_OUTPUT_IO when terminal cleanup or playback restart fails.
  */
-void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
+ErrorCode video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
 
 /**
  * @brief Sets the terminal layout available to video rendering.

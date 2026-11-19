@@ -254,6 +254,75 @@ static void test_gif_native_root_output_failure(void) {
     pixelterm_env_reset_for_test();
 }
 
+static gboolean pause_timer_must_not_run(gpointer data) {
+    (void)data;
+    g_assert_not_reached();
+    return G_SOURCE_REMOVE;
+}
+
+static void test_gif_pause_stop_recovery(gconstpointer data) {
+    guint scenario = GPOINTER_TO_UINT(data);
+    gboolean delivered = (scenario & 1) != 0;
+    gboolean stop_before_recovery = (scenario & 2) != 0;
+    const gchar *stop = "\033_Ga=a,i=4242,s=1,q=2\033\\";
+    const gchar *release = "\033_Ga=d,d=I,i=4242,q=2\033\\";
+    GifPlayer *player = software_test_player();
+    player->kitty_animation_id = 4242;
+    player->kitty_animation_prepared = TRUE;
+    player->kitty_animation_complete = TRUE;
+    player->is_playing = TRUE;
+    player->timer_id = g_timeout_add(60000, pause_timer_must_not_run, player);
+    guint timer_id = player->timer_id;
+    GifOutputSink sink = {.bytes = g_string_new(NULL), .fail = !delivered,
+                          .deliver_then_fail = delivered ? stop : NULL};
+    FILE *stream = test_output_stream(&sink, gif_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+
+    g_assert_cmpint(gif_player_pause(player), ==, ERROR_OUTPUT_IO);
+    /* Pause is locally complete; terminal STOP remains owned by the output queue. */
+    g_assert_false(gif_player_is_playing(player));
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_null(g_main_context_find_source_by_id(NULL, timer_id));
+    g_assert_cmpuint(player->kitty_animation_id, ==, 4242);
+    g_assert_true(player->kitty_animation_prepared);
+    if (stop_before_recovery) {
+        g_assert_cmpint(gif_player_stop(player), ==, ERROR_OUTPUT_IO);
+        g_assert_cmpuint(player->kitty_animation_id, ==, 0);
+    }
+
+    gsize failed_length = sink.bytes->len;
+    sink.fail = FALSE;
+    sink.deliver_then_fail = NULL;
+    g_assert_true(terminal_output_flush());
+    const gchar *retry = strstr(sink.bytes->str + failed_length, stop);
+    g_assert_nonnull(retry);
+    g_assert_cmpint(retry - sink.bytes->str, >=, 2);
+    g_assert_cmpmem(retry - 2, 2, "\033\\", 2);
+    g_assert_null(strstr(retry + 1, stop));
+    if (delivered) {
+        g_assert_true(strstr(sink.bytes->str, stop) < retry);
+    } else {
+        g_assert_true(strstr(sink.bytes->str, stop) == retry);
+    }
+    g_assert_false(gif_player_is_playing(player));
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_cmpint(gif_player_stop(player), ==, ERROR_NONE);
+    gif_player_destroy(player);
+    g_assert_true(terminal_output_flush());
+    const gchar *deleted = strstr(sink.bytes->str, release);
+    g_assert_nonnull(deleted);
+    retry = strstr(sink.bytes->str + failed_length, stop);
+    g_assert_true(retry < deleted);
+    g_assert_null(strstr(deleted + 1, "\033_Ga=d"));
+    g_assert_null(strstr(sink.bytes->str, "\033_Ga=T"));
+    fclose(stream);
+    stdout = saved;
+    g_string_free(sink.bytes, TRUE);
+}
+
 static void test_gif_output_failure(gconstpointer data) {
     const gchar *operation = data;
     if (g_strcmp0(operation, "native_timer") == 0 &&
@@ -900,6 +969,14 @@ void register_gif_player_tests(void) {
                                  "software_play_recovered", "software_timer", "native_timer",
                                  "native_fallback", "backoff"};
     g_test_add_func("/gif_player/output_failure/native_root", test_gif_native_root_output_failure);
+    g_test_add_data_func("/gif_player/output_failure/pause_retry/undelivered",
+                         GUINT_TO_POINTER(0), test_gif_pause_stop_recovery);
+    g_test_add_data_func("/gif_player/output_failure/pause_retry/delivered",
+                         GUINT_TO_POINTER(1), test_gif_pause_stop_recovery);
+    g_test_add_data_func("/gif_player/output_failure/pause_retry/undelivered_then_stop",
+                         GUINT_TO_POINTER(2), test_gif_pause_stop_recovery);
+    g_test_add_data_func("/gif_player/output_failure/pause_retry/delivered_then_stop",
+                         GUINT_TO_POINTER(3), test_gif_pause_stop_recovery);
     for (guint i = 0; i < G_N_ELEMENTS(operations); i++) {
         gchar *path = g_strdup_printf("/gif_player/output_failure/%s", operations[i]);
         g_test_add_data_func(path, operations[i], test_gif_output_failure);
