@@ -225,7 +225,13 @@ static void test_partial_session_preserves_progress(void) {
         while ((count = write(pipefd[1], bytes, sizeof(bytes))) > 0) filled += (gsize)count;
         while ((count = write(pipefd[1], bytes, 1)) > 0) filled += (gsize)count;
         g_assert_true(errno == EAGAIN || errno == EWOULDBLOCK);
-        g_assert_cmpint(read(pipefd[0], bytes, sizeof(bytes)), ==, sizeof(bytes));
+        gsize drained = 0;
+        while (drained < sizeof(bytes)) {
+            count = read(pipefd[0], bytes, sizeof(bytes) - drained);
+            if (count < 0 && errno == EINTR) continue;
+            g_assert_cmpint(count, >, 0); /* EOF or another error invalidates setup. */
+            drained += (gsize)count;
+        }
         gsize prefix = filled - sizeof(bytes);
         g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags), ==, 0);
         FILE *stream = fdopen(pipefd[1], "w");
