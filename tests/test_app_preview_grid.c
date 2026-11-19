@@ -628,7 +628,8 @@ gboolean app_has_images(const PixelTermApp *app) {
 }
 
 void app_preloader_clear_queue(PixelTermApp *app) {
-    if (app->preloader && app->preload_enabled) g_preview_grid_stub_state.preload_mutations++;
+    /* A retained preloader can be cleared even when task generation is disabled. */
+    if (app->preloader) g_preview_grid_stub_state.preload_mutations++;
 }
 
 ErrorCode preloader_clear_queue(ImagePreloader *preloader) {

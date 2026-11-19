@@ -1,6 +1,7 @@
 #include "app.h"
 #include "app_file_manager_internal.h"
 #include "app_book_transaction_internal.h"
+#include "media_utils.h"
 #include "preload_control.h"
 #include "terminal_output.h"
 
@@ -395,6 +396,17 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     return error;
 }
 
+void app_file_manager_clear_listing(PixelTermApp *app) {
+    if (!app) return;
+    if (app->file_manager.entries) {
+        g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
+        app->file_manager.entries = NULL;
+    }
+    app->file_manager.entries_count = 0;
+    app_file_manager_invalidate_selection_cache(app);
+    g_clear_pointer(&app->file_manager.directory, g_free);
+}
+
 // Exit file manager mode
 ErrorCode app_exit_file_manager(PixelTermApp *app) {
     if (!app) {
@@ -403,15 +415,7 @@ ErrorCode app_exit_file_manager(PixelTermApp *app) {
 
     (void)app_transition_mode(app, APP_MODE_SINGLE);
     app->input.file_manager_click.pending = FALSE;
-
-    // Cleanup directory entries
-    if (app->file_manager.entries) {
-        g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
-        app->file_manager.entries = NULL;
-    }
-    app->file_manager.entries_count = 0;
-    app_file_manager_invalidate_selection_cache(app);
-    g_clear_pointer(&app->file_manager.directory, g_free);
+    app_file_manager_clear_listing(app);
 
     // Reset info visibility to ensure proper display
     app->info_visible = FALSE;
@@ -565,13 +569,36 @@ static ErrorCode app_file_manager_open_image(PixelTermApp *app, const char *path
     staged.async = (AsyncState){0};
     ErrorCode error = app_load_single_file(&staged, path);
     if (error != ERROR_NONE) return error;
-    error = app_transition_mode(&staged, APP_MODE_SINGLE);
+    /* Only the candidate's player is needed; retain stopped old decoders on failure.
+     * Timers and workers reference heap players, never this staged app value. */
+    staged.gif_player = NULL;
+    staged.video_player = NULL;
+    MediaKind kind = media_classify(path);
+    if (kind == MEDIA_KIND_ANIMATED_IMAGE && app->gif_player) {
+        staged.gif_player = gif_player_new(app->render_work_factor, app->force_text,
+            app->force_sixel, app->force_kitty, app->force_iterm2, app->text_symbol_mode, app->gamma);
+        if (!staged.gif_player) error = ERROR_MEMORY_ALLOC;
+        else gif_player_set_color_enhance(staged.gif_player, app->color_enhance);
+    } else if (kind == MEDIA_KIND_VIDEO && app->video_player) {
+        staged.video_player = video_player_new(app->render_work_factor, app->force_text,
+            app->force_sixel, app->force_kitty, app->force_iterm2, app->text_symbol_mode,
+            app->gamma, app->kitty_transfer);
+        if (!staged.video_player) error = ERROR_MEMORY_ALLOC;
+        else video_player_set_color_enhance(staged.video_player, app->color_enhance);
+    }
+    if (error == ERROR_NONE) error = app_transition_mode(&staged, APP_MODE_SINGLE);
     if (error == ERROR_NONE) error = app_render_current_image(&staged);
     if (error != ERROR_NONE) {
+        gif_player_destroy(staged.gif_player);
+        video_player_destroy(staged.video_player);
         g_list_free_full(staged.image_files, g_free);
         g_free(staged.current_directory);
         g_free(staged.async.image_path);
     } else {
+        if (staged.gif_player) gif_player_destroy(app->gif_player);
+        else staged.gif_player = app->gif_player;
+        if (staged.video_player) video_player_destroy(app->video_player);
+        else staged.video_player = app->video_player;
         g_list_free_full(app->image_files, g_free);
         g_free(app->current_directory);
         g_free(app->async.image_path);
@@ -671,11 +698,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             }
             return error;
         }
-        g_list_free_full(app->file_manager.entries, g_free);
-        app->file_manager.entries = NULL;
-        app->file_manager.entries_count = 0;
-        app_file_manager_invalidate_selection_cache(app);
-        g_clear_pointer(&app->file_manager.directory, g_free);
+        app_file_manager_clear_listing(app);
         app->info_visible = FALSE;
 
         return ERROR_NONE;

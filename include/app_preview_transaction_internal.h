@@ -14,6 +14,7 @@ static inline ErrorCode app_enter_preview_and_render(PixelTermApp *app) {
     staged.preview.selected_link = NULL;
     staged.preview.selected_link_index = -1;
     /* Keep the live preload queue untouched until output succeeds. */
+    staged.preloader = NULL;
     staged.preload_enabled = FALSE;
     if (staged.return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL)
         staged.return_to_mode = RETURN_MODE_PREVIEW;
@@ -25,6 +26,7 @@ static inline ErrorCode app_enter_preview_and_render(PixelTermApp *app) {
         app->needs_screen_clear = TRUE;
         return error;
     }
+    staged.preloader = app->preloader;
     staged.preload_enabled = app->preload_enabled;
     if (app->preloader && app->preload_enabled) preloader_clear_queue(app->preloader);
     g_list_free_full(app->image_files, g_free);

@@ -11,6 +11,7 @@ static inline ErrorCode app_open_book_preview(PixelTermApp *app, const char *pat
     BookState previous = app->book;
     gchar *directory = app->current_directory;
     AppMode mode = app->mode;
+    InputState input = app->input;
     gboolean info_visible = app->info_visible, help_visible = app->help_visible;
     /* Move staged ownership into app while entry checks the real application. */
     app->book = staged.book;
@@ -25,6 +26,7 @@ static inline ErrorCode app_open_book_preview(PixelTermApp *app, const char *pat
         app->book = previous;
         app->current_directory = directory;
         app_set_mode(app, mode);
+        app->input = input;
         app->info_visible = info_visible;
         app->help_visible = help_visible;
     } else {

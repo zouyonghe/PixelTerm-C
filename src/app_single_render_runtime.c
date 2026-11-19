@@ -29,7 +29,12 @@ ErrorCode app_display_help(PixelTermApp *app) {
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
-    if (!app->help_visible && !ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
+    if (!app->help_visible && !ui_clear_kitty_images(app)) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+        return ERROR_OUTPUT_IO;
+    }
     gboolean help_was_visible = app->help_visible;
     app->help_visible = !app->help_visible;
     if (app->help_visible) {

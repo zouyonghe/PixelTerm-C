@@ -567,7 +567,8 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     // If we found valid images, replace the image list
     if (valid_images && valid_count > 0) {
-        /* Stop media before clearing its content; commit the list only after output succeeds. */
+        /* Stop before clearing; output failure intentionally leaves playback stopped.
+         * Commit the list only after output succeeds. */
         ErrorCode prepared = app_prepare_mode_entry(app, TRUE);
         if (prepared != ERROR_NONE) {
             if (prepared == ERROR_OUTPUT_IO) {
