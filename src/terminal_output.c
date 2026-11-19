@@ -70,7 +70,9 @@ ssize_t terminal_output_descriptor_write_until(int fd, const char *bytes, gsize 
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
     if (flags < 0 || (changed && output_fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)) return -1;
     gsize written = 0;
-    gint64 deadline = g_get_monotonic_time() + 100000;
+    /* SSH and terminal graphics consumers can pause longer than one render tick. */
+    const gint64 idle_timeout_us = 2 * G_TIME_SPAN_SECOND;
+    gint64 deadline = g_get_monotonic_time() + idle_timeout_us;
     if (deadline_us > 0) deadline = MIN(deadline, deadline_us);
     while (written < length) {
         if (g_get_monotonic_time() >= deadline) {
@@ -81,7 +83,7 @@ ssize_t terminal_output_descriptor_write_until(int fd, const char *bytes, gsize 
         ssize_t count = write(fd, bytes + written, length - written);
         if (count > 0) {
             written += (gsize)count;
-            deadline = g_get_monotonic_time() + 100000;
+            deadline = g_get_monotonic_time() + idle_timeout_us;
             if (deadline_us > 0) deadline = MIN(deadline, deadline_us);
         } else if (count < 0 && errno == EINTR) {
             /* Interrupted writes still share the no-progress deadline. */

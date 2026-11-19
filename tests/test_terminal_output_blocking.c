@@ -163,40 +163,58 @@ static void test_full_pipe_returns(gconstpointer data) {
         g_assert_cmpint(after, ==, flags);
         return;
     }
-    g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_subprocess(NULL, 20 * G_TIME_SPAN_SECOND, 0);
     g_test_trap_assert_passed();
 }
 
-typedef struct { int fd; GByteArray *bytes; } PipeReader;
+typedef struct { int fd; GByteArray *bytes; guint delay_us; } PipeReader;
 
 static gpointer read_delayed_pipe(gpointer data) {
     PipeReader *reader = data;
-    g_usleep(20000);
+    g_usleep(reader->delay_us);
     guchar buffer[4096];
     ssize_t count;
-    while ((count = read(reader->fd, buffer, sizeof(buffer))) > 0)
+    gsize next_pause = 64 * 1024;
+    while ((count = read(reader->fd, buffer, sizeof(buffer))) > 0) {
         g_byte_array_append(reader->bytes, buffer, (guint)count);
+        if (reader->bytes->len >= next_pause) {
+            g_usleep(reader->delay_us);
+            next_pause = reader->bytes->len + 64 * 1024;
+        }
+    }
     return NULL;
 }
 
-static void test_transient_pipe_preserves_payload(void) {
+static void test_transient_pipe_preserves_payload(gconstpointer data) {
     if (g_test_subprocess()) {
+        guint mode = GPOINTER_TO_UINT(data);
+        gboolean session = mode != 1;
         int pipefd[2];
         g_assert_cmpint(pipe(pipefd), ==, 0);
+        /* Darwin adds a written-status flag on the first write. */
+        char warmup;
+        g_assert_cmpint(write(pipefd[1], "x", 1), ==, 1);
+        g_assert_cmpint(read(pipefd[0], &warmup, 1), ==, 1);
+        int flags = fcntl(pipefd[1], F_GETFL);
+        g_assert_cmpint(flags, >=, 0);
         FILE *stream = fdopen(pipefd[1], "w");
         g_assert_nonnull(stream);
-        PipeReader reader = {.fd = pipefd[0], .bytes = g_byte_array_new()};
+        PipeReader reader = {.fd = pipefd[0], .bytes = g_byte_array_new(),
+                             .delay_us = mode ? 250000 : 20000};
         GThread *thread = g_thread_new("pipe-reader", read_delayed_pipe, &reader);
-        gsize length = 256 * 1024;
+        gsize length = (mode ? 512 : 256) * 1024;
         gchar *payload = g_malloc(length);
         for (gsize i = 0; i < length; i++) payload[i] = (gchar)(i % 251);
         FILE *saved = stdout;
         fflush(saved);
         stdout = stream;
-        g_assert_true(terminal_output_begin_session());
-        gboolean submitted = fwrite(payload, 1, length, stdout) == length && terminal_output_flush();
-        g_assert_true(terminal_output_end_session());
+        if (session) g_assert_true(terminal_output_begin_session());
+        gboolean submitted = session
+            ? fwrite(payload, 1, length, stdout) == length && terminal_output_flush()
+            : terminal_output_write(payload, length);
+        if (session) g_assert_true(terminal_output_end_session());
         g_assert_true(stdout == stream);
+        g_assert_cmpint(fcntl(pipefd[1], F_GETFL), ==, flags);
         stdout = saved;
         fclose(stream);
         g_thread_join(thread);
@@ -207,7 +225,7 @@ static void test_transient_pipe_preserves_payload(void) {
         g_free(payload);
         return;
     }
-    g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, 0);
     g_test_trap_assert_passed();
 }
 
@@ -270,7 +288,7 @@ static void test_partial_session_preserves_progress(void) {
         g_free(payload);
         return;
     }
-    g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, 0);
     g_test_trap_assert_passed();
 }
 
@@ -281,7 +299,9 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/preflight/enable_nonblock", GUINT_TO_POINTER(5), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/restore_flags/direct", NULL, test_restore_flags_retry);
     g_test_add_data_func("/terminal_output/restore_flags/session", GINT_TO_POINTER(1), test_restore_flags_retry);
-    g_test_add_func("/terminal_output/transient_pipe_preserves_payload", test_transient_pipe_preserves_payload);
+    g_test_add_data_func("/terminal_output/transient_pipe_preserves_payload", NULL, test_transient_pipe_preserves_payload);
+    g_test_add_data_func("/terminal_output/slow_pipe/direct", GUINT_TO_POINTER(1), test_transient_pipe_preserves_payload);
+    g_test_add_data_func("/terminal_output/slow_pipe/session", GUINT_TO_POINTER(2), test_transient_pipe_preserves_payload);
     g_test_add_func("/terminal_output/partial_session_preserves_progress", test_partial_session_preserves_progress);
     g_test_add_data_func("/terminal_output/full_pipe/payload", GINT_TO_POINTER(0), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/full_pipe/buffered", GINT_TO_POINTER(1), test_full_pipe_returns);
