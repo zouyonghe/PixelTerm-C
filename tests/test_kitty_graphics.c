@@ -108,7 +108,7 @@ static void test_kitty_allocation_rejects_bad_replies(void) {
         fclose(capture);
         g_assert_cmpuint(id, ==, 0);
         if (mode == 8) {
-            g_assert_nonnull(strstr(output, "\033_Ga=d,d=I,i=123,q=2\033\\"));
+            g_assert_cmpstr(output, ==, "\033\\\033_Ga=d,d=I,i=123,q=2\033\\");
         } else {
             g_assert_cmpstr(output, ==, "\033\\"); /* Never guess ownership from a shared image number. */
         }
@@ -182,7 +182,11 @@ static void test_kitty_failed_allocation_cleanup_recovers(void) {
     g_assert_cmpuint(blocked, ==, 0);
     g_assert_cmpuint(second, ==, 123);
     g_assert_cmpuint(length, >, 0);
-    g_assert_cmpstr(output, ==, "\033\\");
+    /* Some stdio implementations retain failed buffered writes across dup2. */
+    g_assert_cmpuint(length % 2, ==, 0);
+    for (gsize i = 0; i < length; i += 2) {
+        g_assert_cmpmem(output + i, 2, "\033\\", 2);
+    }
 }
 
 static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpointer data) {
@@ -215,8 +219,8 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     gint saved = dup(STDOUT_FILENO);
     g_assert_cmpint(saved, >=, 0);
     g_assert_cmpint(dup2(fileno(capture), STDOUT_FILENO), >=, 0);
-    g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
-    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
+    ErrorCode first_play = video_player_play(player);
+    guint32 first_id = player->kitty_direct_image_id;
     gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
     while (player->last_presented_pts_ms == G_MININT64 && g_get_monotonic_time() < deadline) {
         g_main_context_iteration(NULL, FALSE);
@@ -224,15 +228,15 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     }
     gboolean presented = player->last_presented_pts_ms != G_MININT64;
     video_player_pause(player);
-    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
-    g_assert_cmpint(video_player_play(player), ==, ERROR_NONE);
-    g_assert_cmpuint(player->kitty_direct_image_id, ==, 123);
-    g_assert_cmpuint(terminal.next_id, ==, 124);
+    guint32 paused_id = player->kitty_direct_image_id;
+    ErrorCode resumed = video_player_play(player);
+    guint32 resumed_id = player->kitty_direct_image_id;
+    guint32 next_id = terminal.next_id;
     gchar padding[8192];
     memset(padding, ' ', sizeof(padding));
-    g_assert_cmpuint(fwrite(padding, 1, sizeof(padding), stdout), ==, sizeof(padding));
+    gsize padding_written = fwrite(padding, 1, sizeof(padding), stdout);
     video_player_stop(player);
-    g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
+    guint32 stopped_id = player->kitty_direct_image_id;
     video_player_destroy(player);
     fflush(stdout);
     g_assert_cmpint(fseek(capture, 0, SEEK_END), ==, 0);
@@ -250,6 +254,14 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     video_player_debug_reset_for_test();
     pixelterm_env_reset_for_test();
     terminal_probe_reset_transport_hooks_for_test();
+    g_assert_cmpint(first_play, ==, ERROR_NONE);
+    g_assert_cmpuint(first_id, ==, 123);
+    g_assert_cmpuint(paused_id, ==, 123);
+    g_assert_cmpint(resumed, ==, ERROR_NONE);
+    g_assert_cmpuint(resumed_id, ==, 123);
+    g_assert_cmpuint(next_id, ==, 124);
+    g_assert_cmpuint(stopped_id, ==, 0);
+    g_assert_cmpuint(padding_written, ==, sizeof(padding));
     g_assert_true(presented);
     const gchar *frame = strstr(output, "\033_Ga=T,f=24,");
     g_assert_nonnull(frame);

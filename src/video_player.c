@@ -73,7 +73,7 @@ static gboolean video_player_prepare_direct_kitty_image(VideoPlayer *player) {
     if (player->kitty_direct_image_id || player->kitty_shm_enabled || player->kitty_transfer == KITTY_TRANSFER_SHM ||
         pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return TRUE;
     RendererConfig config = video_player_render_worker_config(player);
-    gboolean eligible = config.force_kitty && !config.force_text && config.gamma == 1.0 &&
+    gboolean eligible = config.force_kitty && !config.force_text && config.preserve_aspect_ratio && config.gamma == 1.0 &&
         config.color_enhance == COLOR_ENHANCE_OFF;
     if (eligible) {
         clearerr(stdout);
@@ -1157,7 +1157,7 @@ static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer 
         !rgb_buffer_capacity || !rendered_width || !rendered_height) {
         return NULL;
     }
-    if (renderer->config.gamma != 1.0 ||
+    if (!renderer->config.preserve_aspect_ratio || renderer->config.gamma != 1.0 ||
         renderer->config.color_enhance != COLOR_ENHANCE_OFF ||
         pixelterm_getenv("TMUX") || pixelterm_getenv("STY") ||
         !decoded->pixels ||
@@ -1178,15 +1178,9 @@ static KittyGraphicsFrame *video_player_render_direct_kitty_frame(ImageRenderer 
     get_terminal_cell_geometry(&cell_width, &cell_height);
     *rendered_width = renderer->config.max_width;
     *rendered_height = renderer->config.max_height;
-    if (renderer->config.preserve_aspect_ratio) {
-        chafa_calc_canvas_geometry(decoded->width,
-                                   decoded->height,
-                                   rendered_width,
-                                   rendered_height,
-                                   get_terminal_cell_aspect_ratio(),
-                                   TRUE,
-                                   FALSE);
-    }
+    chafa_calc_canvas_geometry(decoded->width, decoded->height,
+                               rendered_width, rendered_height,
+                               get_terminal_cell_aspect_ratio(), TRUE, FALSE);
     if (*rendered_width <= 0 || *rendered_height <= 0) {
         return NULL;
     }
@@ -2046,6 +2040,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         ErrorCode failure = video_player_report_output_failure();
         if (output_error) *output_error = failure;
         kitty_graphics_defer_output_recovery();
+        kitty_graphics_retry_pending_deletes();
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
         player->is_playing = FALSE;

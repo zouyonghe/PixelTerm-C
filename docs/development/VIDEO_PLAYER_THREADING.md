@@ -20,8 +20,8 @@ before workers start and remains immutable while they run. Main-context probes
 reuse terminal-probe key replay and bounded deadlines; workers never read stdin.
 Pause retains the reservation; full release happens only after joining workers.
 The play entry point joins stale worker handles before resetting playback state
-or allocating an image ID. Failed allocations with no confirmed ID receive only
-protocol-boundary recovery; their invisible placeholders may remain until terminal
+or allocating an image ID. If query bytes were written but no ID was confirmed,
+only the protocol boundary is recovered; invisible placeholders may remain until terminal
 eviction/reset, since shared image numbers cannot establish ownership. Complete
 validated replies from probes that failed terminal restoration are cleaned up by
 their confirmed ID, not used for rendering. Pending user keys continue to be

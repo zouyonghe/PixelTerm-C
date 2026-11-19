@@ -1036,9 +1036,13 @@ static void test_paused_seek_reports_output_failure(void) {
     g_assert_cmpint(dup2(failed, STDOUT_FILENO), >=, 0);
     close(failed);
     ErrorCode result = video_player_seek_relative_ms(player, 1000);
+    int sink = open("/dev/null", O_WRONLY);
+    g_assert_cmpint(sink, >=, 0);
+    g_assert_cmpint(dup2(sink, STDOUT_FILENO), >=, 0);
+    close(sink);
+    g_assert_true(kitty_graphics_retry_pending_deletes());
     g_assert_cmpint(dup2(saved, STDOUT_FILENO), >=, 0);
     close(saved);
-    kitty_graphics_retry_pending_deletes();
     video_player_set_seek_hook_for_test(NULL);
     video_player_set_seek_preview_hook_for_test(NULL);
     seek_preview_hook_enqueue_frame = FALSE;
@@ -1663,6 +1667,23 @@ static guint count_debug_event(const gchar *log, const gchar *event) {
     return count;
 }
 
+static void assert_converted_fixture_pixels(const DecodedFrame *frame) {
+    g_assert_nonnull(frame->pixels);
+    g_assert_cmpint(frame->width, ==, 2);
+    g_assert_cmpint(frame->height, ==, 2);
+    g_assert_cmpint(frame->rowstride, >=, 8);
+    /* Six solid-red fixture frames; allow YUV rounding across FFmpeg versions. */
+    for (gint y = 0; y < frame->height; y++) {
+        for (gint x = 0; x < frame->width; x++) {
+            const guint8 *pixel = frame->pixels + y * frame->rowstride + 4 * x;
+            g_assert_cmpuint(pixel[0], >=, 250);
+            g_assert_cmpuint(pixel[1], <=, 3);
+            g_assert_cmpuint(pixel[2], <=, 3);
+            g_assert_cmpuint(pixel[3], ==, 255);
+        }
+    }
+}
+
 static void test_decode_worker_conversion_gating(gconstpointer data) {
     gint mode = GPOINTER_TO_INT(data);
     gboolean late = mode == 1;
@@ -1700,26 +1721,10 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     gboolean pending = FALSE;
     guint output_frames = 0;
     gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
-    guint8 first_pixel_value = 0;
-    gboolean first_pixel_captured = FALSE;
     do {
         DecodedFrame *decoded_frame = video_player_decode_queue_take(player);
         if (decoded_frame) {
-            g_assert_nonnull(decoded_frame->pixels);
-            g_assert_cmpint(decoded_frame->width, >, 0);
-            g_assert_cmpint(decoded_frame->rowstride, >=, decoded_frame->width * 4);
-            /* Verify actual pixel conversion occurred, not just the timing event. */
-            if (!late) {
-                if (!first_pixel_captured) {
-                    first_pixel_value = decoded_frame->pixels[0];
-                    first_pixel_captured = TRUE;
-                    /* Converted video frames should have nonzero pixel data. */
-                    g_assert_cmpuint(first_pixel_value, !=, 0);
-                } else {
-                    /* All converted frames from the same source should have consistent structure. */
-                    g_assert_cmpuint(decoded_frame->pixels[0], ==, first_pixel_value);
-                }
-            }
+            assert_converted_fixture_pixels(decoded_frame);
             output_frames++;
         }
         decoded_frame_destroy(decoded_frame);
@@ -1732,7 +1737,7 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     } while (!pending && g_get_monotonic_time() < deadline);
     DecodedFrame *tail;
     while ((tail = video_player_decode_queue_take(player))) {
-        g_assert_nonnull(tail->pixels);
+        assert_converted_fixture_pixels(tail);
         output_frames++;
         decoded_frame_destroy(tail);
     }
@@ -2855,6 +2860,9 @@ static void test_direct_kitty_preserves_fallback_boundaries(void) {
     g_assert_nonnull(strstr(command->str, "f=24,s=1,v=1,"));
     g_assert_nonnull(strstr(command->str, ";Hjxa\033\\"));
     g_string_free(command, TRUE);
+    renderer->config.preserve_aspect_ratio = FALSE;
+    g_assert_null(video_player_render_direct_kitty_for_test(renderer, &decoded));
+    renderer->config.preserve_aspect_ratio = TRUE;
     pixelterm_env_set_for_test("TMUX", "/test/tmux");
     command = video_player_render_direct_kitty_for_test(renderer, &decoded);
     g_assert_null(command);
@@ -3027,7 +3035,9 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
 #endif
 
 static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
-    gint mode = GPOINTER_TO_INT(data); /* 0: delete failure, 1: detach, 2: frame failure, 3: text replacement, 4: destroy. */
+    /* 0: delete failure, 1: detach, 2: resume failure, 3: text replacement,
+     * 4: destroy, 6: frame failure without an error output parameter. */
+    gint mode = GPOINTER_TO_INT(data);
     gboolean frame_failure = mode == 2 || mode == 6;
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                            TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
