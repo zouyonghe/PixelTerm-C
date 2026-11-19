@@ -4,6 +4,59 @@ This document defines ownership and synchronization rules for `VideoPlayer`.
 It applies to the public API in `include/video_player.h` and the implementation
 in `src/video_player*.c`.
 
+## Terminal output contract
+
+`terminal_output.c/.h` is the single main-context owner of checked submissions,
+failed stdio buffer disposal, APC framing, deferred command lifetime and the
+100 ms background retry deadline. `kitty_graphics.c` encodes Kitty commands,
+runs the image-ID allocation probe, and queues deferred deletes and ST recovery
+through this owner. UI/input depend on the output owner's readiness contract,
+but do not implement its recovery queue, buffer disposal or retry policy.
+Legacy UI rows still assemble bytes with `printf`/`fwrite`. During the application
+session, stdout forwards these writes through the bounded descriptor writer;
+checked frame boundaries use `terminal_output_flush`. The session restores the
+original stdout on exit. Application callers still need to propagate failures.
+
+- `terminal_output_write` first drains pending work. If that fails, it returns
+  false without attempting the payload. Otherwise it writes and flushes the
+  payload and returns that submission result even if recovery later succeeds.
+- `terminal_output_defer(..., TERMINAL_OUTPUT_ONCE)` owns unsent destructive
+  commands. A failed/ambiguous attempt becomes ST-only; deletion is not replayed.
+- `TERMINAL_OUTPUT_RESTORE` owns idempotent mouse/cursor/alternate-screen/sync-end
+  controls until success or process exit, including after the handler/player has
+  been destroyed. Exit makes one final attempt before discarding pending controls.
+- `terminal_output_ready` returns false both after failure and during backoff.
+  The event loop must not run later output stages while readiness is false.
+- Termios recovery remains in input/probe lifecycle and never waits for stdout.
+  Outer user-original settings override a pending probe app-raw snapshot.
+- Media stop and render-area clearing return submission failures. Callers must
+  stop before rendering, changing protocol or resuming playback on failure.
+  Void input-dispatch paths record failures in `app->last_error` for the main loop.
+  GIF timers wait during recovery backoff; failed frame submissions stop playback
+  and report the error instead of scheduling another frame.
+  Native GIF pause transfers its idempotent STOP to retained restoration so
+  logical pause does not silently discard the terminal-side stop after failure.
+
+Recovery assumes the same terminal session and image-ownership namespace. An
+external terminal reset or reconnect is not detected by a local retry deadline;
+cross-session queued-ID validation requires a separate continuity protocol.
+The descriptor writer temporarily uses nonblocking output and polls for up to
+100 ms without progress, preserving partial-write progress and restoring flags.
+The two-second readiness limit bounds repeated recovery failures. Session
+restoration assumes stdout still names
+the original terminal; redirection during an active session is not reattached.
+Shared-memory frames with failed/ambiguous submissions are discarded and their
+local resources reclaimed. A terminal that received the command but has not yet
+opened the shared-memory object by name may lose that failed frame; no delivery
+success is reported.
+Guaranteeing its display would require acknowledgement-based resource lifetime,
+which this recovery contract does not provide.
+
+GIF/video build a presentation payload and submit once through this owner.
+Workers never write to stdout or mutate deferred restoration. This adds a
+command-buffer copy compared with incremental stdout assembly; end-to-end CPU,
+RSS and physical-terminal frame rate must be remeasured before performance claims.
+
 ## Execution Contexts
 
 ### Main / GLib context
