@@ -209,7 +209,8 @@ static void test_probe_descriptor_full_pipe(void) {
         flags = fcntl(fds[1], F_GETFL);
         gboolean attempted = FALSE;
         gint64 start = g_get_monotonic_time();
-        g_assert_cmpint(terminal_output_descriptor_write(fds[1], "\033[c", 3, &attempted), ==, -1);
+        g_assert_cmpint(terminal_output_descriptor_write_until(fds[1], "\033[c", 3, &attempted,
+                                                              start + 100000), ==, -1);
         g_assert_true(errno == EAGAIN || errno == EWOULDBLOCK);
         g_assert_true(attempted);
         g_assert_cmpint(g_get_monotonic_time() - start, <, G_TIME_SPAN_SECOND);

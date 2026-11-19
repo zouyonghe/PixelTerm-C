@@ -19,7 +19,7 @@ gboolean terminal_output_begin_session(void);
 gboolean terminal_output_end_session(void);
 /* Checked payload submission. Descriptor writes temporarily use O_NONBLOCK so
  * a full pipe or flow-controlled terminal cannot stall cleanup. Poll for up to
- * 100 ms without progress, then restore flags (retry before later submissions if
+ * 2 seconds without progress, then restore flags (retry before later submissions if
  * restoration fails). Failed payloads are never replayed. */
 gboolean terminal_output_write(const char *bytes, gsize length);
 /* Internal main-owner transport: bounded write to an explicit descriptor,
@@ -29,7 +29,7 @@ gboolean terminal_output_write(const char *bytes, gsize length);
 ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length,
                                         gboolean *attempted);
 /* Same progress contract, additionally capped by an absolute monotonic deadline.
- * A zero deadline retains the ordinary 100 ms no-progress bound. */
+ * A zero deadline retains the ordinary 2 second no-progress bound. */
 ssize_t terminal_output_descriptor_write_until(int fd, const char *bytes, gsize length,
                                                gboolean *attempted, gint64 deadline_us);
 /* Retry pending descriptor flag restoration independently of stdout/queued output. */
