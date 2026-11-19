@@ -3118,6 +3118,8 @@ static void test_checked_protocol_cycle_reports_resume_failure(void) {
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    chafa_canvas_config_set_pixel_mode(player->renderer->canvas_config, CHAFA_PIXEL_MODE_SYMBOLS);
+    g_assert_true(video_player_protocol_cycle_needs_redraw(player));
     ParkedWorkerCall worker;
     player->worker_thread = start_parked_worker_for_test("failed-cycle-resume-worker", &worker, player);
     player->is_playing = TRUE;
@@ -3140,7 +3142,7 @@ static void test_checked_protocol_cycle_reports_resume_failure(void) {
     g_assert_true(g_atomic_int_get(&worker.finished));
     clear_parked_worker_for_test(&worker);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
-    g_assert_false(needs_redraw);
+    g_assert_true(needs_redraw);
     g_assert_false(video_player_is_playing(player));
     g_assert_null(player->worker_thread);
     g_assert_cmpuint(player->timer_id, ==, 0);

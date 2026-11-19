@@ -208,8 +208,9 @@ gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player);
 gboolean video_player_cycle_protocol(VideoPlayer *player);
 
 /* Checked cycle for callers that must distinguish output failure from no redraw.
- * On failure, needs_redraw is FALSE; a failed release preserves protocol and
- * leaves playback paused. needs_redraw may be NULL. */
+ * needs_redraw reports the committed change's redraw need even if resume fails.
+ * A failed release preserves protocol, reports FALSE, and leaves playback paused.
+ * needs_redraw may be NULL. */
 ErrorCode video_player_cycle_protocol_checked(VideoPlayer *player, gboolean *needs_redraw);
 
 /**
