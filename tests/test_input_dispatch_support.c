@@ -1,6 +1,7 @@
 #include "input_dispatch_test_support.h"
 
 #include "input.h"
+#include "terminal_output.h"
 
 #include <string.h>
 
@@ -224,14 +225,16 @@ gint app_book_toc_get_selected_page(PixelTermApp *app) {
     return app ? app->book.toc_selected : -1;
 }
 
-void app_book_jump_render_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_render_prompt(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_jump_prompt_render_calls++;
+    return ERROR_NONE;
 }
 
-void app_book_jump_clear_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_clear_prompt(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_jump_prompt_clear_calls++;
+    return ERROR_NONE;
 }
 
 void app_close_book(PixelTermApp *app) {
@@ -411,7 +414,11 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
 ErrorCode app_render_by_mode(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.render_by_mode_calls++;
-    return ERROR_NONE;
+    const gchar *payload = g_input_dispatch_stub_state.render_by_mode_payload;
+    if (payload && !terminal_output_write(payload, strlen(payload))) return ERROR_OUTPUT_IO;
+    if (g_input_dispatch_stub_state.render_by_mode_outputs_help && app->help_visible &&
+        !terminal_output_write("FIRST-OVERLAY", 13)) return ERROR_OUTPUT_IO;
+    return g_input_dispatch_stub_state.render_by_mode_result;
 }
 
 ErrorCode app_enter_file_manager(PixelTermApp *app) {

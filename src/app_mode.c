@@ -54,20 +54,23 @@ static void app_mode_on_exit_file_manager(PixelTermApp *app) {
     }
 }
 
-static void app_mode_on_enter_single(PixelTermApp *app) {
+static ErrorCode app_mode_on_enter_single(PixelTermApp *app) {
     (void)app;
+    return ERROR_NONE;
 }
 
-static void app_mode_on_enter_non_single(PixelTermApp *app) {
+static ErrorCode app_mode_on_enter_non_single(PixelTermApp *app) {
     if (!app) {
-        return;
+        return ERROR_MEMORY_ALLOC;
     }
-    app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    if (stopped != ERROR_NONE) app->last_error = stopped;
+    return stopped;
 }
 
 typedef struct {
     const char *name;
-    AppModeHook on_enter;
+    ErrorCode (*on_enter)(PixelTermApp *app);
     AppModeHook on_exit;
 } AppModeDef;
 
@@ -99,21 +102,20 @@ static const AppModeDef k_modes[APP_MODE_COUNT] = {
     },
 };
 
-void app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
+ErrorCode app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_queue) {
     if (!app) {
-        return;
+        return ERROR_MEMORY_ALLOC;
     }
 
-    if (app->gif_player) {
-        gif_player_stop(app->gif_player);
+    ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
+    if (stopped != ERROR_NONE) {
+        app->last_error = stopped;
+        return stopped;
     }
-    if (app->video_player) {
-        video_player_stop(app->video_player);
-    }
-    app->info_visible = FALSE;
     if (clear_preloader_queue) {
         app_preloader_clear_queue(app);
     }
+    return ERROR_NONE;
 }
 
 ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
@@ -136,6 +138,11 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
         return ERROR_INVALID_ARGS;
     }
 
+    /* Entry hooks stop media before mode or input state is committed. */
+    if (k_modes[mode].on_enter) {
+        ErrorCode entered = k_modes[mode].on_enter(app);
+        if (entered != ERROR_NONE) return entered;
+    }
     app->info_visible = FALSE;
     app->help_visible = FALSE;
 
@@ -143,9 +150,6 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
         k_modes[current].on_exit(app);
     }
     app->mode = mode;
-    if (k_modes[mode].on_enter) {
-        k_modes[mode].on_enter(app);
-    }
     return ERROR_NONE;
 }
 

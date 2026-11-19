@@ -10,6 +10,7 @@
 #include "app_single_render_internal.h"
 #include "app_single_render_test_internal.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <math.h>
 
@@ -45,13 +46,13 @@ static void app_queue_async_render(PixelTermApp *app, const gchar *filepath,
     }
 }
 
-static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepath) {
+static ErrorCode app_render_single_placeholder(PixelTermApp *app, const gchar *filepath) {
     if (!app || !filepath || app->ui_text_hidden) {
-        return;
+        return ERROR_NONE;
     }
     get_terminal_size(&app->term_width, &app->term_height);
 
-    ui_begin_sync_update();
+    if (!ui_begin_sync_update()) return ERROR_OUTPUT_IO;
     printf("\033[H\033[0m");
 
     ui_render_centered_row(1, app->term_width, "Image View", NULL);
@@ -94,21 +95,21 @@ static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepa
     }
 
     ui_end_sync_update();
-    fflush(stdout);
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
-static void app_render_info_overlay(PixelTermApp *app,
+static ErrorCode app_render_info_overlay(PixelTermApp *app,
                                      const gchar *filepath,
                                      gint image_area_top_row,
                                      gint image_area_height) {
     if (!app || !filepath || !app->info_visible) {
-        return;
+        return ERROR_NONE;
     }
     (void)image_area_top_row;
     (void)image_area_height;
 
     if (app->term_width < 28 || app->term_height < 10) {
-        return;
+        return ERROR_NONE;
     }
 
     gint width = 0;
@@ -153,7 +154,7 @@ static void app_render_info_overlay(PixelTermApp *app,
         .min_inner_width = 50,
         .max_inner_width = 74
     };
-    ui_render_panel(app->term_width, app->term_height, &panel);
+    ErrorCode output_error = ui_render_panel(app->term_width, app->term_height, &panel);
 
     g_free(line_aspect);
     g_free(line_format);
@@ -166,6 +167,7 @@ static void app_render_info_overlay(PixelTermApp *app,
     g_free(safe_basename);
     g_free(dirname);
     g_free(basename);
+    return output_error;
 }
 
 static const char *app_mode_display_name(const PixelTermApp *app) {
@@ -261,13 +263,13 @@ static const UIPanelRow *app_help_rows_for_mode(const PixelTermApp *app, gsize *
     return rows;
 }
 
-void app_render_help_overlay(PixelTermApp *app) {
+ErrorCode app_render_help_overlay(PixelTermApp *app) {
     if (!app || !app->help_visible) {
-        return;
+        return ERROR_NONE;
     }
     if (!app_help_overlay_can_render(app->term_width, app->term_height)) {
         app->help_visible = FALSE;
-        return;
+        return ERROR_NONE;
     }
 
     gsize line_count = 0;
@@ -280,7 +282,7 @@ void app_render_help_overlay(PixelTermApp *app) {
         .min_inner_width = 28,
         .max_inner_width = 68
     };
-    ui_render_panel(app->term_width, app->term_height, &panel);
+    return ui_render_panel(app->term_width, app->term_height, &panel);
 }
 
 static void app_apply_info_overlay_render_mode(const PixelTermApp *app,
@@ -310,6 +312,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
 
     const gchar *filepath = app_get_current_filepath(app);
     if (!filepath) {
@@ -345,6 +348,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
                                                            app->gif_player,
                                                            filepath);
             if (load_result != ERROR_NONE) {
+                if (load_result == ERROR_OUTPUT_IO) return load_result;
                 // If animation loading fails, just treat it as a regular image
                 is_animated_image = FALSE;
             }
@@ -369,7 +373,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (overlay_visible && active_kind == MEDIA_KIND_VIDEO) {
         active_kind = MEDIA_KIND_IMAGE;
     }
-    app_media_stop_inactive_players(app, active_kind);
+    ErrorCode stopped = app_media_stop_inactive_players(app, active_kind);
+    if (stopped != ERROR_NONE) return stopped;
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
@@ -425,8 +430,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
                                                    &cached_width, &cached_height)) {
             app_queue_async_render(app, filepath, target_width, target_height);
-            app_render_single_placeholder(app, filepath);
-            return ERROR_NONE;
+            return app_render_single_placeholder(app, filepath);
         }
     }
     if (app->async.render_force_sync) {
@@ -448,10 +452,24 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
-    APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update);
-    APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app);
+    if (app->gif_player) {
+        if (gif_is_animated && !overlay_visible && gif_player_is_playing(app->gif_player)) {
+            ErrorCode cleanup_error = gif_player_prepare_for_redraw(app->gif_player);
+            if (cleanup_error != ERROR_NONE) return cleanup_error;
+        }
+        ErrorCode layout_error = gif_player_set_render_area(app->gif_player,
+            app->term_width, app->term_height, image_area_top_row, target_height,
+            target_width, target_height);
+        if (layout_error != ERROR_NONE) return layout_error;
+    }
+    if (!APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update)) return ERROR_OUTPUT_IO;
+    if (!APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app)) {
+        APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+        return ERROR_OUTPUT_IO;
+    }
     // Clear screen and reset terminal state
-    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->info_visible && !app->help_visible;
+    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->needs_screen_clear &&
+                                   !app->info_visible && !app->help_visible;
     if (allow_partial_clear) {
         app->suppress_full_clear = FALSE;
         printf("\033[H\033[0m");
@@ -464,18 +482,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             app->suppress_full_clear = FALSE;
         }
         APP_SINGLE_RENDER_CALL(ui_clear_screen_for_refresh, ui_clear_screen_for_refresh, app);
-    }
-    if (app->gif_player) {
-        if (gif_is_animated && !overlay_visible && gif_player_is_playing(app->gif_player)) {
-            gif_player_prepare_for_redraw(app->gif_player);
-        }
-        gif_player_set_render_area(app->gif_player,
-                                   app->term_width,
-                                   app->term_height,
-                                   image_area_top_row,
-                                   target_height,
-                                   target_width,
-                                   target_height);
+        app->needs_screen_clear = FALSE;
     }
     if (app->video_player) {
         video_player_set_render_area(app->video_player,
@@ -559,14 +566,17 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
 
         if (overlay_visible) {
-            app_render_info_overlay(app, filepath, image_area_top_row, target_height);
-            app_render_help_overlay(app);
+            ErrorCode overlay_error = app_render_info_overlay(app, filepath, image_area_top_row, target_height);
+            if (overlay_error == ERROR_NONE) overlay_error = app_render_help_overlay(app);
+            if (overlay_error != ERROR_NONE) {
+                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+                return overlay_error;
+            }
         } else if (app->video_player) {
             ErrorCode play_result = APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
             app->needs_redraw = play_result != ERROR_NONE;
             if (play_result != ERROR_NONE) {
                 APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
-                fflush(stdout);
                 if (play_result != ERROR_OUTPUT_IO) {
                     fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(play_result));
                 }
@@ -578,8 +588,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
 
         APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
-        fflush(stdout);
-        return ERROR_NONE;
+        return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
     }
 
     // Check if image is already cached
@@ -591,6 +600,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
                                                        gif_player_play,
                                                        app->gif_player);
+        if (play_result == ERROR_OUTPUT_IO) {
+            APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+            return play_result;
+        }
         if (play_result == ERROR_NONE) {
             app->needs_redraw = FALSE;
             rendered = g_string_new(NULL);
@@ -902,8 +915,13 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
     g_free(pad_buffer);
 
-    app_render_info_overlay(app, filepath, image_area_top_row, target_height);
-    app_render_help_overlay(app);
+    ErrorCode overlay_error = app_render_info_overlay(app, filepath, image_area_top_row, target_height);
+    if (overlay_error == ERROR_NONE) overlay_error = app_render_help_overlay(app);
+    if (overlay_error != ERROR_NONE) {
+        APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+        g_string_free(rendered, TRUE);
+        return overlay_error;
+    }
 
     // Calculate filename position relative to image center
     if (filepath && !app->ui_text_hidden) {
@@ -955,9 +973,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
 
     g_string_free(rendered, TRUE);
 
-    return ERROR_NONE;
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

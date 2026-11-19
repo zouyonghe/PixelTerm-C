@@ -1,5 +1,8 @@
 #include "app.h"
 #include "app_file_manager_internal.h"
+#include "app_book_transaction_internal.h"
+#include "preload_control.h"
+#include "terminal_output.h"
 
 gint app_file_manager_compare_names(gconstpointer a, gconstpointer b) {
     const gchar *path_a = (const gchar*)a;
@@ -352,9 +355,19 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    app_prepare_mode_entry(app, FALSE);
+    // Stop media before clearing its displayed content; a failed clear cannot restart playback.
+    ErrorCode prepared = app_prepare_mode_entry(app, FALSE);
+    if (prepared != ERROR_NONE) return prepared;
 
-    (void)app_transition_mode(app, APP_MODE_FILE_MANAGER);
+    const char clear_screen[] = "\033[2J\033[H\033[0m";
+    if (!terminal_output_write(clear_screen, sizeof(clear_screen) - 1)) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+
+    ErrorCode transitioned = app_transition_mode(app, APP_MODE_FILE_MANAGER);
+    if (transitioned != ERROR_NONE) return transitioned;
     app->file_manager.selected_entry = 0;
     app_file_manager_invalidate_selection_cache(app);
     app->file_manager.scroll_offset = 0;
@@ -373,11 +386,13 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     // Always start with hidden files hidden
     app->show_hidden_files = FALSE;
 
-    // Clear screen on mode entry to avoid ghosting
-    printf("\033[2J\033[H\033[0m");
-    fflush(stdout);
-
-    return app_file_manager_refresh(app);
+    ErrorCode error = app_file_manager_refresh(app);
+    if (error != ERROR_NONE && error != ERROR_OUTPUT_IO) {
+        /* Callers skip their redraw on error, but entry already cleared the display. */
+        ErrorCode rendered = app_render_file_manager(app);
+        if (rendered != ERROR_NONE) return rendered;
+    }
+    return error;
 }
 
 // Exit file manager mode
@@ -540,6 +555,35 @@ ErrorCode app_file_manager_right(PixelTermApp *app) {
     return app_file_manager_enter(app);
 }
 
+/* Retain media and navigation ownership through the first single-image render. */
+static ErrorCode app_file_manager_open_image(PixelTermApp *app, const char *path) {
+    PixelTermApp staged = *app;
+    staged.image_files = NULL;
+    staged.current_directory = NULL;
+    staged.preloader = NULL;
+    staged.preload_enabled = FALSE;
+    staged.async = (AsyncState){0};
+    ErrorCode error = app_load_single_file(&staged, path);
+    if (error != ERROR_NONE) return error;
+    error = app_transition_mode(&staged, APP_MODE_SINGLE);
+    if (error == ERROR_NONE) error = app_render_current_image(&staged);
+    if (error != ERROR_NONE) {
+        g_list_free_full(staged.image_files, g_free);
+        g_free(staged.current_directory);
+        g_free(staged.async.image_path);
+    } else {
+        g_list_free_full(app->image_files, g_free);
+        g_free(app->current_directory);
+        g_free(app->async.image_path);
+        app_preloader_reset(app);
+        staged.preloader = app->preloader;
+        staged.preload_enabled = app->preload_enabled;
+        *app = staged;
+        if (app->preload_enabled) (void)app_preloader_enable(app, TRUE);
+    }
+    return error;
+}
+
 // Enter selected directory or open file in file manager
 ErrorCode app_file_manager_enter(PixelTermApp *app) {
     if (!app) {
@@ -577,78 +621,64 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             g_free(child_dir);
             return ERROR_FILE_NOT_FOUND;
         }
-        g_free(app->file_manager.directory);
+        gchar *previous_directory = app->file_manager.directory;
         app->file_manager.directory = new_directory;
-        // Reset selection to first entry when changing directory
-        app->file_manager.selected_entry = 0;
-        app_file_manager_invalidate_selection_cache(app);
-        app->file_manager.scroll_offset = 0;
-        // Refresh file manager with new directory
+        // Refresh resets selection only after the new directory is readable.
         ErrorCode err = app_file_manager_refresh(app);
+        if (err != ERROR_NONE) {
+            g_free(app->file_manager.directory);
+            app->file_manager.directory = previous_directory;
+        } else {
+            g_free(previous_directory);
+        }
         if (err == ERROR_NONE && child_dir) {
             (void)app_file_manager_select_path(app, child_dir);
         }
         g_free(child_dir);
         return err;
     } else {
-        if (is_valid_book_file(selected_path)) {
-            ErrorCode error = app_open_book(app, selected_path);
-            if (error != ERROR_NONE) {
-                return error;
-            }
-
-            printf("\033[2J\033[H\033[0m");
-            fflush(stdout);
-
-            (void)app_transition_mode(app, APP_MODE_SINGLE);
-            if (app->file_manager.entries) {
-                g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
-                app->file_manager.entries = NULL;
-            }
-            app->file_manager.entries_count = 0;
-            app_file_manager_invalidate_selection_cache(app);
-            g_clear_pointer(&app->file_manager.directory, g_free);
-            app->info_visible = FALSE;
-            app->needs_redraw = TRUE;
-
-            app_enter_book_preview(app);
-            app_render_book_preview(app);
-            fflush(stdout);
-            return ERROR_NONE;
-        }
-
-        // It's a file, check if it's a valid image file before loading
-        if (!is_valid_media_file(selected_path)) {
-            // If it's not a valid media file, don't try to load it
+        gboolean is_book = is_valid_book_file(selected_path);
+        if (!is_book && !is_valid_media_file(selected_path)) {
             return ERROR_INVALID_IMAGE;
         }
 
-        ErrorCode error = app_load_single_file(app, selected_path);
+        /* Stop output before clearing; failed output keeps old media but cannot restart playback. */
+        ErrorCode error = app_prepare_mode_entry(app, FALSE);
+        if (error != ERROR_NONE) return error;
 
-        // Only exit file manager if file was loaded successfully
-        if (error == ERROR_NONE) {
-            // Clear screen before exiting file manager
-            printf("\033[2J\033[H\033[0m");
-            fflush(stdout);
-
-            // Exit file manager mode
-            (void)app_transition_mode(app, APP_MODE_SINGLE);
-            // Cleanup directory entries
-            if (app->file_manager.entries) {
-                g_list_free_full(app->file_manager.entries, (GDestroyNotify)g_free);
-                app->file_manager.entries = NULL;
-            }
-            app->file_manager.entries_count = 0;
-            app_file_manager_invalidate_selection_cache(app);
-            g_clear_pointer(&app->file_manager.directory, g_free);
-            // Reset info visibility to ensure proper display
-            app->info_visible = FALSE;
+        const char clear_screen[] = "\033[2J\033[H\033[0m";
+        if (!terminal_output_write(clear_screen, sizeof(clear_screen) - 1)) {
             app->needs_redraw = TRUE;
-            // Force immediate rendering
-            app_render_current_image(app);
-            fflush(stdout);
+            app->needs_screen_clear = TRUE;
+            return ERROR_OUTPUT_IO;
         }
-        return error;
+        /* Entries own selected_path until loading finishes and the list is released below. */
+        gboolean info_visible = app->info_visible;
+        gboolean help_visible = app->help_visible;
+        app->needs_redraw = TRUE;
+        error = is_book ? app_open_book_preview(app, selected_path)
+                        : app_file_manager_open_image(app, selected_path);
+        if (error != ERROR_NONE) {
+            /* Book cleanup or preview entry can change mode before failing. */
+            app_set_mode(app, APP_MODE_FILE_MANAGER);
+            app->info_visible = info_visible;
+            app->help_visible = help_visible;
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            if (error != ERROR_OUTPUT_IO) {
+                ErrorCode rendered = app_render_file_manager(app);
+                if (rendered != ERROR_NONE) return rendered;
+            }
+            return error;
+        }
+        g_list_free_full(app->file_manager.entries, g_free);
+        app->file_manager.entries = NULL;
+        app->file_manager.entries_count = 0;
+        app_file_manager_invalidate_selection_cache(app);
+        g_clear_pointer(&app->file_manager.directory, g_free);
+        app->info_visible = FALSE;
+
+        return ERROR_NONE;
     }
 }
 

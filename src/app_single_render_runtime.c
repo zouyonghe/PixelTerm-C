@@ -6,36 +6,47 @@
 #include "app_single_render_internal.h"
 #include "ui_render_utils.h"
 
-void app_render_help_overlay(PixelTermApp *app);
-
 ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
 
+    gboolean info_was_visible = app->info_visible;
+    gboolean help_was_visible = app->help_visible;
     app->info_visible = !app->info_visible;
-    return app_render_current_image(app);
+    ErrorCode result = app_render_current_image(app);
+    if (result != ERROR_NONE) {
+        app->info_visible = info_was_visible;
+        app->help_visible = help_was_visible;
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+    }
+    return result;
 }
 
 ErrorCode app_display_help(PixelTermApp *app) {
     if (!app) {
         return ERROR_MEMORY_ALLOC;
     }
+    if (!app->help_visible && !ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
+    gboolean help_was_visible = app->help_visible;
     app->help_visible = !app->help_visible;
     if (app->help_visible) {
-        ui_clear_kitty_images(app);
         app->needs_screen_clear = TRUE;
         app->suppress_full_clear = FALSE;
     }
-    if (!app->help_visible) {
-        return app_render_by_mode(app);
-    }
     ErrorCode err = app_render_by_mode(app);
-    if (err != ERROR_NONE) {
-        return err;
+    if (err == ERROR_NONE && app->help_visible && !app_is_single_mode(app)) {
+        err = app_render_help_overlay(app);
     }
-    app_render_help_overlay(app);
-    return ERROR_NONE;
+    if (err != ERROR_NONE) {
+        app->help_visible = help_was_visible;
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+    }
+    return err;
 }
 
 ErrorCode app_refresh_display(PixelTermApp *app) {
@@ -97,7 +108,8 @@ void app_process_async_render(PixelTermApp *app) {
     app_get_image_target_dimensions(app, &target_width, &target_height);
     gint cached_width = 0, cached_height = 0;
     if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
-                                               &cached_width, &cached_height)) {
+                                               &cached_width, &cached_height) &&
+        !app->async.render_force_sync) {
         return;
     }
     (void)cached_width;
@@ -106,5 +118,13 @@ void app_process_async_render(PixelTermApp *app) {
     app->async.render_force_sync = TRUE;
     app->suppress_full_clear = TRUE;
     app_clear_async_render_state(app);
-    app_render_current_image(app);
+    if (app_render_current_image(app) == ERROR_OUTPUT_IO) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
+        app->async.render_force_sync = TRUE;
+        app->async.image_pending = TRUE;
+        app->async.image_index = app->current_index;
+        app->async.image_path = g_strdup(filepath);
+    }
 }

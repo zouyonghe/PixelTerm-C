@@ -22,8 +22,8 @@ ErrorCode app_handle_mouse_click_book_toc(PixelTermApp *app,
                                           gboolean *redraw_needed,
                                           gboolean *out_hit);
 
-void app_book_jump_render_prompt(PixelTermApp *app);
-void app_book_jump_clear_prompt(PixelTermApp *app);
+ErrorCode app_book_jump_render_prompt(PixelTermApp *app);
+ErrorCode app_book_jump_clear_prompt(PixelTermApp *app);
 gboolean app_book_use_double_page(const PixelTermApp *app);
 
 #endif // APP_BOOK_MODE_H
