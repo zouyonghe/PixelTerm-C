@@ -6,6 +6,7 @@
 ErrorCode app_render_current_image(PixelTermApp *app);
 ErrorCode app_display_image_info(PixelTermApp *app);
 ErrorCode app_display_help(PixelTermApp *app);
+ErrorCode app_render_help_overlay(PixelTermApp *app);
 ErrorCode app_refresh_display(PixelTermApp *app);
 ErrorCode app_render_by_mode(PixelTermApp *app);
 void app_process_async_render(PixelTermApp *app);

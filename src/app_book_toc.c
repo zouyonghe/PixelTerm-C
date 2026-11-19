@@ -1,6 +1,7 @@
 #include "app.h"
 #include "text_utils.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static void app_book_toc_layout(const PixelTermApp *app,
                                 gint *content_rows,
@@ -370,10 +371,17 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    gint previous_scroll = app->book.toc_scroll;
     get_terminal_size(&app->term_width, &app->term_height);
-    ui_begin_sync_update();
-    ui_clear_kitty_images(app);
+    if (!ui_begin_sync_update()) goto output_failure;
+    if (!ui_clear_kitty_images(app)) {
+        /* The I/O owner retries queued sync-end after recovery. */
+        ui_end_sync_update();
+        goto output_failure;
+    }
     ui_clear_screen_for_refresh(app);
+    app->needs_screen_clear = FALSE;
+    app->suppress_full_clear = FALSE;
 
     gint rows = app->term_height;
     gint cols = app->term_width;
@@ -542,6 +550,12 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     }
 
     ui_end_sync_update();
-    fflush(stdout);
-    return ERROR_NONE;
+    if (terminal_output_flush()) return ERROR_NONE;
+
+output_failure:
+    app->book.toc_scroll = previous_scroll;
+    app->needs_redraw = TRUE;
+    app->needs_screen_clear = TRUE;
+    app->suppress_full_clear = FALSE;
+    return ERROR_OUTPUT_IO;
 }

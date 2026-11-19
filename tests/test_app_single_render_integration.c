@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <stdio.h>
@@ -8,7 +10,21 @@
 #include "app_single_render_test_internal.h"
 #include "input_dispatch_test_support.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include <errno.h>
 #include "../src/app_single_render_internal.h"
+
+/* Exercise runtime control flow with the real renderer and existing test hooks. */
+#define app_display_image_info runtime_display_image_info
+#define app_display_help runtime_display_help
+#define app_refresh_display runtime_refresh_display
+#define app_process_async_render runtime_process_async_render
+#include "../src/app_single_render_runtime.c"
+#undef app_display_image_info
+#undef app_display_help
+#undef app_refresh_display
+#undef app_process_async_render
 
 typedef struct {
     gint gif_load_calls;
@@ -25,6 +41,7 @@ typedef struct {
     gboolean last_force_sixel;
     gint clear_screen_calls;
     gint clear_area_calls;
+    gint output_failure_stage;
 } AppSingleRenderStubState;
 
 static AppSingleRenderStubState g_app_single_render_stub_state;
@@ -576,7 +593,353 @@ static void test_info_overlay_bypasses_preloader_cache(void) {
     destroy_render_test_app(&app);
 }
 
+typedef struct {
+    gboolean fail;
+    GString *bytes;
+    gint writes;
+    gint allowed_writes;
+} StillOutput;
+
+static ssize_t still_output_write(void *data, const char *bytes, size_t length) {
+    StillOutput *sink = data;
+    if (++sink->writes > sink->allowed_writes && sink->fail) { errno = EIO; return -1; }
+    g_string_append_len(sink->bytes, bytes, length);
+    return (ssize_t)length;
+}
+
+static void test_still_output_failure(gconstpointer data) {
+    gint stage = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.ui_text_hidden = FALSE;
+    g_app_single_render_stub_state.output_failure_stage = stage;
+    StillOutput sink = {.fail = stage == 3, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_current_image(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_true(recovered);
+    if (stage < 3) {
+        g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+        g_assert_cmpuint(sink.bytes->len, ==, 0);
+    } else {
+        g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 1);
+        g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
+    }
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
+static void test_failed_help_clear_keeps_previous_state(void) {
+    PixelTermApp app = {.force_kitty = TRUE, .suppress_full_clear = TRUE};
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_false(app.help_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_true(recovered);
+    g_string_free(sink.bytes, TRUE);
+}
+
+static void test_single_frame_retains_sync_end(gconstpointer data) {
+    gboolean clear_failure = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.force_kitty = clear_failure;
+    AppSingleRenderTestHooks hooks = k_app_single_render_test_hooks;
+    hooks.ui_begin_sync_update = NULL;
+    hooks.ui_end_sync_update = NULL;
+    hooks.ui_clear_kitty_images = NULL;
+    app_single_render_set_test_hooks(&hooks);
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL),
+                        .allowed_writes = clear_failure ? 1 : 0};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_current_image(&app);
+    gint writes_at_return = sink.writes;
+    gchar *delivered_at_return = g_strdup(sink.bytes->str);
+    g_string_truncate(sink.bytes, 0);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_cmpint(writes_at_return, ==, clear_failure ? 3 : 2);
+    g_assert_cmpstr(delivered_at_return, ==, clear_failure ? "\033[?2026h" : "");
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==, "\033\\\033\\\033[?2026l");
+    g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+    app_single_render_set_test_hooks(&k_app_single_render_test_hooks);
+    g_free(delivered_at_return);
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
+static const gchar help_redraw_payload[] = "HELP-REDRAW";
+
+typedef struct {
+    GString *attempted;
+    GString *accepted;
+    gint redraw_failures;
+} HelpRedrawOutput;
+
+static ssize_t help_redraw_output_write(void *data, const char *bytes, size_t length) {
+    HelpRedrawOutput *sink = data;
+    g_string_append_len(sink->attempted, bytes, length);
+    if (length == sizeof(help_redraw_payload) - 1 &&
+        memcmp(bytes, help_redraw_payload, length) == 0) {
+        sink->redraw_failures++;
+        errno = EIO;
+        return -1;
+    }
+    g_string_append_len(sink->accepted, bytes, length);
+    return (ssize_t)length;
+}
+
+static void test_failed_help_redraw_restores_visibility(gconstpointer data) {
+    gboolean was_visible = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.mode = APP_MODE_SINGLE, .help_visible = was_visible,
+                        .info_visible = TRUE, .force_kitty = TRUE,
+                        .suppress_full_clear = TRUE};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.render_by_mode_payload = help_redraw_payload;
+    HelpRedrawOutput sink = {.attempted = g_string_new(NULL), .accepted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, help_redraw_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.help_visible, ==, was_visible);
+    g_assert_true(app.info_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_result, ==, ERROR_NONE);
+    g_assert_true(recovered);
+    g_assert_cmpint(sink.redraw_failures, ==, 1);
+    g_assert_nonnull(strstr(sink.attempted->str, help_redraw_payload));
+    g_assert_null(strstr(sink.accepted->str, help_redraw_payload));
+    g_assert_cmpstr(sink.accepted->str, ==, was_visible ? "\033\\" : "\033_Ga=d,q=2\033\\\033\\");
+    g_string_free(sink.attempted, TRUE);
+    g_string_free(sink.accepted, TRUE);
+    input_dispatch_test_reset_stubs();
+}
+
+static void test_help_overlay_output_failure_rolls_back(gconstpointer data) {
+    PixelTermApp app = {.mode = GPOINTER_TO_INT(data), .term_width = 80, .term_height = 24};
+    input_dispatch_test_reset_stubs();
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_false(app.help_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
+    g_string_free(sink.bytes, TRUE);
+}
+
+static void test_gif_cleanup_failure_aborts_redraw(gconstpointer data) {
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 1;
+    app.gif_player->filepath = g_strdup("anim.gif");
+    app.gif_player->is_animated = TRUE;
+    app.gif_player->is_playing = GPOINTER_TO_INT(data);
+    app.gif_player->kitty_animation_prepared = TRUE;
+    app.gif_player->kitty_animation_id = 42;
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_current_image(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, 0);
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
+static void test_failed_async_frame_retries_after_recovery(gconstpointer data) {
+    gboolean evict = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.preload_enabled = TRUE;
+    app.preloader = preloader_create();
+    g_assert_nonnull(app.preloader);
+    gint width, height;
+    app_get_image_target_dimensions(&app, &width, &height);
+    GString *cached = g_string_new("CACHED-ASYNC");
+    preloader_cache_add(app.preloader, "still.png", cached, 12, 1, FALSE, width, height);
+    g_string_free(cached, TRUE);
+    app.async.image_pending = TRUE;
+    app.async.image_index = 2;
+    app.async.image_path = g_strdup("still.png");
+    StillOutput sink = {.fail = TRUE, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    runtime_process_async_render(&app);
+    gboolean pending_after_failure = app.async.image_pending;
+    gboolean redraw_after_failure = app.needs_redraw;
+    gboolean clear_after_failure = app.needs_screen_clear;
+    gboolean suppress_after_failure = app.suppress_full_clear;
+    gchar *pending_path = g_strdup(app.async.image_path);
+    if (evict) preloader_cache_remove(app.preloader, "still.png");
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    runtime_process_async_render(&app);
+    fclose(stream);
+    stdout = saved;
+    g_assert_true(pending_after_failure);
+    g_assert_true(redraw_after_failure);
+    g_assert_true(clear_after_failure);
+    g_assert_false(suppress_after_failure);
+    g_assert_cmpint(g_app_single_render_stub_state.clear_screen_calls, ==, 1);
+    g_assert_cmpint(g_app_single_render_stub_state.clear_area_calls, ==, 1);
+    g_assert_false(app.needs_screen_clear);
+    g_assert_cmpstr(pending_path, ==, "still.png");
+    g_assert_true(recovered);
+    g_assert_false(app.async.image_pending);
+    g_assert_null(app.async.image_path);
+    if (evict) g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 1);
+    else g_assert_nonnull(strstr(sink.bytes->str, "CACHED-ASYNC"));
+    g_free(pending_path);
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
+static void test_info_render_failure_restores_visibility(gconstpointer data) {
+    gboolean was_visible = (GPOINTER_TO_INT(data) & 1) != 0;
+    gboolean help_was_visible = (GPOINTER_TO_INT(data) & 2) != 0;
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.info_visible = was_visible;
+    app.help_visible = help_was_visible;
+    if (help_was_visible) {
+        app.term_width = 20;
+        app.term_height = 6;
+    }
+    g_app_single_render_stub_state.output_failure_stage = 1;
+    g_assert_cmpint(runtime_display_image_info(&app), ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.info_visible, ==, was_visible);
+    g_assert_cmpint(app.help_visible, ==, help_was_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
+    destroy_render_test_app(&app);
+}
+
+typedef struct { gint writes; } HelpSubmissionSink;
+static ssize_t help_submission_write(void *data, const char *bytes, size_t length) {
+    HelpSubmissionSink *sink = data;
+    (void)bytes;
+    if (++sink->writes == 2) { errno = EIO; return -1; }
+    return (ssize_t)length;
+}
+
+static void test_single_help_has_one_submission(void) {
+    PixelTermApp app = {.mode = APP_MODE_SINGLE, .term_width = 80, .term_height = 24};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.render_by_mode_outputs_help = TRUE;
+    HelpSubmissionSink sink = {0};
+    FILE *stream = test_output_stream(&sink, help_submission_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = runtime_display_help(&app);
+    /* Recover only if the regression submitted a second overlay. */
+    if (result != ERROR_NONE) g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_true(app.help_visible);
+    g_assert_cmpint(sink.writes, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 1);
+    input_dispatch_test_reset_stubs();
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/output/real_begin_retains_sync_end", NULL, test_single_frame_retains_sync_end);
+    g_test_add_data_func("/app_single_render/output/real_clear_retains_sync_end", GINT_TO_POINTER(TRUE), test_single_frame_retains_sync_end);
+    g_test_add_func("/app_single_render/runtime/single_help_one_submission", test_single_help_has_one_submission);
+    g_test_add_data_func("/app_single_render/runtime/info_open_failure", GINT_TO_POINTER(FALSE), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/info_close_failure", GINT_TO_POINTER(TRUE), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/info_open_small_terminal_failure", GINT_TO_POINTER(2), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/info_close_small_terminal_failure", GINT_TO_POINTER(3), test_info_render_failure_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/preview_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_PREVIEW), test_help_overlay_output_failure_rolls_back);
+    g_test_add_data_func("/app_single_render/runtime/book_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_BOOK), test_help_overlay_output_failure_rolls_back);
+    g_test_add_data_func("/app_single_render/runtime/file_manager_help_overlay_output_failure", GINT_TO_POINTER(APP_MODE_FILE_MANAGER), test_help_overlay_output_failure_rolls_back);
+    g_test_add_data_func("/app_single_render/output/gif_layout_cleanup_failure", NULL, test_gif_cleanup_failure_aborts_redraw);
+    g_test_add_data_func("/app_single_render/output/gif_redraw_cleanup_failure", GINT_TO_POINTER(TRUE), test_gif_cleanup_failure_aborts_redraw);
+    g_test_add_data_func("/app_single_render/runtime/help_open_redraw_failure", GINT_TO_POINTER(FALSE), test_failed_help_redraw_restores_visibility);
+    g_test_add_data_func("/app_single_render/runtime/help_close_redraw_failure", GINT_TO_POINTER(TRUE), test_failed_help_redraw_restores_visibility);
+    g_test_add_func("/app_single_render/runtime/help_clear_failure", test_failed_help_clear_keeps_previous_state);
+    g_test_add_data_func("/app_single_render/runtime/async_failure_retries", NULL, test_failed_async_frame_retries_after_recovery);
+    g_test_add_data_func("/app_single_render/runtime/async_retry_after_cache_eviction", GINT_TO_POINTER(TRUE), test_failed_async_frame_retries_after_recovery);
+    g_test_add_data_func("/app_single_render/output/begin_failure", GINT_TO_POINTER(1), test_still_output_failure);
+    g_test_add_data_func("/app_single_render/output/clear_failure", GINT_TO_POINTER(2), test_still_output_failure);
+    g_test_add_data_func("/app_single_render/output/still_frame_failure", GINT_TO_POINTER(3), test_still_output_failure);
     g_test_add_func("/app_single_render/file_size_display/clamps_missing_values",
                     test_file_size_display_clamps_missing_values);
     g_test_add_func("/app_single_render/single_view/switches_media_players",
@@ -658,7 +1021,7 @@ void app_preloader_update_terminal(PixelTermApp *app) {
 ErrorCode app_render_book_page(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_page_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.book_page_render_result;
 }
 
 static MediaKind test_media_classify(const char *path) {
@@ -772,7 +1135,7 @@ static void test_renderer_get_rendered_dimensions(ImageRenderer *renderer, gint 
 }
 
 static gboolean test_ui_begin_sync_update(void) {
-    return TRUE;
+    return g_app_single_render_stub_state.output_failure_stage != 1;
 }
 
 static void test_ui_end_sync_update(void) {
@@ -785,7 +1148,7 @@ static void test_ui_clear_screen_for_refresh(const PixelTermApp *app) {
 
 static gboolean test_ui_clear_kitty_images(const PixelTermApp *app) {
     (void)app;
-    return TRUE;
+    return g_app_single_render_stub_state.output_failure_stage != 2;
 }
 
 static void test_ui_clear_single_view_lines(const PixelTermApp *app) {

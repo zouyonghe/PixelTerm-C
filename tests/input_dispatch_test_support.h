@@ -60,6 +60,10 @@ typedef struct {
     ErrorCode video_seek_result;
     ErrorCode next_image_result;
     ErrorCode previous_image_result;
+    ErrorCode render_by_mode_result;
+    ErrorCode book_page_render_result;
+    gboolean render_by_mode_outputs_help;
+    const gchar *render_by_mode_payload;
 } InputDispatchTestStubState;
 
 extern InputDispatchTestStubState g_input_dispatch_stub_state;

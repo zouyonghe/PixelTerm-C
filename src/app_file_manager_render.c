@@ -2,6 +2,7 @@
 #include "text_utils.h"
 #include "app_file_manager_internal.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 typedef struct {
     gboolean has_images;
@@ -331,6 +332,12 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (!app_is_file_manager_mode(app)) {
         return ERROR_INVALID_ARGS;
     }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        /* Repair state for the next explicit render; callers handle the I/O error. */
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
 
     // Update terminal dimensions before layout
     get_terminal_size(&app->term_width, &app->term_height);
@@ -575,7 +582,11 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     };
     ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
 
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
+    if (!output_success) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+    }
 
     g_free(safe_current_dir);
     if (free_dir) {
@@ -584,5 +595,5 @@ ErrorCode app_render_file_manager(PixelTermApp *app) {
     if (directory_media_cache) {
         g_hash_table_destroy(directory_media_cache);
     }
-    return ERROR_NONE;
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

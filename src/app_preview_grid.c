@@ -4,6 +4,7 @@
 #include "grid_render.h"
 #include "preload_control.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, ui_preview_header_lines(app), 1};
@@ -566,6 +567,37 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
 
     // If we found valid images, replace the image list
     if (valid_images && valid_count > 0) {
+        /* Stop before clearing; output failure intentionally leaves playback stopped.
+         * Commit the list only after output succeeds. */
+        ErrorCode prepared = app_prepare_mode_entry(app, TRUE);
+        if (prepared != ERROR_NONE) {
+            if (prepared == ERROR_OUTPUT_IO) {
+                app->needs_redraw = TRUE;
+                app->needs_screen_clear = TRUE;
+            }
+            g_list_free_full(valid_images, g_free);
+            return prepared;
+        }
+        if (!ui_clear_kitty_images(app)) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            g_list_free_full(valid_images, g_free);
+            return ERROR_OUTPUT_IO;
+        }
+        ui_clear_screen_for_refresh(app);
+        if (!terminal_output_flush()) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            g_list_free_full(valid_images, g_free);
+            return ERROR_OUTPUT_IO;
+        }
+        ErrorCode transitioned = app_transition_mode(app, APP_MODE_PREVIEW);
+        if (transitioned != ERROR_NONE) {
+            app->needs_redraw = TRUE;
+            app->needs_screen_clear = TRUE;
+            g_list_free_full(valid_images, g_free);
+            return transitioned;
+        }
         // Free the old image list
         if (app->image_files) {
             g_list_free_full(app->image_files, (GDestroyNotify)g_free);
@@ -588,9 +620,6 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    app_prepare_mode_entry(app, TRUE);
-
-    (void)app_transition_mode(app, APP_MODE_PREVIEW);
     app_preview_set_selected_index(app, app->current_index >= 0 ? app->current_index : 0);
 
     // For yellow border mode (RETURN_MODE_PREVIEW_VIRTUAL), always select first image
@@ -599,11 +628,6 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     }
 
     app->needs_redraw = TRUE;
-
-    // Text clears do not reliably remove Kitty placements (e.g. Warp over SSH).
-    ui_clear_kitty_images(app);
-    ui_clear_screen_for_refresh(app);
-    fflush(stdout);
 
     return ERROR_NONE;
 }
@@ -643,6 +667,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     }
     if (!app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
+    }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
     }
 
     // Update terminal dimensions and force full clear if size changed
@@ -730,9 +759,13 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
         ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
     }
 
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
     renderer_destroy(renderer);
-    return ERROR_NONE;
+    if (!output_success) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+    }
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index) {
@@ -744,6 +777,11 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     }
     if (!app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
+    }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
     }
 
     gint old_scroll = app->preview.scroll;
@@ -772,6 +810,10 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     app_preview_render_selected_filename(app);
 
     ui_end_sync_update();
-    fflush(stdout);
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
     return ERROR_NONE;
 }

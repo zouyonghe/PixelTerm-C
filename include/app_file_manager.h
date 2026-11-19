@@ -5,6 +5,8 @@
 
 ErrorCode app_enter_file_manager(PixelTermApp *app);
 ErrorCode app_exit_file_manager(PixelTermApp *app);
+/* Release listing ownership without changing mode, input, or display state. */
+void app_file_manager_clear_listing(PixelTermApp *app);
 ErrorCode app_file_manager_up(PixelTermApp *app);
 ErrorCode app_file_manager_down(PixelTermApp *app);
 ErrorCode app_file_manager_left(PixelTermApp *app);
