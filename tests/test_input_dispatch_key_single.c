@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 
@@ -5,6 +7,62 @@
 
 #include "input_dispatch_key_modes_internal.h"
 #include "input_dispatch_test_support.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include "video_player_test_internal.h"
+#include "ui_render_utils.h"
+#include <errno.h>
+
+static gint scale_render_calls;
+static ErrorCode scale_render_result;
+static gint resume_calls;
+static ErrorCode resume_result;
+static gboolean protocol_order_spy_enabled;
+static ErrorCode protocol_stop_result;
+static gint protocol_stop_calls, protocol_clear_calls;
+static ErrorCode protocol_stop_spy(VideoPlayer *player) {
+    if (!protocol_order_spy_enabled) return video_player_stop(player);
+    protocol_stop_calls++;
+    if (protocol_stop_result != ERROR_NONE) return protocol_stop_result;
+    return video_player_stop(player);
+}
+static gboolean protocol_clear_spy(const PixelTermApp *app) {
+    if (!protocol_order_spy_enabled) return ui_clear_kitty_images(app);
+    protocol_clear_calls++;
+    g_assert_false(video_player_is_playing(app->video_player));
+    return FALSE;
+}
+static ErrorCode resume_spy(VideoPlayer *player) {
+    resume_calls++;
+    return resume_result != ERROR_NONE ? resume_result : video_player_play(player);
+}
+static ErrorCode scale_render_spy(PixelTermApp *app) {
+    (void)app;
+    scale_render_calls++;
+    return scale_render_result;
+}
+
+/* Compile the dispatch boundary with an entry spy: a failed output flush can
+ * otherwise hide an accidental call before renderer hooks are reached. */
+#define app_render_current_image scale_render_spy
+#define video_player_play resume_spy
+#define video_player_stop protocol_stop_spy
+#define ui_clear_kitty_images protocol_clear_spy
+#define input_dispatch_handle_key_press_single spy_handle_key_press_single
+#define input_dispatch_key_modes_toggle_video_playback spy_toggle_video_playback
+#define input_dispatch_key_modes_toggle_video_fps spy_toggle_video_fps
+#define input_dispatch_key_single_set_video_seek_for_test spy_set_video_seek
+#define input_dispatch_key_single_get_video_seek_step_ms_for_test spy_get_video_seek_step
+#include "../src/input_dispatch_key_single.c"
+#undef app_render_current_image
+#undef video_player_play
+#undef video_player_stop
+#undef ui_clear_kitty_images
+#undef input_dispatch_handle_key_press_single
+#undef input_dispatch_key_modes_toggle_video_playback
+#undef input_dispatch_key_modes_toggle_video_fps
+#undef input_dispatch_key_single_set_video_seek_for_test
+#undef input_dispatch_key_single_get_video_seek_step_ms_for_test
 
 static PixelTermApp make_single_app(VideoPlayer *player) {
     PixelTermApp app = {0};
@@ -362,6 +420,7 @@ static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(v
 
     VideoPlayer player = {0};
     PixelTermApp app = make_single_app(&player);
+    app.last_error = ERROR_OUTPUT_IO;
     InputEvent event = make_key_event(KEY_RIGHT);
     InputHandler input_handler = {0};
     InputEvent next_event = {0};
@@ -378,10 +437,38 @@ static void test_video_right_coalesces_queued_repeats_and_preserves_next_event(v
     g_assert_cmpint(g_input_dispatch_stub_state.previous_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_total_delta_ms, ==, seek_step_ms * 3);
     g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, seek_step_ms);
     g_assert_cmpint(input_get_event(&input_handler, &next_event), ==, ERROR_NONE);
     g_assert_cmpint(next_event.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(next_event.key_code, ==, KEY_UP);
+    input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
+static ErrorCode seek_commits_then_fails_output(VideoPlayer *player, gint64 delta_ms) {
+    player->fallback_pts_ms += delta_ms;
+    return ++g_input_dispatch_stub_state.video_seek_calls == 2 ? ERROR_OUTPUT_IO : ERROR_NONE;
+}
+
+static void test_video_seek_repeat_output_failure_is_not_replayed(void) {
+    static const gchar queued_input[] = "\033[C\033[C\033[A";
+    VideoPlayer player = {0};
+    PixelTermApp app = make_single_app(&player);
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputEvent next_event = {0};
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    input_dispatch_key_single_set_video_seek_for_test(seek_commits_then_fails_output);
+    redirect_stdin_bytes(queued_input, sizeof(queued_input) - 1);
+    input_dispatch_handle_key_press_single(&app, &handler, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 2);
+    g_assert_cmpint(player.fallback_pts_ms, ==, 2 * input_dispatch_key_single_get_video_seek_step_ms_for_test());
+    g_assert_cmpint(input_get_event(&handler, &next_event), ==, ERROR_NONE);
+    g_assert_cmpint(next_event.key_code, ==, KEY_RIGHT);
+    g_assert_cmpint(input_get_event(&handler, &next_event), ==, ERROR_NONE);
     g_assert_cmpint(next_event.key_code, ==, KEY_UP);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
 }
@@ -429,10 +516,15 @@ static void test_video_seek_output_failure_does_not_switch_media(void) {
     g_input_dispatch_stub_state.current_is_video = TRUE;
     g_input_dispatch_stub_state.video_seek_result = ERROR_OUTPUT_IO;
     input_dispatch_key_single_set_video_seek_for_test(input_dispatch_test_video_seek);
+    redirect_stdin_bytes("\033[C", 3);
     input_dispatch_handle_key_press_single(&app, &handler, &event);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 0);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    InputEvent queued = {0};
+    g_assert_cmpint(input_get_event(&handler, &queued), ==, ERROR_NONE);
+    g_assert_cmpint(queued.key_code, ==, KEY_RIGHT);
 }
 
 static void test_video_up_and_down_keep_media_switching(void) {
@@ -453,6 +545,386 @@ static void test_video_up_and_down_keep_media_switching(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.next_image_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 0);
     input_dispatch_key_single_set_video_seek_for_test(NULL);
+}
+
+static ssize_t failed_protocol_clear(void *data, const char *bytes, size_t length) {
+    if (data) (*(gint *)data)++;
+    (void)bytes; (void)length;
+    errno = EIO;
+    return -1;
+}
+
+static void test_protocol_clear_failure_after_stop_stays_stopped(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.force_kitty = TRUE;
+    player->is_playing = TRUE;
+    gboolean force_text = player->renderer->config.force_text;
+    gboolean force_sixel = player->renderer->config.force_sixel;
+    gboolean force_kitty = player->renderer->config.force_kitty;
+    gboolean force_iterm2 = player->renderer->config.force_iterm2;
+    ChafaPixelMode pixel_mode = chafa_canvas_config_get_pixel_mode(player->renderer->canvas_config);
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    FILE *stream = test_output_stream(NULL, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    g_usleep(160000); /* Protocol keys share a debounce across dispatch calls. */
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    gboolean playing = video_player_is_playing(player);
+    g_assert_cmpint(player->renderer->config.force_text, ==, force_text);
+    g_assert_cmpint(player->renderer->config.force_sixel, ==, force_sixel);
+    g_assert_cmpint(player->renderer->config.force_kitty, ==, force_kitty);
+    g_assert_cmpint(player->renderer->config.force_iterm2, ==, force_iterm2);
+    g_assert_cmpint(chafa_canvas_config_get_pixel_mode(player->renderer->canvas_config), ==, pixel_mode);
+    stdout = recovery;
+    gboolean recovered = terminal_output_flush();
+    rewind(recovery);
+    char recovered_bytes[8] = {0};
+    size_t recovered_length = fread(recovered_bytes, 1, sizeof(recovered_bytes), recovery);
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    video_player_destroy(player);
+    g_assert_false(playing);
+    g_assert_true(recovered);
+    g_assert_cmpuint(recovered_length, ==, 2);
+    g_assert_cmpmem(recovered_bytes, recovered_length, "\033\\", 2);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
+static void test_video_scale_render_failure_stays_stopped(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.video_scale = 1.0;
+    player->is_playing = TRUE;
+    InputEvent event = make_key_event((KeyCode)'-');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    scale_render_calls = 0;
+    scale_render_result = ERROR_OUTPUT_IO;
+    resume_calls = 0;
+    spy_handle_key_press_single(&app, NULL, &event);
+    scale_render_result = ERROR_NONE;
+    g_assert_cmpint(scale_render_calls, ==, 1);
+    g_assert_cmpint(resume_calls, ==, 0);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_false(video_player_is_playing(player));
+    video_player_destroy(player);
+}
+
+static void test_video_scale_stop_failure_aborts_redraw(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.video_scale = 1.0;
+    player->is_playing = TRUE;
+    player->kitty_direct_image_id = 31;
+    player->kitty_direct_image_present = TRUE;
+    InputEvent event = make_key_event((KeyCode)'-');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    FILE *stream = test_output_stream(NULL, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    scale_render_calls = 0;
+    spy_handle_key_press_single(&app, NULL, &event);
+    stdout = recovery;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_cmpint(scale_render_calls, ==, 0);
+    g_assert_cmpfloat_with_epsilon(app.video_scale, 1.0, 0.0001);
+    spy_handle_key_press_single(&app, NULL, &event);
+    g_assert_cmpint(scale_render_calls, ==, 1);
+    video_player_destroy(player);
+}
+
+static void test_video_fps_output_failure_is_recorded(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.show_fps = TRUE;
+    app.term_height = 24;
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    FILE *stream = test_output_stream(NULL, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    input_dispatch_key_modes_toggle_video_fps(&app);
+    stdout = recovery;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    rewind(recovery);
+    char bytes[8] = {0};
+    size_t length = fread(bytes, 1, sizeof(bytes), recovery);
+    fclose(recovery);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpmem(bytes, length, "\033\\", 2);
+    video_player_destroy(player);
+}
+
+static void test_protocol_redraw_failure_stays_stopped(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    player->is_playing = TRUE;
+    player->render_layout_valid = TRUE;
+    player->render_area_top_row = 2;
+    player->render_area_height = 1;
+    player->render_term_height = 24;
+    gboolean force_text = player->renderer->config.force_text;
+    gboolean force_sixel = player->renderer->config.force_sixel;
+    gboolean force_kitty = player->renderer->config.force_kitty;
+    gboolean force_iterm2 = player->renderer->config.force_iterm2;
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    FILE *stream = test_output_stream(NULL, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    g_usleep(160000); /* Protocol keys share a debounce across dispatch calls. */
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    stdout = recovery;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_cmpint(player->renderer->config.force_text, ==, force_text);
+    g_assert_cmpint(player->renderer->config.force_sixel, ==, force_sixel);
+    g_assert_cmpint(player->renderer->config.force_kitty, ==, force_kitty);
+    g_assert_cmpint(player->renderer->config.force_iterm2, ==, force_iterm2);
+    video_player_destroy(player);
+}
+
+static void test_protocol_resume_validation_is_nonfatal(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    player->is_playing = TRUE;
+    player->has_video = FALSE;
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    g_usleep(160000); /* Protocol keys share a debounce across dispatch calls. */
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    g_assert_false(video_player_is_playing(player));
+    video_player_destroy(player);
+}
+
+static void test_protocol_resume_output_failure_is_recorded(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    player->is_playing = TRUE;
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    resume_calls = 0;
+    resume_result = ERROR_OUTPUT_IO;
+    g_usleep(160000);
+    spy_handle_key_press_single(&app, NULL, &event);
+    resume_result = ERROR_NONE;
+    g_assert_cmpint(resume_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_false(video_player_is_playing(player));
+    video_player_destroy(player);
+}
+
+static void test_preview_entry_and_render_errors(gconstpointer data) {
+    gboolean entry_failure = GPOINTER_TO_INT(data);
+    PixelTermApp app = make_single_app(NULL);
+    InputEvent event = make_key_event(KEY_ENTER);
+    app.return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+    input_dispatch_test_reset_stubs();
+    if (entry_failure) g_input_dispatch_stub_state.enter_preview_result = ERROR_OUTPUT_IO;
+    else g_input_dispatch_stub_state.preview_render_result = ERROR_OUTPUT_IO;
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, !entry_failure);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_PREVIEW_VIRTUAL);
+}
+
+static void test_protocol_stop_precedes_global_clear(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    app.force_kitty = TRUE;
+    player->is_playing = scenario != 2;
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    protocol_stop_calls = protocol_clear_calls = 0;
+    protocol_stop_result = scenario == 1 ? ERROR_OUTPUT_IO : ERROR_NONE;
+    protocol_order_spy_enabled = TRUE;
+    handle_video_protocol_toggle(&app);
+    protocol_order_spy_enabled = FALSE;
+    g_assert_cmpint(protocol_stop_calls, ==, scenario == 2 ? 0 : 1);
+    g_assert_cmpint(protocol_clear_calls, ==, scenario == 1 ? 0 : 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    video_player_destroy(player);
+}
+
+static void test_navigation_refresh_failure_preserves_queued_input(void) {
+    PixelTermApp app = make_single_app(NULL);
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(KEY_RIGHT);
+    InputEvent queued = make_key_event(KEY_RIGHT);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.refresh_display_result = ERROR_OUTPUT_IO;
+    input_unget_event(&handler, &queued);
+    input_dispatch_handle_key_press_single(&app, &handler, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 1);
+    g_assert_cmpint(input_get_event(&handler, &queued), ==, ERROR_NONE);
+    g_assert_cmpint(queued.key_code, ==, KEY_RIGHT);
+}
+
+static void test_navigation_bad_image_is_nonfatal(void) {
+    PixelTermApp app = make_single_app(NULL);
+    InputEvent event = make_key_event(KEY_RIGHT);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.refresh_display_result = ERROR_INVALID_IMAGE;
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+}
+
+static void test_paused_graphics_protocol_cycle_preserves_frame(void) {
+    VideoPlayer *player = video_player_new(1, FALSE, TRUE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    PixelTermApp app = make_single_app(player);
+    player->render_layout_valid = TRUE;
+    player->render_area_top_row = 2;
+    player->render_area_height = 1;
+    player->render_term_height = 24;
+    player->last_frame_top_row = 2;
+    player->last_frame_height = 1;
+    player->last_frame_lines = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(player->last_frame_lines, g_strdup("paused graphics frame"));
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    gint writes = 0;
+    FILE *stream = test_output_stream(&writes, failed_protocol_clear);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    g_usleep(160000);
+    input_dispatch_handle_key_press_single(&app, NULL, &event);
+    stdout = recovery;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
+    g_assert_true(player->renderer->config.force_iterm2);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_cmpint(writes, ==, 0);
+    g_assert_cmpint(player->last_frame_top_row, ==, 2);
+    g_assert_cmpint(player->last_frame_height, ==, 1);
+    g_assert_cmpuint(player->last_frame_lines->len, ==, 1);
+    g_assert_cmpstr(g_ptr_array_index(player->last_frame_lines, 0), ==, "paused graphics frame");
+    video_player_destroy(player);
+}
+
+typedef struct {
+    GString *bytes;
+    gboolean fail_payload;
+    gboolean saw_payload;
+} ProtocolFrameOutput;
+
+static ssize_t write_protocol_frame(void *data, const char *bytes, size_t length) {
+    ProtocolFrameOutput *output = data;
+    if (g_strstr_len(bytes, length, "\033P")) {
+        output->saw_payload = TRUE;
+        if (output->fail_payload) {
+            errno = EIO;
+            return -1;
+        }
+    }
+    g_string_append_len(output->bytes, bytes, length);
+    return length;
+}
+
+static void test_paused_protocol_cycle_renders_frame(gconstpointer data) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    video_player_set_fallback_pts_ms(player, 1000);
+    PixelTermApp app = make_single_app(player);
+    InputEvent event = make_key_event((KeyCode)'P');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    resume_calls = 0;
+    g_last_protocol_toggle_us = 0;
+    ProtocolFrameOutput output = {g_string_new(NULL), GPOINTER_TO_INT(data), FALSE};
+    FILE *stream = test_output_stream(&output, write_protocol_frame);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    spy_handle_key_press_single(&app, NULL, &event);
+    stdout = recovery;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    fclose(recovery);
+    g_assert_true(output.saw_payload);
+    if (!output.fail_payload) {
+        g_assert_nonnull(strstr(output.bytes->str, "\033P"));
+        g_assert_nonnull(strstr(output.bytes->str, "#"));
+    }
+    g_assert_cmpint(app.last_error, ==, output.fail_payload ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_assert_true(player->renderer->config.force_sixel);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_cmpint(resume_calls, ==, 0);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 1000);
+    g_string_free(output.bytes, TRUE);
+    video_player_destroy(player);
 }
 
 static void test_video_scale_keeps_paused_video_paused(void) {
@@ -498,6 +970,7 @@ static void test_navigation_failure_does_not_refresh_or_advance_queue(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
     g_assert_false(app.suppress_full_clear);
     g_assert_false(app.async.render_request);
+    g_assert_cmpint(app.last_error, ==, ERROR_NONE);
     InputEvent preserved = {0};
     g_assert_cmpint(input_get_event(&input_handler, &preserved), ==, ERROR_NONE);
     g_assert_cmpint(preserved.key_code, ==, KEY_RIGHT);
@@ -642,6 +1115,23 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 }
 
 void register_input_dispatch_key_single_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_single/video/stop_before_global_clear", GINT_TO_POINTER(0), test_protocol_stop_precedes_global_clear);
+    g_test_add_data_func("/input_dispatch_key_single/video/failed_stop_skips_global_clear", GINT_TO_POINTER(1), test_protocol_stop_precedes_global_clear);
+    g_test_add_data_func("/input_dispatch_key_single/video/paused_still_clears_global_images", GINT_TO_POINTER(2), test_protocol_stop_precedes_global_clear);
+    g_test_add_func("/input_dispatch_key_single/navigation/bad_image_is_nonfatal", test_navigation_bad_image_is_nonfatal);
+    g_test_add_func("/input_dispatch_key_single/video/paused_graphics_cycle_preserves_frame", test_paused_graphics_protocol_cycle_preserves_frame);
+    g_test_add_data_func("/input_dispatch_key_single/video/paused_protocol_cycle_renders_frame", GINT_TO_POINTER(FALSE), test_paused_protocol_cycle_renders_frame);
+    g_test_add_data_func("/input_dispatch_key_single/video/paused_protocol_cycle_output_failure", GINT_TO_POINTER(TRUE), test_paused_protocol_cycle_renders_frame);
+    g_test_add_func("/input_dispatch_key_single/video/fps_output_failure_is_recorded", test_video_fps_output_failure_is_recorded);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_redraw_failure_stays_stopped", test_protocol_redraw_failure_stays_stopped);
+    g_test_add_func("/input_dispatch_key_single/video/scale_render_failure_stays_stopped", test_video_scale_render_failure_stays_stopped);
+    g_test_add_func("/input_dispatch_key_single/video/scale_stop_failure_aborts_redraw", test_video_scale_stop_failure_aborts_redraw);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_resume_validation_is_nonfatal", test_protocol_resume_validation_is_nonfatal);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_resume_output_failure_is_recorded", test_protocol_resume_output_failure_is_recorded);
+    g_test_add_data_func("/input_dispatch_key_single/errors/preview_entry", GINT_TO_POINTER(TRUE), test_preview_entry_and_render_errors);
+    g_test_add_data_func("/input_dispatch_key_single/errors/preview_render", GINT_TO_POINTER(FALSE), test_preview_entry_and_render_errors);
+    g_test_add_func("/input_dispatch_key_single/errors/navigation_refresh", test_navigation_refresh_failure_preserves_queued_input);
+    g_test_add_func("/input_dispatch_key_single/video/protocol_clear_failure_after_stop_stays_stopped", test_protocol_clear_failure_after_stop_stays_stopped);
     g_test_add_func("/input/discards_late_terminal_identity_reply",
                     test_input_discards_late_terminal_identity_reply);
     g_test_add_func("/input/alt_upper_p_keeps_following_key",
@@ -687,6 +1177,7 @@ void register_input_dispatch_key_single_tests(void) {
                     test_video_right_does_not_switch_media);
     g_test_add_func("/input_dispatch_key_single/video/right_coalesces_queued_repeats_and_preserves_next_event",
                     test_video_right_coalesces_queued_repeats_and_preserves_next_event);
+    g_test_add_func("/input_dispatch_key_single/video/seek_repeat_output_failure_is_not_replayed", test_video_seek_repeat_output_failure_is_not_replayed);
     g_test_add_func("/input_dispatch_key_single/video/seek_failure_preserves_queued_repeats_for_retry",
                     test_video_seek_failure_preserves_queued_repeats_for_retry);
     g_test_add_func("/input_dispatch_key_single/video/seek_output_failure_does_not_switch_media",

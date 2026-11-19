@@ -6,6 +6,11 @@
 
 static const gint64 k_click_threshold_us = 400000;
 
+static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
+}
+
 void input_dispatch_process_pending_clicks(PixelTermApp *app) {
     if (!app) {
         return;
@@ -23,13 +28,15 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
             app->input.single_click.pending = FALSE;
             if (app_is_book_mode(app)) {
                 gint page_step = app_book_use_double_page(app) ? 2 : 1;
-                input_dispatch_book_change_page(app, page_step);
+                if (input_dispatch_book_change_page(app, page_step) == ERROR_OUTPUT_IO) return;
             } else {
-                app_next_image(app);
-                if (app->needs_redraw) {
+                ErrorCode result = app_next_image(app);
+                record_output_error(app, result);
+                if (result == ERROR_OUTPUT_IO) return;
+                if (result == ERROR_NONE && app->needs_redraw) {
                     app->suppress_full_clear = TRUE;
                     app->async.render_request = TRUE;
-                    app_refresh_display(app);
+                    if (record_output_error(app, app_refresh_display(app)) == ERROR_OUTPUT_IO) return;
                     app->needs_redraw = FALSE;
                 }
             }
@@ -47,31 +54,31 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
             if (app_is_book_preview_mode(app)) {
                 gint old_selected = app->book.preview_selected;
                 gint old_scroll = app->book.preview_scroll;
-                app_handle_mouse_click_book_preview(app,
+                if (record_output_error(app, app_handle_mouse_click_book_preview(app,
                                                     app->input.preview_click.x,
                                                     app->input.preview_click.y,
                                                     &redraw_needed,
-                                                    NULL);
+                                                    NULL)) == ERROR_OUTPUT_IO) return;
                 if (redraw_needed) {
                     if (app->book.preview_scroll != old_scroll) {
-                        app_render_book_preview(app);
+                        if (record_output_error(app, app_render_book_preview(app)) == ERROR_OUTPUT_IO) return;
                     } else if (app->book.preview_selected != old_selected) {
-                        app_render_book_preview_selection_change(app, old_selected);
+                        if (record_output_error(app, app_render_book_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) return;
                     }
                 }
             } else if (app_is_preview_mode(app)) {
                 gint old_selected = app->preview.selected;
                 gint old_scroll = app->preview.scroll;
-                app_handle_mouse_click_preview(app,
+                if (record_output_error(app, app_handle_mouse_click_preview(app,
                                                app->input.preview_click.x,
                                                app->input.preview_click.y,
                                                &redraw_needed,
-                                               NULL);
+                                               NULL)) == ERROR_OUTPUT_IO) return;
                 if (redraw_needed) {
                     if (app->preview.scroll != old_scroll) {
-                        app_render_preview_grid(app);
+                        if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) return;
                     } else if (app->preview.selected != old_selected) {
-                        app_render_preview_selection_change(app, old_selected);
+                        if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) return;
                     }
                 }
             }
@@ -86,11 +93,11 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
             app->input.file_manager_click.pending = FALSE;
             gint old_selected = app->file_manager.selected_entry;
             gint old_scroll = app->file_manager.scroll_offset;
-            app_handle_mouse_file_manager(app,
+            if (record_output_error(app, app_handle_mouse_file_manager(app,
                                           app->input.file_manager_click.x,
-                                          app->input.file_manager_click.y);
+                                          app->input.file_manager_click.y)) == ERROR_OUTPUT_IO) return;
             if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-                app_render_file_manager(app);
+                record_output_error(app, app_render_file_manager(app));
             }
         }
     } else if (!app_is_file_manager_mode(app) && app->input.file_manager_click.pending) {
