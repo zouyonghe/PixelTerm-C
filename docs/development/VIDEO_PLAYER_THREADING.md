@@ -27,11 +27,14 @@ original stdout on exit. Application callers still need to propagate failures.
   been destroyed. Exit makes one final attempt before discarding pending controls.
 - `terminal_output_ready` returns false both after failure and during backoff.
   The event loop must not run later output stages while readiness is false.
-- Termios recovery remains in input/probe lifecycle and never waits for stdout.
+- Termios recovery remains in input/probe lifecycle and does not wait on the
+  output queue or stdio buffers. `TCSAFLUSH` may still wait for terminal output
+  to drain before applying the settings.
   Outer user-original settings override a pending probe app-raw snapshot.
 - Media stop and render-area clearing return submission failures. Callers must
   stop before rendering, changing protocol or resuming playback on failure.
-  Void input-dispatch paths record failures in `app->last_error` for the main loop.
+  Void input-dispatch paths must record failures in `app->last_error` for the main
+  loop; their checked-call integration is supplied by the separate application PR.
   GIF timers wait during recovery backoff; failed frame submissions stop playback
   and report the error instead of scheduling another frame.
   Native GIF pause transfers its idempotent STOP to retained restoration so
@@ -45,6 +48,8 @@ The descriptor writer temporarily uses nonblocking output and polls for up to
 The two-second readiness limit bounds repeated recovery failures. Session
 restoration assumes stdout still names
 the original terminal; redirection during an active session is not reattached.
+Probe queries use a separate descriptor transport; bounding that transport is
+covered by the terminal follow-up PR rather than by stdout session forwarding.
 Shared-memory frames with failed/ambiguous submissions are discarded and their
 local resources reclaimed. A terminal that received the command but has not yet
 opened the shared-memory object by name may lose that failed frame; no delivery
