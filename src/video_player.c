@@ -2314,6 +2314,25 @@ ErrorCode video_player_stop(VideoPlayer *player) {
     return video_player_clear_direct_kitty_image(player, TRUE) ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
+ErrorCode video_player_refresh_paused_frame(VideoPlayer *player) {
+    if (!player || !video_player_has_video(player) || video_player_is_playing(player))
+        return ERROR_INVALID_ARGS;
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
+    gint64 target_ms = video_player_current_position_ms(player);
+    video_player_stop_worker_internal(player, FALSE);
+    ErrorCode result = video_player_seek_to_ms(player, target_ms, target_ms);
+    if (result != ERROR_NONE) return result;
+    video_player_reset_timing_state(player);
+    if (!video_player_render_seek_preview(player, target_ms)) {
+        video_player_restore_paused_seek_target(player, target_ms);
+        return ERROR_INVALID_IMAGE;
+    }
+    ErrorCode output_error = ERROR_NONE;
+    video_player_render_frame(player, &output_error);
+    video_player_restore_paused_seek_target(player, target_ms);
+    return output_error;
+}
+
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     if (!player || !video_player_has_video(player)) {
         return ERROR_INVALID_ARGS;

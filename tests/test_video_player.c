@@ -3473,7 +3473,39 @@ static void test_protocol_cycle_restarts_active_workers(void) {
     video_player_destroy(player);
 }
 
+static void test_refresh_paused_frame_submits_without_playing(void) {
+    VideoPlayer *player = video_player_new(1, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    player->last_presented_pts_ms = 100;
+    player->fallback_pts_ms = 100;
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    ErrorCode result = video_player_refresh_paused_frame(player);
+    fflush(capture);
+    stdout = saved;
+    rewind(capture);
+    gchar bytes[4096] = {0};
+    gsize length = fread(bytes, 1, sizeof(bytes) - 1, capture);
+    gboolean playing = video_player_is_playing(player);
+    guint timer = player->timer_id;
+    gint64 position = video_player_current_position_ms_for_test(player);
+    fclose(capture);
+    video_player_destroy(player);
+    g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_false(playing);
+    g_assert_cmpuint(timer, ==, 0);
+    g_assert_cmpint(position, ==, 100);
+    g_assert_cmpuint(length, >, 2);
+    g_assert_nonnull(strstr(bytes, "\033["));
+}
+
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/paused_refresh/submits_without_playing", test_refresh_paused_frame_submits_without_playing);
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)
     g_test_add_data_func("/video_player/load/cleanup_failure_preserves_media", NULL, test_cleanup_failure_aborts_media_change);
