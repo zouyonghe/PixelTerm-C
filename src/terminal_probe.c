@@ -231,6 +231,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
         gboolean query_sent = FALSE;
         gboolean sequence_before_query = FALSE;
         gboolean read_failed = FALSE;
+        gboolean descriptor_restore_failed = FALSE;
 
         while (offset + 1 < buffer_size && sequence_length + 1 < sizeof(sequence) &&
                g_terminal_probe_pending_input.length + sequence_length < TERMINAL_PROBE_PENDING_LIMIT) {
@@ -259,11 +260,17 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
                     ssize_t written = hooks->write_fn(query, query_len,
                         default_transport ? &deadline_us : user_data);
                     if (query_written && written > 0) *query_written = TRUE;
-                    if (default_transport && !terminal_output_retry_descriptor_restore()) break;
+                    if (default_transport) {
+                        if (written > 0 && written != (ssize_t)query_len)
+                            terminal_output_defer_recovery();
+                        descriptor_restore_failed = !terminal_output_retry_descriptor_restore();
+                    }
                     if (written != (ssize_t)query_len) {
                         break;
                     }
                     query_sent = TRUE;
+                    /* Read a fully sent query's bounded reply for ownership cleanup,
+                     * but never report success while descriptor restoration failed. */
                     /* Replies retain their full budget after queued input/query submission. */
                     deadline_us = hooks->monotonic_time_us_fn(user_data) + (gint64)timeout_ms * 1000;
                 }
@@ -320,7 +327,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
         }
 
         buffer[offset] = '\0';
-        length = query_sent && !read_failed ? (gssize)offset : -1;
+        length = query_sent && !read_failed && !descriptor_restore_failed ? (gssize)offset : -1;
     } while (0);
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
