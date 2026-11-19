@@ -60,7 +60,7 @@ static void remove_path(gpointer data) {
 }
 
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
-    gchar *template = g_strdup_printf("%s/pixelterm-test-XXXXXX", g_get_tmp_dir());
+    gchar *template = g_strdup_printf("%s/pixelterm-test-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
     int fd = g_mkstemp(template);
     if (fd < 0) {
         g_error("Failed to create temp file");
@@ -68,15 +68,6 @@ static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len
     close(fd);
 
     gchar *path = template;
-    if (suffix && suffix[0] != '\0') {
-        gchar *with_suffix = g_strconcat(template, suffix, NULL);
-        if (g_rename(template, with_suffix) == 0) {
-            g_free(template);
-            path = with_suffix;
-        } else {
-            g_free(with_suffix);
-        }
-    }
 
     const gchar *contents = (len == 0 && data == NULL) ? "" : (const gchar *)data;
     GError *error = NULL;
@@ -199,6 +190,18 @@ static void test_is_valid_video_file_by_content(void) {
 
     g_assert_true(is_valid_video_file(mp4_path));
     g_assert_false(is_valid_video_file(invalid_path));
+}
+
+static void test_temp_fixtures_do_not_replace_each_other(void) {
+    GHashTable *paths = g_hash_table_new(g_str_hash, g_str_equal);
+    const guint8 data[] = {1};
+    for (gint i = 0; i < 1024; i++) {
+        gchar *path = write_temp_file(".png", data, sizeof(data));
+        g_assert_true(g_str_has_suffix(path, ".png"));
+        g_assert_false(g_hash_table_contains(paths, path));
+        g_hash_table_add(paths, path);
+    }
+    g_hash_table_destroy(paths);
 }
 
 static void test_is_animated_image_candidate(void) {
@@ -337,6 +340,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_book_file_and_valid", test_is_book_file_and_valid);
     g_test_add_func("/common/is_valid_video_file_by_content", test_is_valid_video_file_by_content);
     g_test_add_func("/common/is_animated_image_candidate", test_is_animated_image_candidate);
+    g_test_add_func("/common/temp_fixtures_are_unique", test_temp_fixtures_do_not_replace_each_other);
     g_test_add_func("/common/media_classify", test_media_classify_handles_content_and_extensions);
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
