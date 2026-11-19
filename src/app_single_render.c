@@ -10,6 +10,7 @@
 #include "app_single_render_internal.h"
 #include "app_single_render_test_internal.h"
 #include "ui_render_utils.h"
+#include "kitty_graphics.h"
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <math.h>
 
@@ -310,6 +311,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
 
     const gchar *filepath = app_get_current_filepath(app);
     if (!filepath) {
@@ -565,8 +567,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             ErrorCode play_result = APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
             app->needs_redraw = play_result != ERROR_NONE;
             if (play_result != ERROR_NONE) {
-                APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
-                fflush(stdout);
+                if (kitty_graphics_retry_pending_deletes()) {
+                    APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+                    fflush(stdout);
+                }
                 if (play_result != ERROR_OUTPUT_IO) {
                     fprintf(stderr, "Video playback failed: %s\n", error_code_to_string(play_result));
                 }
@@ -577,6 +581,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             return ERROR_INVALID_IMAGE;
         }
 
+        if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
         APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
         fflush(stdout);
         return ERROR_NONE;

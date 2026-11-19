@@ -42,10 +42,12 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     }
 
     terminal_probe_retry_restore();
-    kitty_graphics_retry_pending_deletes();
-    printf("\033[2J\033[H\033[0m");
-    printf("\033[?25h");
-    fflush(stdout);
+    gboolean output_ready = kitty_graphics_retry_pending_deletes();
+    if (output_ready) {
+        printf("\033[2J\033[H\033[0m");
+        printf("\033[?25h");
+        fflush(stdout);
+    }
 
     input_disable_mouse(input_handler);
     gboolean original_known = input_handler->has_orig_termios;
@@ -55,7 +57,7 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     if (!restored || (!original_known && restore_error != ERROR_NONE)) {
         return ERROR_TERMINAL_SIZE;
     }
-    return ERROR_NONE;
+    return kitty_graphics_retry_pending_deletes() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static ErrorCode finish_application(InputHandler *input_handler, ErrorCode primary_error) {
@@ -67,6 +69,7 @@ static ErrorCode finish_application(InputHandler *input_handler, ErrorCode prima
 }
 
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
+    if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
         return ERROR_MEMORY_ALLOC;
@@ -95,6 +98,9 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     }
 
     // Initial render
+    if (!kitty_graphics_retry_pending_deletes()) {
+        return finish_application(input_handler, ERROR_OUTPUT_IO);
+    }
     if (input_handler->alt_screen_enabled) {
         app->suppress_full_clear = TRUE;
     }
@@ -143,6 +149,10 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
                 gif_player_pause(app->gif_player);
             }
+            if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+                resize_pending = TRUE;
+                continue;
+            }
             if (app_is_preview_mode(app)) {
                 app->needs_screen_clear = TRUE;
             }
@@ -170,6 +180,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         gboolean handled_input = FALSE;
 
         input_dispatch_process_pending(app);
+        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
 
         if (input_has_pending_input(input_handler)) {
             error = input_get_event(input_handler, &event);
@@ -181,7 +192,9 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             handled_input = TRUE;
         }
 
+        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
         input_dispatch_process_animations(app);
+        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) continue;
         app_process_async_render(app);
 
         if (handled_input) {

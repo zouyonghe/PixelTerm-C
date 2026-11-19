@@ -1,5 +1,6 @@
 #include "input.h"
 #include "terminal_probe.h"
+#include "kitty_graphics.h"
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -237,12 +238,14 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
     }
 
     // Restore main screen (if we switched), then show cursor
-    if (handler->alt_screen_enabled && isatty(STDOUT_FILENO)) {
-        printf("\033[?1049l");
-        handler->alt_screen_enabled = FALSE;
+    if (kitty_graphics_retry_pending_deletes()) {
+        if (handler->alt_screen_enabled && isatty(STDOUT_FILENO)) {
+            printf("\033[?1049l");
+            handler->alt_screen_enabled = FALSE;
+        }
+        printf("\033[0m\033[?25h");
+        fflush(stdout);
     }
-    printf("\033[0m\033[?25h");
-    fflush(stdout);
 
     handler->raw_mode_enabled = !restored;
     return restored ? ERROR_NONE : ERROR_TERMINAL_SIZE;
@@ -278,6 +281,7 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
     }
 
     // Disable mouse tracking
+    if (!kitty_graphics_retry_pending_deletes()) return ERROR_OUTPUT_IO;
     printf("\033[?1002;1006l");
     fflush(stdout);
 

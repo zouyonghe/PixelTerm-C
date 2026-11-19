@@ -45,6 +45,10 @@ static gboolean gif_player_write_kitty_command(GString *command) {
     if (!command) {
         return FALSE;
     }
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+        g_string_free(command, TRUE);
+        return FALSE;
+    }
     size_t written = command->len > 0 ? fwrite(command->str, 1, command->len, stdout) : 0;
     gboolean success = written == command->len && fflush(stdout) == 0;
     if (!success) {
@@ -222,6 +226,7 @@ static void gif_player_present_rendered_frame(GifPlayer *player,
     if (!player || !result) {
         return;
     }
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return;
 
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
@@ -396,6 +401,10 @@ static gboolean gif_player_submit_kitty_frame(GifPlayer *player,
         kitty_graphics_frame_free(frame);
         return FALSE;
     }
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+        kitty_graphics_frame_free(frame);
+        return FALSE;
+    }
 
     gboolean success = FALSE;
     if (display_root) {
@@ -462,6 +471,7 @@ gboolean gif_player_native_geometry_matches_for_test(const GifPlayer *player,
 }
 
 static gboolean gif_player_prepare_kitty_animation(GifPlayer *player) {
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return FALSE;
     if (!gif_player_is_direct_kitty(player) || !player->iter) {
         return FALSE;
     }
@@ -871,6 +881,7 @@ static void render_current_frame_internal(GifPlayer *player) {
     if (!player || !player->iter || !player->renderer) {
         return;
     }
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return;
 
     // Update terminal size for renderer to ensure correct scaling
     renderer_update_terminal_size(player->renderer);
@@ -929,6 +940,7 @@ static gboolean render_next_frame(gpointer user_data) {
         player->timer_id = 0;
         return G_SOURCE_REMOVE;
     }
+    if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) return G_SOURCE_CONTINUE;
     
     if (player->kitty_animation_prepared && !player->kitty_animation_complete) {
         player->kitty_animation_elapsed_ms += player->kitty_animation_current_delay_ms;

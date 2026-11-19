@@ -2973,10 +2973,12 @@ typedef struct {
     gboolean partial;
     gboolean delivered_but_failed;
     gboolean fail_recovery;
+    gboolean fail_all;
 } DeleteOutput;
 
 static ssize_t delete_output_write(void *data, const char *bytes, size_t length) {
     DeleteOutput *output = data;
+    if (output->fail_all) { output->attempts++; errno = EIO; return -1; }
     if (output->attempts++ == 0) {
         if (output->delivered_but_failed) {
             g_string_append_len(output->output, bytes, length);
@@ -3054,7 +3056,10 @@ static void test_hide_failure_does_not_emit_frame(void) {
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
     player->kitty_direct_image_id = 42;
     player->kitty_direct_image_present = TRUE;
-    video_player_queue_push(player, make_test_frame_with_generation(0, player->playback_generation));
+    VideoFrame *frame = make_test_frame_with_generation(0, player->playback_generation);
+    g_string_assign(frame->rendered, "\033_Ga=T,f=24,s=1,v=1;AAAA\033\\");
+    frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+    video_player_queue_push(player, frame);
     DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE, .fail_recovery = TRUE};
     cookie_io_functions_t hooks = {.write = delete_output_write};
     FILE *capture = fopencookie(&output, "w", hooks);
@@ -3069,7 +3074,7 @@ static void test_hide_failure_does_not_emit_frame(void) {
     player->kitty_direct_image_id = 0;
     video_player_destroy(player);
     g_assert_false(rendered);
-    g_assert_null(strstr(output.output->str, "frame"));
+    g_assert_null(strstr(output.output->str, "\033_Ga=T,"));
     g_string_free(output.output, TRUE);
 }
 
@@ -3116,6 +3121,36 @@ static void test_gif_frame_failure_recovers(gconstpointer data) {
     g_assert_cmpuint(attempts, >=, 2);
     g_assert_true(g_str_has_suffix(output.output->str, "\033\\"));
     g_string_free(output.output, TRUE);
+}
+
+static void test_gif_fallback_waits_for_recovery(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    DeleteOutput output = {.output = g_string_new(NULL), .fail_all = TRUE};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    kitty_graphics_defer_output_recovery();
+    GString *fallback = g_string_new("GIF-FALLBACK");
+    gif_player_present_rendered_frame_for_test(player, fallback, 1, 1, FALSE);
+    output.fail_all = FALSE;
+    fflush(capture);
+    gsize premature_length = output.output->len;
+    gboolean recovered = kitty_graphics_retry_pending_deletes();
+    gif_player_present_rendered_frame_for_test(player, fallback, 1, 1, FALSE);
+    fflush(capture);
+    fclose(capture);
+    stdout = saved;
+    gif_player_destroy(player);
+    g_assert_cmpuint(premature_length, ==, 0);
+    g_assert_true(recovered);
+    g_assert_true(g_str_has_prefix(output.output->str, "\033\\"));
+    g_assert_nonnull(strstr(output.output->str, "GIF-FALLBACK"));
+    g_string_free(output.output, TRUE);
+    g_string_free(fallback, TRUE);
 }
 
 static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
@@ -3357,6 +3392,7 @@ void register_video_player_tests(void) {
     g_test_add_func("/gif_player/native_animation/delete_failure_discards_buffer", test_gif_delete_failure_discards_buffer);
     g_test_add_data_func("/gif_player/native_animation/root_failure_recovers", GINT_TO_POINTER(1), test_gif_frame_failure_recovers);
     g_test_add_data_func("/gif_player/native_animation/frame_failure_recovers", NULL, test_gif_frame_failure_recovers);
+    g_test_add_func("/gif_player/native_animation/fallback_waits_for_recovery", test_gif_fallback_waits_for_recovery);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_failed_flush", NULL,
                          test_direct_kitty_destroy_retries_failed_flush);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_partial_delete", GINT_TO_POINTER(1),
