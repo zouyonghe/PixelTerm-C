@@ -1,6 +1,7 @@
 #include "ui_render_utils.h"
 
 #include "text_utils.h"
+#include "terminal_output.h"
 
 void ui_render_centered_row(gint row, gint term_width, const char *text, const char *style) {
     if (row <= 0 || term_width <= 0) {
@@ -160,13 +161,16 @@ void ui_print_centered_help_line(gint row, gint term_width, const HelpSegment *s
     }
 }
 
-void ui_begin_sync_update(void) {
+gboolean ui_begin_sync_update(void) {
     // Use terminal synchronized output to reduce flicker during full-frame draws.
-    printf("\033[?2026h");
+    const char begin[] = "\033[?2026h";
+    if (terminal_output_write(begin, sizeof(begin) - 1)) return TRUE;
+    terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
+    return FALSE;
 }
 
 void ui_end_sync_update(void) {
-    printf("\033[?2026l");
+    terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
 }
 
 void ui_clear_screen_for_refresh(const PixelTermApp *app) {
@@ -191,12 +195,13 @@ void ui_clear_screen_for_refresh(const PixelTermApp *app) {
     printf("\033[2J\033[H\033[0m");
 }
 
-void ui_clear_kitty_images(const PixelTermApp *app) {
+gboolean ui_clear_kitty_images(const PixelTermApp *app) {
     if (!app || !app->force_kitty) {
-        return;
+        return TRUE;
     }
     // Delete all kitty image placements (quiet) so old images don't linger.
-    printf("\033_Ga=d,q=2\033\\");
+    const char command[] = "\033_Ga=d,q=2\033\\";
+    return terminal_output_write(command, sizeof(command) - 1);
 }
 
 void ui_clear_single_view_lines(const PixelTermApp *app) {
@@ -292,10 +297,11 @@ static void ui_panel_pair_row(gint row,
     g_free(left);
 }
 
-void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
+ErrorCode ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
     if (!panel || term_width < 8 || term_height < 4) {
-        return;
+        return ERROR_NONE;
     }
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
 
     const char *title = panel->title ? panel->title : "";
     gsize line_count = panel->lines ? panel->line_count : 0;
@@ -354,5 +360,5 @@ void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
         ui_panel_pair_row(row, start_col, inner_width, left_width, &panel->rows[i]);
     }
     ui_panel_border(start_row + panel_height - 1, start_col, inner_width);
-    fflush(stdout);
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

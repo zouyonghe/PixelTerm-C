@@ -108,9 +108,10 @@ void app_preloader_reset(PixelTermApp *app) {
     (void)app;
 }
 
-void app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_kind) {
+ErrorCode app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_kind) {
     (void)app;
     (void)active_kind;
+    return ERROR_NONE;
 }
 
 ErrorCode app_enter_book_preview(PixelTermApp *app) {

@@ -139,7 +139,8 @@ static gchar *make_temp_dir(void) {
 }
 
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
-    gchar *template = g_strdup_printf("%s/pixelterm-book-test-XXXXXX", g_get_tmp_dir());
+    /* GLib permits suffixes after XXXXXX; no rename is needed. */
+    gchar *template = g_strdup_printf("%s/pixelterm-book-test-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
     int fd = g_mkstemp(template);
     if (fd < 0) {
         g_error("Failed to create temp file");
@@ -147,15 +148,6 @@ static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len
     close(fd);
 
     gchar *path = template;
-    if (suffix && suffix[0] != '\0') {
-        gchar *with_suffix = g_strconcat(template, suffix, NULL);
-        if (g_rename(template, with_suffix) == 0) {
-            g_free(template);
-            path = with_suffix;
-        } else {
-            g_free(with_suffix);
-        }
-    }
 
     GError *error = NULL;
     const gchar *contents = (len == 0 && data == NULL) ? "" : (const gchar *)data;
@@ -171,7 +163,7 @@ static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len
 }
 
 static gchar *make_missing_temp_path(const gchar *suffix) {
-    gchar *template = g_strdup_printf("%s/pixelterm-book-missing-XXXXXX", g_get_tmp_dir());
+    gchar *template = g_strdup_printf("%s/pixelterm-book-missing-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
     int fd = g_mkstemp(template);
     if (fd < 0) {
         g_error("Failed to create temp file");
@@ -179,15 +171,6 @@ static gchar *make_missing_temp_path(const gchar *suffix) {
     close(fd);
 
     gchar *path = template;
-    if (suffix && suffix[0] != '\0') {
-        gchar *with_suffix = g_strconcat(template, suffix, NULL);
-        if (g_rename(template, with_suffix) == 0) {
-            g_free(template);
-            path = with_suffix;
-        } else {
-            g_free(with_suffix);
-        }
-    }
 
     g_assert_cmpint(g_remove(path), ==, 0);
     return path;

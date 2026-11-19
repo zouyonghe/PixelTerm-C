@@ -75,10 +75,10 @@ static void test_renderer_destroy(ImageRenderer *renderer);
 static ErrorCode test_renderer_initialize(ImageRenderer *renderer, const RendererConfig *config);
 static GString *test_renderer_render_image_file(ImageRenderer *renderer, const char *filepath);
 static void test_renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height);
-static void test_ui_begin_sync_update(void);
+static gboolean test_ui_begin_sync_update(void);
 static void test_ui_end_sync_update(void);
 static void test_ui_clear_screen_for_refresh(const PixelTermApp *app);
-static void test_ui_clear_kitty_images(const PixelTermApp *app);
+static gboolean test_ui_clear_kitty_images(const PixelTermApp *app);
 static void test_ui_clear_single_view_lines(const PixelTermApp *app);
 static void test_ui_clear_area(const PixelTermApp *app, gint top_row, gint height);
 
@@ -771,7 +771,8 @@ static void test_renderer_get_rendered_dimensions(ImageRenderer *renderer, gint 
     }
 }
 
-static void test_ui_begin_sync_update(void) {
+static gboolean test_ui_begin_sync_update(void) {
+    return TRUE;
 }
 
 static void test_ui_end_sync_update(void) {
@@ -782,8 +783,9 @@ static void test_ui_clear_screen_for_refresh(const PixelTermApp *app) {
     g_app_single_render_stub_state.clear_screen_calls++;
 }
 
-static void test_ui_clear_kitty_images(const PixelTermApp *app) {
+static gboolean test_ui_clear_kitty_images(const PixelTermApp *app) {
     (void)app;
+    return TRUE;
 }
 
 static void test_ui_clear_single_view_lines(const PixelTermApp *app) {

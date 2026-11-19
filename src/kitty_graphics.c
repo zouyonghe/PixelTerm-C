@@ -1,7 +1,11 @@
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
 #include "kitty_graphics.h"
 #include "process_env.h"
 #include "media_buffer.h"
 #include "terminal_probe.h"
+#include "terminal_output.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -103,57 +107,15 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode) {
 #endif
 }
 
-/* The main input/output owner services this queue; render workers never use it. */
-static GQueue pending_deletes = G_QUEUE_INIT;
-static gboolean cleanup_registered = FALSE;
-static gint64 next_cleanup_retry_us = 0;
-
-void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
-    if (now_us < next_cleanup_retry_us) return;
-    if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;
-}
-
-gboolean kitty_graphics_retry_pending_deletes(void) {
-    while (!g_queue_is_empty(&pending_deletes)) {
-        GString *command = g_queue_peek_head(&pending_deletes);
-        clearerr(stdout);
-        gsize written = fwrite(command->str, 1, command->len, stdout);
-        gint flushed = fflush(stdout);
-        if (written != command->len || flushed != 0 || ferror(stdout)) return FALSE;
-        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
-    }
-    next_cleanup_retry_us = 0;
-    return TRUE;
-}
-
-static void kitty_graphics_cleanup_at_exit(void) {
-    kitty_graphics_retry_pending_deletes();
-    /* Process exit is the last retry opportunity, even if the terminal is gone. */
-    while (!g_queue_is_empty(&pending_deletes)) {
-        g_string_free(g_queue_pop_head(&pending_deletes), TRUE);
-    }
-}
-
-static void kitty_graphics_queue_delete(GString *command) {
-    if (!cleanup_registered) {
-        cleanup_registered = atexit(kitty_graphics_cleanup_at_exit) == 0;
-    }
-    g_queue_push_tail(&pending_deletes, command);
-}
-
 void kitty_graphics_defer_image_delete(guint32 image_id) {
     if (!image_id) return;
     GString *command = kitty_graphics_build_delete_image_command(image_id);
-    g_string_prepend(command, "\033\\"); /* Finish an interrupted graphics command first. */
-    kitty_graphics_queue_delete(command);
-}
-
-void kitty_graphics_defer_output_recovery(void) {
-    kitty_graphics_queue_delete(g_string_new("\033\\"));
+    terminal_output_defer(command->str, TERMINAL_OUTPUT_ONCE);
+    g_string_free(command, TRUE);
 }
 
 guint32 kitty_graphics_allocate_image_id(void) {
-    if (!kitty_graphics_retry_pending_deletes()) return 0;
+    if (!terminal_output_flush()) return 0;
     /* I= requests a fresh terminal-assigned i=; the nonce only correlates replies. */
     guint32 nonce = g_random_int();
     if (!nonce) nonce = 1;
@@ -195,7 +157,7 @@ guint32 kitty_graphics_allocate_image_id(void) {
                 /* A failed restore invalidates use, not ownership of a complete reply.
                  * defer_image_delete prepends \033\\ for recovery, so skip the separate defer. */
                 kitty_graphics_defer_image_delete((guint32)id);
-                kitty_graphics_retry_pending_deletes();
+                terminal_output_flush();
                 return 0;
             }
         }
@@ -204,8 +166,8 @@ guint32 kitty_graphics_allocate_image_id(void) {
     if (query_written) {
         /* Image numbers are shared across clients; without a confirmed i=, a
          * d=N delete could target another client's newer image. Only end the APC. */
-        kitty_graphics_defer_output_recovery();
-        kitty_graphics_retry_pending_deletes();
+        terminal_output_defer_recovery();
+        terminal_output_flush();
     }
     return 0;
 }

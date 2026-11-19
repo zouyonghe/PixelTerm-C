@@ -48,6 +48,15 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
 gboolean terminal_probe_has_pending_input(void);
 /* Returns the next replayed byte (0-255), or -1 when no pending input remains. */
 gint terminal_probe_take_pending_byte(void);
+/* Main-thread recovery; failed restoration keeps the original settings for retry. */
+gboolean terminal_probe_retry_restore(void);
+/* Input ownership: report whether this retry applied pending outer-owner settings.
+ * restored_original must be non-NULL; FALSE also covers no pending restoration. */
+gboolean terminal_probe_retry_restore_for_input(gboolean *restored_original);
+/* state must be non-NULL. Restore the outer owner's original mode with TCSAFLUSH
+ * (discarding unread terminal input), replacing any pending probe snapshot.
+ * On failure, retain both settings and the flush action for later retry/exit. */
+gboolean terminal_probe_restore_original(const struct termios *state);
 
 void terminal_probe_set_transport_hooks_for_test(const TerminalProbeTransportHooks *hooks,
                                                  gpointer user_data);

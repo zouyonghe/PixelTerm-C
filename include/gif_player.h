@@ -99,8 +99,9 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer);
  * @param area_height Height of the image area in rows.
  * @param max_width Maximum render width in characters.
  * @param max_height Maximum render height in characters.
+ * @return `ERROR_NONE` on success or no change, or the cleanup/presentation error.
  */
-void gif_player_set_render_area(GifPlayer *player,
+ErrorCode gif_player_set_render_area(GifPlayer *player,
                                 gint term_width,
                                 gint term_height,
                                 gint area_top_row,
@@ -127,11 +128,16 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath);
  * to sequentially display frames, creating an animation effect.
  * 
  * @param player A pointer to the `GifPlayer` instance.
- * @return `ERROR_NONE` on success, or `ERROR_INVALID_IMAGE` if no animated
- *         GIF is loaded.
+ * @return `ERROR_NONE` on success, `ERROR_INVALID_IMAGE` if no animated GIF is
+ *         loaded, or `ERROR_OUTPUT_IO` on failed terminal submission or cleanup.
  */
 ErrorCode gif_player_play(GifPlayer *player);
-void gif_player_prepare_for_redraw(GifPlayer *player);
+/**
+ * @brief Suspends playback for redraw while preserving the current frame.
+ * @return `ERROR_NONE` on success or no active playback, or `ERROR_OUTPUT_IO`
+ *         if native animation cleanup fails.
+ */
+ErrorCode gif_player_prepare_for_redraw(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 
@@ -139,7 +145,8 @@ void gif_player_prepare_for_redraw(GifPlayer *player);
  * effectively pausing the animation at its current frame.
  * 
  * @param player A pointer to the `GifPlayer` instance.
- * @return `ERROR_NONE` on success.
+ * @return `ERROR_NONE` on success, `ERROR_INVALID_IMAGE` for a NULL player,
+ *         or `ERROR_OUTPUT_IO` if the native animation stop command fails.
  */
 ErrorCode gif_player_pause(GifPlayer *player);
 /**
@@ -149,7 +156,8 @@ ErrorCode gif_player_pause(GifPlayer *player);
  * and clears any animation-related internal state.
  * 
  * @param player A pointer to the `GifPlayer` instance.
- * @return `ERROR_NONE` on success.
+ * @return `ERROR_NONE` on success, `ERROR_INVALID_IMAGE` for a NULL player,
+ *         or `ERROR_OUTPUT_IO` if image release is blocked or fails submission.
  */
 ErrorCode gif_player_stop(GifPlayer *player);
 /**

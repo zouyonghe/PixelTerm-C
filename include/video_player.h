@@ -145,8 +145,12 @@ void video_player_destroy(VideoPlayer *player);
  *
  * Active workers are stopped before replacement and restarted when playback
  * was active. The player borrows @p renderer and never destroys it.
+ * Cleanup failure preserves the old renderer and ownership, with playback paused.
+ * A restart failure leaves the replacement installed and playback paused.
+ * @return ERROR_NONE on success, ERROR_INVALID_IMAGE for a NULL player,
+ * or ERROR_OUTPUT_IO when terminal cleanup or playback restart fails.
  */
-void video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
+ErrorCode video_player_set_renderer(VideoPlayer *player, ImageRenderer *renderer);
 
 /**
  * @brief Sets the terminal layout available to video rendering.
@@ -164,9 +168,13 @@ void video_player_set_render_area(VideoPlayer *player,
 /**
  * @brief Clears the most recently rendered video area from the terminal.
  *
+ * @return ERROR_NONE after a successful clear or when no area exists;
+ * ERROR_INVALID_IMAGE for a NULL player; ERROR_OUTPUT_IO on failed submission.
+ * Any attempted submission
+ * invalidates the previous line cache because delivery may have succeeded.
  * @note Call from the player-owning main context because this writes stdout.
  */
-void video_player_clear_render_area(VideoPlayer *player);
+ErrorCode video_player_clear_render_area(VideoPlayer *player);
 
 /**
  * @brief Enables or disables the playback statistics overlay.
@@ -184,6 +192,9 @@ void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats);
  */
 void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance);
 
+/* Predict cycle_protocol's redraw result without changing protocol or frame. */
+gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player);
+
 /**
  * @brief Advances the renderer protocol override to the next display mode.
  *
@@ -195,6 +206,12 @@ void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_
  * @note Call from the player-owning main context while playback is stopped.
  */
 gboolean video_player_cycle_protocol(VideoPlayer *player);
+
+/* Checked cycle for callers that must distinguish output failure from no redraw.
+ * needs_redraw reports the committed change's redraw need even if resume fails.
+ * A failed release preserves protocol, reports FALSE, and leaves playback paused.
+ * needs_redraw may be NULL. */
+ErrorCode video_player_cycle_protocol_checked(VideoPlayer *player, gboolean *needs_redraw);
 
 /**
  * @brief Returns a consistent snapshot of the last rendered frame bounds.
@@ -239,6 +256,10 @@ ErrorCode video_player_stop(VideoPlayer *player);
  * @note Call from the player-owning main context.
  */
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms);
+/* Re-decode and present the current paused position without starting a timer.
+ * Returns the seek/decode/output result. Call from the player-owning main
+ * context while playback is paused; this submits terminal output. */
+ErrorCode video_player_refresh_paused_frame(VideoPlayer *player);
 
 /**
  * @brief Returns whether playback is active.

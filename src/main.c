@@ -16,7 +16,8 @@
 #include "input.h"
 #include "input_dispatch.h"
 #include "common.h"
-#include "kitty_graphics.h"
+#include "terminal_output.h"
+#include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
 
@@ -35,22 +36,37 @@ static void signal_handler(int sig) {
     g_last_signal = sig;
 }
 
-static void run_application_cleanup(InputHandler *input_handler) {
+static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     if (!input_handler) {
-        return;
+        return ERROR_NONE;
     }
 
-    kitty_graphics_retry_pending_deletes();
-    printf("\033[2J\033[H\033[0m");
-    printf("\033[?25h");
-    fflush(stdout);
+    terminal_probe_retry_restore();
+    const char clear[] = "\033[2J\033[H\033[0m";
+    gboolean cleared = terminal_output_write(clear, sizeof(clear) - 1);
 
     input_disable_mouse(input_handler);
-    input_disable_raw_mode(input_handler);
+    gboolean original_known = input_handler->has_orig_termios;
+    ErrorCode restore_error = input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
+    gboolean restored = terminal_probe_retry_restore();
+    if (!restored || (!original_known && restore_error == ERROR_TERMINAL_SIZE)) {
+        return ERROR_TERMINAL_SIZE;
+    }
+    gboolean output_restored = terminal_output_flush();
+    return cleared && output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
-static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
+static ErrorCode finish_application(InputHandler *input_handler, ErrorCode primary_error) {
+    ErrorCode cleanup_error = run_application_cleanup(input_handler);
+    if (primary_error != ERROR_NONE && cleanup_error != ERROR_NONE) {
+        fprintf(stderr, "Terminal restoration failed: %s\n", error_code_to_string(cleanup_error));
+    }
+    return primary_error != ERROR_NONE ? primary_error : cleanup_error;
+}
+
+static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_enabled) {
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
         return ERROR_MEMORY_ALLOC;
@@ -67,18 +83,22 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
     error = input_enable_raw_mode(input_handler);
     if (error != ERROR_NONE) {
-        input_handler_destroy(input_handler);
-        return error;
+        if (!input_handler->raw_mode_enabled) {
+            input_handler_destroy(input_handler);
+            return error;
+        }
+        return finish_application(input_handler, error);
     }
 
     error = input_enable_mouse(input_handler);
     if (error != ERROR_NONE) {
-        input_disable_raw_mode(input_handler);
-        input_handler_destroy(input_handler);
-        return error;
+        return finish_application(input_handler, error);
     }
 
     // Initial render
+    if (!terminal_output_flush()) {
+        return finish_application(input_handler, ERROR_OUTPUT_IO);
+    }
     if (input_handler->alt_screen_enabled) {
         app->suppress_full_clear = TRUE;
     }
@@ -87,25 +107,40 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         app->suppress_full_clear = FALSE;
     }
     if (error != ERROR_NONE) {
-        run_application_cleanup(input_handler);
-        return error;
+        return finish_application(input_handler, error);
     }
 
     // Main event loop
     InputEvent event;
     static gint last_term_width = 0, last_term_height = 0;
     gboolean resize_pending = FALSE;
+    gint64 output_blocked_since_us = 0;
     // Initialize terminal size tracking
     last_term_width = input_handler->terminal_width;
     last_term_height = input_handler->terminal_height;
         
     while (app->running && !input_handler->should_exit) {
-        kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time());
+        if (app->last_error != ERROR_NONE) break;
+        if (!terminal_probe_retry_restore()) {
+            error = ERROR_TERMINAL_SIZE;
+            break;
+        }
         if (g_terminate_requested) {
             app->running = FALSE;
             input_handler->should_exit = TRUE;
             break;
         }
+        gint64 now_us = g_get_monotonic_time();
+        if (!terminal_output_ready(now_us)) {
+            if (!output_blocked_since_us) output_blocked_since_us = now_us;
+            if (now_us - output_blocked_since_us >= 2 * G_TIME_SPAN_SECOND) {
+                error = ERROR_OUTPUT_IO;
+                break;
+            }
+            usleep(k_input_poll_sleep_us);
+            continue;
+        }
+        output_blocked_since_us = 0;
         
         // Check for terminal size changes
         input_update_terminal_size(input_handler);
@@ -119,14 +154,25 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
             input_dispatch_pause_video_for_resize(app);
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
-                gif_player_pause(app->gif_player);
+                error = gif_player_pause(app->gif_player);
+                if (error != ERROR_NONE) break;
+            }
+            if (!terminal_output_ready(g_get_monotonic_time())) {
+                resize_pending = TRUE;
+                continue;
             }
             if (app_is_preview_mode(app)) {
                 app->needs_screen_clear = TRUE;
             }
-            ui_clear_kitty_images(app);
+            if (!ui_clear_kitty_images(app)) {
+                error = ERROR_OUTPUT_IO;
+                break;
+            }
             ui_clear_screen_for_refresh(app);
-            fflush(stdout);
+            if (!terminal_output_flush()) {
+                error = ERROR_OUTPUT_IO;
+                break;
+            }
             resize_pending = TRUE;
             usleep(k_resize_sleep_us);
             continue;
@@ -138,9 +184,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             app->video_was_playing_before_resize = FALSE;
             get_terminal_size(&app->term_width, &app->term_height);
             app->suppress_full_clear = FALSE;
-            app_render_by_mode(app);
+            error = app_render_by_mode(app);
+            if (error != ERROR_NONE) break;
             if (resume_video_after_resize && app->video_player) {
-                video_player_play(app->video_player);
+                error = video_player_play(app->video_player);
+                if (error != ERROR_NONE) break;
             }
             continue;
         }
@@ -148,6 +196,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         gboolean handled_input = FALSE;
 
         input_dispatch_process_pending(app);
+        if (app->last_error != ERROR_NONE) break;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (input_has_pending_input(input_handler)) {
             error = input_get_event(input_handler, &event);
@@ -159,8 +209,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             handled_input = TRUE;
         }
 
+        if (app->last_error != ERROR_NONE) break;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
         input_dispatch_process_animations(app);
+        if (app->last_error != ERROR_NONE) break;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
         app_process_async_render(app);
+        if (app->last_error != ERROR_NONE) break;
+        if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
         if (handled_input) {
             continue;
@@ -179,9 +235,15 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
-    run_application_cleanup(input_handler);
+    if (error == ERROR_NONE) error = app->last_error;
+    return finish_application(input_handler, error);
+}
 
-    return error;
+static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
+    if (!terminal_output_begin_session()) return ERROR_OUTPUT_IO;
+    ErrorCode error = run_application_loop(app, alt_screen_enabled);
+    gboolean output_restored = terminal_output_end_session();
+    return error != ERROR_NONE ? error : output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 int main(int argc, char *argv[]) {
@@ -287,6 +349,9 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         error = run_application(g_app, config.alt_screen_enabled);
+        if (error != ERROR_NONE) {
+            fprintf(stderr, "Application error: %s\n", error_code_to_string(error));
+        }
         app_destroy(g_app);
         g_free(path);
         g_app = NULL;

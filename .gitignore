@@ -11,6 +11,7 @@ bin/
 # Documentation
 docs/api/
 /docs/plans/
+/docs/superpowers/plans/
 
 # CodeQL
 _codeql_detected_source_root

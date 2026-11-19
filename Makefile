@@ -195,7 +195,7 @@ PREVIEW_GRID_TEST_OBJECT = $(OBJDIR)/test_app_preview_grid.o
 BOOK_PREVIEW_TEST_SOURCE = tests/test_app_preview_book.c
 BOOK_PREVIEW_TEST_OBJECT = $(OBJDIR)/test_app_preview_book.o
 TEST_COMMON_LINK_OBJECTS = $(OBJDIR)/common.o $(OBJDIR)/text_utils.o $(OBJDIR)/process_env.o \
-		$(OBJDIR)/ui_render_utils.o
+		$(OBJDIR)/ui_render_utils.o $(OBJDIR)/terminal_output.o
 TEST_RENDER_LINK_OBJECTS = $(OBJDIR)/browser.o $(OBJDIR)/renderer.o $(OBJDIR)/pixbuf_utils.o \
 		$(OBJDIR)/kitty_graphics.o
 TEST_MEDIA_LINK_OBJECTS = $(OBJDIR)/gif_player.o $(OBJDIR)/media_buffer.o $(OBJDIR)/preloader.o \
@@ -217,8 +217,8 @@ TEST_LINK_OBJECTS = $(TEST_COMMON_LINK_OBJECTS) $(TEST_RENDER_LINK_OBJECTS) \
 		$(TEST_TERMINAL_LINK_OBJECTS)
 FILE_MANAGER_TEST_LINK_OBJECTS = $(TEST_COMMON_LINK_OBJECTS) $(OBJDIR)/app_core.o \
 		$(OBJDIR)/app_mode.o $(OBJDIR)/app_file_manager.o $(OBJDIR)/app_file_manager_render.o
-PREVIEW_GRID_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_grid.o $(OBJDIR)/ui_render_utils.o $(OBJDIR)/text_utils.o
-BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o $(OBJDIR)/app_book_page_render.o
+PREVIEW_GRID_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_grid.o $(OBJDIR)/ui_render_utils.o $(OBJDIR)/text_utils.o $(OBJDIR)/terminal_output.o
+BOOK_PREVIEW_TEST_LINK_OBJECTS = $(OBJDIR)/app_preview_book.o $(OBJDIR)/app_book_page_render.o $(OBJDIR)/terminal_output.o
 
 # Default target
 all: $(TARGET)

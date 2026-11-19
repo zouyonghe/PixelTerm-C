@@ -377,14 +377,16 @@ void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, g
     }
 }
 
-void ui_begin_sync_update(void) {
+gboolean ui_begin_sync_update(void) {
+    return TRUE;
 }
 
 void ui_end_sync_update(void) {
 }
 
-void ui_clear_kitty_images(const PixelTermApp *app) {
+gboolean ui_clear_kitty_images(const PixelTermApp *app) {
     (void)app;
+    return TRUE;
 }
 
 void ui_clear_screen_for_refresh(const PixelTermApp *app) {
