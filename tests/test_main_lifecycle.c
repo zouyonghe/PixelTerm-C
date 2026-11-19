@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include "terminal_probe.h"
 #include "app.h"
 #include "input.h"
@@ -253,6 +254,7 @@ static void test_render_error_keeps_primary_and_reports_cleanup_failure(void) {
     stdout = capture;
     stderr = errors;
     ErrorCode result = run_application(&app, FALSE);
+    g_assert_true(stdout == capture);
     stdout = saved;
     stderr = saved_errors;
     fclose(capture);
@@ -524,7 +526,65 @@ static void test_dispatch_output_error_reaches_application(void) {
     g_assert_cmpuint(premature_dispatches, ==, 0);
 }
 
+static void test_full_pipe_initial_flush_is_bounded(void) {
+    if (!g_test_subprocess()) {
+        g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, 0);
+        g_test_trap_assert_passed();
+        return;
+    }
+    int descriptors[2];
+    g_assert_cmpint(pipe(descriptors), ==, 0);
+    int flags = fcntl(descriptors[1], F_GETFL);
+    g_assert_cmpint(flags, >=, 0);
+    g_assert_cmpint(fcntl(descriptors[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
+    char bytes[4096] = {0};
+    while (write(descriptors[1], bytes, sizeof(bytes)) > 0) {}
+    while (write(descriptors[1], bytes, 1) > 0) {}
+    g_assert_cmpint(errno, ==, EAGAIN);
+    g_assert_cmpint(fcntl(descriptors[1], F_SETFL, flags), ==, 0);
+    FILE *capture = fdopen(descriptors[1], "w");
+    g_assert_nonnull(capture);
+    char buffer[BUFSIZ];
+    g_assert_cmpint(setvbuf(capture, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    g_assert_cmpint(fputs("pending", capture), >=, 0);
+    FILE *saved = stdout;
+    stdout = capture;
+    PixelTermApp app = {0};
+    initialize_calls = 0;
+    gint64 started = g_get_monotonic_time();
+    ErrorCode result = run_application(&app, FALSE);
+    gint64 elapsed = g_get_monotonic_time() - started;
+    g_assert_true(stdout == capture);
+    stdout = saved;
+    g_assert_cmpint(fcntl(descriptors[0], F_SETFL, O_NONBLOCK), ==, 0);
+    while (read(descriptors[0], bytes, sizeof(bytes)) > 0) {}
+    fclose(capture);
+    close(descriptors[0]);
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpuint(initialize_calls, ==, 0);
+    g_assert_cmpint(elapsed, <, 5 * G_TIME_SPAN_SECOND);
+}
+
+static void test_raw_setup_failure_restores_stdout(void) {
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    stdout = capture;
+    PixelTermApp app = {0};
+    startup_failure_stage = 3;
+    ErrorCode result = run_application(&app, TRUE);
+    startup_failure_stage = 0;
+    g_assert_true(stdout == capture);
+    g_assert_cmpint(fputs("restored", stdout), >=, 0);
+    g_assert_cmpint(fflush(stdout), ==, 0);
+    stdout = saved;
+    fclose(capture);
+    g_assert_cmpint(result, ==, ERROR_TERMINAL_SIZE);
+}
+
 void register_main_lifecycle_tests(void) {
+    g_test_add_func("/main/startup/raw_setup_failure_restores_stdout", test_raw_setup_failure_restores_stdout);
+    g_test_add_func("/main/output/full_pipe_initial_flush_is_bounded", test_full_pipe_initial_flush_is_bounded);
     g_test_add_data_func("/main/output/persistent_block_times_out", NULL, test_main_persistent_output_block);
     g_test_add_data_func("/main/output/persistent_block_signal_exits", GINT_TO_POINTER(1), test_main_persistent_output_block);
     g_test_add_func("/main/startup/already_raw_retries_restore", test_already_raw_retries_pending_probe_restore);

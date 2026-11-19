@@ -1,3 +1,6 @@
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
 #endif
@@ -6,6 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <poll.h>
+#include <unistd.h>
 #ifdef __linux__
 #include <stdio_ext.h>
 #endif
@@ -18,6 +24,75 @@ typedef struct {
 } PendingOutput;
 static gboolean cleanup_registered = FALSE;
 static gint64 next_cleanup_retry_us = 0;
+static FILE *session_stdout;
+static FILE *session_stream;
+static int session_fd;
+
+static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length) {
+    int flags = fcntl(fd, F_GETFL);
+    gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
+    if (flags < 0 || (changed && fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)) return -1;
+    gsize written = 0;
+    gint64 deadline = g_get_monotonic_time() + 100000;
+    while (written < length) {
+        ssize_t count = write(fd, bytes + written, length - written);
+        if (count > 0) {
+            written += (gsize)count;
+            deadline = g_get_monotonic_time() + 100000;
+        } else if (count < 0 && errno == EINTR) {
+            /* Interrupted writes still share the no-progress deadline. */
+        } else if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            gint64 remaining = deadline - g_get_monotonic_time();
+            if (remaining <= 0) break;
+            struct pollfd output = {.fd = fd, .events = POLLOUT};
+            if (poll(&output, 1, (int)((remaining + 999) / 1000)) < 0 && errno != EINTR) break;
+        } else break;
+        if (g_get_monotonic_time() >= deadline) break;
+    }
+    if (changed && fcntl(fd, F_SETFL, flags) < 0) return -1;
+    return written || !length ? (ssize_t)written : -1;
+}
+
+#ifdef __APPLE__
+static int terminal_output_session_write(void *data, const char *bytes, int length) {
+    (void)data;
+    return (int)terminal_output_descriptor_write(session_fd, bytes, (gsize)length);
+}
+#else
+static ssize_t terminal_output_session_write(void *data, const char *bytes, size_t length) {
+    (void)data;
+    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, length);
+    return written < 0 ? 0 : written;
+}
+#endif
+
+gboolean terminal_output_begin_session(void) {
+    if (session_stream) return FALSE;
+    if (fileno(stdout) < 0) return TRUE;
+    if (!terminal_output_flush()) return FALSE;
+    session_fd = fileno(stdout);
+#ifdef __APPLE__
+    FILE *stream = funopen(NULL, NULL, terminal_output_session_write, NULL, NULL);
+#else
+    cookie_io_functions_t hooks = {.write = terminal_output_session_write};
+    FILE *stream = fopencookie(NULL, "w", hooks);
+#endif
+    if (!stream) return FALSE;
+    session_stdout = stdout;
+    session_stream = stream;
+    stdout = stream;
+    return TRUE;
+}
+
+gboolean terminal_output_end_session(void) {
+    if (!session_stream) return TRUE;
+    gboolean success = terminal_output_flush();
+    terminal_output_discard();
+    stdout = session_stdout;
+    if (fclose(session_stream) != 0) success = FALSE;
+    session_stdout = session_stream = NULL;
+    return success;
+}
 
 /* Bound kernel writes without changing descriptor flags between submissions. */
 static gboolean terminal_output_submit(const char *bytes, gsize length) {
@@ -26,8 +101,18 @@ static gboolean terminal_output_submit(const char *bytes, gsize length) {
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
     if (fd >= 0 && (flags < 0 || (changed && fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)))
         return FALSE;
-    gsize written = length ? fwrite(bytes, 1, length, stdout) : 0;
+    gsize written = 0;
     int flushed = fflush(stdout);
+    if (flushed == 0 && !ferror(stdout)) {
+        if (fd < 0) {
+            written = length ? fwrite(bytes, 1, length, stdout) : 0;
+            flushed = fflush(stdout);
+        } else {
+            ssize_t count = terminal_output_descriptor_write(fd, bytes, length);
+            if (count > 0) written = (gsize)count;
+            if (count < 0) flushed = -1;
+        }
+    }
     gboolean success = written == length && flushed == 0 && !ferror(stdout);
     if (changed && fcntl(fd, F_SETFL, flags) < 0) success = FALSE;
     return success;
