@@ -50,11 +50,14 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     gsize written = fwrite(command->str, 1, command->len, stdout);
     gint flushed = fflush(stdout);
     deleted = written == command->len && flushed == 0 && !ferror(stdout);
-    if (!deleted) kitty_graphics_discard_failed_output();
+    if (!deleted) {
+        kitty_graphics_discard_failed_output();
+        kitty_graphics_defer_output_recovery();
+        kitty_graphics_retry_pending_deletes();
+    }
     g_string_free(command, TRUE);
     if (release) {
         if (!deleted) {
-            kitty_graphics_defer_output_recovery();
             video_player_report_output_failure();
         }
         /* Release has one owner, even while this stopped player remains alive. */

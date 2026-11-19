@@ -3051,9 +3051,11 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     fflush(saved_stdout);
     stdout = capture;
     video_player_destroy(player);
+    guint attempts_before_return = output.attempts;
     kitty_graphics_retry_pending_deletes();
     fclose(capture);
     stdout = saved_stdout;
+    g_assert_cmpuint(attempts_before_return, ==, 2);
     g_assert_cmpuint(output.attempts, ==, 2);
     if (output.partial) {
         g_assert_true(g_str_has_suffix(output.output->str, "\033\\"));

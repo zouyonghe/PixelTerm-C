@@ -222,18 +222,19 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
 
     gboolean restored = TRUE;
     // Only restore if stdin is a terminal
-    if (isatty(STDIN_FILENO)) {
-        if (handler->has_orig_termios) {
-            restored = terminal_probe_restore_original(&handler->orig_termios);
+    if (handler->has_orig_termios) {
+        /* Preserve the outer settings even if stdin is temporarily no longer a TTY. */
+        restored = terminal_probe_restore_original(&handler->orig_termios);
+    } else if (isatty(STDIN_FILENO)) {
+        struct termios term;
+        if (tcgetattr(STDIN_FILENO, &term) == 0) {
+            term.c_lflag |= (ICANON | ECHO);
+            restored = terminal_probe_restore_original(&term);
         } else {
-            struct termios term;
-            if (tcgetattr(STDIN_FILENO, &term) == 0) {
-                term.c_lflag |= (ICANON | ECHO);
-                restored = terminal_probe_restore_original(&term);
-            } else {
-                restored = FALSE;
-            }
+            restored = FALSE;
         }
+    } else {
+        restored = FALSE;
     }
 
     // Restore main screen (if we switched), then show cursor

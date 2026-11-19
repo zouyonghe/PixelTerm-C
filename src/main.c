@@ -36,20 +36,21 @@ static void signal_handler(int sig) {
     g_last_signal = sig;
 }
 
-static void run_application_cleanup(InputHandler *input_handler) {
+static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     if (!input_handler) {
-        return;
+        return ERROR_NONE;
     }
 
-    terminal_probe_retry_restore();
+    gboolean probe_restored = terminal_probe_retry_restore();
     kitty_graphics_retry_pending_deletes();
     printf("\033[2J\033[H\033[0m");
     printf("\033[?25h");
     fflush(stdout);
 
     input_disable_mouse(input_handler);
-    input_disable_raw_mode(input_handler);
+    ErrorCode restore_error = input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
+    return !probe_restored || restore_error != ERROR_NONE ? ERROR_TERMINAL_SIZE : ERROR_NONE;
 }
 
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
@@ -185,9 +186,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
-    run_application_cleanup(input_handler);
-
-    return error;
+    ErrorCode cleanup_error = run_application_cleanup(input_handler);
+    return error != ERROR_NONE ? error : cleanup_error;
 }
 
 int main(int argc, char *argv[]) {
