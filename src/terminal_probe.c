@@ -102,6 +102,14 @@ static void terminal_probe_restore_at_exit(void) {
     (void)terminal_probe_retry_restore();
 }
 
+gboolean terminal_probe_retry_restore_for_input(gboolean *restored_original) {
+    gboolean outer_pending = g_restore_pending && g_pending_restore_actions == TCSAFLUSH;
+    *restored_original = FALSE;
+    if (!terminal_probe_retry_restore()) return FALSE;
+    *restored_original = outer_pending;
+    return TRUE;
+}
+
 gboolean terminal_probe_restore_original(const struct termios *state) {
     g_pending_termios = *state;
     g_pending_restore_actions = TCSAFLUSH;

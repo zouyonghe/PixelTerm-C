@@ -45,11 +45,23 @@ static gint inject_stage;
 static gboolean recovery_injected;
 static gboolean recovery_blocked;
 static gboolean async_completed;
+static gboolean persistent_block;
+static gboolean terminate_block;
+static gint64 blocked_clock;
+static void request_termination_for_test(void);
+static gint64 lifecycle_monotonic_time(void) {
+    return persistent_block ? blocked_clock : g_get_monotonic_time();
+}
 static gboolean lifecycle_has_pending(InputHandler *handler) {
     if (!gate_test) return input_has_pending_input(handler);
     return (inject_stage == 1 && recovery_injected) || (inject_stage == 3 && async_completed);
 }
 static gboolean lifecycle_cleanup_due(gint64 now_us) {
+    if (persistent_block) {
+        blocked_clock += 100000;
+        if (terminate_block && gate_attempts == 3) request_termination_for_test();
+        return ++gate_attempts > 25; /* Bound the unfixed implementation too. */
+    }
     if (!gate_test) return terminal_output_ready(now_us);
     if (inject_stage && !recovery_injected) return TRUE;
     if (gate_attempts >= 3) return TRUE;
@@ -112,6 +124,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #define input_has_pending_input lifecycle_has_pending
 #define input_get_event lifecycle_get_event
 #define terminal_output_ready lifecycle_cleanup_due
+#define g_get_monotonic_time lifecycle_monotonic_time
 #define input_enable_raw_mode lifecycle_enable_raw_mode
 #define input_handler_initialize lifecycle_initialize
 #define input_enable_mouse lifecycle_enable_mouse
@@ -125,12 +138,17 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #undef app_render_by_mode
 #undef app_process_async_render
 #undef terminal_output_ready
+#undef g_get_monotonic_time
 #undef input_enable_raw_mode
 #undef input_handler_initialize
 #undef input_enable_mouse
 #undef input_update_terminal_size
 #undef video_player_play
 #undef gif_player_pause
+
+static void request_termination_for_test(void) {
+    signal_handler(SIGTERM);
+}
 
 typedef struct {
     gint failures;
@@ -272,15 +290,34 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     stdout = capture;
     ErrorCode result = run_application(&app, FALSE);
     stdout = saved;
+    if (persistent_block) {
+        rewind(capture);
+        gchar output[512] = {0};
+        fread(output, 1, sizeof(output) - 1, capture);
+        g_assert_nonnull(strstr(output, "\033[2J\033[H\033[0m"));
+    }
     fclose(capture);
     g_assert_cmpint(dup2(saved_input, STDIN_FILENO), >=, 0);
     close(saved_input);
     fclose(input);
     gate_test = FALSE;
     inject_stage = 0;
-    g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_cmpint(result, ==, persistent_block && !terminate_block ? ERROR_OUTPUT_IO : ERROR_NONE);
     g_assert_cmpuint(premature_dispatches, ==, 0);
-    g_assert_cmpuint(gate_attempts, ==, 3);
+    if (persistent_block) {
+        g_assert_cmpuint(gate_attempts, <=, terminate_block ? 4 : 22);
+        g_assert_cmpuint(gate_attempts, >=, terminate_block ? 4 : 21);
+        g_assert_cmpint(blocked_clock, <=, 2200001);
+    } else g_assert_cmpuint(gate_attempts, ==, 3);
+}
+
+static void test_main_persistent_output_block(gconstpointer terminate) {
+    persistent_block = TRUE;
+    terminate_block = GPOINTER_TO_INT(terminate);
+    blocked_clock = 1;
+    test_main_waits_for_framing_recovery(NULL);
+    persistent_block = terminate_block = FALSE;
+    g_terminate_requested = g_last_signal = 0;
 }
 
 #if defined(__GLIBC__) || defined(__APPLE__)
@@ -486,6 +523,8 @@ static void test_dispatch_output_error_reaches_application(void) {
 }
 
 void register_main_lifecycle_tests(void) {
+    g_test_add_data_func("/main/output/persistent_block_times_out", NULL, test_main_persistent_output_block);
+    g_test_add_data_func("/main/output/persistent_block_signal_exits", GINT_TO_POINTER(1), test_main_persistent_output_block);
     g_test_add_func("/main/startup/already_raw_retries_restore", test_already_raw_retries_pending_probe_restore);
     g_test_add_func("/main/output/dispatch_error_reaches_application", test_dispatch_output_error_reaches_application);
 #if defined(__GLIBC__) || defined(__APPLE__)

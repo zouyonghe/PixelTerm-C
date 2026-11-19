@@ -168,7 +168,9 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
     }
 
     // Check if stdin is a terminal
-    if (!terminal_probe_retry_restore()) return ERROR_TERMINAL_SIZE;
+    gboolean restored_original = FALSE;
+    if (!terminal_probe_retry_restore_for_input(&restored_original)) return ERROR_TERMINAL_SIZE;
+    if (restored_original) handler->raw_mode_enabled = FALSE;
     if (handler->raw_mode_enabled) return ERROR_NONE;
     if (!isatty(STDIN_FILENO)) {
         return ERROR_NONE;

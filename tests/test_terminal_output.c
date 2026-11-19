@@ -173,6 +173,24 @@ static void test_ui_controls_report_failed_submission(gconstpointer data) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static void test_pending_controls_start_with_recovery_framing(void) {
+    OutputSink sink = {.bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    terminal_output_defer("RESTORE", TERMINAL_OUTPUT_RESTORE);
+    terminal_output_defer("\033_Ga=d,d=I,i=42,q=2\033\\", TERMINAL_OUTPUT_ONCE);
+    gboolean recovered = terminal_output_recover();
+    fclose(stream);
+    stdout = saved;
+    g_assert_true(recovered);
+    g_assert_cmpstr(sink.bytes->str, ==,
+        "\033\\RESTORE\033\\\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
+    g_string_free(sink.bytes, TRUE);
+}
+
 static int restore_mode(gint action, const struct termios *state, gpointer data) {
     (void)action; (void)state; (void)data;
     return 0;
@@ -250,6 +268,7 @@ void register_terminal_output_tests(void) {
     g_test_add_data_func("/terminal_output/ui/begin_failure", NULL, test_ui_controls_report_failed_submission);
     g_test_add_data_func("/terminal_output/ui/clear_failure", GINT_TO_POINTER(1), test_ui_controls_report_failed_submission);
     g_test_add_func("/terminal_output/session/controls_outlive_handler", test_cleanup_controls_outlive_handler);
+    g_test_add_func("/terminal_output/session/pending_controls_start_with_ST", test_pending_controls_start_with_recovery_framing);
     g_test_add_func("/terminal_output/session/unsent_gif_delete_outlives_player", test_unsent_gif_delete_outlives_player);
 #endif
 }

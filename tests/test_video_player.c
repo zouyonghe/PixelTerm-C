@@ -2668,13 +2668,17 @@ static void test_public_protocol_cycle_preserves_existing_order(void) {
         return;
     }
 
+    g_assert_true(video_player_protocol_cycle_needs_redraw(player));
     g_assert_true(video_player_cycle_protocol(player));
     assert_renderer_protocol(player, FALSE, TRUE, FALSE, FALSE);
-    video_player_cycle_protocol(player);
+    g_assert_false(video_player_protocol_cycle_needs_redraw(player));
+    g_assert_false(video_player_cycle_protocol(player));
     assert_renderer_protocol(player, FALSE, FALSE, TRUE, FALSE);
-    video_player_cycle_protocol(player);
+    g_assert_false(video_player_protocol_cycle_needs_redraw(player));
+    g_assert_false(video_player_cycle_protocol(player));
     assert_renderer_protocol(player, FALSE, FALSE, FALSE, TRUE);
-    video_player_cycle_protocol(player);
+    g_assert_true(video_player_protocol_cycle_needs_redraw(player));
+    g_assert_true(video_player_cycle_protocol(player));
     assert_renderer_protocol(player, TRUE, FALSE, FALSE, FALSE);
     g_assert_false(video_player_cycle_protocol(NULL));
 
@@ -2977,10 +2981,12 @@ typedef struct {
     gboolean delivered_but_failed;
     gboolean fail_recovery;
     gboolean fail_all;
+    GString *attempted;
 } DeleteOutput;
 
 static ssize_t delete_output_write(void *data, const char *bytes, size_t length) {
     DeleteOutput *output = data;
+    if (output->attempted) g_string_append_len(output->attempted, bytes, length);
     if (output->fail_all) { output->attempts++; errno = EIO; return -1; }
     if (output->attempts++ == 0) {
         if (output->delivered_but_failed) {
@@ -3005,7 +3011,7 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
 }
 
 static void test_failed_delete_buffer_is_discarded(void) {
-    DeleteOutput output = {.output = g_string_new(NULL)};
+    DeleteOutput output = {.output = g_string_new(NULL), .attempted = g_string_new(NULL)};
     FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     char buffer[256];
@@ -3020,7 +3026,9 @@ static void test_failed_delete_buffer_is_discarded(void) {
     stdout = saved;
     g_assert_false(submitted);
     g_assert_true(recovered);
+    g_assert_cmpstr(output.attempted->str, ==, "\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
     g_assert_cmpstr(output.output->str, ==, "\033\\");
+    g_string_free(output.attempted, TRUE);
     g_string_free(output.output, TRUE);
 }
 
@@ -3050,6 +3058,85 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_cleanup_failure_aborts_media_change(gconstpointer cycle) {
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    const gchar *path = write_seek_preview_video_fixture();
+    g_assert_cmpint(video_player_load(player, path), ==, ERROR_NONE);
+    AVFormatContext *prior_media = player->format_context;
+    guint layout_generation = player->render_layout_generation;
+    player->kitty_direct_image_id = 42;
+    player->kitty_direct_image_present = TRUE;
+    ParkedWorkerCall worker;
+    player->worker_thread = start_parked_worker_for_test("failed-cleanup-worker", &worker, player);
+    player->is_playing = TRUE;
+    DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    gboolean needs_redraw = TRUE;
+    ErrorCode result = cycle ? video_player_cycle_protocol_checked(player, &needs_redraw) :
+        video_player_load(player, "/nonexistent-pixelterm-replacement.mp4");
+    gboolean recovered = terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    g_assert_true(g_atomic_int_get(&worker.finished));
+    clear_parked_worker_for_test(&worker);
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    if (cycle) g_assert_false(needs_redraw);
+    g_assert_true(player->format_context == prior_media);
+    g_assert_cmpstr(player->filepath, ==, path);
+    g_assert_cmpuint(player->render_layout_generation, ==, layout_generation);
+    assert_renderer_protocol(player, FALSE, FALSE, FALSE, TRUE);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_null(player->worker_thread);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_true(recovered);
+    g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
+    video_player_destroy(player);
+    g_string_free(output.output, TRUE);
+}
+
+static void test_checked_protocol_cycle_reports_resume_failure(void) {
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, FALSE, TRUE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    ParkedWorkerCall worker;
+    player->worker_thread = start_parked_worker_for_test("failed-cycle-resume-worker", &worker, player);
+    player->is_playing = TRUE;
+    DeleteOutput output = {.output = g_string_new(NULL), .fail_all = TRUE};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    FILE *recovery = tmpfile();
+    g_assert_nonnull(capture);
+    g_assert_nonnull(recovery);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    terminal_output_defer_recovery();
+    gboolean needs_redraw = TRUE;
+    ErrorCode result = video_player_cycle_protocol_checked(player, &needs_redraw);
+    stdout = recovery;
+    gboolean recovered = terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    fclose(recovery);
+    g_assert_true(g_atomic_int_get(&worker.finished));
+    clear_parked_worker_for_test(&worker);
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_false(needs_redraw);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_null(player->worker_thread);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_true(recovered);
+    assert_renderer_protocol(player, FALSE, FALSE, FALSE, TRUE);
+    video_player_destroy(player);
+    g_string_free(output.output, TRUE);
+}
+
 static void test_hide_failure_does_not_emit_frame(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -3061,7 +3148,8 @@ static void test_hide_failure_does_not_emit_frame(void) {
     g_string_assign(frame->rendered, "\033_Ga=T,f=24,s=1,v=1;AAAA\033\\");
     frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
     video_player_queue_push(player, frame);
-    DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE, .fail_recovery = TRUE};
+    DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE, .fail_recovery = TRUE,
+        .attempted = g_string_new(NULL)};
     FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
@@ -3074,7 +3162,13 @@ static void test_hide_failure_does_not_emit_frame(void) {
     player->kitty_direct_image_id = 0;
     video_player_destroy(player);
     g_assert_false(rendered);
+    const gchar *hide = "\033_Ga=d,d=i,i=42,q=2\033\\";
+    const gchar *attempt = strstr(output.attempted->str, hide);
+    g_assert_nonnull(attempt);
+    g_assert_null(strstr(attempt + strlen(hide), hide));
+    g_assert_null(strstr(output.attempted->str, "\033_Ga=T,"));
     g_assert_null(strstr(output.output->str, "\033_Ga=T,"));
+    g_string_free(output.attempted, TRUE);
     g_string_free(output.output, TRUE);
 }
 
@@ -3382,6 +3476,9 @@ static void test_protocol_cycle_restarts_active_workers(void) {
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)
+    g_test_add_data_func("/video_player/load/cleanup_failure_preserves_media", NULL, test_cleanup_failure_aborts_media_change);
+    g_test_add_data_func("/video_player/public_api/protocol_cycle_cleanup_failure", GINT_TO_POINTER(1), test_cleanup_failure_aborts_media_change);
+    g_test_add_func("/video_player/public_api/protocol_cycle_resume_failure", test_checked_protocol_cycle_reports_resume_failure);
     g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
     g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
     g_test_add_func("/video_player/direct_kitty/hide_failure_blocks_frame", test_hide_failure_does_not_emit_frame);

@@ -164,7 +164,8 @@ void video_player_set_render_area(VideoPlayer *player,
 /**
  * @brief Clears the most recently rendered video area from the terminal.
  *
- * @return ERROR_OUTPUT_IO on failed submission; the previous line cache is retained.
+ * @return ERROR_OUTPUT_IO on failed submission. Any attempted submission
+ * invalidates the previous line cache because delivery may have succeeded.
  * @note Call from the player-owning main context because this writes stdout.
  */
 ErrorCode video_player_clear_render_area(VideoPlayer *player);
@@ -199,6 +200,11 @@ gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player);
  * @note Call from the player-owning main context while playback is stopped.
  */
 gboolean video_player_cycle_protocol(VideoPlayer *player);
+
+/* Checked cycle for callers that must distinguish output failure from no redraw.
+ * On failure, needs_redraw is FALSE; a failed release preserves protocol and
+ * leaves playback paused. needs_redraw may be NULL. */
+ErrorCode video_player_cycle_protocol_checked(VideoPlayer *player, gboolean *needs_redraw);
 
 /**
  * @brief Returns a consistent snapshot of the last rendered frame bounds.
