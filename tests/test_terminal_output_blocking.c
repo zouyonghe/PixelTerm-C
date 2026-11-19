@@ -42,11 +42,17 @@ static void test_full_pipe_returns(gconstpointer data) {
         fflush(saved);
         stdout = stream;
         gboolean submitted;
-        if (GPOINTER_TO_INT(data) == 1) {
-            g_assert_cmpint(fputs("BUFFERED", stream), >=, 0);
+        gboolean session = GPOINTER_TO_INT(data) == 3;
+        if (session) g_assert_true(terminal_output_begin_session());
+        if (GPOINTER_TO_INT(data) == 1 || session) {
+            g_assert_cmpint(fputs("BUFFERED", stdout), >=, 0);
             submitted = terminal_output_flush();
         } else {
             submitted = terminal_output_write("FRAME", 5);
+        }
+        if (session) {
+            g_assert_false(terminal_output_end_session());
+            g_assert_true(stdout == stream);
         }
         int after = fcntl(pipefd[1], F_GETFL);
         stdout = recovery;
@@ -64,8 +70,54 @@ static void test_full_pipe_returns(gconstpointer data) {
     g_test_trap_assert_passed();
 }
 
+typedef struct { int fd; GByteArray *bytes; } PipeReader;
+
+static gpointer read_delayed_pipe(gpointer data) {
+    PipeReader *reader = data;
+    g_usleep(20000);
+    guchar buffer[4096];
+    ssize_t count;
+    while ((count = read(reader->fd, buffer, sizeof(buffer))) > 0)
+        g_byte_array_append(reader->bytes, buffer, (guint)count);
+    return NULL;
+}
+
+static void test_transient_pipe_preserves_payload(void) {
+    if (g_test_subprocess()) {
+        int pipefd[2];
+        g_assert_cmpint(pipe(pipefd), ==, 0);
+        FILE *stream = fdopen(pipefd[1], "w");
+        g_assert_nonnull(stream);
+        PipeReader reader = {.fd = pipefd[0], .bytes = g_byte_array_new()};
+        GThread *thread = g_thread_new("pipe-reader", read_delayed_pipe, &reader);
+        gsize length = 256 * 1024;
+        gchar *payload = g_malloc(length);
+        for (gsize i = 0; i < length; i++) payload[i] = (gchar)(i % 251);
+        FILE *saved = stdout;
+        fflush(saved);
+        stdout = stream;
+        g_assert_true(terminal_output_begin_session());
+        gboolean submitted = fwrite(payload, 1, length, stdout) == length && terminal_output_flush();
+        g_assert_true(terminal_output_end_session());
+        g_assert_true(stdout == stream);
+        stdout = saved;
+        fclose(stream);
+        g_thread_join(thread);
+        close(pipefd[0]);
+        g_assert_true(submitted);
+        g_assert_cmpmem(reader.bytes->data, reader.bytes->len, payload, length);
+        g_byte_array_unref(reader.bytes);
+        g_free(payload);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_assert_passed();
+}
+
 void register_terminal_output_blocking_tests(void) {
+    g_test_add_func("/terminal_output/transient_pipe_preserves_payload", test_transient_pipe_preserves_payload);
     g_test_add_data_func("/terminal_output/full_pipe/payload", GINT_TO_POINTER(0), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/full_pipe/buffered", GINT_TO_POINTER(1), test_full_pipe_returns);
+    g_test_add_data_func("/terminal_output/full_pipe/legacy_session", GINT_TO_POINTER(3), test_full_pipe_returns);
     g_test_add_data_func("/terminal_output/stopped_terminal", GINT_TO_POINTER(2), test_full_pipe_returns);
 }

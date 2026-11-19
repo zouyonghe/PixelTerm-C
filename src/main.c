@@ -65,7 +65,7 @@ static ErrorCode finish_application(InputHandler *input_handler, ErrorCode prima
     return primary_error != ERROR_NONE ? primary_error : cleanup_error;
 }
 
-static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
+static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_enabled) {
     if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
     InputHandler *input_handler = input_handler_create();
     if (!input_handler) {
@@ -237,6 +237,13 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
     if (error == ERROR_NONE) error = app->last_error;
     return finish_application(input_handler, error);
+}
+
+static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
+    if (!terminal_output_begin_session()) return ERROR_OUTPUT_IO;
+    ErrorCode error = run_application_loop(app, alt_screen_enabled);
+    gboolean output_restored = terminal_output_end_session();
+    return error != ERROR_NONE ? error : output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 int main(int argc, char *argv[]) {

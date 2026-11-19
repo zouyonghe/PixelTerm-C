@@ -12,9 +12,13 @@ typedef enum {
  * emit UI bytes until ready/flush succeeds. Background failures wait 100 ms. */
 gboolean terminal_output_ready(gint64 now_us);
 gboolean terminal_output_flush(void);
+/* Scope legacy stdio rendering through the same bounded descriptor writer.
+ * Memory/test streams are left untouched. End restores the caller's stdout. */
+gboolean terminal_output_begin_session(void);
+gboolean terminal_output_end_session(void);
 /* Checked payload submission. Descriptor writes temporarily use O_NONBLOCK so
- * a full pipe or flow-controlled terminal cannot stall cleanup. Restore original
- * flags after each submission. Payloads are never replayed after failure. */
+ * a full pipe or flow-controlled terminal cannot stall cleanup. Poll for up to
+ * 100 ms without progress, then restore flags. Failed payloads are never replayed. */
 gboolean terminal_output_write(const char *bytes, gsize length);
 /* Copies bytes and prefixes ST. ONCE becomes ST-only after uncertain delivery;
  * RESTORE is retained until success or process exit (one final attempt).
