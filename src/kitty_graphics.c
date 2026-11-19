@@ -129,9 +129,12 @@ gboolean kitty_graphics_recover_failed_output(void) {
     return kitty_graphics_retry_pending_deletes();
 }
 
-void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
-    if (now_us < next_cleanup_retry_us) return;
-    if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;
+gboolean kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
+    if (g_queue_is_empty(&pending_deletes)) return TRUE;
+    if (now_us < next_cleanup_retry_us) return FALSE;
+    if (kitty_graphics_retry_pending_deletes()) return TRUE;
+    next_cleanup_retry_us = now_us + 100000;
+    return FALSE;
 }
 
 gboolean kitty_graphics_retry_pending_deletes(void) {

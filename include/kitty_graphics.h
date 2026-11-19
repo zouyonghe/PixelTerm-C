@@ -22,11 +22,13 @@ void kitty_graphics_defer_image_delete(guint32 image_id);
 void kitty_graphics_defer_output_recovery(void);
 /* Discard unsent bytes after failed output, before any framing recovery. */
 void kitty_graphics_discard_failed_output(void);
-/* Purge failed bytes, queue ST, and attempt recovery before returning. */
+/* Purge failed bytes, queue ST, and attempt recovery before returning.
+ * TRUE means no output remains pending; FALSE means ST remains queued for retry. */
 gboolean kitty_graphics_recover_failed_output(void);
 gboolean kitty_graphics_retry_pending_deletes(void);
-/* Background retries are throttled; explicit allocation/shutdown retries are not. */
-void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us);
+/* TRUE permits UI output. FALSE means cleanup/recovery is pending, including
+ * while waiting for the retry deadline. Explicit allocation/shutdown retries are immediate. */
+gboolean kitty_graphics_retry_pending_deletes_if_due(gint64 now_us);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */
 #define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)

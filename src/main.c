@@ -119,11 +119,14 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             error = ERROR_TERMINAL_SIZE;
             break;
         }
-        kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time());
         if (g_terminate_requested) {
             app->running = FALSE;
             input_handler->should_exit = TRUE;
             break;
+        }
+        if (!kitty_graphics_retry_pending_deletes_if_due(g_get_monotonic_time())) {
+            usleep(k_input_poll_sleep_us);
+            continue;
         }
         
         // Check for terminal size changes
