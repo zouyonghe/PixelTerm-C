@@ -34,6 +34,7 @@ static gint g_browser_scan_calls;
 static ErrorCode g_browser_scan_error;
 static gboolean g_browser_create_failure;
 static gint g_preloader_reset_calls;
+static gint g_live_preloader_resets, g_preloader_enables;
 
 typedef void (*RenderCaptureFunc)(gpointer user_data);
 
@@ -147,13 +148,14 @@ static void test_open_book_failure_preserves_book(void) {
 }
 
 ErrorCode app_preloader_enable(PixelTermApp *app, gboolean queue_tasks) {
-    (void)app;
+    if (app->preload_enabled) g_preloader_enables++;
     (void)queue_tasks;
     return ERROR_NONE;
 }
 
 void app_preloader_reset(PixelTermApp *app) {
-    (void)app;
+    if (app->preloader) g_live_preloader_resets++;
+    app->preloader = NULL;
     g_preloader_reset_calls++;
 }
 
@@ -185,6 +187,10 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
 
 ErrorCode app_render_current_image(PixelTermApp *app) {
     g_assert_nonnull(app->file_manager.entries);
+    g_assert_null(app->preloader);
+    g_assert_false(app->preload_enabled);
+    g_assert_cmpint(g_live_preloader_resets, ==, 0);
+    g_assert_cmpint(g_preloader_enables, ==, 0);
     g_render_calls++;
     if (g_render_error == ERROR_OUTPUT_IO) terminal_output_write("partial-render", 14);
     return g_render_error;
@@ -989,6 +995,15 @@ static void test_open_loaded_file_output(gconstpointer data) {
     app.info_visible = TRUE;
     app.help_visible = TRUE;
     app.image_files = g_list_append(NULL, g_strdup("old.png"));
+    app.return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+    app.image_zoom = 2.0;
+    app.image_pan_x = 3.0;
+    app.image_pan_y = 4.0;
+    app.preloader = (ImagePreloader *)0x1;
+    app.preload_enabled = TRUE;
+    app.async.image_pending = TRUE;
+    app.async.image_path = g_strdup("old.png");
+    gchar *old_async_path = app.async.image_path;
     app.total_images = 1;
     GList *old_images = app.image_files;
     app.preview.selected_link = old_images;
@@ -1007,6 +1022,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_book_entry_calls = g_render_calls = 0;
     g_book_open_calls = g_book_close_calls = g_browser_scan_calls = 0;
     g_old_book_close_calls = g_old_toc_free_calls = 0;
+    g_live_preloader_resets = g_preloader_enables = 0;
     FileManagerOutput sink = {.fail = clear_failure, .fail_after_clear = redraw_failure,
                              .attempted = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, file_manager_output_write);
@@ -1057,6 +1073,17 @@ static void test_open_loaded_file_output(gconstpointer data) {
         }
         g_assert_nonnull(strstr(sink.attempted->str, "PixelTerm File Manager"));
         g_assert_nonnull(strstr(sink.attempted->str, book ? "book.pdf" : "image.png"));
+    } else if (!book && render_failure) {
+        g_assert_true(app.image_files == old_images);
+        g_assert_true(app.current_directory == old_directory);
+        g_assert_true(app.preview.selected_link == old_images);
+        g_assert_cmpint(app.preview.selected_link_index, ==, 0);
+        g_assert_cmpint(app.total_images, ==, 1);
+        g_assert_cmpstr(app_get_current_filepath(&app), ==, "old.png");
+        g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_PREVIEW_VIRTUAL);
+        g_assert_cmpfloat(app.image_zoom, ==, 2.0);
+        g_assert_cmpfloat(app.image_pan_x, ==, 3.0);
+        g_assert_cmpfloat(app.image_pan_y, ==, 4.0);
     } else if (book && (entry_failure || render_failure)) {
         g_assert_cmpmem(&app.book, sizeof(app.book), &old_book, sizeof(old_book));
         g_assert_cmpint(g_book_close_calls, ==, 1);
@@ -1079,6 +1106,12 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_assert_cmpint(g_book_entry_calls, ==, book && !clear_failure && !preparation_failure && !load_failure ? 1 : 0);
     g_assert_cmpint(g_render_calls, ==, !clear_failure && !entry_failure && !preparation_failure && !load_failure ? 1 : 0);
     if (clear_failure || preparation_failure || load_failure || entry_failure || render_failure) {
+        g_assert_true(app.preloader == (ImagePreloader *)0x1);
+        g_assert_true(app.preload_enabled);
+        g_assert_cmpint(g_live_preloader_resets, ==, 0);
+        g_assert_cmpint(g_preloader_enables, ==, 0);
+        g_assert_true(app.async.image_path == old_async_path);
+        g_assert_true(app.async.image_pending);
         g_assert_true(app.info_visible);
         g_assert_true(app.help_visible);
         g_assert_true(app.file_manager.entries == entries);
@@ -1112,6 +1145,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     cleanup_file_manager_app(&app);
     g_list_free_full(app.image_files, g_free);
     g_free(app.current_directory);
+    g_free(app.async.image_path);
     clear_browser_test_files(NULL);
     g_free(path);
     g_free(dir);

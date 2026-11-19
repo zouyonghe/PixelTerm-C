@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "app.h"
+#include "app_preview_transaction_internal.h"
 #include "app_preview_render_internal.h"
 #include "ui_render_utils.h"
 #include "terminal_output.h"
@@ -22,6 +23,8 @@ typedef struct {
     gint transition_calls;
     ErrorCode prepare_error;
     ErrorCode transition_error;
+    ErrorCode renderer_error;
+    gint preload_mutations;
 } PreviewGridStubState;
 
 typedef void (*PreviewGridCaptureFunc)(gpointer user_data);
@@ -240,6 +243,60 @@ static void test_enter_preview_transition_failure_retains_list(void) {
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_true(app.needs_redraw);
     g_assert_true(app.needs_screen_clear);
+    cleanup_preview_app(&app);
+}
+
+static void test_preview_transaction(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    PixelTermApp app;
+    init_preview_app(&app, 3, 20, 80, 30);
+    g_free(app.image_files->data);
+    app.image_files->data = g_strdup("invalid");
+    app.mode = APP_MODE_SINGLE;
+    app.current_index = 2;
+    app.preview.selected = 2;
+    app.preview.scroll = 3;
+    app.preview.selected_link = g_list_last(app.image_files);
+    app.preview.selected_link_index = 2;
+    app.info_visible = app.help_visible = TRUE;
+    app.return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+    app.preload_enabled = TRUE;
+    app.preloader = (ImagePreloader *)0x1;
+    GList *images = app.image_files;
+    PreviewState preview = app.preview;
+    g_preview_grid_stub_state.renderer_error = scenario == 1 ? ERROR_MEMORY_ALLOC : ERROR_NONE;
+    PreviewOutput sink = {.fail_at = scenario == 2 ? 2 : 0};
+    FILE *stream = test_output_stream(&sink, preview_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_enter_preview_and_render(&app);
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, scenario == 1 ? ERROR_MEMORY_ALLOC : scenario == 2 ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_assert_true(app.preloader == (ImagePreloader *)0x1);
+    g_assert_true(app.preload_enabled);
+    g_assert_cmpint(g_preview_grid_stub_state.preload_mutations, ==, scenario == 0 ? 1 : 0);
+    if (scenario) {
+        g_assert_true(app.image_files == images);
+        g_assert_cmpint(app.total_images, ==, 3);
+        g_assert_cmpint(app.current_index, ==, 2);
+        g_assert_cmpmem(&app.preview, sizeof(app.preview), &preview, sizeof(preview));
+        g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+        g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_PREVIEW_VIRTUAL);
+        g_assert_true(app.info_visible);
+        g_assert_true(app.help_visible);
+        g_assert_true(app.needs_redraw);
+        g_assert_true(app.needs_screen_clear);
+    } else {
+        g_assert_cmpint(app.mode, ==, APP_MODE_PREVIEW);
+        g_assert_cmpint(app.total_images, ==, 2);
+        g_assert_cmpint(app.current_index, ==, 1);
+        g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_PREVIEW);
+        g_assert_cmpstr(app.preview.selected_link->data, ==, "img-2");
+    }
     cleanup_preview_app(&app);
 }
 
@@ -556,6 +613,10 @@ ImageRenderer* app_create_grid_renderer(const PixelTermApp *app,
     (void)content_width;
     (void)content_height;
     g_preview_grid_stub_state.create_grid_renderer_calls++;
+    if (g_preview_grid_stub_state.renderer_error != ERROR_NONE) {
+        if (out_error) *out_error = g_preview_grid_stub_state.renderer_error;
+        return NULL;
+    }
     if (out_error) {
         *out_error = ERROR_NONE;
     }
@@ -567,7 +628,13 @@ gboolean app_has_images(const PixelTermApp *app) {
 }
 
 void app_preloader_clear_queue(PixelTermApp *app) {
-    (void)app;
+    if (app->preloader && app->preload_enabled) g_preview_grid_stub_state.preload_mutations++;
+}
+
+ErrorCode preloader_clear_queue(ImagePreloader *preloader) {
+    (void)preloader;
+    g_preview_grid_stub_state.preload_mutations++;
+    return ERROR_NONE;
 }
 
 void app_preloader_queue_directory(PixelTermApp *app) {
@@ -652,7 +719,7 @@ ErrorCode app_prepare_mode_entry(PixelTermApp *app, gboolean clear_preloader_que
     g_preview_grid_stub_state.prepare_calls++;
     if (g_preview_grid_stub_state.prepare_error != ERROR_NONE)
         app->last_error = g_preview_grid_stub_state.prepare_error;
-    (void)clear_preloader_queue;
+    if (clear_preloader_queue) app_preloader_clear_queue(app);
     return g_preview_grid_stub_state.prepare_error;
 }
 
@@ -671,8 +738,7 @@ ErrorCode gif_player_stop(GifPlayer *player) {
 }
 
 gboolean is_valid_media_file(const char *filepath) {
-    (void)filepath;
-    return TRUE;
+    return g_strcmp0(filepath, "invalid") != 0;
 }
 
 ErrorCode preloader_add_task(ImagePreloader *preloader,
@@ -685,6 +751,7 @@ ErrorCode preloader_add_task(ImagePreloader *preloader,
     (void)priority;
     (void)target_width;
     (void)target_height;
+    g_preview_grid_stub_state.preload_mutations++;
     return ERROR_NONE;
 }
 
@@ -699,6 +766,9 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_preview_grid/transaction/success", GINT_TO_POINTER(0), test_preview_transaction);
+    g_test_add_data_func("/app_preview_grid/transaction/renderer_failure", GINT_TO_POINTER(1), test_preview_transaction);
+    g_test_add_data_func("/app_preview_grid/transaction/final_flush_failure", GINT_TO_POINTER(2), test_preview_transaction);
     g_test_add_data_func("/app_preview_grid/output/full_backoff", GINT_TO_POINTER(0), test_preview_backoff_blocks_ui);
     g_test_add_data_func("/app_preview_grid/output/selection_backoff", GINT_TO_POINTER(1), test_preview_backoff_blocks_ui);
     g_test_add_func("/app_preview_grid/entry/previous_error", test_enter_preview_with_previous_error);

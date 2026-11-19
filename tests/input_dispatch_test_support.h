@@ -6,6 +6,8 @@
 typedef struct {
     gint preview_click_calls;
     gint preview_render_calls;
+    gboolean preview_render_needs_screen_clear;
+    gboolean preview_render_suppress_full_clear;
     gint preview_selection_render_calls;
     gint book_preview_click_calls;
     gint book_preview_render_calls;

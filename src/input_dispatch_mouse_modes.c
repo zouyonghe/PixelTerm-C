@@ -1,4 +1,5 @@
 #include "input_dispatch_mouse_modes_internal.h"
+#include "app_preview_transaction_internal.h"
 
 #include <math.h>
 
@@ -126,12 +127,7 @@ void input_dispatch_handle_mouse_double_click_single(PixelTermApp *app, const In
     (void)event;
     app->input.single_click.pending = FALSE;
 
-    if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
-        app->return_to_mode = RETURN_MODE_PREVIEW;
-    }
-    if (record_output_error(app, app_enter_preview(app)) == ERROR_NONE) {
-        record_output_error(app, app_render_preview_grid(app));
-    }
+    record_output_error(app, app_enter_preview_and_render(app));
 }
 
 void input_dispatch_handle_mouse_double_click_preview(PixelTermApp *app, const InputEvent *event) {

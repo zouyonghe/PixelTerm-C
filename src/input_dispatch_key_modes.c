@@ -146,6 +146,8 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
                     app->current_index = saved_index;
                     app->return_to_mode = saved_return_mode;
                     app->needs_redraw = TRUE;
+                    app->needs_screen_clear = TRUE;
+                    app->suppress_full_clear = FALSE;
                     if (entered != ERROR_OUTPUT_IO) {
                         record_output_error(app, app_render_preview_grid(app));
                     }

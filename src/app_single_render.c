@@ -468,7 +468,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         return ERROR_OUTPUT_IO;
     }
     // Clear screen and reset terminal state
-    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->info_visible && !app->help_visible;
+    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->needs_screen_clear &&
+                                   !app->info_visible && !app->help_visible;
     if (allow_partial_clear) {
         app->suppress_full_clear = FALSE;
         printf("\033[H\033[0m");
@@ -481,6 +482,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
             app->suppress_full_clear = FALSE;
         }
         APP_SINGLE_RENDER_CALL(ui_clear_screen_for_refresh, ui_clear_screen_for_refresh, app);
+        app->needs_screen_clear = FALSE;
     }
     if (app->video_player) {
         video_player_set_render_area(app->video_player,

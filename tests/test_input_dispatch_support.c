@@ -293,7 +293,8 @@ ErrorCode app_handle_mouse_click_preview(PixelTermApp *app,
 }
 
 ErrorCode app_render_preview_grid(PixelTermApp *app) {
-    (void)app;
+    g_input_dispatch_stub_state.preview_render_needs_screen_clear = app->needs_screen_clear;
+    g_input_dispatch_stub_state.preview_render_suppress_full_clear = app->suppress_full_clear;
     g_input_dispatch_stub_state.preview_render_calls++;
     return g_input_dispatch_stub_state.preview_render_result;
 }
@@ -473,15 +474,16 @@ ErrorCode app_render_by_mode(PixelTermApp *app) {
 }
 
 ErrorCode app_enter_file_manager(PixelTermApp *app) {
+    g_input_dispatch_stub_state.enter_file_manager_calls++;
     g_input_dispatch_stub_state.last_enter_file_manager_index = app->current_index;
     if (g_input_dispatch_stub_state.enter_file_manager_renders_before_error) {
         app_set_mode(app, APP_MODE_FILE_MANAGER);
-        app_render_file_manager(app);
+        ErrorCode rendered = app_render_file_manager(app);
+        if (rendered != ERROR_NONE) return rendered;
     }
     if (g_input_dispatch_stub_state.enter_file_manager_result == ERROR_NONE) {
         app_set_mode(app, APP_MODE_FILE_MANAGER);
     }
-    g_input_dispatch_stub_state.enter_file_manager_calls++;
     return g_input_dispatch_stub_state.enter_file_manager_result;
 }
 

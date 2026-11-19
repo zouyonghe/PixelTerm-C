@@ -48,7 +48,23 @@ static void test_file_manager_double_click_skips_rerender_after_mode_change(void
     g_assert_cmpint(app.mode, ==, APP_MODE_BOOK_PREVIEW);
 }
 
+static void test_preview_render_failure_preserves_navigation(void) {
+    PixelTermApp app = {0};
+    InputEvent event = make_double_click_event(1, 1);
+    app.mode = APP_MODE_SINGLE;
+    app.return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.preview_render_result = ERROR_OUTPUT_IO;
+    input_dispatch_handle_mouse_double_click_single(&app, &event);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_PREVIEW_VIRTUAL);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, 1);
+}
+
 void register_input_dispatch_mouse_modes_tests(void) {
+    g_test_add_func("/input_dispatch_mouse_modes/preview_render_failure_preserves_navigation",
+                    test_preview_render_failure_preserves_navigation);
     g_test_add_func("/input_dispatch_mouse_modes/file_manager_double_click/rerenders_when_mode_stays_file_manager",
                     test_file_manager_double_click_rerenders_when_mode_stays_file_manager);
     g_test_add_func("/input_dispatch_mouse_modes/file_manager_double_click/skips_rerender_after_mode_change",

@@ -381,7 +381,8 @@ static void test_preview_entry_recovery(gconstpointer data) {
     gboolean render_fails = GPOINTER_TO_INT(data);
     PixelTermApp app = {.mode = APP_MODE_PREVIEW,
                         .return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL,
-                        .current_index = 2, .total_images = 10};
+                        .current_index = 2, .total_images = 10,
+                        .suppress_full_clear = TRUE};
     app.preview.selected = 5;
     app.preview.scroll = 3;
     app.file_manager.previous_selected_entry = 7;
@@ -402,8 +403,30 @@ static void test_preview_entry_recovery(gconstpointer data) {
     g_assert_cmpint(app.preview.scroll, ==, 3);
     g_assert_cmpint(app.file_manager.previous_selected_entry, ==, 7);
     g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, 1);
+    g_assert_true(g_input_dispatch_stub_state.preview_render_needs_screen_clear);
+    g_assert_false(g_input_dispatch_stub_state.preview_render_suppress_full_clear);
     g_assert_cmpint(g_input_dispatch_stub_state.exit_preview_calls, ==, 0);
     g_assert_cmpint(app.last_error, ==, render_fails ? ERROR_OUTPUT_IO : ERROR_NONE);
+}
+
+static void test_preview_entry_render_output_failure(void) {
+    PixelTermApp app = {.mode = APP_MODE_PREVIEW, .current_index = 2, .total_images = 10};
+    app.preview.selected = 5;
+    InputEvent event = make_key_event(KEY_TAB);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_file_manager_result = ERROR_FILE_NOT_FOUND;
+    g_input_dispatch_stub_state.enter_file_manager_renders_before_error = TRUE;
+    g_input_dispatch_stub_state.file_manager_render_result = ERROR_OUTPUT_IO;
+
+    input_dispatch_core_handle_event(&app, NULL, &event);
+
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.mode, ==, APP_MODE_PREVIEW);
+    g_assert_cmpint(app.current_index, ==, 2);
+    g_assert_cmpint(g_input_dispatch_stub_state.enter_file_manager_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.exit_preview_calls, ==, 0);
 }
 
 static void test_preview_navigation_queue(gconstpointer data) {
@@ -455,6 +478,7 @@ void register_input_dispatch_core_tests(void) {
         }
     }
     g_test_add_data_func("/input_dispatch_core/preview_entry/recovery", GINT_TO_POINTER(0), test_preview_entry_recovery);
+    g_test_add_func("/input_dispatch_core/preview_entry/entry_render_output_failure", test_preview_entry_render_output_failure);
     g_test_add_data_func("/input_dispatch_core/preview_entry/recovery_output_failure", GINT_TO_POINTER(1), test_preview_entry_recovery);
     g_test_add_data_func("/input_dispatch_core/preview_errors/grid", GINT_TO_POINTER(0), test_preview_key_output_errors);
     g_test_add_data_func("/input_dispatch_core/preview_errors/selection", GINT_TO_POINTER(1), test_preview_key_output_errors);

@@ -18,6 +18,9 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     if (result != ERROR_NONE) {
         app->info_visible = info_was_visible;
         app->help_visible = help_was_visible;
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
     }
     return result;
 }
@@ -34,12 +37,15 @@ ErrorCode app_display_help(PixelTermApp *app) {
         app->suppress_full_clear = FALSE;
     }
     ErrorCode err = app_render_by_mode(app);
+    if (err == ERROR_NONE && app->help_visible && !app_is_single_mode(app)) {
+        err = app_render_help_overlay(app);
+    }
     if (err != ERROR_NONE) {
         app->help_visible = help_was_visible;
-        return err;
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
     }
-    if (app->help_visible && !app_is_single_mode(app)) err = app_render_help_overlay(app);
-    if (err != ERROR_NONE) app->help_visible = help_was_visible;
     return err;
 }
 
@@ -113,6 +119,9 @@ void app_process_async_render(PixelTermApp *app) {
     app->suppress_full_clear = TRUE;
     app_clear_async_render_state(app);
     if (app_render_current_image(app) == ERROR_OUTPUT_IO) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        app->suppress_full_clear = FALSE;
         app->async.render_force_sync = TRUE;
         app->async.image_pending = TRUE;
         app->async.image_index = app->current_index;

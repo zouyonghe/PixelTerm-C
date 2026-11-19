@@ -2,6 +2,7 @@
 
 #include "input_dispatch_media_internal.h"
 #include "ui_render_utils.h"
+#include "app_preview_transaction_internal.h"
 #include "terminal_output.h"
 
 static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
@@ -194,14 +195,14 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     gboolean was_playing = video_player_is_playing(app->video_player);
     VideoPlayer *player = app->video_player;
     gboolean redraw = video_player_protocol_cycle_needs_redraw(player);
-    if ((was_playing || redraw) && app->force_kitty && !ui_clear_kitty_images(app)) {
-        app->last_error = ERROR_OUTPUT_IO;
-        return;
-    }
     if (was_playing) {
         if (record_output_error(app, video_player_stop(app->video_player)) != ERROR_NONE) {
             return;
         }
+    }
+    if ((was_playing || redraw) && app->force_kitty && !ui_clear_kitty_images(app)) {
+        app->last_error = ERROR_OUTPUT_IO;
+        return;
     }
     if ((was_playing || redraw) &&
         record_output_error(app, video_player_clear_render_area(player)) != ERROR_NONE) return;
@@ -329,12 +330,7 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
             break;
         case KEY_ENTER:
         case 13:
-            if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
-                app->return_to_mode = RETURN_MODE_PREVIEW;
-            }
-            if (record_output_error(app, app_enter_preview(app)) == ERROR_NONE) {
-                record_output_error(app, app_render_preview_grid(app));
-            }
+            record_output_error(app, app_enter_preview_and_render(app));
             break;
         default:
             break;

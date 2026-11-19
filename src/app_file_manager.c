@@ -1,6 +1,7 @@
 #include "app.h"
 #include "app_file_manager_internal.h"
 #include "app_book_transaction_internal.h"
+#include "preload_control.h"
 #include "terminal_output.h"
 
 gint app_file_manager_compare_names(gconstpointer a, gconstpointer b) {
@@ -554,6 +555,35 @@ ErrorCode app_file_manager_right(PixelTermApp *app) {
     return app_file_manager_enter(app);
 }
 
+/* Retain media and navigation ownership through the first single-image render. */
+static ErrorCode app_file_manager_open_image(PixelTermApp *app, const char *path) {
+    PixelTermApp staged = *app;
+    staged.image_files = NULL;
+    staged.current_directory = NULL;
+    staged.preloader = NULL;
+    staged.preload_enabled = FALSE;
+    staged.async = (AsyncState){0};
+    ErrorCode error = app_load_single_file(&staged, path);
+    if (error != ERROR_NONE) return error;
+    error = app_transition_mode(&staged, APP_MODE_SINGLE);
+    if (error == ERROR_NONE) error = app_render_current_image(&staged);
+    if (error != ERROR_NONE) {
+        g_list_free_full(staged.image_files, g_free);
+        g_free(staged.current_directory);
+        g_free(staged.async.image_path);
+    } else {
+        g_list_free_full(app->image_files, g_free);
+        g_free(app->current_directory);
+        g_free(app->async.image_path);
+        app_preloader_reset(app);
+        staged.preloader = app->preloader;
+        staged.preload_enabled = app->preload_enabled;
+        *app = staged;
+        if (app->preload_enabled) (void)app_preloader_enable(app, TRUE);
+    }
+    return error;
+}
+
 // Enter selected directory or open file in file manager
 ErrorCode app_file_manager_enter(PixelTermApp *app) {
     if (!app) {
@@ -627,11 +657,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         gboolean help_visible = app->help_visible;
         app->needs_redraw = TRUE;
         error = is_book ? app_open_book_preview(app, selected_path)
-                        : app_load_single_file(app, selected_path);
-        if (error == ERROR_NONE && !is_book) {
-            error = app_transition_mode(app, APP_MODE_SINGLE);
-            if (error == ERROR_NONE) error = app_render_current_image(app);
-        }
+                        : app_file_manager_open_image(app, selected_path);
         if (error != ERROR_NONE) {
             /* Book cleanup or preview entry can change mode before failing. */
             app_set_mode(app, APP_MODE_FILE_MANAGER);

@@ -699,8 +699,9 @@ static void test_failed_help_redraw_restores_visibility(gconstpointer data) {
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(app.help_visible, ==, was_visible);
     g_assert_true(app.info_visible);
-    g_assert_cmpint(app.needs_screen_clear, ==, !was_visible);
-    g_assert_cmpint(app.suppress_full_clear, ==, was_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
     g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.render_by_mode_result, ==, ERROR_NONE);
     g_assert_true(recovered);
@@ -729,6 +730,9 @@ static void test_help_overlay_output_failure_rolls_back(gconstpointer data) {
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_false(app.help_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
     g_assert_true(recovered);
     g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
     g_string_free(sink.bytes, TRUE);
@@ -788,6 +792,9 @@ static void test_failed_async_frame_retries_after_recovery(gconstpointer data) {
     stdout = stream;
     runtime_process_async_render(&app);
     gboolean pending_after_failure = app.async.image_pending;
+    gboolean redraw_after_failure = app.needs_redraw;
+    gboolean clear_after_failure = app.needs_screen_clear;
+    gboolean suppress_after_failure = app.suppress_full_clear;
     gchar *pending_path = g_strdup(app.async.image_path);
     if (evict) preloader_cache_remove(app.preloader, "still.png");
     sink.fail = FALSE;
@@ -796,6 +803,12 @@ static void test_failed_async_frame_retries_after_recovery(gconstpointer data) {
     fclose(stream);
     stdout = saved;
     g_assert_true(pending_after_failure);
+    g_assert_true(redraw_after_failure);
+    g_assert_true(clear_after_failure);
+    g_assert_false(suppress_after_failure);
+    g_assert_cmpint(g_app_single_render_stub_state.clear_screen_calls, ==, 1);
+    g_assert_cmpint(g_app_single_render_stub_state.clear_area_calls, ==, 1);
+    g_assert_false(app.needs_screen_clear);
     g_assert_cmpstr(pending_path, ==, "still.png");
     g_assert_true(recovered);
     g_assert_false(app.async.image_pending);
@@ -824,6 +837,9 @@ static void test_info_render_failure_restores_visibility(gconstpointer data) {
     g_assert_cmpint(runtime_display_image_info(&app), ==, ERROR_OUTPUT_IO);
     g_assert_cmpint(app.info_visible, ==, was_visible);
     g_assert_cmpint(app.help_visible, ==, help_was_visible);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_false(app.suppress_full_clear);
     destroy_render_test_app(&app);
 }
 
