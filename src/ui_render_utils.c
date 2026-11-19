@@ -163,7 +163,8 @@ void ui_print_centered_help_line(gint row, gint term_width, const HelpSegment *s
 
 void ui_begin_sync_update(void) {
     // Use terminal synchronized output to reduce flicker during full-frame draws.
-    printf("\033[?2026h");
+    const char begin[] = "\033[?2026h";
+    terminal_output_write(begin, sizeof(begin) - 1);
 }
 
 void ui_end_sync_update(void) {

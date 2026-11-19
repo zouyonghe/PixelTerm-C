@@ -104,13 +104,13 @@ public media API behavior; no new codec, rendering backend or CLI parameter.
 **Files:** Output/Kitty headers, `Makefile`, threading/performance/protocol docs,
 and only directly affected tests.
 
-- [ ] Remove old `kitty_graphics_*` recovery adapters and stale state flags once
+- [x] Remove old `kitty_graphics_*` recovery adapters and stale state flags once
   all callers migrate. Search remaining direct terminal writes for bypasses.
-- [ ] Verify minimal standalone dependencies; no protocol module imports a media
+- [x] Verify minimal standalone dependencies; no protocol module imports a media
   player merely for error recovery. Correct the currently failing preview link.
-- [ ] Update contracts with exact failure semantics, retry timing and limits;
+- [x] Update contracts with exact failure semantics, retry timing and limits;
   record deferred real-terminal validation honestly.
-- [ ] Run `make -j4 EXTRA_CFLAGS=-Werror test`, `ubsan-test`, `debug-test`,
+- [x] Run `make -j4 EXTRA_CFLAGS=-Werror test`, `ubsan-test`, `debug-test`,
   `tsan-test`, plus `git diff --check`; record results for the exact head.
 - [ ] Review diff for removed validations, changed geometry, widened inputs and
   lifecycle regressions. Push only after local validation; inspect Linux/macOS CI.
@@ -125,3 +125,8 @@ and only directly affected tests.
 
 - Phase 2/3: session controls and unsent GIF deletion remain owned after handler/player destruction. GIF/video presentation is assembled then submitted via terminal_output_write; local payload fwrite/flush branches were removed.
 - Gate mutations after dispatch, animation and async rendering each fail at premature_dispatches==0; production code restored. Full normal suite passed 518 C and 74 Python tests. Final sanitizer/platform checks remain in Task 4.
+
+- Final local verification (restored production code after mutations): normal, UBSan and ASan/UBSan debug suites each passed 518 C + 74 Python tests; TSan passed all 21 paths. Independent test binaries link with terminal_output and no UI-to-Kitty recovery dependency.
+- Replay policy mutations independently fail for destructive replay and dropped idempotent restores. Old Kitty recovery interfaces have no remaining callers.
+- Earlier asynchronous verification was terminated by its executor timeout; it is not counted as passing evidence. The final full commands completed successfully.
+- Remaining gate: remote Linux/macOS CI on the pushed refactor head. Physical-terminal A/B and presentation-buffer CPU/RSS measurements have not been performed. Do not auto-merge.

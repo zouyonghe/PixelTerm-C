@@ -452,6 +452,10 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
 
     APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update);
     APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app);
+    if (!terminal_output_flush()) {
+        APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
+        return ERROR_OUTPUT_IO;
+    }
     // Clear screen and reset terminal state
     gboolean allow_partial_clear = app && app->suppress_full_clear && !app->info_visible && !app->help_visible;
     if (allow_partial_clear) {

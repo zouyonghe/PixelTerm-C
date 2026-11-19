@@ -142,3 +142,13 @@ Review 后补充：direct RGB 按统一比例缩放两个轴，像素负载始�
 - [FFmpeg 发布记录](https://ffmpeg.org/index.html)
 
 文档由 AI 辅助整理，源码事实与性能推断分开。依赖版本和终端子能力以实际运行环境为准。
+
+## Unified output refactor
+
+The output recovery queue, platform purge, deadline and replay rules now live in
+`terminal_output.c`, not the Kitty encoder. Unsent image releases remain owned;
+uncertain deletes become ST-only, while idempotent session controls survive
+object destruction. GIF/video presentation is assembled into one checked payload.
+The pixel path, source geometry and alpha/gamma fallback are unchanged, but the
+extra temporary presentation buffer is not a proven performance improvement.
+Historical throughput figures above are not a benchmark of this refactor.

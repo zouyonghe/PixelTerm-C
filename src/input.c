@@ -196,17 +196,15 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
         return ERROR_TERMINAL_SIZE;
     }
 
-    // Hide cursor for TUI; optionally enter alternate screen (if enabled).
+    handler->raw_mode_enabled = TRUE;
+    // Record attempted controls before submission so failed entry can unwind.
     if (isatty(STDOUT_FILENO)) {
         if (handler->use_alt_screen) {
-            printf("\033[?1049h");
             handler->alt_screen_enabled = TRUE;
         }
-        printf("\033[?25l");
-        fflush(stdout);
+        const char *entry = handler->use_alt_screen ? "\033[?1049h\033[?25l" : "\033[?25l";
+        if (!terminal_output_write(entry, strlen(entry))) return ERROR_OUTPUT_IO;
     }
-
-    handler->raw_mode_enabled = TRUE;
     return ERROR_NONE;
 }
 
@@ -259,11 +257,9 @@ ErrorCode input_enable_mouse(InputHandler *handler) {
     }
 
     // Enable mouse tracking with button event tracking (supports scroll wheel)
-    printf("\033[?1002;1006h");
-    fflush(stdout);
-
     handler->mouse_enabled = TRUE;
-    return ERROR_NONE;
+    const char enable[] = "\033[?1002;1006h";
+    return terminal_output_write(enable, sizeof(enable) - 1) ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 // Disable mouse tracking

@@ -109,6 +109,7 @@ void terminal_output_defer_recovery(void) {
 
 gboolean terminal_output_write(const char *bytes, gsize length) {
     if (!terminal_output_flush()) return FALSE;
+    clearerr(stdout);
     gsize written = fwrite(bytes, 1, length, stdout);
     gint flushed = fflush(stdout);
     if (written == length && flushed == 0 && !ferror(stdout)) return TRUE;

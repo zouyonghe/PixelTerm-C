@@ -4,6 +4,29 @@ This document defines ownership and synchronization rules for `VideoPlayer`.
 It applies to the public API in `include/video_player.h` and the implementation
 in `src/video_player*.c`.
 
+## Terminal output contract
+
+`terminal_output.c/.h` is the single main-context owner of checked submissions,
+failed stdio buffer disposal, APC framing, deferred command lifetime and the
+100 ms background retry deadline. `kitty_graphics.c` only encodes Kitty commands
+and negotiates confirmed image IDs; UI/input do not depend on its recovery logic.
+
+- `terminal_output_write` drains pending work, writes and flushes one payload,
+  and returns the result of that submission even if recovery later succeeds.
+- `terminal_output_defer(..., TERMINAL_OUTPUT_ONCE)` owns unsent destructive
+  commands. A failed/ambiguous attempt becomes ST-only; deletion is not replayed.
+- `TERMINAL_OUTPUT_RESTORE` owns idempotent mouse/cursor/alternate-screen/sync-end
+  controls until success, including after the handler/player has been destroyed.
+- `terminal_output_ready` returns false both after failure and during backoff.
+  The event loop must not run later output stages while readiness is false.
+- Termios recovery remains in input/probe lifecycle and never waits for stdout.
+  Outer user-original settings override a pending probe app-raw snapshot.
+
+GIF/video build a presentation payload and submit once through this owner.
+Workers never write to stdout or mutate deferred restoration. This adds a
+command-buffer copy compared with incremental stdout assembly; end-to-end CPU,
+RSS and physical-terminal frame rate must be remeasured before performance claims.
+
 ## Execution Contexts
 
 ### Main / GLib context

@@ -42,12 +42,8 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     }
 
     terminal_probe_retry_restore();
-    gboolean output_ready = terminal_output_flush();
-    if (output_ready) {
-        printf("\033[2J\033[H\033[0m");
-        printf("\033[?25h");
-        fflush(stdout);
-    }
+    const char clear[] = "\033[2J\033[H\033[0m";
+    terminal_output_write(clear, sizeof(clear) - 1);
 
     input_disable_mouse(input_handler);
     gboolean original_known = input_handler->has_orig_termios;

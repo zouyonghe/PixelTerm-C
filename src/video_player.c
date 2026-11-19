@@ -45,8 +45,16 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
         command = g_string_new(NULL);
         g_string_printf(command, "\033_Ga=d,d=i,i=%u,q=2\033\\", player->kitty_direct_image_id);
     }
-    g_string_prepend(command, "\033\\"); /* End a partial APC before every delete attempt. */
-    gboolean deleted = terminal_output_write(command->str, command->len);
+    gboolean deleted;
+    if (release) {
+        /* Transfer unsent releases before dropping the player's ID. */
+        terminal_output_defer(command->str, TERMINAL_OUTPUT_ONCE);
+        deleted = terminal_output_flush();
+        if (!deleted) terminal_output_flush(); /* The attempted release is now ST-only. */
+    } else {
+        g_string_prepend(command, "\033\\");
+        deleted = terminal_output_write(command->str, command->len);
+    }
     g_string_free(command, TRUE);
     if (release) {
         if (!deleted) {
@@ -1021,10 +1029,12 @@ void video_player_clear_render_area(VideoPlayer *player) {
         bottom = term_h;
     }
 
+    GString *clear = g_string_new(NULL);
     for (gint row = clear_top; row <= bottom; row++) {
-        printf("\033[%d;1H\033[2K", row);
+        g_string_append_printf(clear, "\033[%d;1H\033[2K", row);
     }
-    fflush(stdout);
+    terminal_output_write(clear->str, clear->len);
+    g_string_free(clear, TRUE);
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
