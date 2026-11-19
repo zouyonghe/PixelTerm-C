@@ -3051,23 +3051,25 @@ static void test_failed_frame_retains_clear_bounds(gconstpointer data) {
     player->fixed_frame_top_row = next_top;
     if (mode == 2) player->render_layout_valid = FALSE;
     frame = make_test_frame_with_generation(0, player->playback_generation);
-    g_string_assign(frame->rendered, "short\nframe");
-    frame->rendered_height = 2;
+    g_string_assign(frame->rendered, mode == 2 ?
+        "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\nthirteen\nfourteen" : "short\nframe");
+    frame->rendered_height = mode == 2 ? 14 : 2;
     video_player_queue_push(player, frame);
     output.attempts = 0;
     output.delivered_but_failed = TRUE;
     g_assert_false(video_player_render_frame_for_test(player));
     g_assert_null(player->last_frame_lines);
-    g_assert_cmpint(player->last_frame_top_row, ==, 4);
-    gint last_row = mode == 1 ? 21 : 11;
-    g_assert_cmpint(player->last_frame_height, ==, last_row - 3);
+    gint first_row = mode == 2 ? 1 : 4;
+    g_assert_cmpint(player->last_frame_top_row, ==, first_row);
+    gint last_row = mode == 1 ? 21 : mode == 2 ? 14 : 11;
+    g_assert_cmpint(player->last_frame_height, ==, last_row - first_row + 1);
 
     /* A moved/shrunken layout must still clear the previously displayed rows. */
     player->render_area_top_row = next_top;
     player->render_area_height = 2;
     g_string_truncate(output.output, 0);
     g_assert_cmpint(video_player_clear_render_area(player), ==, ERROR_NONE);
-    for (gint row = 4; row <= last_row; row++) {
+    for (gint row = first_row; row <= last_row; row++) {
         gchar *erase = g_strdup_printf("\033[%d;1H\033[2K", row);
         g_assert_nonnull(strstr(output.output->str, erase));
         g_free(erase);

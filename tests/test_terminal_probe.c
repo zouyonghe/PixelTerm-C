@@ -9,16 +9,24 @@
 #include <string.h>
 #include <unistd.h>
 
+static guint stdout_get_flags_calls;
+
+static int track_probe_fcntl(int fd, int operation, int flags) {
+    if (fd == STDOUT_FILENO && operation == F_GETFL) stdout_get_flags_calls++;
+    return fcntl(fd, operation, flags);
+}
+
 static void test_default_probe_blocked_terminal(gconstpointer data) {
+    (void)data;
     if (g_test_subprocess()) {
-        gboolean stopped = GPOINTER_TO_INT(data);
         int master = posix_openpt(O_RDWR | O_NOCTTY);
         g_assert_cmpint(master, >=, 0);
         g_assert_cmpint(grantpt(master), ==, 0);
         g_assert_cmpint(unlockpt(master), ==, 0);
         int slave = open(ptsname(master), O_RDWR | O_NOCTTY);
         g_assert_cmpint(slave, >=, 0);
-        if (stopped) g_assert_cmpint(tcflow(slave, TCOOFF), ==, 0);
+        /* Linux can drain a filled PTY asynchronously; stop output before filling. */
+        g_assert_cmpint(tcflow(slave, TCOOFF), ==, 0);
         int flags = fcntl(slave, F_GETFL);
         g_assert_cmpint(flags, >=, 0);
         g_assert_cmpint(fcntl(slave, F_SETFL, flags | O_NONBLOCK), ==, 0);
@@ -39,12 +47,17 @@ static void test_default_probe_blocked_terminal(gconstpointer data) {
         stdout = capture;
         char reply[64];
         gboolean written = TRUE;
+        stdout_get_flags_calls = 0;
+        terminal_output_set_fcntl_for_test(track_probe_fcntl);
         gint64 start = g_get_monotonic_time();
         gssize result = terminal_probe_query_response_tracked("\033[c", 120, 20, 'c',
                                                              reply, sizeof(reply), &written);
         gint64 elapsed = g_get_monotonic_time() - start;
+        terminal_output_set_fcntl_for_test(NULL);
+        g_assert_cmpuint(stdout_get_flags_calls, >, 0);
         g_assert_cmpint(result, ==, -1);
         g_assert_false(written);
+        g_assert_cmpint(elapsed, >=, 100000);
         g_assert_cmpint(elapsed, <, G_TIME_SPAN_SECOND);
         g_assert_cmpint(fcntl(slave, F_GETFL), ==, flags);
         g_assert_cmpint(tcgetattr(slave, &after), ==, 0);
@@ -57,7 +70,7 @@ static void test_default_probe_blocked_terminal(gconstpointer data) {
         g_assert_cmpint(ftell(capture), ==, 0);
         stdout = saved;
         fclose(capture);
-        if (stopped) g_assert_cmpint(tcflow(slave, TCOON), ==, 0);
+        g_assert_cmpint(tcflow(slave, TCOON), ==, 0);
         close(slave);
         close(master);
         return;

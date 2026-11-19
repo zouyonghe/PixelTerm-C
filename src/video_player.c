@@ -2054,6 +2054,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         }
     } else {
         video_player_clear_line_cache(player);
+        next_frame_top_row = 1;
+        next_frame_height = rendered_h > 0 ? rendered_h : 1;
         g_string_append_printf(output, "\033[H");
         g_string_append_len(output, result->str, result->len);
         kitty_shm_written = frame->kitty_shm_name != NULL;
