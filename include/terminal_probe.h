@@ -50,8 +50,9 @@ gboolean terminal_probe_has_pending_input(void);
 gint terminal_probe_take_pending_byte(void);
 /* Main-thread recovery; failed restoration keeps the original settings for retry. */
 gboolean terminal_probe_retry_restore(void);
-/* Called only after the outer input owner successfully restores its original mode. */
-void terminal_probe_forget_restore(void);
+/* Restore the outer owner's original mode, replacing any pending probe snapshot.
+ * On failure, retain it for later retry/exit and return FALSE. */
+gboolean terminal_probe_restore_original(const struct termios *state);
 
 void terminal_probe_set_transport_hooks_for_test(const TerminalProbeTransportHooks *hooks,
                                                  gpointer user_data);

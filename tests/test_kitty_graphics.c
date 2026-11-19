@@ -142,6 +142,24 @@ static gpointer allocation_stale_worker(gpointer data) {
     return NULL;
 }
 
+static void test_outer_restore_replaces_pending_raw_snapshot(void) {
+    AllocationTerminal terminal = {.next_id = 123, .mode = 10};
+    terminal.state.c_cc[VMIN] = 0; /* The probe begins during app raw mode. */
+    terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
+    char response[256];
+    g_assert_cmpint(terminal_probe_query_response("\033_Ga=t,I=123;AAAAAA==\033\\\033[5n",
+        120, 20, 'n', response, sizeof(response)), ==, -1);
+    struct termios original = terminal.state;
+    original.c_lflag = ICANON | ECHO | IEXTEN;
+    original.c_cc[VMIN] = 1;
+    g_assert_false(terminal_probe_restore_original(&original));
+    terminal.mode = 0;
+    g_assert_true(terminal_probe_retry_restore());
+    g_assert_cmpint(terminal.state.c_lflag, ==, original.c_lflag);
+    g_assert_cmpint(terminal.state.c_cc[VMIN], ==, 1);
+    terminal_probe_reset_transport_hooks_for_test();
+}
+
 static void test_kitty_shm_playback_skips_direct_allocation(void) {
     AllocationTerminal terminal = {.next_id = 123};
     terminal_probe_set_transport_hooks_for_test(&allocation_hooks, &terminal);
@@ -565,6 +583,7 @@ void register_kitty_graphics_tests(void) {
     g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
     g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
     g_test_add_func("/kitty_graphics/allocation/persistent_restore_recovery", test_probe_persistent_restore_failure_recovers);
+    g_test_add_func("/kitty_graphics/allocation/outer_restore_replaces_raw_snapshot", test_outer_restore_replaces_pending_raw_snapshot);
     g_test_add_func("/kitty_graphics/allocation/failed_cleanup_recovers", test_kitty_failed_allocation_cleanup_recovers);
     g_test_add_func("/kitty_graphics/allocation/shm_skips_direct", test_kitty_shm_playback_skips_direct_allocation);
     g_test_add_data_func("/kitty_graphics/allocation/player_lifecycle", NULL, test_kitty_player_uses_and_releases_terminal_reservation);

@@ -220,19 +220,18 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
         return ERROR_NONE;
     }
 
+    gboolean restored = TRUE;
     // Only restore if stdin is a terminal
     if (isatty(STDIN_FILENO)) {
         if (handler->has_orig_termios) {
-            if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &handler->orig_termios) == 0) {
-                terminal_probe_forget_restore();
-            }
+            restored = terminal_probe_restore_original(&handler->orig_termios);
         } else {
             struct termios term;
             if (tcgetattr(STDIN_FILENO, &term) == 0) {
                 term.c_lflag |= (ICANON | ECHO);
-                if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term) == 0) {
-                    terminal_probe_forget_restore();
-                }
+                restored = terminal_probe_restore_original(&term);
+            } else {
+                restored = FALSE;
             }
         }
     }
@@ -245,8 +244,8 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
     printf("\033[0m\033[?25h");
     fflush(stdout);
 
-    handler->raw_mode_enabled = FALSE;
-    return ERROR_NONE;
+    handler->raw_mode_enabled = !restored;
+    return restored ? ERROR_NONE : ERROR_TERMINAL_SIZE;
 }
 
 // Enable mouse tracking

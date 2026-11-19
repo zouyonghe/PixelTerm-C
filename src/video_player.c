@@ -50,6 +50,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
     gsize written = fwrite(command->str, 1, command->len, stdout);
     gint flushed = fflush(stdout);
     deleted = written == command->len && flushed == 0 && !ferror(stdout);
+    if (!deleted) kitty_graphics_discard_failed_output();
     g_string_free(command, TRUE);
     if (release) {
         if (!deleted) {
@@ -2034,6 +2035,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     }
     gint64 io_end_us = g_get_monotonic_time();
     if (!output_success) {
+        kitty_graphics_discard_failed_output();
         ErrorCode failure = video_player_report_output_failure();
         if (output_error) *output_error = failure;
         kitty_graphics_defer_output_recovery();

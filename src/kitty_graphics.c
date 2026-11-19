@@ -1,3 +1,6 @@
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
 #include "kitty_graphics.h"
 #include "process_env.h"
 #include "media_buffer.h"
@@ -7,6 +10,9 @@
 #include <fcntl.h>
 #include <math.h>
 #include <stdlib.h>
+#ifdef __linux__
+#include <stdio_ext.h>
+#endif
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -108,6 +114,15 @@ static GQueue pending_deletes = G_QUEUE_INIT;
 static gboolean cleanup_registered = FALSE;
 static gint64 next_cleanup_retry_us = 0;
 
+void kitty_graphics_discard_failed_output(void) {
+#ifdef __linux__
+    __fpurge(stdout);
+#else
+    fpurge(stdout);
+#endif
+    clearerr(stdout);
+}
+
 void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us) {
     if (now_us < next_cleanup_retry_us) return;
     if (!kitty_graphics_retry_pending_deletes()) next_cleanup_retry_us = now_us + 100000;
@@ -120,6 +135,7 @@ gboolean kitty_graphics_retry_pending_deletes(void) {
         gsize written = fwrite(command->str, 1, command->len, stdout);
         gint flushed = fflush(stdout);
         if (written != command->len || flushed != 0 || ferror(stdout)) {
+            kitty_graphics_discard_failed_output();
             /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
             g_string_assign(command, "\033\\");
             return FALSE;

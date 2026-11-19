@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <sys/select.h>
 #include <unistd.h>
 
@@ -90,10 +89,11 @@ static gpointer g_terminal_probe_user_data = NULL;
 static struct termios g_pending_termios;
 static gboolean g_restore_pending = FALSE;
 static gboolean g_restore_exit_registered = FALSE;
+static gint g_pending_restore_actions = TCSANOW;
 
 gboolean terminal_probe_retry_restore(void) {
     if (!g_restore_pending) return TRUE;
-    if (g_terminal_probe_hooks->tcsetattr_fn(TCSANOW, &g_pending_termios, g_terminal_probe_user_data) != 0) return FALSE;
+    if (g_terminal_probe_hooks->tcsetattr_fn(g_pending_restore_actions, &g_pending_termios, g_terminal_probe_user_data) != 0) return FALSE;
     g_restore_pending = FALSE;
     return TRUE;
 }
@@ -102,8 +102,14 @@ static void terminal_probe_restore_at_exit(void) {
     (void)terminal_probe_retry_restore();
 }
 
-void terminal_probe_forget_restore(void) {
-    g_restore_pending = FALSE;
+gboolean terminal_probe_restore_original(const struct termios *state) {
+    g_pending_termios = *state;
+    g_pending_restore_actions = TCSAFLUSH;
+    g_restore_pending = TRUE;
+    if (!g_restore_exit_registered) {
+        g_restore_exit_registered = atexit(terminal_probe_restore_at_exit) == 0;
+    }
+    return terminal_probe_retry_restore();
 }
 
 /* Startup probes and event handling run on the main thread. Stop reading when
@@ -306,6 +312,7 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
 
     if (hooks->tcsetattr_fn(TCSANOW, &saved_termios, user_data) != 0) {
         g_pending_termios = saved_termios;
+        g_pending_restore_actions = TCSANOW;
         g_restore_pending = TRUE;
         if (!g_restore_exit_registered) {
             g_restore_exit_registered = atexit(terminal_probe_restore_at_exit) == 0;
@@ -314,7 +321,6 @@ gssize terminal_probe_query_response_tracked(const char *query, gint timeout_ms,
         for (gint retry = 0; retry < 2; retry++) {
             if (terminal_probe_retry_restore()) break;
         }
-        if (g_restore_pending) fprintf(stderr, "Failed to restore terminal settings; recovery remains pending.\n");
         return -1;
     }
 

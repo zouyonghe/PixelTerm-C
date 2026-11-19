@@ -2991,6 +2991,29 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
     return (ssize_t)length;
 }
 
+static void test_failed_delete_buffer_is_discarded(void) {
+    DeleteOutput output = {.attempts = 1, .output = g_string_new(NULL)};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    char buffer[256];
+    g_assert_cmpint(setvbuf(capture, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    const char *deletion = "\033_Ga=d,d=I,i=42,q=2\033\\";
+    /* Model stdio retaining failed delete bytes, as observed on macOS CI. */
+    gsize written = fwrite(deletion, 1, strlen(deletion), capture);
+    kitty_graphics_discard_failed_output();
+    fwrite("\033\\", 1, 2, capture);
+    fflush(capture);
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpuint(written, ==, strlen(deletion));
+    g_assert_cmpstr(output.output->str, ==, "\033\\");
+    g_string_free(output.output, TRUE);
+}
+
 static void test_deferred_cleanup_retry_deadline(void) {
     DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
     cookie_io_functions_t hooks = {.write = delete_output_write};
@@ -3246,6 +3269,7 @@ void register_video_player_tests(void) {
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #ifdef __GLIBC__
     g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
+    g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_failed_flush", NULL,
                          test_direct_kitty_destroy_retries_failed_flush);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_partial_delete", GINT_TO_POINTER(1),
