@@ -24,6 +24,7 @@ gboolean terminal_output_end_session(void);
 gboolean terminal_output_write(const char *bytes, gsize length);
 /* Internal main-owner transport: bounded write to an explicit descriptor,
  * independent of stdout sessions/queues. Returns exact progress or -1/errno.
+ * Main owner only: callers must serialize all output on shared descriptors.
  * attempted may be NULL; otherwise becomes TRUE when write is called. */
 ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length,
                                         gboolean *attempted);

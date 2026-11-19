@@ -11,10 +11,15 @@
 
 static guint stdout_get_flags_calls;
 static guint restore_failures;
+static int reply_master = -1;
 
 static int track_probe_fcntl(int fd, int operation, int flags) {
     if (fd == STDOUT_FILENO && operation == F_GETFL) stdout_get_flags_calls++;
     if (fd == STDOUT_FILENO && operation == F_SETFL && !(flags & O_NONBLOCK) && restore_failures) {
+        if (reply_master >= 0) {
+            g_assert_cmpint(write(reply_master, "\033[?1c", 5), ==, 5);
+            reply_master = -1;
+        }
         restore_failures--;
         errno = EIO;
         return -1;
@@ -103,13 +108,15 @@ static void test_default_probe_restore_flags(gconstpointer data) {
         int flags = fcntl(slave, F_GETFL);
         g_assert_cmpint(flags, >=, 0);
         restore_failures = GPOINTER_TO_UINT(data);
+        reply_master = master;
         terminal_output_set_fcntl_for_test(track_probe_fcntl);
         char reply[64];
         gboolean written = FALSE;
         gssize result = terminal_probe_query_response_tracked("\033[c", 20, 10, 'c',
                                                              reply, sizeof(reply), &written);
         g_assert_true(written); /* Delivery remains known even if restoration fails. */
-        g_assert_cmpint(result, ==, GPOINTER_TO_UINT(data) == 1 ? 0 : -1);
+        g_assert_cmpint(result, ==, GPOINTER_TO_UINT(data) == 1 ? 5 : -1);
+        g_assert_cmpstr(reply, ==, "\033[?1c");
         if (GPOINTER_TO_UINT(data) == 1) g_assert_cmpint(fcntl(slave, F_GETFL), ==, flags);
         terminal_output_set_fcntl_for_test(NULL);
         g_assert_cmpint(terminal_output_descriptor_write(STDOUT_FILENO, NULL, 0, NULL), ==, 0);
@@ -117,6 +124,68 @@ static void test_default_probe_restore_flags(gconstpointer data) {
         char query[3];
         g_assert_cmpint(read(master, query, sizeof(query)), ==, sizeof(query));
         g_assert_cmpmem(query, sizeof(query), "\033[c", 3);
+        FILE *saved = stdout;
+        FILE *capture = tmpfile();
+        g_assert_nonnull(capture);
+        stdout = capture;
+        g_assert_true(terminal_output_write("UI", 2));
+        rewind(capture);
+        char output[16];
+        gsize output_length = fread(output, 1, sizeof(output), capture);
+        g_assert_cmpmem(output, output_length, "UI", 2);
+        stdout = saved;
+        fclose(capture);
+        close(slave);
+        close(master);
+        return;
+    }
+    g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_assert_passed();
+}
+
+static void test_default_probe_partial_query(gconstpointer data) {
+    if (g_test_subprocess()) {
+        int master = posix_openpt(O_RDWR | O_NOCTTY);
+        g_assert_cmpint(master, >=, 0);
+        g_assert_cmpint(grantpt(master), ==, 0);
+        g_assert_cmpint(unlockpt(master), ==, 0);
+        int slave = open(ptsname(master), O_RDWR | O_NOCTTY);
+        g_assert_cmpint(slave, >=, 0);
+        g_assert_cmpint(dup2(slave, STDIN_FILENO), ==, STDIN_FILENO);
+        g_assert_cmpint(dup2(slave, STDOUT_FILENO), ==, STDOUT_FILENO);
+        FILE *saved = stdout;
+        FILE *capture = tmpfile();
+        g_assert_nonnull(capture);
+        stdout = capture;
+        gsize size = 256 * 1024;
+        gchar *query = g_malloc(size + 1);
+        memset(query, 'A', size);
+        memcpy(query, "\033_G", 3);
+        query[size] = '\0';
+        char reply[64];
+        gboolean written = FALSE;
+        gssize result = GPOINTER_TO_INT(data) ?
+            terminal_probe_query_response_tracked(query, 20, 10, '\0', reply, sizeof(reply),
+                                                   &written) :
+            terminal_probe_query_response(query, 20, 10, '\0', reply, sizeof(reply));
+        g_assert_cmpint(result, ==, -1);
+        if (GPOINTER_TO_INT(data)) g_assert_true(written);
+        g_assert_cmpint(fcntl(master, F_SETFL, O_NONBLOCK), ==, 0);
+        char bytes[4096];
+        gsize received = 0;
+        ssize_t count;
+        while ((count = read(master, bytes, sizeof(bytes))) > 0) received += (gsize)count;
+        g_assert_cmpuint(received, >, 0);
+        g_assert_cmpuint(received, <, size);
+        /* A tracked caller may also request recovery; it must coalesce. */
+        if (GPOINTER_TO_INT(data)) terminal_output_defer_recovery();
+        g_assert_true(terminal_output_write("UI", 2));
+        rewind(capture);
+        gsize length = fread(bytes, 1, sizeof(bytes), capture);
+        g_assert_cmpmem(bytes, length, "\033\\UI", 4);
+        stdout = saved;
+        fclose(capture);
+        g_free(query);
         close(slave);
         close(master);
         return;
@@ -158,8 +227,16 @@ static void test_probe_descriptor_full_pipe(void) {
 
 void register_terminal_probe_tests(void) {
     g_test_add_func("/terminal_probe/descriptor/full_pipe", test_probe_descriptor_full_pipe);
-    g_test_add_data_func("/terminal_probe/default/stopped_terminal", GINT_TO_POINTER(120), test_default_probe_blocked_terminal);
-    g_test_add_data_func("/terminal_probe/default/short_deadline", GINT_TO_POINTER(20), test_default_probe_blocked_terminal);
-    g_test_add_data_func("/terminal_probe/default/restore_transient", GUINT_TO_POINTER(1), test_default_probe_restore_flags);
-    g_test_add_data_func("/terminal_probe/default/restore_persistent", GUINT_TO_POINTER(10), test_default_probe_restore_flags);
+    g_test_add_data_func("/terminal_probe/default/stopped_terminal", GINT_TO_POINTER(120),
+                         test_default_probe_blocked_terminal);
+    g_test_add_data_func("/terminal_probe/default/short_deadline", GINT_TO_POINTER(20),
+                         test_default_probe_blocked_terminal);
+    g_test_add_data_func("/terminal_probe/default/restore_transient", GUINT_TO_POINTER(1),
+                         test_default_probe_restore_flags);
+    g_test_add_data_func("/terminal_probe/default/restore_persistent", GUINT_TO_POINTER(10),
+                         test_default_probe_restore_flags);
+    g_test_add_data_func("/terminal_probe/default/partial_untracked", NULL,
+                         test_default_probe_partial_query);
+    g_test_add_data_func("/terminal_probe/default/partial_tracked", GINT_TO_POINTER(1),
+                         test_default_probe_partial_query);
 }

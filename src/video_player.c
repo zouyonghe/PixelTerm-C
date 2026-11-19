@@ -2005,13 +2005,13 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
             player->last_frame_lines = new_lines;
         }
 
-        if (player->last_frame_height > 0) {
+        if (player->last_frame_top_row > 0 && player->last_frame_height > 0) {
             gint prev_top = player->last_frame_top_row;
             gint prev_bottom = prev_top + player->last_frame_height - 1;
             gint new_top = image_top_row;
             gint new_bottom = image_top_row + (lines_printed > 0 ? (lines_printed - 1) : -1);
-            if (prev_top < area_top) prev_top = area_top;
-            if (prev_bottom > area_bottom) prev_bottom = area_bottom;
+            /* Retained coverage may lie outside the replacement layout. */
+            if (term_h > 0 && prev_bottom > term_h) prev_bottom = term_h;
             for (gint r = prev_top; r <= prev_bottom; r++) {
                 if (r < new_top || r > new_bottom) {
                     g_string_append_printf(output, "\033[%d;1H\033[2K", r);
@@ -2295,8 +2295,6 @@ ErrorCode video_player_play(VideoPlayer *player) {
     g_mutex_lock(&player->state_mutex);
     player->is_playing = TRUE;
     player->fixed_frame_valid = FALSE;
-    player->last_frame_top_row = 0;
-    player->last_frame_height = 0;
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
     video_player_reset_timing_state(player);
@@ -2425,8 +2423,6 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
     player->fallback_pts_ms = target_ms;
     player->rewind_needs_resync = TRUE;
     player->fixed_frame_valid = FALSE;
-    player->last_frame_top_row = 0;
-    player->last_frame_height = 0;
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
 
