@@ -114,6 +114,7 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
     InputEvent event;
     static gint last_term_width = 0, last_term_height = 0;
     gboolean resize_pending = FALSE;
+    gint64 output_blocked_since_us = 0;
     // Initialize terminal size tracking
     last_term_width = input_handler->terminal_width;
     last_term_height = input_handler->terminal_height;
@@ -129,10 +130,17 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             input_handler->should_exit = TRUE;
             break;
         }
-        if (!terminal_output_ready(g_get_monotonic_time())) {
+        gint64 now_us = g_get_monotonic_time();
+        if (!terminal_output_ready(now_us)) {
+            if (!output_blocked_since_us) output_blocked_since_us = now_us;
+            if (now_us - output_blocked_since_us >= 2 * G_TIME_SPAN_SECOND) {
+                error = ERROR_OUTPUT_IO;
+                break;
+            }
             usleep(k_input_poll_sleep_us);
             continue;
         }
+        output_blocked_since_us = 0;
         
         // Check for terminal size changes
         input_update_terminal_size(input_handler);

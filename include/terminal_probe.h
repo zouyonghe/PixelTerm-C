@@ -50,6 +50,9 @@ gboolean terminal_probe_has_pending_input(void);
 gint terminal_probe_take_pending_byte(void);
 /* Main-thread recovery; failed restoration keeps the original settings for retry. */
 gboolean terminal_probe_retry_restore(void);
+/* Input ownership: report whether this retry applied pending outer-owner settings.
+ * restored_original must be non-NULL; FALSE also covers no pending restoration. */
+gboolean terminal_probe_retry_restore_for_input(gboolean *restored_original);
 /* state must be non-NULL. Restore the outer owner's original mode with TCSAFLUSH
  * (discarding unread terminal input), replacing any pending probe snapshot.
  * On failure, retain both settings and the flush action for later retry/exit. */

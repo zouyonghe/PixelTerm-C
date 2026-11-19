@@ -898,9 +898,10 @@ gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player) {
     return redraw;
 }
 
-gboolean video_player_cycle_protocol(VideoPlayer *player) {
+ErrorCode video_player_cycle_protocol_checked(VideoPlayer *player, gboolean *needs_redraw) {
+    if (needs_redraw) *needs_redraw = FALSE;
     if (!player) {
-        return FALSE;
+        return ERROR_INVALID_IMAGE;
     }
 
     gboolean was_playing = video_player_is_playing(player);
@@ -920,7 +921,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     ImageRenderer *renderer = player->renderer;
     if (!renderer) {
         g_mutex_unlock(&player->render_mutex);
-        return FALSE;
+        return ERROR_NONE;
     }
 
     gboolean force_text = renderer->config.force_text;
@@ -928,6 +929,12 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     gboolean force_iterm2 = renderer->config.force_iterm2;
     gboolean force_sixel = renderer->config.force_sixel;
     gboolean redraw = protocol_cycle_needs_redraw(renderer);
+    gboolean next_kitty = force_iterm2;
+    if (!next_kitty && !video_player_clear_direct_kitty_image(player, TRUE)) {
+        g_mutex_unlock(&player->render_mutex);
+        video_player_pause(player);
+        return ERROR_OUTPUT_IO;
+    }
 
     renderer->config.force_text = force_kitty;
     renderer->config.force_sixel = force_text ||
@@ -936,7 +943,6 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     renderer->config.force_iterm2 = force_sixel;
     renderer->config.force_kitty = force_iterm2;
 
-    gboolean next_kitty = renderer->config.force_kitty;
     renderer_update_terminal_size(renderer);
     g_mutex_lock(&player->state_mutex);
     player->render_layout_generation++;
@@ -944,14 +950,20 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     g_mutex_unlock(&player->state_mutex);
     g_mutex_unlock(&player->render_mutex);
 
-    if (!next_kitty) video_player_clear_direct_kitty_image(player, TRUE);
     if (was_playing) {
-        (void)video_player_resume_playback_loop(player);
+        ErrorCode error = video_player_resume_playback_loop(player);
+        if (error != ERROR_NONE) return error;
     }
 
     /* Re-render when entering graphics mode or when leaving it so stale
      * graphics placements do not remain behind the next text frame. */
-    return redraw;
+    if (needs_redraw) *needs_redraw = redraw;
+    return ERROR_NONE;
+}
+
+gboolean video_player_cycle_protocol(VideoPlayer *player) {
+    gboolean redraw = FALSE;
+    return video_player_cycle_protocol_checked(player, &redraw) == ERROR_NONE && redraw;
 }
 
 gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
@@ -1047,11 +1059,11 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     }
     gboolean cleared = terminal_output_write(clear->str, clear->len);
     g_string_free(clear, TRUE);
-    if (!cleared) return ERROR_OUTPUT_IO;
+    /* A failed submission may already have erased some or all cached rows. */
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
-    return ERROR_NONE;
+    return cleared ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error);
@@ -2076,7 +2088,8 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     }
 
     video_player_ffmpeg_init_once();
-    video_player_stop(player);
+    ErrorCode stop_error = video_player_stop(player);
+    if (stop_error != ERROR_NONE) return stop_error;
     video_player_reset_media_state(player);
 
     g_mutex_lock(&player->state_mutex);
