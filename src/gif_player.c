@@ -553,6 +553,9 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
         g_object_unref(native_iter);
         return FALSE;
     }
+    /* Own the image before submission: a failed write may still deliver it. */
+    player->kitty_animation_id = image_id;
+    player->kitty_animation_prepared = TRUE;
     if (!gif_player_submit_kitty_frame(player, root, TRUE)) {
         *output_error = ERROR_OUTPUT_IO;
         player->kitty_animation_disabled = TRUE;
@@ -560,8 +563,6 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
         return FALSE;
     }
 
-    player->kitty_animation_id = image_id;
-    player->kitty_animation_prepared = TRUE;
     player->kitty_animation_complete = FALSE;
     player->kitty_animation_frame_count = 1;
     player->kitty_animation_source_width = gdk_pixbuf_get_width(pixbuf);

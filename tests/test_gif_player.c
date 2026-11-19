@@ -126,6 +126,7 @@ typedef struct {
     gboolean fail;
     gboolean fail_once;
     guint writes;
+    const gchar *deliver_then_fail;
 } GifOutputSink;
 
 static ssize_t gif_output_write(void *data, const char *bytes, size_t length) {
@@ -137,6 +138,11 @@ static ssize_t gif_output_write(void *data, const char *bytes, size_t length) {
         return -1;
     }
     g_string_append_len(sink->bytes, bytes, length);
+    if (sink->deliver_then_fail &&
+        g_strstr_len(bytes, length, sink->deliver_then_fail)) {
+        errno = EIO;
+        return -1;
+    }
     return (ssize_t)length;
 }
 
@@ -155,6 +161,97 @@ static GifPlayer *software_test_player(void) {
     player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
     player->is_animated = TRUE;
     return player;
+}
+
+static void test_gif_native_root_output_failure(void) {
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("KITTY_WINDOW_ID", "1");
+    pixelterm_env_unset_for_test("SSH_CONNECTION");
+    pixelterm_env_unset_for_test("SSH_CLIENT");
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    if (!native_kitty_shm_available_for_test()) {
+        g_test_skip("native Kitty SHM unavailable");
+        pixelterm_env_reset_for_test();
+        return;
+    }
+
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                      TEXT_SYMBOL_MODE_AUTO, 1.0);
+    GdkPixbuf *frame = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    gdk_pixbuf_fill(frame, 0xff0000ff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, frame);
+    gdk_pixbuf_simple_anim_add_frame(animation, frame);
+    g_object_unref(frame);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    player->total_frames = 2;
+
+    GifOutputSink sink = {.bytes = g_string_new(NULL),
+                          .deliver_then_fail = "\033_Ga="};
+    GifOutputSink errors = {.bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, gif_output_write);
+    FILE *error_stream = test_output_stream(&errors, gif_output_write);
+    g_assert_nonnull(stream);
+    g_assert_nonnull(error_stream);
+    FILE *saved = stdout;
+    FILE *saved_errors = stderr;
+    fflush(saved);
+    stdout = stream;
+    stderr = error_stream;
+
+    ErrorCode result = gif_player_play(player);
+    fflush(error_stream);
+    stderr = saved_errors;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_false(player->is_playing);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_cmpuint(player->kitty_animation_id, ==, 0);
+    g_assert_false(player->kitty_animation_prepared);
+    g_assert_false(player->kitty_animation_complete);
+    g_assert_cmpuint(player->kitty_animation_frame_count, ==, 0);
+    g_assert_cmpuint(player->kitty_animation_shm_names->len, ==, 0);
+    g_assert_nonnull(strstr(errors.bytes->str, "GIF playback failed:"));
+
+    const gchar *root = strstr(sink.bytes->str, "\033_Ga=T");
+    g_assert_nonnull(root);
+    g_assert_nonnull(strstr(root, ",t=s,"));
+    const gchar *id_field = strstr(root, ",i=");
+    g_assert_nonnull(id_field);
+    gchar *id_end = NULL;
+    guint64 image_id = g_ascii_strtoull(id_field + 3, &id_end, 10);
+    g_assert_cmpuint(image_id, >, 0);
+    g_assert_cmpuint(image_id, <=, G_MAXUINT32);
+    g_assert_cmpint(*id_end, ==, ',');
+    gchar *expected_release = g_strdup_printf("\033_Ga=d,d=I,i=%u,q=2\033\\",
+                                              (guint32)image_id);
+    /* Keep failing Kitty writes until cleanup has attempted its queued release. */
+    terminal_output_flush();
+    g_assert_nonnull(strstr(sink.bytes->str, expected_release));
+    sink.deliver_then_fail = NULL;
+    g_assert_true(terminal_output_flush());
+    g_assert_cmpint(gif_player_stop(player), ==, ERROR_NONE);
+    gif_player_destroy(player);
+    g_assert_true(terminal_output_flush());
+    const gchar *release = strstr(sink.bytes->str, expected_release);
+    g_assert_nonnull(release);
+    g_assert_null(strstr(release + 1, "\033_Ga=d"));
+    g_assert_true(strstr(sink.bytes->str, "\033_Ga=d") == release);
+    g_assert_null(strstr(sink.bytes->str, "\033_Ga=a"));
+    root = strstr(sink.bytes->str, "\033_Ga=T");
+    g_assert_null(strstr(root + 1, "\033_Ga=T"));
+
+    fclose(stream);
+    stdout = saved;
+    fclose(error_stream);
+    stderr = saved_errors;
+    g_free(expected_release);
+    g_string_free(sink.bytes, TRUE);
+    g_string_free(errors.bytes, TRUE);
+    pixelterm_env_reset_for_test();
 }
 
 static void test_gif_output_failure(gconstpointer data) {
@@ -802,6 +899,7 @@ void register_gif_player_tests(void) {
                                  "native_play", "native_loading", "software_play",
                                  "software_play_recovered", "software_timer", "native_timer",
                                  "native_fallback", "backoff"};
+    g_test_add_func("/gif_player/output_failure/native_root", test_gif_native_root_output_failure);
     for (guint i = 0; i < G_N_ELEMENTS(operations); i++) {
         gchar *path = g_strdup_printf("/gif_player/output_failure/%s", operations[i]);
         g_test_add_data_func(path, operations[i], test_gif_output_failure);

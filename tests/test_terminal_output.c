@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 #include "terminal_output.h"
 #include "input.h"
 #include "terminal_probe.h"
@@ -191,6 +192,36 @@ static void test_pending_controls_start_with_recovery_framing(void) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static ssize_t exit_output_write(void *data, const char *bytes, size_t length) {
+    gboolean *fail_once = data;
+    if (*fail_once) {
+        *fail_once = FALSE;
+        errno = EIO;
+        return -1;
+    }
+    return write(STDOUT_FILENO, bytes, length);
+}
+
+static void test_exit_attempts_restoration_after_stream_error(gconstpointer data) {
+    if (g_test_subprocess()) {
+        gboolean fail_once = TRUE;
+        FILE *stream = test_output_stream(&fail_once, exit_output_write);
+        g_assert_nonnull(stream);
+        char buffer[256];
+        g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+        fflush(stdout);
+        stdout = stream;
+        g_assert_cmpint(fputs("LOST-FRAME", stream), >=, 0);
+        if (!GPOINTER_TO_INT(data)) g_assert_cmpint(fflush(stream), !=, 0);
+        terminal_output_defer("RESTORE", TERMINAL_OUTPUT_RESTORE);
+        exit(0); /* Exercise the real atexit callback while its sink remains alive. */
+    }
+    g_test_trap_subprocess(NULL, 3 * G_TIME_SPAN_SECOND, 0);
+    g_test_trap_assert_passed();
+    g_test_trap_assert_stdout("*\033\\RESTORE\033\\*");
+    g_test_trap_assert_stdout_unmatched("*LOST-FRAME*");
+}
+
 static int restore_mode(gint action, const struct termios *state, gpointer data) {
     (void)action; (void)state; (void)data;
     return 0;
@@ -269,6 +300,8 @@ void register_terminal_output_tests(void) {
     g_test_add_data_func("/terminal_output/ui/clear_failure", GINT_TO_POINTER(1), test_ui_controls_report_failed_submission);
     g_test_add_func("/terminal_output/session/controls_outlive_handler", test_cleanup_controls_outlive_handler);
     g_test_add_func("/terminal_output/session/pending_controls_start_with_ST", test_pending_controls_start_with_recovery_framing);
+    g_test_add_data_func("/terminal_output/exit/restores_after_sticky_error", NULL, test_exit_attempts_restoration_after_stream_error);
+    g_test_add_data_func("/terminal_output/exit/restores_after_buffered_failure", GINT_TO_POINTER(1), test_exit_attempts_restoration_after_stream_error);
     g_test_add_func("/terminal_output/session/unsent_gif_delete_outlives_player", test_unsent_gif_delete_outlives_player);
 #endif
 }
