@@ -14,27 +14,37 @@ static guint gate_attempts;
 static guint premature_dispatches;
 static gint inject_stage;
 static gboolean recovery_injected;
+static gboolean recovery_blocked;
+static gboolean async_completed;
 static gboolean lifecycle_has_pending(InputHandler *handler) {
-    return gate_test ? FALSE : input_has_pending_input(handler);
+    if (!gate_test) return input_has_pending_input(handler);
+    return (inject_stage == 1 && recovery_injected) || (inject_stage == 3 && async_completed);
 }
 static gboolean lifecycle_cleanup_due(gint64 now_us) {
     if (!gate_test) return terminal_output_ready(now_us);
     if (inject_stage && !recovery_injected) return TRUE;
     if (gate_attempts >= 3) return TRUE;
-    return ++gate_attempts >= 3;
+    gboolean ready = ++gate_attempts >= 3;
+    if (ready) recovery_blocked = FALSE;
+    return ready;
 }
 
 static ErrorCode lifecycle_render(PixelTermApp *app);
 static void lifecycle_async_render(PixelTermApp *app) {
     if (gate_test && inject_stage) {
-        if (gate_attempts < 3) premature_dispatches++;
-        app->running = FALSE;
+        if (inject_stage == 3 && !async_completed) {
+            recovery_injected = recovery_blocked = async_completed = TRUE;
+        } else if (inject_stage != 3) {
+            if (recovery_blocked) premature_dispatches++;
+            app->running = FALSE;
+        }
     }
 }
 static void lifecycle_dispatch(PixelTermApp *app) {
     if (gate_test) {
         if (inject_stage) {
-            if (inject_stage == 1) recovery_injected = TRUE;
+            if (inject_stage == 1 && !recovery_injected) recovery_injected = recovery_blocked = TRUE;
+            else if (recovery_blocked) premature_dispatches++;
             return;
         }
         if (gate_attempts < 3) premature_dispatches++;
@@ -42,10 +52,22 @@ static void lifecycle_dispatch(PixelTermApp *app) {
     }
 }
 static void lifecycle_animation(PixelTermApp *app) {
-    if (gate_test && inject_stage == 2) recovery_injected = TRUE;
-    else if (!inject_stage) lifecycle_dispatch(app);
+    if (gate_test && inject_stage == 2 && !recovery_injected) {
+        recovery_injected = recovery_blocked = TRUE;
+    } else if (gate_test && inject_stage) {
+        if (recovery_blocked) premature_dispatches++;
+    } else if (!inject_stage) lifecycle_dispatch(app);
 }
-static void lifecycle_event(PixelTermApp *app, InputHandler *input, const InputEvent *event) { (void)app; (void)input; (void)event; }
+static void lifecycle_event(PixelTermApp *app, InputHandler *input, const InputEvent *event) {
+    (void)input; (void)event;
+    if (gate_test && (inject_stage == 1 || inject_stage == 3)) {
+        if (recovery_blocked) premature_dispatches++;
+        app->running = FALSE;
+    }
+}
+static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
+    return gate_test ? ERROR_NONE : input_get_event(handler, event);
+}
 #define input_dispatch_process_pending lifecycle_dispatch
 #define input_dispatch_process_animations lifecycle_animation
 #define input_dispatch_pause_video_for_resize lifecycle_dispatch
@@ -53,6 +75,7 @@ static void lifecycle_event(PixelTermApp *app, InputHandler *input, const InputE
 #define app_render_by_mode lifecycle_render
 #define app_process_async_render lifecycle_async_render
 #define input_has_pending_input lifecycle_has_pending
+#define input_get_event lifecycle_get_event
 #define terminal_output_ready lifecycle_cleanup_due
 
 #define main pixelterm_main_for_lifecycle_test
@@ -161,6 +184,8 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     gate_test = TRUE;
     inject_stage = GPOINTER_TO_INT(data);
     recovery_injected = FALSE;
+    recovery_blocked = inject_stage == 0;
+    async_completed = FALSE;
     gate_attempts = premature_dispatches = 0;
     g_terminate_requested = 0;
     FILE *saved = stdout;
@@ -181,8 +206,8 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     gate_test = FALSE;
     inject_stage = 0;
     g_assert_cmpint(result, ==, ERROR_NONE);
-    g_assert_cmpuint(gate_attempts, ==, 3);
     g_assert_cmpuint(premature_dispatches, ==, 0);
+    g_assert_cmpuint(gate_attempts, ==, 3);
 }
 
 #ifdef __GLIBC__
@@ -240,6 +265,7 @@ void register_main_lifecycle_tests(void) {
     g_test_add_data_func("/main/output/waits_for_framing_recovery", NULL, test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_dispatch", GINT_TO_POINTER(1), test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_animation", GINT_TO_POINTER(2), test_main_waits_for_framing_recovery);
+    g_test_add_data_func("/main/output/rechecks_after_async_render", GINT_TO_POINTER(3), test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/cleanup/transient_restore", GINT_TO_POINTER(1), test_cleanup_reports_final_restore_state);
     g_test_add_data_func("/main/cleanup/persistent_restore", GINT_TO_POINTER(10), test_cleanup_reports_final_restore_state);
     g_test_add_data_func("/main/cleanup/late_restore", GINT_TO_POINTER(2), test_cleanup_reports_final_restore_state);

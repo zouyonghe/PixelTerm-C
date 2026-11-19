@@ -67,15 +67,15 @@ lifecycle owns termios; queued restoration outlives its callers.
 **Consumes:** Task 1 output interfaces. **Produces:** Existing input lifecycle
 APIs with documented transfer of restore controls; no extra generic session layer.
 
-- [ ] Add failure/recovery tests requiring mouse-disable, cursor-show, alternate-
+- [x] Add failure/recovery tests requiring mouse-disable, cursor-show, alternate-
   screen exit and sync-end after ST, including after handler destruction.
-- [ ] Retain outer original termios on non-TTY/restore failure; test raw snapshot
+- [x] Retain outer original termios on non-TTY/restore failure; test raw snapshot
   replacement and final restoration with two failures versus three.
-- [ ] Queue idempotent controls separately from raw-mode ownership and use checked
+- [x] Queue idempotent controls separately from raw-mode ownership and use checked
   final drain. Make sync-end defer through its existing UI helper.
-- [ ] Preserve primary errors and emit one secondary cleanup diagnostic; test both.
-- [ ] Run `/main`, input/probe and output tests, then the full normal suite.
-- [ ] Commit the independently verified lifecycle slice.
+- [x] Preserve primary errors and emit one secondary cleanup diagnostic; test both.
+- [x] Run `/main`, input/probe and output tests, then the full normal suite.
+- [x] Commit the independently verified lifecycle slice.
 
 ### Task 3: Route presentation through the shared output contract
 
@@ -85,19 +85,19 @@ APIs with documented transfer of restore controls; no extra generic session laye
 **Consumes:** `terminal_output_write/ready/flush/defer`. **Produces:** Existing
 public media API behavior; no new codec, rendering backend or CLI parameter.
 
-- [ ] Add tests for blocked-but-unsent GIF delete surviving reset, actual Kitty
+- [x] Add tests for blocked-but-unsent GIF delete surviving reset, actual Kitty
   APC absence after hide failure, and sync-end after failed initial play.
-- [ ] Strengthen stage-injection tests to record every unsafe dispatch/render
+- [x] Strengthen stage-injection tests to record every unsafe dispatch/render
   while recovery remains pending, including async-to-input fallthrough.
-- [ ] Route GIF root/subsequent/software output and video presentation failures
+- [x] Route GIF root/subsequent/software output and video presentation failures
   through the same checked submission boundary. Retain renderer output format.
-- [ ] Use one stage readiness contract for startup, event, animation, async and
+- [x] Use one stage readiness contract for startup, event, animation, async and
   cleanup; ensure no unbounded shutdown wait or busy-spin is introduced.
-- [ ] Remove repeated local purge/retry sequences; keep generation invalidation,
+- [x] Remove repeated local purge/retry sequences; keep generation invalidation,
   worker joins, paused target restoration and fallback policies unchanged.
-- [ ] Run full normal/UBSan/debug suites and intentional missing-gate/wrong-delete
+- [x] Run full normal/UBSan/debug suites and intentional missing-gate/wrong-delete
   mutations; restore production code before committing.
-- [ ] Commit presentation migration separately from optional cleanup.
+- [x] Commit presentation migration separately from optional cleanup.
 
 ### Task 4: Remove drift and validate the complete branch
 
@@ -122,3 +122,6 @@ and only directly affected tests.
 - Preserved and incorporated the pre-existing uncommitted policy work; fixed the standalone preview link by linking only the lightweight output module.
 - GIF root submission now returns the original presentation result; successful recovery cannot erase the failed-submit result.
 - Warning-clean full normal suite passed: 515 C tests and 74 Python tests. Tasks 2/3 continue with lifecycle ownership/fault tests and checked presentation.
+
+- Phase 2/3: session controls and unsent GIF deletion remain owned after handler/player destruction. GIF/video presentation is assembled then submitted via terminal_output_write; local payload fwrite/flush branches were removed.
+- Gate mutations after dispatch, animation and async rendering each fail at premature_dispatches==0; production code restored. Full normal suite passed 518 C and 74 Python tests. Final sanitizer/platform checks remain in Task 4.

@@ -50,11 +50,7 @@ static gboolean gif_player_write_kitty_command(GString *command) {
         g_string_free(command, TRUE);
         return FALSE;
     }
-    size_t written = command->len > 0 ? fwrite(command->str, 1, command->len, stdout) : 0;
-    gboolean success = written == command->len && fflush(stdout) == 0;
-    if (!success) {
-        terminal_output_recover();
-    }
+    gboolean success = terminal_output_write(command->str, command->len);
     g_string_free(command, TRUE);
     return success;
 }
@@ -230,6 +226,8 @@ static gboolean gif_player_present_rendered_frame(GifPlayer *player,
     }
     if (!terminal_output_ready(g_get_monotonic_time())) return FALSE;
 
+    GString *output = g_string_new(NULL);
+
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
         gint term_h = player->render_term_height;
@@ -273,22 +271,22 @@ static gboolean gif_player_present_rendered_frame(GifPlayer *player,
             if (col < 1) {
                 col = 1;
             }
-            printf("\033[%d;%dH", row, col);
+            g_string_append_printf(output, "\033[%d;%dH", row, col);
             if (result->len > 0) {
-                fwrite(result->str, 1, result->len, stdout);
+                g_string_append_len(output, result->str, result->len);
             }
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else if (!has_newline) {
             gif_player_clear_line_cache(player);
-            printf("\033[%d;1H", row);
+            g_string_append_printf(output, "\033[%d;1H", row);
             if (left_pad > 0) {
                 gchar *pad_buffer = g_malloc(left_pad);
                 memset(pad_buffer, ' ', left_pad);
-                fwrite(pad_buffer, 1, left_pad, stdout);
+                g_string_append_len(output, pad_buffer, left_pad);
                 g_free(pad_buffer);
             }
             if (result->len > 0) {
-                fwrite(result->str, 1, result->len, stdout);
+                g_string_append_len(output, result->str, result->len);
             }
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else {
@@ -315,9 +313,9 @@ static gboolean gif_player_present_rendered_frame(GifPlayer *player,
                     prev_line = g_ptr_array_index(player->last_frame_lines, line_index);
                 }
                 if (!prev_line || strcmp(prev_line, full_line) != 0) {
-                    printf("\033[%d;1H\033[2K", row);
+                    g_string_append_printf(output, "\033[%d;1H\033[2K", row);
                     if (full_len > 0) {
-                        fwrite(full_line, 1, full_len, stdout);
+                        g_string_append_len(output, full_line, full_len);
                     }
                 }
 
@@ -348,7 +346,7 @@ static gboolean gif_player_present_rendered_frame(GifPlayer *player,
             }
             for (gint r = prev_top; r <= prev_bottom; r++) {
                 if (r < new_top || r > new_bottom) {
-                    printf("\033[%d;1H\033[2K", r);
+                    g_string_append_printf(output, "\033[%d;1H\033[2K", r);
                 }
             }
         }
@@ -357,17 +355,18 @@ static gboolean gif_player_present_rendered_frame(GifPlayer *player,
         player->last_frame_height = lines_printed > 0 ? lines_printed : 0;
     } else {
         gif_player_clear_line_cache(player);
-        printf("\033[H");
+        g_string_append_printf(output, "\033[H");
         if (result->len > 0) {
-            fwrite(result->str, 1, result->len, stdout);
+            g_string_append_len(output, result->str, result->len);
         }
-        printf("\033[J");
+        g_string_append_printf(output, "\033[J");
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
     }
 
-    gboolean success = fflush(stdout) == 0 && !ferror(stdout);
-    if (!success) terminal_output_recover();
+    gboolean success = terminal_output_write(output->str, output->len);
+    g_string_free(output, TRUE);
+    if (!success) gif_player_clear_line_cache(player);
     return success;
 }
 
@@ -418,17 +417,13 @@ static gboolean gif_player_submit_kitty_frame(GifPlayer *player,
                                           frame->display_height_cells,
                                           TRUE);
     } else {
-        size_t written = frame->command->len > 0
-            ? fwrite(frame->command->str, 1, frame->command->len, stdout)
-            : 0;
-        success = written == frame->command->len && fflush(stdout) == 0;
+        success = terminal_output_write(frame->command->str, frame->command->len);
     }
 
     if (success && frame->shm_name) {
         g_ptr_array_add(player->kitty_animation_shm_names, frame->shm_name);
         frame->shm_name = NULL;
     }
-    if (!success) terminal_output_recover();
     kitty_graphics_frame_free(frame);
     return success;
 }

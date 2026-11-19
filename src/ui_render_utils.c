@@ -200,11 +200,7 @@ void ui_clear_kitty_images(const PixelTermApp *app) {
     // Delete all kitty image placements (quiet) so old images don't linger.
     if (!terminal_output_flush()) return;
     const char command[] = "\033_Ga=d,q=2\033\\";
-    gsize written = fwrite(command, 1, sizeof(command) - 1, stdout);
-    gint flushed = fflush(stdout);
-    if (written != sizeof(command) - 1 || flushed != 0 || ferror(stdout)) {
-        terminal_output_recover();
-    }
+    terminal_output_write(command, sizeof(command) - 1);
 }
 
 void ui_clear_single_view_lines(const PixelTermApp *app) {
