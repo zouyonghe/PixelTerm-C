@@ -8,6 +8,7 @@
 #include "video_player_playback_internal.h"
 #include "video_player_seek_internal.h"
 #include "kitty_graphics.h"
+#include "terminal_output.h"
 #include "media_buffer.h"
 #include "process_env.h"
 
@@ -44,19 +45,19 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
         command = g_string_new(NULL);
         g_string_printf(command, "\033_Ga=d,d=i,i=%u,q=2\033\\", player->kitty_direct_image_id);
     }
-    g_string_prepend(command, "\033\\"); /* End a partial APC before every delete attempt. */
-    gboolean deleted = FALSE;
-    for (gint attempt = 0; attempt < (release ? 3 : 1); attempt++) {
-        clearerr(stdout); /* Retry checks this attempt, not a previous stream error. */
-        gsize written = fwrite(command->str, 1, command->len, stdout);
-        gint flushed = fflush(stdout);
-        deleted = written == command->len && flushed == 0 && !ferror(stdout);
-        if (deleted) break;
+    gboolean deleted;
+    if (release) {
+        /* Transfer unsent releases before dropping the player's ID. */
+        terminal_output_defer(command->str, TERMINAL_OUTPUT_ONCE);
+        deleted = terminal_output_flush();
+        if (!deleted) terminal_output_flush(); /* The attempted release is now ST-only. */
+    } else {
+        g_string_prepend(command, "\033\\");
+        deleted = terminal_output_write(command->str, command->len);
     }
     g_string_free(command, TRUE);
     if (release) {
         if (!deleted) {
-            kitty_graphics_defer_image_delete(player->kitty_direct_image_id);
             video_player_report_output_failure();
         }
         /* Release has one owner, even while this stopped player remains alive. */
@@ -69,7 +70,7 @@ static gboolean video_player_clear_direct_kitty_image(VideoPlayer *player, gbool
 }
 
 static gboolean video_player_prepare_direct_kitty_image(VideoPlayer *player) {
-    if (!kitty_graphics_retry_pending_deletes()) return FALSE;
+    if (!terminal_output_flush()) return FALSE;
     if (player->kitty_direct_image_id || player->kitty_shm_enabled || player->kitty_transfer == KITTY_TRANSFER_SHM ||
         pixelterm_getenv("TMUX") || pixelterm_getenv("STY")) return TRUE;
     RendererConfig config = video_player_render_worker_config(player);
@@ -878,6 +879,25 @@ void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_
     g_mutex_unlock(&player->state_mutex);
 }
 
+static gboolean protocol_cycle_needs_redraw(const ImageRenderer *renderer) {
+    if (!renderer) return FALSE;
+    const RendererConfig *config = &renderer->config;
+    gboolean was_text = config->force_text || !renderer->canvas_config ||
+        chafa_canvas_config_get_pixel_mode(renderer->canvas_config) == CHAFA_PIXEL_MODE_SYMBOLS;
+    gboolean next_graphics = config->force_iterm2 || config->force_sixel ||
+        config->force_text || (!config->force_text && !config->force_sixel &&
+                               !config->force_iterm2 && !config->force_kitty);
+    return was_text || !next_graphics;
+}
+
+gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player) {
+    if (!player) return FALSE;
+    g_mutex_lock(&player->render_mutex);
+    gboolean redraw = protocol_cycle_needs_redraw(player->renderer);
+    g_mutex_unlock(&player->render_mutex);
+    return redraw;
+}
+
 gboolean video_player_cycle_protocol(VideoPlayer *player) {
     if (!player) {
         return FALSE;
@@ -907,11 +927,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     gboolean force_kitty = renderer->config.force_kitty;
     gboolean force_iterm2 = renderer->config.force_iterm2;
     gboolean force_sixel = renderer->config.force_sixel;
-    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-    if (renderer->canvas_config) {
-        current_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
-    }
-    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
+    gboolean redraw = protocol_cycle_needs_redraw(renderer);
 
     renderer->config.force_text = force_kitty;
     renderer->config.force_sixel = force_text ||
@@ -920,9 +936,6 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     renderer->config.force_iterm2 = force_sixel;
     renderer->config.force_kitty = force_iterm2;
 
-    gboolean next_graphics = renderer->config.force_kitty ||
-                              renderer->config.force_iterm2 ||
-                              renderer->config.force_sixel;
     gboolean next_kitty = renderer->config.force_kitty;
     renderer_update_terminal_size(renderer);
     g_mutex_lock(&player->state_mutex);
@@ -938,7 +951,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
 
     /* Re-render when entering graphics mode or when leaving it so stale
      * graphics placements do not remain behind the next text frame. */
-    return was_text || !next_graphics;
+    return redraw;
 }
 
 gboolean video_player_get_last_frame_bounds(VideoPlayer *player,
@@ -988,9 +1001,9 @@ gchar *video_player_dup_cached_line_at_row(VideoPlayer *player, gint terminal_ro
     return line_copy;
 }
 
-void video_player_clear_render_area(VideoPlayer *player) {
+ErrorCode video_player_clear_render_area(VideoPlayer *player) {
     if (!player) {
-        return;
+        return ERROR_INVALID_IMAGE;
     }
 
     gint area_top = 0;
@@ -1020,7 +1033,7 @@ void video_player_clear_render_area(VideoPlayer *player) {
     }
 
     if (clear_top <= 0 || clear_height <= 0) {
-        return;
+        return ERROR_NONE;
     }
 
     gint bottom = clear_top + clear_height - 1;
@@ -1028,13 +1041,17 @@ void video_player_clear_render_area(VideoPlayer *player) {
         bottom = term_h;
     }
 
+    GString *clear = g_string_new(NULL);
     for (gint row = clear_top; row <= bottom; row++) {
-        printf("\033[%d;1H\033[2K", row);
+        g_string_append_printf(clear, "\033[%d;1H\033[2K", row);
     }
-    fflush(stdout);
+    gboolean cleared = terminal_output_write(clear->str, clear->len);
+    g_string_free(clear, TRUE);
+    if (!cleared) return ERROR_OUTPUT_IO;
     g_mutex_lock(&player->state_mutex);
     video_player_clear_line_cache(player);
     g_mutex_unlock(&player->state_mutex);
+    return ERROR_NONE;
 }
 
 static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output_error);
@@ -1845,15 +1862,15 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
-    clearerr(stdout);
-    /* Recovery must precede cursor/text output, not only the next graphics APC. */
-    gboolean output_success = fwrite("\033\\", 1, 2, stdout) == 2;
+    gboolean output_success = terminal_output_flush();
+    GString *output = g_string_new("\033\x5c");
     if (!frame->kitty_direct_image_id) {
         output_success = video_player_clear_direct_kitty_image(player, FALSE) && output_success;
     } else {
         /* Keep ownership even if a later write is partial, so stop can clean up. */
         player->kitty_direct_image_present = TRUE;
     }
+    if (!output_success) goto output_finished;
     g_mutex_lock(&player->state_mutex);
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
@@ -1896,27 +1913,23 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
             if (col < 1) {
                 col = 1;
             }
-            printf("\033[%d;%dH", row, col);
-            size_t written = 0;
-            if (result->len > 0) {
-                written = fwrite(result->str, 1, result->len, stdout);
-            }
-            output_success = (written == result->len) && output_success;
-            kitty_shm_written = frame->kitty_shm_name && written == result->len;
+            g_string_append_printf(output, "\033[%d;%dH", row, col);
+            g_string_append_len(output, result->str, result->len);
+            kitty_shm_written = frame->kitty_shm_name != NULL;
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else if (!has_newline) {
             video_player_clear_line_cache(player);
             if (left_pad > 0) {
                 gchar *pad_buffer = g_malloc(left_pad);
                 memset(pad_buffer, ' ', left_pad);
-                printf("\033[%d;1H", row);
-                output_success = (fwrite(pad_buffer, 1, left_pad, stdout) == (gsize)left_pad) && output_success;
+                g_string_append_printf(output, "\033[%d;1H", row);
+                g_string_append_len(output, pad_buffer, left_pad);
                 g_free(pad_buffer);
             } else {
-                printf("\033[%d;1H", row);
+                g_string_append_printf(output, "\033[%d;1H", row);
             }
             if (result->len > 0) {
-                output_success = (fwrite(result->str, 1, result->len, stdout) == result->len) && output_success;
+                g_string_append_len(output, result->str, result->len);
             }
             lines_printed = rendered_h > 0 ? rendered_h : 1;
         } else {
@@ -1943,9 +1956,9 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
                     prev_line = g_ptr_array_index(player->last_frame_lines, line_index);
                 }
                 if (!prev_line || strcmp(prev_line, full_line) != 0) {
-                    printf("\033[%d;1H\033[2K", row);
+                    g_string_append_printf(output, "\033[%d;1H\033[2K", row);
                     if (full_len > 0) {
-                        output_success = (fwrite(full_line, 1, full_len, stdout) == (gsize)full_len) && output_success;
+                        g_string_append_len(output, full_line, full_len);
                     }
                 }
                 g_ptr_array_add(new_lines, full_line);
@@ -1973,7 +1986,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
             if (prev_bottom > area_bottom) prev_bottom = area_bottom;
             for (gint r = prev_top; r <= prev_bottom; r++) {
                 if (r < new_top || r > new_bottom) {
-                    printf("\033[%d;1H\033[2K", r);
+                    g_string_append_printf(output, "\033[%d;1H\033[2K", r);
                 }
             }
         }
@@ -2007,31 +2020,28 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
                     show_proto = FALSE;
                 }
                 if (show_proto) {
-                    printf("\033[%d;1H%s", stats_row, proto_line);
+                    g_string_append_printf(output, "\033[%d;1H%s", stats_row, proto_line);
                     for (gint pad = proto_len; pad < 12; pad++) {
-                        putchar(' ');
+                        g_string_append_c(output, ' ');
                     }
                 }
-                printf("\033[%d;%dH%s", stats_row, fps_col, fps_line);
+                g_string_append_printf(output, "\033[%d;%dH%s", stats_row, fps_col, fps_line);
             }
         }
     } else {
         video_player_clear_line_cache(player);
-        printf("\033[H");
-        size_t written = 0;
-        if (result->len > 0) {
-            written = fwrite(result->str, 1, result->len, stdout);
-        }
-        output_success = (written == result->len) && output_success;
-        kitty_shm_written = frame->kitty_shm_name && written == result->len;
-        printf("\033[J");
+        g_string_append_printf(output, "\033[H");
+        g_string_append_len(output, result->str, result->len);
+        kitty_shm_written = frame->kitty_shm_name != NULL;
+        g_string_append_printf(output, "\033[J");
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
     }
     g_mutex_unlock(&player->state_mutex);
 
-    gint flush_result = fflush(stdout);
-    output_success = output_success && flush_result == 0 && !ferror(stdout);
+output_finished:;
+    if (output_success) output_success = terminal_output_write(output->str, output->len);
+    g_string_free(output, TRUE);
     if (output_success && kitty_shm_written) {
         video_frame_mark_kitty_shm_submitted(frame);
     }
@@ -2039,8 +2049,6 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     if (!output_success) {
         ErrorCode failure = video_player_report_output_failure();
         if (output_error) *output_error = failure;
-        kitty_graphics_defer_output_recovery();
-        kitty_graphics_retry_pending_deletes();
         g_mutex_lock(&player->state_mutex);
         video_player_clear_line_cache(player);
         player->is_playing = FALSE;

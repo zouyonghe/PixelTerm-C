@@ -164,9 +164,10 @@ void video_player_set_render_area(VideoPlayer *player,
 /**
  * @brief Clears the most recently rendered video area from the terminal.
  *
+ * @return ERROR_OUTPUT_IO on failed submission; the previous line cache is retained.
  * @note Call from the player-owning main context because this writes stdout.
  */
-void video_player_clear_render_area(VideoPlayer *player);
+ErrorCode video_player_clear_render_area(VideoPlayer *player);
 
 /**
  * @brief Enables or disables the playback statistics overlay.
@@ -183,6 +184,9 @@ void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats);
  * with render workers.
  */
 void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance);
+
+/* Predict cycle_protocol's redraw result without changing protocol or frame. */
+gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player);
 
 /**
  * @brief Advances the renderer protocol override to the next display mode.

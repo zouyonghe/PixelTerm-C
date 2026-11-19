@@ -1,5 +1,6 @@
 #include "input.h"
 #include "terminal_probe.h"
+#include "terminal_output.h"
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -162,11 +163,13 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
                                                   g_input_enable_raw_mode_observer_user_data);
     }
 
-    if (!handler || handler->raw_mode_enabled) {
+    if (!handler) {
         return ERROR_NONE;
     }
 
     // Check if stdin is a terminal
+    if (!terminal_probe_retry_restore()) return ERROR_TERMINAL_SIZE;
+    if (handler->raw_mode_enabled) return ERROR_NONE;
     if (!isatty(STDIN_FILENO)) {
         return ERROR_NONE;
     }
@@ -194,17 +197,15 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
         return ERROR_TERMINAL_SIZE;
     }
 
-    // Hide cursor for TUI; optionally enter alternate screen (if enabled).
+    handler->raw_mode_enabled = TRUE;
+    // Record attempted controls before submission so failed entry can unwind.
     if (isatty(STDOUT_FILENO)) {
         if (handler->use_alt_screen) {
-            printf("\033[?1049h");
             handler->alt_screen_enabled = TRUE;
         }
-        printf("\033[?25l");
-        fflush(stdout);
+        const char *entry = handler->use_alt_screen ? "\033[?1049h\033[?25l" : "\033[?25l";
+        if (!terminal_output_write(entry, strlen(entry))) return ERROR_OUTPUT_IO;
     }
-
-    handler->raw_mode_enabled = TRUE;
     return ERROR_NONE;
 }
 
@@ -219,29 +220,31 @@ ErrorCode input_disable_raw_mode(InputHandler *handler) {
         return ERROR_NONE;
     }
 
-    // Only restore if stdin is a terminal
-    if (isatty(STDIN_FILENO)) {
-        if (handler->has_orig_termios) {
-            tcsetattr(STDIN_FILENO, TCSAFLUSH, &handler->orig_termios);
+    gboolean restored = TRUE;
+    if (handler->has_orig_termios) {
+        /* Preserve the outer settings even if stdin is temporarily no longer a TTY. */
+        restored = terminal_probe_restore_original(&handler->orig_termios);
+    } else if (isatty(STDIN_FILENO)) {
+        struct termios term;
+        if (tcgetattr(STDIN_FILENO, &term) == 0) {
+            term.c_lflag |= (ICANON | ECHO);
+            restored = terminal_probe_restore_original(&term);
         } else {
-            struct termios term;
-            if (tcgetattr(STDIN_FILENO, &term) == 0) {
-                term.c_lflag |= (ICANON | ECHO);
-                tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
-            }
+            restored = FALSE;
         }
+    } else {
+        restored = FALSE;
     }
 
     // Restore main screen (if we switched), then show cursor
-    if (handler->alt_screen_enabled && isatty(STDOUT_FILENO)) {
-        printf("\033[?1049l");
-        handler->alt_screen_enabled = FALSE;
-    }
-    printf("\033[0m\033[?25h");
-    fflush(stdout);
+    terminal_output_defer(handler->alt_screen_enabled ?
+        "\033[?1049l\033[0m\033[?25h" : "\033[0m\033[?25h", TERMINAL_OUTPUT_RESTORE);
+    /* The queue, rather than raw_mode_enabled, now owns pending screen restoration. */
+    handler->alt_screen_enabled = FALSE;
+    gboolean output_restored = terminal_output_flush();
 
-    handler->raw_mode_enabled = FALSE;
-    return ERROR_NONE;
+    handler->raw_mode_enabled = !restored;
+    return !restored ? ERROR_TERMINAL_SIZE : output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 // Enable mouse tracking
@@ -255,11 +258,9 @@ ErrorCode input_enable_mouse(InputHandler *handler) {
     }
 
     // Enable mouse tracking with button event tracking (supports scroll wheel)
-    printf("\033[?1002;1006h");
-    fflush(stdout);
-
     handler->mouse_enabled = TRUE;
-    return ERROR_NONE;
+    const char enable[] = "\033[?1002;1006h";
+    return terminal_output_write(enable, sizeof(enable) - 1) ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 // Disable mouse tracking
@@ -268,17 +269,10 @@ ErrorCode input_disable_mouse(InputHandler *handler) {
         return ERROR_NONE;
     }
 
-    if (!isatty(STDOUT_FILENO)) {
-        handler->mouse_enabled = FALSE;
-        return ERROR_NONE;
-    }
-
     // Disable mouse tracking
-    printf("\033[?1002;1006l");
-    fflush(stdout);
-
+    terminal_output_defer("\033[?1002;1006l", TERMINAL_OUTPUT_RESTORE);
     handler->mouse_enabled = FALSE;
-    return ERROR_NONE;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 /* shortcut: ESC/Alt keys and replies share bytes; allow 250 ms idle gaps,

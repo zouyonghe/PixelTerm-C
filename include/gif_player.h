@@ -99,8 +99,9 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer);
  * @param area_height Height of the image area in rows.
  * @param max_width Maximum render width in characters.
  * @param max_height Maximum render height in characters.
+ * @return `ERROR_NONE` on success or no change, or the cleanup/presentation error.
  */
-void gif_player_set_render_area(GifPlayer *player,
+ErrorCode gif_player_set_render_area(GifPlayer *player,
                                 gint term_width,
                                 gint term_height,
                                 gint area_top_row,
@@ -131,7 +132,12 @@ ErrorCode gif_player_load(GifPlayer *player, const gchar *filepath);
  *         GIF is loaded.
  */
 ErrorCode gif_player_play(GifPlayer *player);
-void gif_player_prepare_for_redraw(GifPlayer *player);
+/**
+ * @brief Suspends playback for redraw while preserving the current frame.
+ * @return `ERROR_NONE` on success or no active playback, or `ERROR_OUTPUT_IO`
+ *         if native animation cleanup fails.
+ */
+ErrorCode gif_player_prepare_for_redraw(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 

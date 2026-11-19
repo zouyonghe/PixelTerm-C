@@ -2,6 +2,8 @@
 #define GIF_PLAYER_TEST_INTERNAL_H
 
 #include "gif_player.h"
+#include "kitty_graphics.h"
+gboolean gif_player_submit_kitty_frame_for_test(GifPlayer *player, KittyGraphicsFrame *frame, gboolean root);
 
 typedef gboolean (*GifPlayerAdvanceHook)(GdkPixbufAnimationIter *iter,
                                          gconstpointer current_time);

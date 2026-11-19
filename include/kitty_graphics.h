@@ -16,13 +16,9 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode);
 /* Main context only; reserves an invisible pixel using a terminal-assigned ID.
  * Returns 0 on unsupported transport, malformed reply or timeout. */
 guint32 kitty_graphics_allocate_image_id(void);
-/* Main context only. Deferred deletes outlive players and retain ownership until
- * a checked write/flush succeeds. Retry from the event loop and before allocation. */
+/* Main context only. Queue one terminal-owned image release;
+ * uncertain delivery is never replayed. */
 void kitty_graphics_defer_image_delete(guint32 image_id);
-void kitty_graphics_defer_output_recovery(void);
-gboolean kitty_graphics_retry_pending_deletes(void);
-/* Background retries are throttled; explicit allocation/shutdown retries are not. */
-void kitty_graphics_retry_pending_deletes_if_due(gint64 now_us);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */
 #define KITTY_GRAPHICS_DIRECT_MAX_BYTES (8 * 1024 * 1024)

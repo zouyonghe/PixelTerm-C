@@ -1,6 +1,9 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 
 #include "common.h"
 #include "media_utils.h"
@@ -20,6 +23,7 @@ void register_input_dispatch_key_file_manager_tests(void);
 void register_input_dispatch_mouse_modes_tests(void);
 void register_preview_shared_tests(void);
 void register_video_player_tests(void);
+void register_video_output_tests(void);
 void register_app_media_session_tests(void);
 void register_app_single_render_integration_tests(void);
 void register_terminal_protocols_tests(void);
@@ -27,6 +31,8 @@ void register_kitty_graphics_tests(void);
 void register_app_cli_tests(void);
 void register_app_startup_tests(void);
 void register_book_tests(void);
+void register_terminal_output_tests(void);
+void register_main_lifecycle_tests(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
 
 static void test_video_player_debug_filter_covers_logged_events(void) {
@@ -59,24 +65,18 @@ static void remove_path(gpointer data) {
     g_free(data);
 }
 
+static gint (*fixture_mkstemp)(gchar *) = g_mkstemp;
+
 static gchar *write_temp_file(const gchar *suffix, const guint8 *data, gsize len) {
-    gchar *template = g_strdup_printf("%s/pixelterm-test-XXXXXX", g_get_tmp_dir());
-    int fd = g_mkstemp(template);
+    /* GLib permits suffixes after XXXXXX, reserving the final name atomically. */
+    gchar *template = g_strdup_printf("%s/pixelterm-test-XXXXXX%s", g_get_tmp_dir(), suffix ? suffix : "");
+    int fd = fixture_mkstemp(template);
     if (fd < 0) {
         g_error("Failed to create temp file");
     }
     close(fd);
 
     gchar *path = template;
-    if (suffix && suffix[0] != '\0') {
-        gchar *with_suffix = g_strconcat(template, suffix, NULL);
-        if (g_rename(template, with_suffix) == 0) {
-            g_free(template);
-            path = with_suffix;
-        } else {
-            g_free(with_suffix);
-        }
-    }
 
     const gchar *contents = (len == 0 && data == NULL) ? "" : (const gchar *)data;
     GError *error = NULL;
@@ -199,6 +199,44 @@ static void test_is_valid_video_file_by_content(void) {
 
     g_assert_true(is_valid_video_file(mp4_path));
     g_assert_false(is_valid_video_file(invalid_path));
+}
+
+static gchar *collision_candidate;
+static gboolean collision_seen;
+
+static gint reserve_colliding_fixture(gchar *template) {
+    if (collision_candidate) {
+        gint fd = g_open(collision_candidate, O_RDWR | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0) {
+            g_assert_cmpuint(strlen(template), ==, strlen(collision_candidate));
+            memcpy(template, collision_candidate, strlen(template) + 1);
+            return fd;
+        }
+        g_assert_cmpint(errno, ==, EEXIST);
+        collision_seen = TRUE;
+    }
+    gint fd = g_mkstemp(template);
+    if (!collision_candidate) collision_candidate = g_strdup(template);
+    return fd;
+}
+
+static void test_temp_fixtures_do_not_replace_each_other(void) {
+    const guint8 first_bytes[] = {1, 2, 3}, second_bytes[] = {4, 5, 6};
+    collision_seen = FALSE;
+    fixture_mkstemp = reserve_colliding_fixture;
+    gchar *first = write_temp_file(".png", first_bytes, sizeof(first_bytes));
+    gchar *second = write_temp_file(".png", second_bytes, sizeof(second_bytes));
+    fixture_mkstemp = g_mkstemp;
+    g_clear_pointer(&collision_candidate, g_free);
+    gchar *contents = NULL;
+    gsize length = 0;
+    g_assert_true(g_file_get_contents(first, &contents, &length, NULL));
+    g_assert_cmpmem(contents, length, first_bytes, sizeof(first_bytes));
+    g_free(contents);
+    g_assert_true(collision_seen);
+    g_assert_cmpstr(first, !=, second);
+    g_assert_true(g_str_has_suffix(first, ".png"));
+    g_assert_true(g_str_has_suffix(second, ".png"));
 }
 
 static void test_is_animated_image_candidate(void) {
@@ -337,6 +375,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/common/is_book_file_and_valid", test_is_book_file_and_valid);
     g_test_add_func("/common/is_valid_video_file_by_content", test_is_valid_video_file_by_content);
     g_test_add_func("/common/is_animated_image_candidate", test_is_animated_image_candidate);
+    g_test_add_func("/common/temp_fixtures_are_unique", test_temp_fixtures_do_not_replace_each_other);
     g_test_add_func("/common/media_classify", test_media_classify_handles_content_and_extensions);
     g_test_add_func("/common/file_helpers", test_file_helpers);
     g_test_add_func("/common/cleanup_helpers", test_cleanup_helpers);
@@ -362,7 +401,10 @@ int main(int argc, char **argv) {
     register_app_cli_tests();
     register_app_startup_tests();
     register_book_tests();
+    register_terminal_output_tests();
+    register_main_lifecycle_tests();
     register_video_player_tests();
+    register_video_output_tests();
     register_app_media_session_tests();
     register_app_single_render_integration_tests();
 
