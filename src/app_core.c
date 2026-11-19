@@ -188,16 +188,18 @@ ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
         return ERROR_INVALID_IMAGE;
     }
 
-    app_close_book(app);
-
     ErrorCode open_err = ERROR_NONE;
     BookDocument *doc = book_open(filepath, &open_err);
     if (!doc) {
         return open_err != ERROR_NONE ? open_err : ERROR_INVALID_IMAGE;
     }
 
+    /* filepath may alias the current book's path or current_directory. */
+    gchar *path = g_strdup(filepath);
+    gchar *directory = g_path_get_dirname(filepath);
+    app_close_book(app);
     app->book.doc = doc;
-    app->book.path = g_strdup(filepath);
+    app->book.path = path;
     app->book.page_count = book_get_page_count(doc);
     app->book.page = 0;
     app->book.preview_selected = 0;
@@ -209,8 +211,7 @@ ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
     app->book.toc_visible = FALSE;
 
     g_free(app->current_directory);
-    gchar *directory = g_path_get_dirname(filepath);
-    app->current_directory = directory ? directory : g_strdup(filepath);
+    app->current_directory = directory;
 
     return ERROR_NONE;
 }

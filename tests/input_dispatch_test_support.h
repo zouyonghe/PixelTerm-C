@@ -55,6 +55,7 @@ typedef struct {
     ErrorCode delete_result;
     ErrorCode open_book_result;
     ErrorCode enter_file_manager_result;
+    gboolean enter_file_manager_renders_before_error;
     ErrorCode exit_file_manager_result;
     ErrorCode enter_preview_result;
     ErrorCode enter_book_preview_result;
@@ -74,9 +75,11 @@ typedef struct {
     ErrorCode display_help_result;
     ErrorCode render_by_mode_result;
     ErrorCode preview_render_result;
+    ErrorCode book_preview_render_result;
     ErrorCode book_page_render_result;
     ErrorCode file_manager_render_result;
     gboolean render_by_mode_outputs_help;
+    const gchar *render_by_mode_payload;
     ErrorCode preview_selection_render_result;
     ErrorCode exit_preview_result;
     ErrorCode preview_zoom_result;

@@ -44,6 +44,7 @@ static void cleanup_file_manager_app(PixelTermApp *app) {
     }
     g_list_free_full(app->file_manager.entries, g_free);
     g_free(app->file_manager.directory);
+    g_free(app->book.path);
 }
 
 static PixelTermApp make_file_manager_list_app(void) {
@@ -91,6 +92,7 @@ static void test_tab_on_book_selection_enters_book_preview(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
     g_assert_cmpint(app.mode, ==, APP_MODE_BOOK_PREVIEW);
 
+    g_free(app.current_directory);
     cleanup_file_manager_app(&app);
     g_remove(book_path);
     g_free(book_path);
@@ -131,15 +133,28 @@ static void test_enter_error_redraw_once(gconstpointer data) {
 }
 
 static void test_tab_preserves_source_until_destination_entry(gconstpointer data) {
-    gint kind = GPOINTER_TO_INT(data);
+    gint scenario = GPOINTER_TO_INT(data);
+    gint kind = scenario & 3;
+    gboolean render_failure = scenario & 4;
+    gboolean redraw_failure = scenario & 8;
     gchar *dir = create_temp_dir();
     gchar *path = kind == 0 ? write_book_fixture(dir) :
                   kind == 1 ? g_build_filename(dir, "image.jpg", NULL) : g_strdup(dir);
     if (kind == 1) g_assert_true(g_file_set_contents(path, "image", -1, NULL));
-    ErrorCode results[] = {ERROR_OUTPUT_IO, ERROR_INVALID_IMAGE, ERROR_NONE};
+    ErrorCode results[] = {ERROR_OUTPUT_IO, ERROR_INVALID_IMAGE, ERROR_MEMORY_ALLOC, ERROR_NONE};
     for (guint i = 0; i < G_N_ELEMENTS(results); i++) {
         PixelTermApp app = make_file_manager_app(path);
         app.current_directory = g_strdup("/original");
+        app.info_visible = app.help_visible = TRUE;
+        if (kind == 0) {
+            app.book = (BookState){.doc = (BookDocument *)0x1,
+                .path = g_strdup("/original/old.pdf"), .toc = (BookToc *)0x1,
+                .page = 3, .page_count = 20, .preview_selected = 7, .preview_scroll = 2,
+                .preview_zoom = 40, .toc_selected = 4, .toc_scroll = 1, .toc_visible = TRUE,
+                .jump_active = TRUE, .jump_dirty = TRUE, .jump_len = 2, .jump_buf = "12"};
+        }
+        BookState old_book = app.book;
+        gchar *old_directory = app.current_directory;
         if (kind != 0) {
             app.return_to_mode = RETURN_MODE_NONE;
             app.current_index = 1;
@@ -156,20 +171,33 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         input_dispatch_test_reset_stubs();
         g_input_dispatch_stub_state.file_manager_has_images = TRUE;
         g_input_dispatch_stub_state.load_directory_replaces_media = kind != 0;
-        g_input_dispatch_stub_state.enter_book_preview_result = results[i];
-        g_input_dispatch_stub_state.enter_preview_result = results[i];
+        g_input_dispatch_stub_state.enter_book_preview_result = render_failure ? ERROR_NONE : results[i];
+        g_input_dispatch_stub_state.enter_preview_result = render_failure ? ERROR_NONE : results[i];
+        g_input_dispatch_stub_state.book_preview_render_result = render_failure ? results[i] : ERROR_NONE;
+        g_input_dispatch_stub_state.preview_render_result = render_failure ? results[i] : ERROR_NONE;
+        g_input_dispatch_stub_state.file_manager_render_result = redraw_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
         input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
         gboolean success = results[i] == ERROR_NONE;
         g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, success);
         g_assert_cmpint(app.mode, ==, success ? (kind == 0 ? APP_MODE_BOOK_PREVIEW : APP_MODE_PREVIEW) : APP_MODE_FILE_MANAGER);
-        g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, success && kind == 0);
-        g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, success && kind != 0);
+        g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, (success || render_failure) && kind == 0);
+        g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, (success || render_failure) && kind != 0);
+        g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, !success && results[i] != ERROR_OUTPUT_IO);
         g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
         if (kind == 0) {
-            g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, !success);
+            g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, 1);
+            if (!success) {
+                g_assert_cmpmem(&app.book, sizeof(app.book), &old_book, sizeof(old_book));
+                g_assert_true(app.current_directory == old_directory);
+            } else {
+                g_assert_true(app.book.doc == (BookDocument *)0x2);
+                g_assert_cmpstr(app.book.path, ==, path);
+            }
         }
         if (!success) {
             g_assert_true(app.needs_redraw);
+            g_assert_true(app.info_visible);
+            g_assert_true(app.help_visible);
             g_assert_true(app.file_manager.entries == entries);
             g_assert_cmpstr(app.file_manager.entries->data, ==, path);
             if (kind != 0) {
@@ -185,7 +213,7 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
             }
             g_assert_cmpstr(app.current_directory, ==, "/original");
         }
-        g_assert_cmpint(app.last_error, ==, results[i] == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
+        g_assert_cmpint(app.last_error, ==, results[i] == ERROR_OUTPUT_IO || (redraw_failure && !success) ? ERROR_OUTPUT_IO : ERROR_NONE);
         g_list_free_full(app.image_files, g_free);
         g_free(app.current_directory);
         cleanup_file_manager_app(&app);
@@ -239,7 +267,6 @@ static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
     g_assert_true(app.file_manager.entries == entries);
     g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
     g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
-    g_free(app.book.path);
     g_free(app.current_directory);
     cleanup_file_manager_app(&app);
     g_remove(path);
@@ -249,6 +276,12 @@ static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
 }
 
 void register_input_dispatch_key_file_manager_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_render_preserves_source", GINT_TO_POINTER(4), test_tab_preserves_source_until_destination_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/media_render_preserves_source", GINT_TO_POINTER(5), test_tab_preserves_source_until_destination_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/virtual_render_preserves_source", GINT_TO_POINTER(6), test_tab_preserves_source_until_destination_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_render_recovery_failure", GINT_TO_POINTER(12), test_tab_preserves_source_until_destination_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/media_render_recovery_failure", GINT_TO_POINTER(13), test_tab_preserves_source_until_destination_entry);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/virtual_render_recovery_failure", GINT_TO_POINTER(14), test_tab_preserves_source_until_destination_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_output_keeps_existing_book", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_tab_book_open_failure_keeps_existing_book);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_invalid_keeps_existing_book", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_tab_book_open_failure_keeps_existing_book);
     g_test_add_data_func("/input_dispatch_key_file_manager/navigation/up_render_failure", GINT_TO_POINTER(2), test_navigation_render_result_controls_queue);

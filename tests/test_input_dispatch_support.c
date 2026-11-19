@@ -152,7 +152,7 @@ ErrorCode app_handle_mouse_click_book_toc(PixelTermApp *app,
 ErrorCode app_render_book_preview(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_preview_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.book_preview_render_result;
 }
 
 ErrorCode app_enter_book_preview(PixelTermApp *app) {
@@ -262,9 +262,14 @@ ErrorCode app_file_manager_select_path(PixelTermApp *app, const char *path) {
 }
 
 ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {
-    app_set_mode(app, APP_MODE_SINGLE);
-    (void)filepath;
     g_input_dispatch_stub_state.open_book_calls++;
+    if (g_input_dispatch_stub_state.open_book_result == ERROR_NONE) {
+        g_free(app->book.path);
+        app->book = (BookState){.doc = (BookDocument *)0x2, .path = g_strdup(filepath)};
+        g_free(app->current_directory);
+        app->current_directory = g_path_get_dirname(filepath);
+        app_set_mode(app, APP_MODE_SINGLE);
+    }
     return g_input_dispatch_stub_state.open_book_result;
 }
 
@@ -460,6 +465,8 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
 ErrorCode app_render_by_mode(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.render_by_mode_calls++;
+    const gchar *payload = g_input_dispatch_stub_state.render_by_mode_payload;
+    if (payload && !terminal_output_write(payload, strlen(payload))) return ERROR_OUTPUT_IO;
     if (g_input_dispatch_stub_state.render_by_mode_outputs_help && app->help_visible &&
         !terminal_output_write("FIRST-OVERLAY", 13)) return ERROR_OUTPUT_IO;
     return g_input_dispatch_stub_state.render_by_mode_result;
@@ -467,6 +474,10 @@ ErrorCode app_render_by_mode(PixelTermApp *app) {
 
 ErrorCode app_enter_file_manager(PixelTermApp *app) {
     g_input_dispatch_stub_state.last_enter_file_manager_index = app->current_index;
+    if (g_input_dispatch_stub_state.enter_file_manager_renders_before_error) {
+        app_set_mode(app, APP_MODE_FILE_MANAGER);
+        app_render_file_manager(app);
+    }
     if (g_input_dispatch_stub_state.enter_file_manager_result == ERROR_NONE) {
         app_set_mode(app, APP_MODE_FILE_MANAGER);
     }

@@ -1,5 +1,6 @@
 #include "app.h"
 #include "app_file_manager_internal.h"
+#include "app_book_transaction_internal.h"
 #include "terminal_output.h"
 
 gint app_file_manager_compare_names(gconstpointer a, gconstpointer b) {
@@ -624,22 +625,14 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         /* Entries own selected_path until loading finishes and the list is released below. */
         gboolean info_visible = app->info_visible;
         gboolean help_visible = app->help_visible;
-        gchar *previous_directory = is_book ? g_strdup(app->current_directory) : NULL;
-        error = is_book ? app_open_book(app, selected_path)
+        app->needs_redraw = TRUE;
+        error = is_book ? app_open_book_preview(app, selected_path)
                         : app_load_single_file(app, selected_path);
-        gboolean opened_book = is_book && error == ERROR_NONE;
-        if (error == ERROR_NONE) {
-            error = is_book ? app_enter_book_preview(app)
-                            : app_transition_mode(app, APP_MODE_SINGLE);
+        if (error == ERROR_NONE && !is_book) {
+            error = app_transition_mode(app, APP_MODE_SINGLE);
+            if (error == ERROR_NONE) error = app_render_current_image(app);
         }
         if (error != ERROR_NONE) {
-            if (opened_book) {
-                app_close_book(app);
-                g_free(app->current_directory);
-                app->current_directory = previous_directory;
-                previous_directory = NULL;
-            }
-            g_free(previous_directory);
             /* Book cleanup or preview entry can change mode before failing. */
             app_set_mode(app, APP_MODE_FILE_MANAGER);
             app->info_visible = info_visible;
@@ -652,19 +645,14 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             }
             return error;
         }
-        g_free(previous_directory);
         g_list_free_full(app->file_manager.entries, g_free);
         app->file_manager.entries = NULL;
         app->file_manager.entries_count = 0;
         app_file_manager_invalidate_selection_cache(app);
         g_clear_pointer(&app->file_manager.directory, g_free);
         app->info_visible = FALSE;
-        app->needs_redraw = TRUE;
 
-        if (is_book) {
-            return app_render_book_preview(app);
-        }
-        return app_render_current_image(app);
+        return ERROR_NONE;
     }
 }
 

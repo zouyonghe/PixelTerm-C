@@ -52,9 +52,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 0, -1);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -65,9 +65,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 0, 1);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -78,9 +78,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, -1, 0);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -91,9 +91,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 1, 0);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -103,9 +103,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_page_move(app, 1);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
@@ -115,9 +115,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_page_move(app, -1);
             if (app->preview.scroll != old_scroll) {
-                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_grid(app)) == ERROR_OUTPUT_IO) break;
             } else if (app->preview.selected != old_selected) {
-                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
@@ -140,11 +140,15 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
                     app->current_index = app->preview.selected;
                 }
                 app->return_to_mode = RETURN_MODE_PREVIEW;
-                if (record_output_error(app, app_enter_file_manager(app)) != ERROR_NONE) {
+                ErrorCode entered = record_output_error(app, app_enter_file_manager(app));
+                if (entered != ERROR_NONE) {
                     app_set_mode(app, APP_MODE_PREVIEW);
                     app->current_index = saved_index;
                     app->return_to_mode = saved_return_mode;
                     app->needs_redraw = TRUE;
+                    if (entered != ERROR_OUTPUT_IO) {
+                        record_output_error(app, app_render_preview_grid(app));
+                    }
                     break;
                 }
                 /* Exit applies the selected image and resets view state only after entry succeeds. */

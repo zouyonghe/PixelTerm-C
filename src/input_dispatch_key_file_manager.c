@@ -1,6 +1,7 @@
 #include "input_dispatch_key_modes_internal.h"
 
 #include "input_dispatch_media_internal.h"
+#include "app_book_transaction_internal.h"
 
 static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
     if (result == ERROR_OUTPUT_IO) app->last_error = result;
@@ -150,39 +151,17 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
         case KEY_TAB: {
             const gchar *selected_path = file_manager_selected_path(app);
             if (selected_path && is_valid_book_file(selected_path)) {
-                gchar *previous_directory = g_strdup(app->current_directory);
-                gboolean info_visible = app->info_visible;
-                gboolean help_visible = app->help_visible;
-                ErrorCode book_error = record_output_error(app, app_open_book(app, selected_path));
-                /* Opening a book can reset mode; retain the listing until entry succeeds. */
-                app_set_mode(app, APP_MODE_FILE_MANAGER);
-                if (book_error == ERROR_OUTPUT_IO) {
-                    g_free(previous_directory);
-                    break;
-                }
+                ErrorCode book_error = record_output_error(app, app_open_book_preview(app, selected_path));
                 if (book_error == ERROR_NONE) {
-                    ErrorCode entry = record_output_error(app, app_enter_book_preview(app));
-                    if (entry == ERROR_NONE) {
-                        g_free(previous_directory);
-                        previous_directory = NULL;
-                        ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
-                        app_set_mode(app, APP_MODE_BOOK_PREVIEW);
-                        if (exited != ERROR_NONE) break;
-                        record_output_error(app, app_render_book_preview(app));
-                    } else {
-                        app_close_book(app);
-                        g_free(app->current_directory);
-                        app->current_directory = previous_directory;
-                        previous_directory = NULL;
-                        app_set_mode(app, APP_MODE_FILE_MANAGER);
-                        app->info_visible = info_visible;
-                        app->help_visible = help_visible;
-                        app->needs_redraw = TRUE;
-                    }
+                    ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
+                    app_set_mode(app, APP_MODE_BOOK_PREVIEW);
+                    if (exited != ERROR_NONE) break;
                 } else {
-                    record_output_error(app, app_render_file_manager(app));
+                    app->needs_redraw = TRUE;
+                    app->needs_screen_clear = TRUE;
+                    if (book_error != ERROR_OUTPUT_IO)
+                        record_output_error(app, app_render_file_manager(app));
                 }
-                g_free(previous_directory);
                 break;
             }
 
@@ -199,6 +178,8 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 g_list_position(app->image_files, app->preview.selected_link));
             ReturnMode saved_return_mode = app->return_to_mode;
             gint saved_previous = app->file_manager.previous_selected_entry;
+            gboolean info_visible = app->info_visible;
+            gboolean help_visible = app->help_visible;
             ErrorCode load_error = record_output_error(app, app_load_directory(app, app->file_manager.directory));
             if (load_error != ERROR_NONE) {
                 g_list_free_full(saved_files, g_free);
@@ -228,7 +209,12 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 app->return_to_mode = RETURN_MODE_PREVIEW_VIRTUAL;
                 app->file_manager.previous_selected_entry = app->file_manager.selected_entry;
             }
-            if (record_output_error(app, app_enter_preview(app)) != ERROR_NONE) {
+            ErrorCode entered = record_output_error(app, app_enter_preview(app));
+            if (entered == ERROR_NONE) {
+                if (!selection_is_media) app->preview.selected = 0;
+                entered = record_output_error(app, app_render_preview_grid(app));
+            }
+            if (entered != ERROR_NONE) {
                 g_list_free_full(app->image_files, g_free);
                 g_free(app->current_directory);
                 app->image_files = saved_files;
@@ -236,10 +222,15 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
                 app->total_images = saved_count;
                 app->preview = saved_preview;
                 app_set_mode(app, APP_MODE_FILE_MANAGER);
+                app->info_visible = info_visible;
+                app->help_visible = help_visible;
                 app->return_to_mode = saved_return_mode;
                 app->current_index = saved_index;
                 app->file_manager.previous_selected_entry = saved_previous;
                 app->needs_redraw = TRUE;
+                app->needs_screen_clear = TRUE;
+                if (entered != ERROR_OUTPUT_IO)
+                    record_output_error(app, app_render_file_manager(app));
                 break;
             }
             g_list_free_full(saved_files, g_free);
@@ -247,8 +238,6 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
             app_set_mode(app, APP_MODE_PREVIEW);
             if (exited != ERROR_NONE) break;
-            if (!selection_is_media) app->preview.selected = 0;
-            record_output_error(app, app_render_preview_grid(app));
             break;
         }
         case KEY_ENTER:

@@ -12,9 +12,13 @@ ErrorCode app_display_image_info(PixelTermApp *app) {
     }
 
     gboolean info_was_visible = app->info_visible;
+    gboolean help_was_visible = app->help_visible;
     app->info_visible = !app->info_visible;
     ErrorCode result = app_render_current_image(app);
-    if (result != ERROR_NONE) app->info_visible = info_was_visible;
+    if (result != ERROR_NONE) {
+        app->info_visible = info_was_visible;
+        app->help_visible = help_was_visible;
+    }
     return result;
 }
 
