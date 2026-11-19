@@ -34,7 +34,8 @@ original stdout on exit. Application callers still need to propagate failures.
 - Media stop and render-area clearing return submission failures. Callers must
   stop before rendering, changing protocol or resuming playback on failure.
   Void input-dispatch paths must record failures in `app->last_error` for the main
-  loop; their checked-call integration is supplied by the separate application PR.
+  loop and stop follow-up rendering or playback. Each caller must implement this
+  check; the output owner cannot infer application-level error state.
   GIF timers wait during recovery backoff; failed frame submissions stop playback
   and report the error instead of scheduling another frame.
   Native GIF pause transfers its idempotent STOP to retained restoration so
@@ -45,11 +46,14 @@ external terminal reset or reconnect is not detected by a local retry deadline;
 cross-session queued-ID validation requires a separate continuity protocol.
 The descriptor writer temporarily uses nonblocking output and polls for up to
 100 ms without progress, preserving partial-write progress and restoring flags.
-The two-second readiness limit bounds repeated recovery failures. Session
+The two-second readiness limit bounds repeated recovery failures between
+returned readiness checks, not total submission time. Continuous write progress
+resets the 100 ms idle deadline and can keep a submission running longer than
+two seconds; input and signal dispatch wait until it returns. Session
 restoration assumes stdout still names
 the original terminal; redirection during an active session is not reattached.
-Probe queries use a separate descriptor transport; bounding that transport is
-covered by the terminal follow-up PR rather than by stdout session forwarding.
+Probe queries use a separate descriptor transport and require their own bounded
+write handling; stdout session forwarding alone does not bound those queries.
 Shared-memory frames with failed/ambiguous submissions are discarded and their
 local resources reclaimed. A terminal that received the command but has not yet
 opened the shared-memory object by name may lose that failed frame; no delivery

@@ -77,6 +77,10 @@ You can also set `protocol = auto|text|sixel|kitty|iterm2` in `config.ini`. For 
 Known-ID releases that fail before any write attempt remain owned by the
 main-context cleanup queue. Only attempted releases with uncertain delivery
 become ST-only recovery; these two failure cases have different retry rules.
+The current conservative policy treats a failed write syscall as uncertain even
+when the descriptor reports no progress. It can leave an image allocated rather
+than retry a destructive command; preflight failures before that syscall retain
+the command for a later attempt.
 
 ## Scope notes
 
