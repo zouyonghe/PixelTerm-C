@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <libavcodec/avcodec.h>
@@ -17,6 +18,7 @@
 #include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
+#include "test_output_stream.h"
 
 static gsize test_video_player_sync_once = 0;
 
@@ -2967,7 +2969,7 @@ static void test_direct_kitty_worker_respects_transfer_mode(gconstpointer data) 
     pixelterm_env_reset_for_test();
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
 typedef struct {
     guint attempts;
     GString *output;
@@ -2988,7 +2990,8 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
         }
         if (output->partial) {
             g_string_append_len(output->output, bytes, length / 2);
-            return (ssize_t)(length / 2);
+            errno = EIO;
+            return -1;
         }
         errno = EIO;
         return -1;
@@ -3002,9 +3005,8 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
 }
 
 static void test_failed_delete_buffer_is_discarded(void) {
-    DeleteOutput output = {.attempts = 1, .output = g_string_new(NULL)};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    DeleteOutput output = {.output = g_string_new(NULL)};
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     char buffer[256];
     g_assert_cmpint(setvbuf(capture, buffer, _IOFBF, sizeof(buffer)), ==, 0);
@@ -3012,32 +3014,30 @@ static void test_failed_delete_buffer_is_discarded(void) {
     fflush(saved);
     stdout = capture;
     const char *deletion = "\033_Ga=d,d=I,i=42,q=2\033\\";
-    /* Model stdio retaining failed delete bytes, as observed on macOS CI. */
-    gsize written = fwrite(deletion, 1, strlen(deletion), capture);
-    terminal_output_discard();
-    fwrite("\033\\", 1, 2, capture);
-    fflush(capture);
+    gboolean submitted = terminal_output_write(deletion, strlen(deletion));
+    gboolean recovered = terminal_output_flush();
     fclose(capture);
     stdout = saved;
-    g_assert_cmpuint(written, ==, strlen(deletion));
+    g_assert_false(submitted);
+    g_assert_true(recovered);
     g_assert_cmpstr(output.output->str, ==, "\033\\");
     g_string_free(output.output, TRUE);
 }
 
 static void test_deferred_cleanup_retry_deadline(void) {
     DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
     stdout = capture;
     kitty_graphics_defer_image_delete(42);
-    gboolean ready_after_failure = terminal_output_ready(1000000);
+    gint64 before_failure = g_get_monotonic_time();
+    gboolean ready_after_failure = terminal_output_ready(before_failure);
     guint first = output.attempts;
-    gboolean ready_before_deadline = terminal_output_ready(1099999);
+    gboolean ready_before_deadline = terminal_output_ready(before_failure + 99999);
     guint before_deadline = output.attempts;
-    gboolean ready_after_recovery = terminal_output_ready(1100000);
+    gboolean ready_after_recovery = terminal_output_ready(g_get_monotonic_time() + 100000);
     fclose(capture);
     stdout = saved;
     g_assert_false(ready_after_failure);
@@ -3062,8 +3062,7 @@ static void test_hide_failure_does_not_emit_frame(void) {
     frame->pixel_mode = CHAFA_PIXEL_MODE_KITTY;
     video_player_queue_push(player, frame);
     DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE, .fail_recovery = TRUE};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
@@ -3085,8 +3084,7 @@ static void test_gif_delete_failure_discards_buffer(void) {
     player->kitty_animation_prepared = TRUE;
     player->kitty_animation_id = 42;
     DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
@@ -3107,8 +3105,7 @@ static void test_gif_frame_failure_recovers(gconstpointer data) {
     frame->command = g_string_new("\033_Ga=T,f=24,s=1,v=1;AAAA\033\\");
     frame->display_width_cells = frame->display_height_cells = 1;
     DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
@@ -3128,8 +3125,7 @@ static void test_gif_fallback_waits_for_recovery(void) {
     GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
     g_assert_nonnull(player);
     DeleteOutput output = {.output = g_string_new(NULL), .fail_all = TRUE};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
@@ -3161,8 +3157,7 @@ static void test_direct_kitty_destroy_retries_failed_flush(gconstpointer data) {
     player->kitty_direct_image_id = 42;
     player->kitty_direct_image_present = TRUE;
     DeleteOutput output = {.output = g_string_new(NULL), .partial = GPOINTER_TO_INT(data)};
-    cookie_io_functions_t hooks = {.write = delete_output_write};
-    FILE *capture = fopencookie(&output, "w", hooks);
+    FILE *capture = test_output_stream(&output, delete_output_write);
     g_assert_nonnull(capture);
     FILE *saved_stdout = stdout;
     fflush(saved_stdout);
@@ -3386,7 +3381,7 @@ static void test_protocol_cycle_restarts_active_workers(void) {
 
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
     g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
     g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
     g_test_add_func("/video_player/direct_kitty/hide_failure_blocks_frame", test_hide_failure_does_not_emit_frame);

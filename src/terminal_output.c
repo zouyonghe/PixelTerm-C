@@ -31,7 +31,6 @@ gboolean terminal_output_recover(void) {
     terminal_output_discard();
     terminal_output_defer_recovery();
     gboolean recovered = terminal_output_flush();
-    if (!recovered) next_cleanup_retry_us = g_get_monotonic_time() + 100000;
     return recovered;
 }
 
@@ -39,11 +38,17 @@ gboolean terminal_output_ready(gint64 now_us) {
     if (g_queue_is_empty(&pending_output)) return TRUE;
     if (now_us < next_cleanup_retry_us) return FALSE;
     if (terminal_output_flush()) return TRUE;
-    next_cleanup_retry_us = now_us + 100000;
     return FALSE;
 }
 
 gboolean terminal_output_flush(void) {
+    /* Check buffered UI bytes before clearing errors or submitting queued controls. */
+    if (ferror(stdout) || fflush(stdout) != 0 || ferror(stdout)) {
+        terminal_output_discard();
+        terminal_output_defer_recovery();
+        next_cleanup_retry_us = g_get_monotonic_time() + 100000;
+        return FALSE;
+    }
     while (!g_queue_is_empty(&pending_output)) {
         PendingOutput *pending = g_queue_peek_head(&pending_output);
         GString *command = pending->bytes;
@@ -57,6 +62,7 @@ gboolean terminal_output_flush(void) {
                 g_string_assign(command, "\033\\");
                 pending->replay_safe = TRUE;
             }
+            next_cleanup_retry_us = g_get_monotonic_time() + 100000;
             return FALSE;
         }
         g_queue_pop_head(&pending_output);

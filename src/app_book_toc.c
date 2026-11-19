@@ -1,6 +1,7 @@
 #include "app.h"
 #include "text_utils.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static void app_book_toc_layout(const PixelTermApp *app,
                                 gint *content_rows,
@@ -371,8 +372,11 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     }
 
     get_terminal_size(&app->term_width, &app->term_height);
-    ui_begin_sync_update();
-    ui_clear_kitty_images(app);
+    if (!ui_begin_sync_update()) return ERROR_OUTPUT_IO;
+    if (!ui_clear_kitty_images(app)) {
+        ui_end_sync_update();
+        return ERROR_OUTPUT_IO;
+    }
     ui_clear_screen_for_refresh(app);
 
     gint rows = app->term_height;
@@ -542,6 +546,5 @@ ErrorCode app_render_book_toc(PixelTermApp *app) {
     }
 
     ui_end_sync_update();
-    fflush(stdout);
-    return ERROR_NONE;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

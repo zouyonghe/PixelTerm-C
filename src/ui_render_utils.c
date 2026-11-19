@@ -161,15 +161,16 @@ void ui_print_centered_help_line(gint row, gint term_width, const HelpSegment *s
     }
 }
 
-void ui_begin_sync_update(void) {
+gboolean ui_begin_sync_update(void) {
     // Use terminal synchronized output to reduce flicker during full-frame draws.
     const char begin[] = "\033[?2026h";
-    terminal_output_write(begin, sizeof(begin) - 1);
+    if (terminal_output_write(begin, sizeof(begin) - 1)) return TRUE;
+    terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
+    return FALSE;
 }
 
 void ui_end_sync_update(void) {
     terminal_output_defer("\033[?2026l", TERMINAL_OUTPUT_RESTORE);
-    terminal_output_flush();
 }
 
 void ui_clear_screen_for_refresh(const PixelTermApp *app) {
@@ -194,14 +195,13 @@ void ui_clear_screen_for_refresh(const PixelTermApp *app) {
     printf("\033[2J\033[H\033[0m");
 }
 
-void ui_clear_kitty_images(const PixelTermApp *app) {
+gboolean ui_clear_kitty_images(const PixelTermApp *app) {
     if (!app || !app->force_kitty) {
-        return;
+        return TRUE;
     }
     // Delete all kitty image placements (quiet) so old images don't linger.
-    if (!terminal_output_flush()) return;
     const char command[] = "\033_Ga=d,q=2\033\\";
-    terminal_output_write(command, sizeof(command) - 1);
+    return terminal_output_write(command, sizeof(command) - 1);
 }
 
 void ui_clear_single_view_lines(const PixelTermApp *app) {

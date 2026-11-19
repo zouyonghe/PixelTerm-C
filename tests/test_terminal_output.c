@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <stdio.h>
 #include <errno.h>
@@ -8,18 +9,20 @@
 #include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "gif_player.h"
+#include "test_output_stream.h"
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
 typedef struct {
     GString *bytes;
     gboolean fail;
+    gboolean fail_once;
     guint writes;
 } OutputSink;
 
 static ssize_t sink_write(void *data, const char *bytes, size_t length) {
     OutputSink *sink = data;
     sink->writes++;
-    if (sink->fail) { errno = EIO; return -1; }
+    if (sink->fail || sink->fail_once) { sink->fail_once = FALSE; errno = EIO; return -1; }
     g_string_append_len(sink->bytes, bytes, length);
     return (ssize_t)length;
 }
@@ -27,18 +30,18 @@ static ssize_t sink_write(void *data, const char *bytes, size_t length) {
 static void test_pending_policy(gconstpointer data) {
     TerminalOutputPolicy policy = GPOINTER_TO_INT(data);
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
-    cookie_io_functions_t hooks = {.write = sink_write};
-    FILE *stream = fopencookie(&sink, "w", hooks);
+    FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
     fflush(saved);
     stdout = stream;
     terminal_output_defer("CONTROL", policy);
-    gboolean failed = terminal_output_ready(1000000);
-    gboolean waiting = terminal_output_ready(1099999);
+    gint64 before_failure = g_get_monotonic_time();
+    gboolean failed = terminal_output_ready(before_failure);
+    gboolean waiting = terminal_output_ready(before_failure + 99999);
     guint before = sink.writes;
     sink.fail = FALSE;
-    gboolean recovered = terminal_output_ready(1100000);
+    gboolean recovered = terminal_output_ready(g_get_monotonic_time() + 100000);
     fclose(stream);
     stdout = saved;
     g_assert_false(failed);
@@ -51,8 +54,7 @@ static void test_pending_policy(gconstpointer data) {
 
 static void test_checked_write_and_owned_controls(void) {
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
-    cookie_io_functions_t hooks = {.write = sink_write};
-    FILE *stream = fopencookie(&sink, "w", hooks);
+    FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
     fflush(saved);
@@ -73,6 +75,75 @@ static void test_checked_write_and_owned_controls(void) {
     g_string_free(sink.bytes, TRUE);
 }
 
+static void test_sync_end_preserves_frame_failure(void) {
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail_once = TRUE};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    char buffer[256];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    gsize written = fwrite("FRAME", 1, 5, stream);
+    ui_end_sync_update();
+    gboolean submitted = terminal_output_flush();
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpuint(written, ==, 5);
+    g_assert_false(submitted);
+    g_assert_true(recovered);
+    g_assert_null(strstr(sink.bytes->str, "FRAME"));
+    g_assert_nonnull(strstr(sink.bytes->str, "\033[?2026l"));
+    g_string_free(sink.bytes, TRUE);
+}
+
+static void test_direct_flush_sets_retry_deadline(void) {
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    terminal_output_defer("CONTROL", TERMINAL_OUTPUT_RESTORE);
+    gboolean flushed = terminal_output_flush();
+    guint attempts = sink.writes;
+    gboolean ready = terminal_output_ready(g_get_monotonic_time());
+    guint after = sink.writes;
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_false(flushed);
+    g_assert_false(ready);
+    g_assert_cmpuint(after, ==, attempts);
+    g_assert_true(recovered);
+    g_string_free(sink.bytes, TRUE);
+}
+
+static void test_ui_controls_report_failed_submission(gconstpointer data) {
+    gboolean clear = GPOINTER_TO_INT(data);
+    OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
+    FILE *stream = test_output_stream(&sink, sink_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    PixelTermApp app = {.force_kitty = TRUE};
+    gboolean submitted = clear ? ui_clear_kitty_images(&app) : ui_begin_sync_update();
+    if (submitted) fputs("UNSAFE", stdout);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_false(submitted);
+    g_assert_true(recovered);
+    g_assert_null(strstr(sink.bytes->str, "UNSAFE"));
+    if (clear) g_assert_null(strstr(sink.bytes->str, "a=d"));
+    else g_assert_nonnull(strstr(sink.bytes->str, "\033[?2026l"));
+    g_string_free(sink.bytes, TRUE);
+}
+
 static int restore_mode(gint action, const struct termios *state, gpointer data) {
     (void)action; (void)state; (void)data;
     return 0;
@@ -80,8 +151,7 @@ static int restore_mode(gint action, const struct termios *state, gpointer data)
 
 static void test_cleanup_controls_outlive_handler(void) {
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
-    cookie_io_functions_t hooks = {.write = sink_write};
-    FILE *stream = fopencookie(&sink, "w", hooks);
+    FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     TerminalProbeTransportHooks transport = {.tcsetattr_fn = restore_mode};
     terminal_probe_set_transport_hooks_for_test(&transport, NULL);
@@ -120,8 +190,7 @@ static void test_unsent_gif_delete_outlives_player(void) {
     player->kitty_animation_id = 42;
     player->kitty_animation_prepared = TRUE;
     OutputSink sink = {.bytes = g_string_new(NULL), .fail = TRUE};
-    cookie_io_functions_t hooks = {.write = sink_write};
-    FILE *stream = fopencookie(&sink, "w", hooks);
+    FILE *stream = test_output_stream(&sink, sink_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
     fflush(saved);
@@ -141,10 +210,14 @@ static void test_unsent_gif_delete_outlives_player(void) {
 #endif
 
 void register_terminal_output_tests(void) {
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
     g_test_add_data_func("/terminal_output/policy/destructive_once", GINT_TO_POINTER(TERMINAL_OUTPUT_ONCE), test_pending_policy);
     g_test_add_data_func("/terminal_output/policy/idempotent_restore", GINT_TO_POINTER(TERMINAL_OUTPUT_RESTORE), test_pending_policy);
     g_test_add_func("/terminal_output/checked_write_and_owned_controls", test_checked_write_and_owned_controls);
+    g_test_add_func("/terminal_output/sync_end_preserves_frame_failure", test_sync_end_preserves_frame_failure);
+    g_test_add_func("/terminal_output/direct_flush_sets_retry_deadline", test_direct_flush_sets_retry_deadline);
+    g_test_add_data_func("/terminal_output/ui/begin_failure", NULL, test_ui_controls_report_failed_submission);
+    g_test_add_data_func("/terminal_output/ui/clear_failure", GINT_TO_POINTER(1), test_ui_controls_report_failed_submission);
     g_test_add_func("/terminal_output/session/controls_outlive_handler", test_cleanup_controls_outlive_handler);
     g_test_add_func("/terminal_output/session/unsent_gif_delete_outlives_player", test_unsent_gif_delete_outlives_player);
 #endif

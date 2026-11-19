@@ -43,7 +43,7 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
 
     terminal_probe_retry_restore();
     const char clear[] = "\033[2J\033[H\033[0m";
-    terminal_output_write(clear, sizeof(clear) - 1);
+    gboolean cleared = terminal_output_write(clear, sizeof(clear) - 1);
 
     input_disable_mouse(input_handler);
     gboolean original_known = input_handler->has_orig_termios;
@@ -53,7 +53,8 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
     if (!restored || (!original_known && restore_error == ERROR_TERMINAL_SIZE)) {
         return ERROR_TERMINAL_SIZE;
     }
-    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
+    gboolean output_restored = terminal_output_flush();
+    return cleared && output_restored ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static ErrorCode finish_application(InputHandler *input_handler, ErrorCode primary_error) {
@@ -82,15 +83,12 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
     error = input_enable_raw_mode(input_handler);
     if (error != ERROR_NONE) {
-        input_handler_destroy(input_handler);
-        return error;
+        return finish_application(input_handler, error);
     }
 
     error = input_enable_mouse(input_handler);
     if (error != ERROR_NONE) {
-        input_disable_raw_mode(input_handler);
-        input_handler_destroy(input_handler);
-        return error;
+        return finish_application(input_handler, error);
     }
 
     // Initial render
@@ -152,13 +150,15 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             if (app_is_preview_mode(app)) {
                 app->needs_screen_clear = TRUE;
             }
-            ui_clear_kitty_images(app);
-            if (!terminal_output_ready(g_get_monotonic_time())) {
-                resize_pending = TRUE;
-                continue;
+            if (!ui_clear_kitty_images(app)) {
+                error = ERROR_OUTPUT_IO;
+                break;
             }
             ui_clear_screen_for_refresh(app);
-            fflush(stdout);
+            if (!terminal_output_flush()) {
+                error = ERROR_OUTPUT_IO;
+                break;
+            }
             resize_pending = TRUE;
             usleep(k_resize_sleep_us);
             continue;
@@ -170,9 +170,11 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
             app->video_was_playing_before_resize = FALSE;
             get_terminal_size(&app->term_width, &app->term_height);
             app->suppress_full_clear = FALSE;
-            app_render_by_mode(app);
+            error = app_render_by_mode(app);
+            if (error != ERROR_NONE) break;
             if (resume_video_after_resize && app->video_player) {
-                video_player_play(app->video_player);
+                error = video_player_play(app->video_player);
+                if (error != ERROR_NONE) break;
             }
             continue;
         }

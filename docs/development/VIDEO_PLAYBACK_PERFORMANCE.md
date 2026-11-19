@@ -143,12 +143,14 @@ Review 后补充：direct RGB 按统一比例缩放两个轴，像素负载始�
 
 文档由 AI 辅助整理，源码事实与性能推断分开。依赖版本和终端子能力以实际运行环境为准。
 
-## Unified output refactor
+## 统一输出重构
 
-The output recovery queue, platform purge, deadline and replay rules now live in
-`terminal_output.c`, not the Kitty encoder. Unsent image releases remain owned;
-uncertain deletes become ST-only, while idempotent session controls survive
-object destruction. GIF/video presentation is assembled into one checked payload.
-The pixel path, source geometry and alpha/gamma fallback are unchanged, but the
-extra temporary presentation buffer is not a proven performance improvement.
-Historical throughput figures above are not a benchmark of this refactor.
+输出恢复队列、平台缓冲清理、重试期限和重放规则统一由 `terminal_output.c`
+管理。Kitty 模块负责命令编码、图像 ID 分配探测，并通过该模块排队删除和 ST 恢复。
+尚未发送的图像释放命令持续由队列持有；送达不确定的删除仅恢复 ST，
+不重放删除。幂等的会话恢复控制在对象销毁后继续保留，直到成功或进程退出；
+退出时做最后一次尝试。
+
+GIF／视频将呈现内容组装为一次受检查的提交。像素路径、源几何和 alpha／gamma
+回退保持不变，但额外的临时呈现缓冲尚未证实能提高性能。上文历史吞吐量数据
+不代表此次重构的基准测试结果。

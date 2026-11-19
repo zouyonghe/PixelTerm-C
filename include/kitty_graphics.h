@@ -16,7 +16,8 @@ gboolean kitty_graphics_should_use_shm(KittyTransferMode mode);
 /* Main context only; reserves an invisible pixel using a terminal-assigned ID.
  * Returns 0 on unsupported transport, malformed reply or timeout. */
 guint32 kitty_graphics_allocate_image_id(void);
-/* Queue one terminal-owned image release; uncertain delivery is never replayed. */
+/* Main context only. Queue one terminal-owned image release;
+ * uncertain delivery is never replayed. */
 void kitty_graphics_defer_image_delete(guint32 image_id);
 
 /* Bound direct pixel data before base64/command allocations in each worker. */

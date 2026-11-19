@@ -46,13 +46,13 @@ static void app_queue_async_render(PixelTermApp *app, const gchar *filepath,
     }
 }
 
-static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepath) {
+static ErrorCode app_render_single_placeholder(PixelTermApp *app, const gchar *filepath) {
     if (!app || !filepath || app->ui_text_hidden) {
-        return;
+        return ERROR_NONE;
     }
     get_terminal_size(&app->term_width, &app->term_height);
 
-    ui_begin_sync_update();
+    if (!ui_begin_sync_update()) return ERROR_OUTPUT_IO;
     printf("\033[H\033[0m");
 
     ui_render_centered_row(1, app->term_width, "Image View", NULL);
@@ -95,7 +95,7 @@ static void app_render_single_placeholder(PixelTermApp *app, const gchar *filepa
     }
 
     ui_end_sync_update();
-    fflush(stdout);
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static void app_render_info_overlay(PixelTermApp *app,
@@ -427,8 +427,7 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
                                                    &cached_width, &cached_height)) {
             app_queue_async_render(app, filepath, target_width, target_height);
-            app_render_single_placeholder(app, filepath);
-            return ERROR_NONE;
+            return app_render_single_placeholder(app, filepath);
         }
     }
     if (app->async.render_force_sync) {
@@ -450,9 +449,8 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
         }
     }
 
-    APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update);
-    APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app);
-    if (!terminal_output_flush()) {
+    if (!APP_SINGLE_RENDER_CALL(ui_begin_sync_update, ui_begin_sync_update)) return ERROR_OUTPUT_IO;
+    if (!APP_SINGLE_RENDER_CALL(ui_clear_kitty_images, ui_clear_kitty_images, app)) {
         APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
         return ERROR_OUTPUT_IO;
     }
@@ -959,9 +957,9 @@ ErrorCode app_render_current_image(PixelTermApp *app) {
     }
 
     APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
 
     g_string_free(rendered, TRUE);
 
-    return ERROR_NONE;
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

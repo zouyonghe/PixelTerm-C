@@ -23,7 +23,7 @@ ErrorCode app_display_help(PixelTermApp *app) {
     }
     app->help_visible = !app->help_visible;
     if (app->help_visible) {
-        ui_clear_kitty_images(app);
+        if (!ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
         app->needs_screen_clear = TRUE;
         app->suppress_full_clear = FALSE;
     }

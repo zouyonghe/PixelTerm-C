@@ -4,6 +4,7 @@
 #include "grid_render.h"
 #include "preload_control.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static PreviewLayout app_preview_calculate_layout(PixelTermApp *app) {
     PreviewLayout layout = {1, 1, app ? app->term_width : 80, 10, ui_preview_header_lines(app), 1};
@@ -601,11 +602,9 @@ ErrorCode app_enter_preview(PixelTermApp *app) {
     app->needs_redraw = TRUE;
 
     // Text clears do not reliably remove Kitty placements (e.g. Warp over SSH).
-    ui_clear_kitty_images(app);
+    if (!ui_clear_kitty_images(app)) return ERROR_OUTPUT_IO;
     ui_clear_screen_for_refresh(app);
-    fflush(stdout);
-
-    return ERROR_NONE;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 
@@ -772,6 +771,5 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     app_preview_render_selected_filename(app);
 
     ui_end_sync_update();
-    fflush(stdout);
-    return ERROR_NONE;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

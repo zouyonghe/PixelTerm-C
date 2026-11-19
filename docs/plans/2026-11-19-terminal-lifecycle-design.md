@@ -14,10 +14,9 @@ dependencies, or perform unrelated formatting.
 - Readiness checks are scattered across event dispatch, GIF, video and UI paths.
 - Termios recovery and output-control restoration have different lifetimes but
   have historically shared flags such as `raw_mode_enabled`.
-- The current uncommitted policy work adds replay-safe controls, but fails the
-  independent preview-grid test link: UI helpers now require Kitty recovery
-  symbols absent from that target. It is not a verified baseline.
-- Preserve these local edits as migration input, not as finished production code.
+- Earlier policy experiments added replay-safe controls but failed the independent
+  preview-grid link because UI helpers required unavailable Kitty recovery symbols.
+  Those experiments were historical migration input, not a verified baseline.
 
 ## Boundaries
 
@@ -87,7 +86,7 @@ from writing in that iteration. Startup and teardown use that same contract.
 | Event, animation or async render queues recovery | No later stage emits until readiness |
 | Recover helper fails | Next background attempt waits at least 100 ms |
 | Outer restore and probe restore both fail | Retry applies user-original termios |
-| Restore fails twice then succeeds / fails three times | Correct final result and one diagnostic |
+| Restore fails twice then succeeds / fails three times | Success after two failures returns success with no diagnostic; failure after three attempts returns failure. If a primary error already exists, report the secondary cleanup failure exactly once at the application boundary |
 | Pause, seek, EOF replay, resize, protocol changes | Existing timing, generations and geometry preserved |
 | Standalone preview/file-manager/book test links | No accidental dependency on media implementation |
 

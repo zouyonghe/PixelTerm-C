@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <stdio.h>
 #include <string.h>
@@ -8,6 +9,21 @@
 #include "input.h"
 #include "kitty_graphics.h"
 #include "terminal_output.h"
+#include "test_output_stream.h"
+
+static gint startup_failure_stage;
+static gboolean resize_test;
+static guint resume_calls;
+static ErrorCode lifecycle_enable_raw_mode(InputHandler *handler);
+static ErrorCode lifecycle_enable_mouse(InputHandler *handler);
+static void lifecycle_update_size(InputHandler *handler) {
+    if (resize_test) handler->terminal_width = 123;
+    else input_update_terminal_size(handler);
+}
+static ErrorCode lifecycle_play(VideoPlayer *player) {
+    if (resize_test) { resume_calls++; return ERROR_NONE; }
+    return video_player_play(player);
+}
 
 static gboolean gate_test;
 static guint gate_attempts;
@@ -77,6 +93,10 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #define input_has_pending_input lifecycle_has_pending
 #define input_get_event lifecycle_get_event
 #define terminal_output_ready lifecycle_cleanup_due
+#define input_enable_raw_mode lifecycle_enable_raw_mode
+#define input_enable_mouse lifecycle_enable_mouse
+#define input_update_terminal_size lifecycle_update_size
+#define video_player_play lifecycle_play
 
 #define main pixelterm_main_for_lifecycle_test
 #include "../src/main.c"
@@ -84,6 +104,10 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #undef app_render_by_mode
 #undef app_process_async_render
 #undef terminal_output_ready
+#undef input_enable_raw_mode
+#undef input_enable_mouse
+#undef input_update_terminal_size
+#undef video_player_play
 
 typedef struct {
     gint failures;
@@ -93,7 +117,15 @@ typedef struct {
 
 static ErrorCode render_result;
 static guint render_calls;
-static ErrorCode lifecycle_render(PixelTermApp *app) { (void)app; render_calls++; return render_result; }
+static ErrorCode lifecycle_render(PixelTermApp *app) {
+    render_calls++;
+    if (resize_test) {
+        app->video_was_playing_before_resize = TRUE;
+        if (render_calls > 2) app->running = FALSE;
+        return render_calls > 1 ? ERROR_OUTPUT_IO : ERROR_NONE;
+    }
+    return render_result;
+}
 
 static void enable_owned_raw_mode(InputHandler *handler, gpointer data) {
     (void)data;
@@ -101,6 +133,22 @@ static void enable_owned_raw_mode(InputHandler *handler, gpointer data) {
     handler->has_orig_termios = TRUE;
     handler->orig_termios.c_lflag = ICANON | ECHO;
     handler->orig_termios.c_cc[VMIN] = 1;
+}
+
+static ErrorCode lifecycle_enable_raw_mode(InputHandler *handler) {
+    if (!startup_failure_stage) return input_enable_raw_mode(handler);
+    enable_owned_raw_mode(handler, NULL);
+    handler->alt_screen_enabled = TRUE;
+    const char entry[] = "\033[?1049h\033[?25l";
+    return startup_failure_stage == 1 && !terminal_output_write(entry, sizeof(entry) - 1) ?
+        ERROR_OUTPUT_IO : ERROR_NONE;
+}
+
+static ErrorCode lifecycle_enable_mouse(InputHandler *handler) {
+    if (startup_failure_stage != 2) return input_enable_mouse(handler);
+    handler->mouse_enabled = TRUE;
+    const char entry[] = "\033[?1002;1006h";
+    return terminal_output_write(entry, sizeof(entry) - 1) ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
 static int cleanup_setattr(gint action, const struct termios *state, gpointer data) {
@@ -210,15 +258,17 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     g_assert_cmpuint(gate_attempts, ==, 3);
 }
 
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
 typedef struct {
     gboolean writable;
     gboolean unsafe_output;
     GString *output;
+    gboolean fail_once;
 } LifecycleOutput;
 
 static ssize_t lifecycle_write(void *data, const char *bytes, size_t length) {
     LifecycleOutput *sink = data;
+    if (sink->fail_once) { sink->fail_once = FALSE; errno = EIO; return -1; }
     if (length != 2 || memcmp(bytes, "\033\\", 2) != 0) sink->unsafe_output = TRUE;
     if (!sink->writable) { errno = EIO; return -1; }
     g_string_append_len(sink->output, bytes, length);
@@ -228,8 +278,7 @@ static ssize_t lifecycle_write(void *data, const char *bytes, size_t length) {
 static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) {
     gboolean cleanup = GPOINTER_TO_INT(data);
     LifecycleOutput sink = {.output = g_string_new(NULL)};
-    cookie_io_functions_t hooks = {.write = lifecycle_write};
-    FILE *capture = fopencookie(&sink, "w", hooks);
+    FILE *capture = test_output_stream(&sink, lifecycle_write);
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     fflush(saved);
@@ -255,13 +304,81 @@ static void test_pending_framing_blocks_startup_and_cleanup(gconstpointer data) 
     g_assert_cmpstr(sink.output->str, ==, "\033\\");
     g_string_free(sink.output, TRUE);
 }
+
+static void test_startup_failure_unwinds_controls(gconstpointer data) {
+    startup_failure_stage = GPOINTER_TO_INT(data);
+    CleanupTerminal terminal = {0};
+    TerminalProbeTransportHooks hooks = {.tcsetattr_fn = cleanup_setattr};
+    terminal_probe_set_transport_hooks_for_test(&hooks, &terminal);
+    LifecycleOutput sink = {.output = g_string_new(NULL), .writable = TRUE, .fail_once = TRUE};
+    FILE *capture = test_output_stream(&sink, lifecycle_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    PixelTermApp app = {0};
+    ErrorCode result = run_application(&app, TRUE);
+    gboolean recovered = terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    terminal_probe_reset_transport_hooks_for_test();
+    gint stage = startup_failure_stage;
+    startup_failure_stage = 0;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    g_assert_cmpint(terminal.calls, >, 0);
+    g_assert_cmpint(terminal.restored.c_lflag, ==, ICANON | ECHO);
+    g_assert_nonnull(strstr(sink.output->str, "\033[?1049l"));
+    g_assert_nonnull(strstr(sink.output->str, "\033[?25h"));
+    if (stage == 2) g_assert_nonnull(strstr(sink.output->str, "\033[?1002;1006l"));
+    g_string_free(sink.output, TRUE);
+}
+
+static void test_cleanup_preserves_clear_failure(void) {
+    LifecycleOutput sink = {.output = g_string_new(NULL), .writable = TRUE, .fail_once = TRUE};
+    FILE *capture = test_output_stream(&sink, lifecycle_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    ErrorCode result = run_application_cleanup(input_handler_create());
+    gboolean recovered = terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    g_string_free(sink.output, TRUE);
+}
 #endif
 
+static void test_resize_render_failure_does_not_resume(void) {
+    PixelTermApp app = {.running = TRUE};
+    /* The playback call is intercepted: no real player is needed. */
+    app.video_player = (VideoPlayer *)&app;
+    resize_test = TRUE;
+    render_calls = resume_calls = 0;
+    g_terminate_requested = 0;
+    FILE *saved = stdout, *capture = tmpfile();
+    g_assert_nonnull(capture);
+    stdout = capture;
+    ErrorCode result = run_application(&app, FALSE);
+    stdout = saved;
+    fclose(capture);
+    resize_test = FALSE;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpuint(resume_calls, ==, 0);
+    g_assert_cmpuint(render_calls, ==, 2);
+}
+
 void register_main_lifecycle_tests(void) {
-#ifdef __GLIBC__
+#if defined(__GLIBC__) || defined(__APPLE__)
+    g_test_add_data_func("/main/startup/raw_failure_unwinds", GINT_TO_POINTER(1), test_startup_failure_unwinds_controls);
+    g_test_add_data_func("/main/startup/mouse_failure_unwinds", GINT_TO_POINTER(2), test_startup_failure_unwinds_controls);
+    g_test_add_func("/main/cleanup/preserves_clear_failure", test_cleanup_preserves_clear_failure);
     g_test_add_data_func("/main/output/blocks_startup", NULL, test_pending_framing_blocks_startup_and_cleanup);
     g_test_add_data_func("/main/output/blocks_cleanup", GINT_TO_POINTER(1), test_pending_framing_blocks_startup_and_cleanup);
 #endif
+    g_test_add_func("/main/resize/render_failure_does_not_resume", test_resize_render_failure_does_not_resume);
     g_test_add_data_func("/main/output/waits_for_framing_recovery", NULL, test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_dispatch", GINT_TO_POINTER(1), test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_animation", GINT_TO_POINTER(2), test_main_waits_for_framing_recovery);

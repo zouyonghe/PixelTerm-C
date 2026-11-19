@@ -2,6 +2,7 @@
 #include "app_config_runtime.h"
 #include "text_utils.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
 
 static const gint k_book_spread_gutter_cols = 2;
 static const HelpSegment k_book_page_help_segments[] = {
@@ -107,8 +108,11 @@ static void app_book_render_header(const PixelTermApp *app) {
 
 static gint app_book_begin_frame(PixelTermApp *app, gint target_height) {
     gint image_area_top_row = 4;
-    ui_begin_sync_update();
-    ui_clear_kitty_images(app);
+    if (!ui_begin_sync_update()) return 0;
+    if (!ui_clear_kitty_images(app)) {
+        ui_end_sync_update();
+        return 0;
+    }
     if (app->suppress_full_clear) {
         app->suppress_full_clear = FALSE;
         if (app->ui_text_hidden) {
@@ -250,6 +254,12 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
             book_page_image_free(&right_image);
 
             gint image_area_top_row = app_book_begin_frame(app, target_height);
+            if (!image_area_top_row) {
+                g_string_free(left_rendered, TRUE);
+                if (right_rendered) g_string_free(right_rendered, TRUE);
+                renderer_destroy(renderer);
+                return ERROR_OUTPUT_IO;
+            }
 
             gint spread_cols = per_page_cols * 2 + gutter_cols;
             gint spread_left_col = 1;
@@ -347,13 +357,13 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
             }
 
             ui_end_sync_update();
-            fflush(stdout);
+            gboolean output_success = terminal_output_flush();
             g_string_free(left_rendered, TRUE);
             if (right_rendered) {
                 g_string_free(right_rendered, TRUE);
             }
             renderer_destroy(renderer);
-            return ERROR_NONE;
+            return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
         }
     }
 
@@ -395,6 +405,11 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
     }
 
     gint image_area_top_row = app_book_begin_frame(app, target_height);
+    if (!image_area_top_row) {
+        g_string_free(rendered, TRUE);
+        renderer_destroy(renderer);
+        return ERROR_OUTPUT_IO;
+    }
 
     gint image_width = 0;
     gint image_height = 0;
@@ -480,8 +495,8 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
     }
 
     ui_end_sync_update();
-    fflush(stdout);
+    gboolean output_success = terminal_output_flush();
     g_string_free(rendered, TRUE);
     renderer_destroy(renderer);
-    return ERROR_NONE;
+    return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

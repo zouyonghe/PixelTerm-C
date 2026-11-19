@@ -15,10 +15,12 @@ gboolean terminal_output_flush(void);
 /* Checked payload submission. Payloads are never replayed after failure. */
 gboolean terminal_output_write(const char *bytes, gsize length);
 /* Copies bytes and prefixes ST. ONCE becomes ST-only after uncertain delivery;
- * RESTORE is idempotent and retained until success. Identical restores coalesce. */
+ * RESTORE is retained until success or process exit (one final attempt).
+ * Identical restores coalesce. */
 void terminal_output_defer(const char *bytes, TerminalOutputPolicy policy);
 /* Discard buffered failed bytes, recover ST, and retain a failed retry deadline. */
 gboolean terminal_output_recover(void);
+/* Purge all unsent stdout bytes and clear its error state; do not queue or drain ST. */
 void terminal_output_discard(void);
 void terminal_output_defer_recovery(void);
 

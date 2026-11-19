@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <stdio.h>
@@ -8,6 +10,9 @@
 #include "app_single_render_test_internal.h"
 #include "input_dispatch_test_support.h"
 #include "ui_render_utils.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
+#include <errno.h>
 #include "../src/app_single_render_internal.h"
 
 typedef struct {
@@ -25,6 +30,7 @@ typedef struct {
     gboolean last_force_sixel;
     gint clear_screen_calls;
     gint clear_area_calls;
+    gint output_failure_stage;
 } AppSingleRenderStubState;
 
 static AppSingleRenderStubState g_app_single_render_stub_state;
@@ -75,10 +81,10 @@ static void test_renderer_destroy(ImageRenderer *renderer);
 static ErrorCode test_renderer_initialize(ImageRenderer *renderer, const RendererConfig *config);
 static GString *test_renderer_render_image_file(ImageRenderer *renderer, const char *filepath);
 static void test_renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint *height);
-static void test_ui_begin_sync_update(void);
+static gboolean test_ui_begin_sync_update(void);
 static void test_ui_end_sync_update(void);
 static void test_ui_clear_screen_for_refresh(const PixelTermApp *app);
-static void test_ui_clear_kitty_images(const PixelTermApp *app);
+static gboolean test_ui_clear_kitty_images(const PixelTermApp *app);
 static void test_ui_clear_single_view_lines(const PixelTermApp *app);
 static void test_ui_clear_area(const PixelTermApp *app, gint top_row, gint height);
 
@@ -576,7 +582,54 @@ static void test_info_overlay_bypasses_preloader_cache(void) {
     destroy_render_test_app(&app);
 }
 
+typedef struct {
+    gboolean fail;
+    GString *bytes;
+} StillOutput;
+
+static ssize_t still_output_write(void *data, const char *bytes, size_t length) {
+    StillOutput *sink = data;
+    if (sink->fail) { errno = EIO; return -1; }
+    g_string_append_len(sink->bytes, bytes, length);
+    return (ssize_t)length;
+}
+
+static void test_still_output_failure(gconstpointer data) {
+    gint stage = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    app_single_render_reset_stubs();
+    g_assert_true(init_render_test_app(&app));
+    app.current_index = 2;
+    app.ui_text_hidden = FALSE;
+    g_app_single_render_stub_state.output_failure_stage = stage;
+    StillOutput sink = {.fail = stage == 3, .bytes = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, still_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_render_current_image(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    if (stage < 3) {
+        g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 0);
+        g_assert_cmpuint(sink.bytes->len, ==, 0);
+    } else {
+        g_assert_cmpint(g_app_single_render_stub_state.renderer_render_file_calls, ==, 1);
+        g_assert_cmpstr(sink.bytes->str, ==, "\033\\");
+    }
+    g_string_free(sink.bytes, TRUE);
+    destroy_render_test_app(&app);
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/output/begin_failure", GINT_TO_POINTER(1), test_still_output_failure);
+    g_test_add_data_func("/app_single_render/output/clear_failure", GINT_TO_POINTER(2), test_still_output_failure);
+    g_test_add_data_func("/app_single_render/output/still_frame_failure", GINT_TO_POINTER(3), test_still_output_failure);
     g_test_add_func("/app_single_render/file_size_display/clamps_missing_values",
                     test_file_size_display_clamps_missing_values);
     g_test_add_func("/app_single_render/single_view/switches_media_players",
@@ -771,7 +824,8 @@ static void test_renderer_get_rendered_dimensions(ImageRenderer *renderer, gint 
     }
 }
 
-static void test_ui_begin_sync_update(void) {
+static gboolean test_ui_begin_sync_update(void) {
+    return g_app_single_render_stub_state.output_failure_stage != 1;
 }
 
 static void test_ui_end_sync_update(void) {
@@ -782,8 +836,9 @@ static void test_ui_clear_screen_for_refresh(const PixelTermApp *app) {
     g_app_single_render_stub_state.clear_screen_calls++;
 }
 
-static void test_ui_clear_kitty_images(const PixelTermApp *app) {
+static gboolean test_ui_clear_kitty_images(const PixelTermApp *app) {
     (void)app;
+    return g_app_single_render_stub_state.output_failure_stage != 2;
 }
 
 static void test_ui_clear_single_view_lines(const PixelTermApp *app) {

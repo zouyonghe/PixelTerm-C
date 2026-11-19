@@ -21,10 +21,10 @@ typedef struct {
     ErrorCode (*renderer_initialize)(ImageRenderer *renderer, const RendererConfig *config);
     GString *(*renderer_render_image_file)(ImageRenderer *renderer, const char *filepath);
     void (*renderer_get_rendered_dimensions)(ImageRenderer *renderer, gint *width, gint *height);
-    void (*ui_begin_sync_update)(void);
+    gboolean (*ui_begin_sync_update)(void);
     void (*ui_end_sync_update)(void);
     void (*ui_clear_screen_for_refresh)(const PixelTermApp *app);
-    void (*ui_clear_kitty_images)(const PixelTermApp *app);
+    gboolean (*ui_clear_kitty_images)(const PixelTermApp *app);
     void (*ui_clear_single_view_lines)(const PixelTermApp *app);
     void (*ui_clear_area)(const PixelTermApp *app, gint top_row, gint height);
 } AppSingleRenderTestHooks;

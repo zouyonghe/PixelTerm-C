@@ -189,7 +189,7 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     }
 
     if (app->force_kitty) {
-        ui_clear_kitty_images(app);
+        if (!ui_clear_kitty_images(app)) return;
     }
     if (video_player_cycle_protocol(app->video_player)) {
         video_player_clear_render_area(app->video_player);
