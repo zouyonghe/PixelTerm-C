@@ -251,7 +251,9 @@ ErrorCode video_player_stop(VideoPlayer *player);
  * @note Call from the player-owning main context.
  */
 ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms);
-/* Re-decode and present the current paused position without starting a timer. */
+/* Re-decode and present the current paused position without starting a timer.
+ * Returns the seek/decode/output result. Call from the player-owning main
+ * context while playback is paused; this submits terminal output. */
 ErrorCode video_player_refresh_paused_frame(VideoPlayer *player);
 
 /**
