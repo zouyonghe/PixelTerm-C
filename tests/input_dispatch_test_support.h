@@ -36,6 +36,7 @@ typedef struct {
     gint book_toc_render_calls;
     gint book_jump_prompt_render_calls;
     gint book_jump_prompt_clear_calls;
+    ErrorCode book_jump_prompt_result;
     gint file_manager_enter_calls;
     gint file_manager_toggle_hidden_calls;
     gint file_manager_select_path_calls;

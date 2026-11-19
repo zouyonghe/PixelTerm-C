@@ -229,14 +229,16 @@ gint app_book_toc_get_selected_page(PixelTermApp *app) {
     return app ? app->book.toc_selected : -1;
 }
 
-void app_book_jump_render_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_render_prompt(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_jump_prompt_render_calls++;
+    return g_input_dispatch_stub_state.book_jump_prompt_result;
 }
 
-void app_book_jump_clear_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_clear_prompt(PixelTermApp *app) {
     (void)app;
     g_input_dispatch_stub_state.book_jump_prompt_clear_calls++;
+    return g_input_dispatch_stub_state.book_jump_prompt_result;
 }
 
 void app_close_book(PixelTermApp *app) {

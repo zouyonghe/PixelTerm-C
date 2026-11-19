@@ -255,7 +255,7 @@ ImageRenderer *app_create_grid_renderer(const PixelTermApp *app,
     (void)content_height;
     g_book_preview_stub_state.create_grid_renderer_calls++;
     if (g_book_preview_stub_state.renderer_fail) {
-        if (out_error) *out_error = ERROR_OUTPUT_IO;
+        if (out_error) *out_error = ERROR_INVALID_IMAGE;
         return NULL;
     }
     if (out_error) {
@@ -496,12 +496,14 @@ void app_grid_draw_cell_border(const PreviewLayout *layout, gint cell_x, gint ce
 typedef struct {
     gboolean fail;
     GString *attempted;
+    GString *delivered;
 } BookOutput;
 
 static ssize_t book_output_write(void *data, const char *bytes, size_t length) {
     BookOutput *sink = data;
     g_string_append_len(sink->attempted, bytes, length);
     if (sink->fail) { errno = EIO; return -1; }
+    if (sink->delivered) g_string_append_len(sink->delivered, bytes, length);
     return (ssize_t)length;
 }
 
@@ -522,7 +524,8 @@ static void test_book_preview_output(gconstpointer data) {
         app.book.jump_active = TRUE;
     }
     g_book_preview_stub_state.renderer_fail = renderer_fail;
-    BookOutput sink = {.fail = !success && !renderer_fail, .attempted = g_string_new(NULL)};
+    BookOutput sink = {.fail = !success && !renderer_fail, .attempted = g_string_new(NULL),
+                       .delivered = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, book_output_write);
     g_assert_nonnull(stream);
     char buffer[65536];
@@ -534,12 +537,14 @@ static void test_book_preview_output(gconstpointer data) {
     ErrorCode result = selection ? app_render_book_preview_selection_change(&app, 0)
                                  : app_render_book_preview(&app);
     gchar *attempted = g_strdup(sink.attempted->str);
+    g_string_truncate(sink.delivered, 0);
     sink.fail = FALSE;
     gboolean recovered = terminal_output_flush();
     fclose(stream);
     stdout = saved;
-    g_assert_cmpint(result, ==, success ? ERROR_NONE : ERROR_OUTPUT_IO);
+    g_assert_cmpint(result, ==, success ? ERROR_NONE : renderer_fail ? ERROR_INVALID_IMAGE : ERROR_OUTPUT_IO);
     g_assert_true(recovered);
+    g_assert_cmpstr(sink.delivered->str, ==, success || renderer_fail ? "" : pending ? "\033\\pending-book" : "\033\\");
     if (!success) {
         g_assert_true(app.needs_redraw);
         g_assert_true(app.needs_screen_clear);
@@ -555,11 +560,60 @@ static void test_book_preview_output(gconstpointer data) {
     if (jump) g_assert_cmpint(g_book_preview_stub_state.help_calls, ==, 0);
     g_free(attempted);
     g_string_free(sink.attempted, TRUE);
+    g_string_free(sink.delivered, TRUE);
+    cleanup_book_preview_app(&app);
+}
+
+static void test_book_output_backoff_and_prompt_failure(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    gint operation = scenario & 3;
+    gboolean backoff = scenario & 4;
+    PixelTermApp app;
+    init_book_preview_app(&app, 4, 20, 80, 30);
+    app.book.jump_active = TRUE;
+    BookOutput sink = {.fail = TRUE, .attempted = g_string_new(NULL),
+                       .delivered = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, book_output_write);
+    g_assert_nonnull(stream);
+    char buffer[65536];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    if (backoff) {
+        terminal_output_defer("pending-book", TERMINAL_OUTPUT_RESTORE);
+        g_assert_false(terminal_output_flush());
+    }
+    gsize attempted = sink.attempted->len;
+    ErrorCode result;
+    switch (operation) {
+        case 0: result = app_book_jump_render_prompt(&app); break;
+        case 1: result = app_book_jump_clear_prompt(&app); break;
+        case 2: result = app_render_book_preview(&app); break;
+        default: result = app_render_book_preview_selection_change(&app, 1); break;
+    }
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    if (backoff) g_assert_cmpuint(sink.attempted->len, ==, attempted);
+    sink.fail = FALSE;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpstr(sink.delivered->str, ==, backoff ? "\033\\pending-book" : "\033\\");
+    g_string_free(sink.attempted, TRUE);
+    g_string_free(sink.delivered, TRUE);
     cleanup_book_preview_app(&app);
 }
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_preview_book/output/prompt_render_failure", GINT_TO_POINTER(0), test_book_output_backoff_and_prompt_failure);
+    g_test_add_data_func("/app_preview_book/output/prompt_clear_failure", GINT_TO_POINTER(1), test_book_output_backoff_and_prompt_failure);
+    g_test_add_data_func("/app_preview_book/output/prompt_render_backoff", GINT_TO_POINTER(4), test_book_output_backoff_and_prompt_failure);
+    g_test_add_data_func("/app_preview_book/output/prompt_clear_backoff", GINT_TO_POINTER(5), test_book_output_backoff_and_prompt_failure);
+    g_test_add_data_func("/app_preview_book/output/full_backoff", GINT_TO_POINTER(6), test_book_output_backoff_and_prompt_failure);
+    g_test_add_data_func("/app_preview_book/output/selection_backoff", GINT_TO_POINTER(7), test_book_output_backoff_and_prompt_failure);
     g_test_add_func("/app_preview_book/entry/previous_error", test_entry_with_previous_error);
     g_test_add_data_func("/app_preview_book/output/full_final_failure", GINT_TO_POINTER(0), test_book_preview_output);
     g_test_add_data_func("/app_preview_book/output/selection_final_failure", GINT_TO_POINTER(1), test_book_preview_output);

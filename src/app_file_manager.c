@@ -384,7 +384,13 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
     // Always start with hidden files hidden
     app->show_hidden_files = FALSE;
 
-    return app_file_manager_refresh(app);
+    ErrorCode error = app_file_manager_refresh(app);
+    if (error != ERROR_NONE && error != ERROR_OUTPUT_IO) {
+        /* Callers skip their redraw on error, but entry already cleared the display. */
+        ErrorCode rendered = app_render_file_manager(app);
+        if (rendered != ERROR_NONE) return rendered;
+    }
+    return error;
 }
 
 // Exit file manager mode
@@ -625,6 +631,10 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             app->help_visible = help_visible;
             app->needs_redraw = TRUE;
             app->needs_screen_clear = TRUE;
+            if (error != ERROR_OUTPUT_IO) {
+                ErrorCode rendered = app_render_file_manager(app);
+                if (rendered != ERROR_NONE) return rendered;
+            }
             return error;
         }
         error = app_transition_mode(app, APP_MODE_SINGLE);

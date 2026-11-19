@@ -144,12 +144,17 @@ static void test_enter_preview_other_protocols_skip_kitty_delete(void) {
 typedef struct {
     guint writes;
     guint fail_at;
+    GString *delivered;
 } PreviewOutput;
 
 static ssize_t preview_output_write(void *data, const char *bytes, size_t length) {
-    (void)bytes;
     PreviewOutput *sink = data;
-    if (++sink->writes == sink->fail_at) { errno = EIO; return -1; }
+    if (++sink->writes == sink->fail_at) {
+        if (sink->delivered) g_string_truncate(sink->delivered, 0);
+        errno = EIO;
+        return -1;
+    }
+    if (sink->delivered) g_string_append_len(sink->delivered, bytes, length);
     return (ssize_t)length;
 }
 
@@ -162,7 +167,7 @@ static void test_enter_preview_output_failure_preserves_mode(gconstpointer data)
     app.info_visible = TRUE;
     app.help_visible = TRUE;
     GList *original_images = app.image_files;
-    PreviewOutput sink = {.fail_at = GPOINTER_TO_UINT(data)};
+    PreviewOutput sink = {.fail_at = GPOINTER_TO_UINT(data), .delivered = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, preview_output_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
@@ -174,6 +179,8 @@ static void test_enter_preview_output_failure_preserves_mode(gconstpointer data)
     stdout = saved;
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(recovered);
+    g_assert_cmpstr(sink.delivered->str, ==, "\033\\");
+    g_string_free(sink.delivered, TRUE);
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_true(app.image_files == original_images);
     g_assert_cmpint(app.current_index, ==, 1);
@@ -226,7 +233,7 @@ static void test_full_preview_output_failure_is_reported(void) {
     PixelTermApp app;
     init_preview_app(&app, 2, 20, 80, 30);
     app.needs_screen_clear = TRUE;
-    PreviewOutput sink = {.fail_at = 1};
+    PreviewOutput sink = {.fail_at = 1, .delivered = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, preview_output_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
@@ -239,6 +246,34 @@ static void test_full_preview_output_failure_is_reported(void) {
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(app.needs_screen_clear);
     g_assert_true(recovered);
+    g_assert_cmpstr(sink.delivered->str, ==, "\033\\");
+    g_string_free(sink.delivered, TRUE);
+    cleanup_preview_app(&app);
+}
+
+static void test_preview_backoff_blocks_ui(gconstpointer data) {
+    PixelTermApp app;
+    init_preview_app(&app, 2, 20, 80, 30);
+    app.ui_text_hidden = FALSE;
+    PreviewOutput sink = {.fail_at = 1, .delivered = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, preview_output_write);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    terminal_output_defer("pending-preview", TERMINAL_OUTPUT_RESTORE);
+    g_assert_false(terminal_output_flush());
+    guint writes = sink.writes;
+    ErrorCode result = GPOINTER_TO_INT(data) ? app_render_preview_selection_change(&app, 1)
+                                           : app_render_preview_grid(&app);
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpuint(sink.writes, ==, writes);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+    g_assert_cmpstr(sink.delivered->str, ==, "\033\\pending-preview");
+    g_string_free(sink.delivered, TRUE);
     cleanup_preview_app(&app);
 }
 
@@ -636,6 +671,8 @@ ErrorCode video_player_stop(VideoPlayer *player) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_preview_grid/output/full_backoff", GINT_TO_POINTER(0), test_preview_backoff_blocks_ui);
+    g_test_add_data_func("/app_preview_grid/output/selection_backoff", GINT_TO_POINTER(1), test_preview_backoff_blocks_ui);
     g_test_add_func("/app_preview_grid/entry/previous_error", test_enter_preview_with_previous_error);
     g_test_add_func("/app_preview_grid/entry/stop_failure_keeps_display", test_enter_preview_stop_failure_keeps_display);
     g_test_add_func("/app_preview_grid/render/full_output_failure", test_full_preview_output_failure_is_reported);

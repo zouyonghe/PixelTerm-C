@@ -654,7 +654,11 @@ ErrorCode app_render_preview_grid(PixelTermApp *app) {
     if (!app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
-    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
 
     // Update terminal dimensions and force full clear if size changed
     gint prev_width = app->term_width;
@@ -757,6 +761,11 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     if (!app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
     }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
 
     gint old_scroll = app->preview.scroll;
     PreviewLayout layout = app_preview_calculate_layout(app);
@@ -784,5 +793,10 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     app_preview_render_selected_filename(app);
 
     ui_end_sync_update();
-    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+    return ERROR_NONE;
 }

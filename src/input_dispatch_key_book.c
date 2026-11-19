@@ -52,31 +52,27 @@ static void book_jump_start(PixelTermApp *app) {
     if (!app || app->book.jump_active) {
         return;
     }
-    gint current = 1;
-    if (app_is_book_preview_mode(app)) {
-        current = app->book.preview_selected + 1;
-    } else if (app_is_book_mode(app)) {
-        current = app->book.page + 1;
-    }
-    if (current < 1) current = 1;
-    char current_buf[16];
-    g_snprintf(current_buf, sizeof(current_buf), "%d", current);
+    BookState previous = app->book;
     app->book.jump_buf[0] = '\0';
     app->book.jump_len = 0;
     app->book.jump_active = TRUE;
     app->book.jump_dirty = FALSE;
-    app_book_jump_render_prompt(app);
+    if (record_output_error(app, app_book_jump_render_prompt(app)) != ERROR_NONE) {
+        app->book = previous;
+    }
 }
 
-static void book_jump_cancel(PixelTermApp *app) {
+static ErrorCode book_jump_cancel(PixelTermApp *app) {
     if (!app || !app->book.jump_active) {
-        return;
+        return ERROR_NONE;
     }
+    ErrorCode result = record_output_error(app, app_book_jump_clear_prompt(app));
+    if (result != ERROR_NONE) return result;
     app->book.jump_active = FALSE;
     app->book.jump_dirty = FALSE;
     app->book.jump_len = 0;
     app->book.jump_buf[0] = '\0';
-    app_book_jump_clear_prompt(app);
+    return ERROR_NONE;
 }
 
 static void book_jump_commit(PixelTermApp *app) {
@@ -99,7 +95,7 @@ static void book_jump_commit(PixelTermApp *app) {
     if (app_is_book_preview_mode(app)) {
         gint old_selected = app->book.preview_selected;
         gint old_scroll = app->book.preview_scroll;
-        book_jump_cancel(app);
+        if (book_jump_cancel(app) != ERROR_NONE) return;
         app_book_preview_jump_to_page(app, value - 1);
         if (app->book.preview_scroll != old_scroll) {
             record_output_error(app, app_render_book_preview(app));
@@ -111,7 +107,7 @@ static void book_jump_commit(PixelTermApp *app) {
             book_jump_cancel(app);
             return;
         }
-        book_jump_cancel(app);
+        if (book_jump_cancel(app) != ERROR_NONE) return;
         if (record_output_error(app, app_enter_book_page(app, value - 1)) == ERROR_NONE) {
             app->suppress_full_clear = TRUE;
             record_output_error(app, app_render_book_page(app));
@@ -138,10 +134,13 @@ gboolean input_dispatch_key_modes_handle_book_jump_input(PixelTermApp *app, cons
     }
     if (event->key_code == KEY_BACKSPACE || event->key_code == KEY_DELETE) {
         if (app->book.jump_len > 0) {
+            BookState previous = app->book;
             app->book.jump_len--;
             app->book.jump_buf[app->book.jump_len] = '\0';
             app->book.jump_dirty = TRUE;
-            app_book_jump_render_prompt(app);
+            if (record_output_error(app, app_book_jump_render_prompt(app)) != ERROR_NONE) {
+                app->book = previous;
+            }
         }
         return TRUE;
     }
@@ -157,10 +156,13 @@ gboolean input_dispatch_key_modes_handle_book_jump_input(PixelTermApp *app, cons
             max_len = (gint)(sizeof(app->book.jump_buf) - 1);
         }
         if (app->book.jump_len < max_len) {
+            BookState previous = app->book;
             app->book.jump_buf[app->book.jump_len++] = (char)event->key_code;
             app->book.jump_buf[app->book.jump_len] = '\0';
             app->book.jump_dirty = TRUE;
-            app_book_jump_render_prompt(app);
+            if (record_output_error(app, app_book_jump_render_prompt(app)) != ERROR_NONE) {
+                app->book = previous;
+            }
         }
         return TRUE;
     }

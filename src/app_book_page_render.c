@@ -352,12 +352,10 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
                 app_book_render_help_line(app);
             }
 
-            if (app->book.jump_active) {
-                app_book_jump_render_prompt(app);
-            }
+            ErrorCode prompt_error = app->book.jump_active ? app_book_jump_render_prompt(app) : ERROR_NONE;
 
             ui_end_sync_update();
-            gboolean output_success = terminal_output_flush();
+            gboolean output_success = prompt_error == ERROR_NONE && terminal_output_flush();
             g_string_free(left_rendered, TRUE);
             if (right_rendered) {
                 g_string_free(right_rendered, TRUE);
@@ -490,12 +488,10 @@ ErrorCode app_render_book_page(PixelTermApp *app) {
         app_book_render_help_line(app);
     }
 
-    if (app->book.jump_active) {
-        app_book_jump_render_prompt(app);
-    }
+    ErrorCode prompt_error = app->book.jump_active ? app_book_jump_render_prompt(app) : ERROR_NONE;
 
     ui_end_sync_update();
-    gboolean output_success = terminal_output_flush();
+    gboolean output_success = prompt_error == ERROR_NONE && terminal_output_flush();
     g_string_free(rendered, TRUE);
     renderer_destroy(renderer);
     return output_success ? ERROR_NONE : ERROR_OUTPUT_IO;

@@ -27,6 +27,7 @@ static ErrorCode g_render_error;
 static gint g_book_entry_calls;
 static gint g_render_calls;
 static gint g_book_open_calls;
+static gint g_book_close_calls;
 static gint g_browser_scan_calls;
 static ErrorCode g_browser_scan_error;
 
@@ -100,6 +101,7 @@ BookDocument *book_open(const char *filepath, ErrorCode *out_error) {
 
 void book_close(BookDocument *doc) {
     (void)doc;
+    g_book_close_calls++;
 }
 
 gint book_get_page_count(const BookDocument *doc) {
@@ -652,6 +654,7 @@ static void test_render_marks_directory_containing_media(void) {
 
 typedef struct {
     gboolean fail;
+    gboolean fail_after_clear;
     GString *attempted;
     gsize first_length;
 } FileManagerOutput;
@@ -660,7 +663,7 @@ static ssize_t file_manager_output_write(void *data, const char *bytes, size_t l
     FileManagerOutput *sink = data;
     if (sink->attempted->len == 0) sink->first_length = length;
     g_string_append_len(sink->attempted, bytes, length);
-    if (sink->fail) {
+    if (sink->fail || (sink->fail_after_clear && sink->attempted->len > sink->first_length)) {
         errno = EIO;
         return -1;
     }
@@ -759,6 +762,44 @@ static void test_enter_with_previous_error(void) {
     g_free(dir);
 }
 
+static void test_enter_missing_directory_redraw(gconstpointer data) {
+    gboolean redraw_failure = GPOINTER_TO_INT(data);
+    gchar *dir = create_temp_dir();
+    PixelTermApp app = {0};
+    app.mode = APP_MODE_SINGLE;
+    app.current_directory = g_build_filename(dir, "missing\033[31m", NULL);
+    app.info_visible = TRUE;
+    app.help_visible = TRUE;
+    FileManagerOutput sink = {.fail_after_clear = redraw_failure, .attempted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, file_manager_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_enter_file_manager(&app);
+    sink.fail_after_clear = FALSE;
+    g_assert_true(terminal_output_flush());
+    fclose(stream);
+    stdout = saved;
+
+    g_assert_cmpint(result, ==, redraw_failure ? ERROR_OUTPUT_IO : ERROR_FILE_NOT_FOUND);
+    g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
+    g_assert_null(app.file_manager.entries);
+    g_assert_cmpint(app.file_manager.entries_count, ==, 0);
+    g_assert_nonnull(strstr(sink.attempted->str, "PixelTerm File Manager"));
+    g_assert_nonnull(strstr(sink.attempted->str, "No items"));
+    g_assert_null(strstr(sink.attempted->str, "missing\033[31m"));
+    g_assert_nonnull(strstr(sink.attempted->str, "missing"));
+    if (redraw_failure) {
+        g_assert_true(app.needs_redraw);
+        g_assert_true(app.needs_screen_clear);
+    }
+    g_string_free(sink.attempted, TRUE);
+    cleanup_file_manager_app(&app);
+    g_free(app.current_directory);
+    g_free(dir);
+}
+
 static void test_open_loaded_file_output(gconstpointer data) {
     gint scenario = GPOINTER_TO_INT(data);
     gboolean book = scenario & 1;
@@ -767,6 +808,7 @@ static void test_open_loaded_file_output(gconstpointer data) {
     gboolean render_failure = scenario & 8;
     gboolean transition_failure = scenario & 16;
     gboolean load_failure = scenario & 32;
+    gboolean redraw_failure = scenario & 64;
     gchar *dir = create_temp_dir();
     gchar *path = book ? write_file_in_dir(dir, "book.pdf", (const guint8 *)"%PDF", 4)
                        : write_png_file_in_dir(dir, "image.png");
@@ -791,8 +833,9 @@ static void test_open_loaded_file_output(gconstpointer data) {
     g_render_error = render_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
     g_media_stop_error = transition_failure ? ERROR_OUTPUT_IO : ERROR_NONE;
     g_book_entry_calls = g_render_calls = 0;
-    g_book_open_calls = g_browser_scan_calls = 0;
-    FileManagerOutput sink = {.fail = clear_failure, .attempted = g_string_new(NULL)};
+    g_book_open_calls = g_book_close_calls = g_browser_scan_calls = 0;
+    FileManagerOutput sink = {.fail = clear_failure, .fail_after_clear = redraw_failure,
+                             .attempted = g_string_new(NULL)};
     FILE *stream = test_output_stream(&sink, file_manager_output_write);
     g_assert_nonnull(stream);
     FILE *saved = stdout;
@@ -801,10 +844,11 @@ static void test_open_loaded_file_output(gconstpointer data) {
     ErrorCode result = app_file_manager_enter(&app);
     gchar *attempted = g_strndup(sink.attempted->str, sink.first_length);
     sink.fail = FALSE;
+    sink.fail_after_clear = FALSE;
     gboolean recovered = terminal_output_flush();
     fclose(stream);
     stdout = saved;
-    ErrorCode expected = (clear_failure || entry_failure || render_failure || transition_failure)
+    ErrorCode expected = (clear_failure || entry_failure || render_failure || transition_failure || redraw_failure)
                          ? ERROR_OUTPUT_IO : load_failure
                          ? (book ? ERROR_INVALID_IMAGE : ERROR_FILE_NOT_FOUND) : ERROR_NONE;
     g_assert_cmpint(result, ==, expected);
@@ -816,6 +860,25 @@ static void test_open_loaded_file_output(gconstpointer data) {
         g_assert_cmpstr(app.book.path, ==, "old.pdf");
         g_assert_true(app.info_visible);
         g_assert_true(app.help_visible);
+    } else if (load_failure) {
+        if (book) {
+            g_assert_cmpint(g_book_close_calls, ==, 1);
+            g_assert_null(app.book.doc);
+            g_assert_null(app.book.path);
+            g_assert_true(app.image_files == old_images);
+            g_assert_cmpstr(app.image_files->data, ==, "old.png");
+            g_assert_cmpint(app.total_images, ==, 1);
+        } else {
+            g_assert_cmpint(g_book_close_calls, ==, 0);
+            g_assert_null(app.image_files);
+            /* The scan fails before app_load_directory resets the previous count. */
+            g_assert_cmpint(app.total_images, ==, 1);
+            g_assert_cmpstr(app.current_directory, ==, dir);
+            g_assert_true(app.book.doc == (BookDocument *)0x2);
+            g_assert_cmpstr(app.book.path, ==, "old.pdf");
+        }
+        g_assert_nonnull(strstr(sink.attempted->str, "PixelTerm File Manager"));
+        g_assert_nonnull(strstr(sink.attempted->str, book ? "book.pdf" : "image.png"));
     } else if (!load_failure && book) {
         g_assert_nonnull(app.book.doc);
         g_assert_cmpstr(app.book.path, ==, path);
@@ -891,6 +954,10 @@ static void test_render_output_failure(gconstpointer data) {
 
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+    g_test_add_data_func("/app_file_manager/entry/missing_directory_redraw", GINT_TO_POINTER(FALSE), test_enter_missing_directory_redraw);
+    g_test_add_data_func("/app_file_manager/entry/missing_directory_redraw_failure", GINT_TO_POINTER(TRUE), test_enter_missing_directory_redraw);
+    g_test_add_data_func("/app_file_manager/open/image_load_redraw_failure", GINT_TO_POINTER(96), test_open_loaded_file_output);
+    g_test_add_data_func("/app_file_manager/open/book_load_redraw_failure", GINT_TO_POINTER(97), test_open_loaded_file_output);
     g_test_add_func("/app_file_manager/entry/previous_error", test_enter_with_previous_error);
     g_test_add_data_func("/app_file_manager/open/image_load_failure", GINT_TO_POINTER(32), test_open_loaded_file_output);
     g_test_add_data_func("/app_file_manager/open/book_load_failure", GINT_TO_POINTER(33), test_open_loaded_file_output);

@@ -333,12 +333,17 @@ static void app_book_render_page_indicator(const PixelTermApp *app) {
     }
 }
 
-void app_book_jump_render_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_render_prompt(PixelTermApp *app) {
     if (!app || !app->book.jump_active) {
-        return;
+        return ERROR_NONE;
     }
     if (!app_is_book_mode(app) && !app_is_book_preview_mode(app)) {
-        return;
+        return ERROR_NONE;
+    }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
     }
 
     gint total_pages = app->book.page_count > 0 ? app->book.page_count : 1;
@@ -387,15 +392,25 @@ void app_book_jump_render_prompt(PixelTermApp *app) {
     if (cursor_col < 1) cursor_col = 1;
     if (cursor_col > term_w) cursor_col = term_w;
     printf("\033[%d;%dH\033[?25h", input_row, cursor_col);
-    fflush(stdout);
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+    return ERROR_NONE;
 }
 
-void app_book_jump_clear_prompt(PixelTermApp *app) {
+ErrorCode app_book_jump_clear_prompt(PixelTermApp *app) {
     if (!app) {
-        return;
+        return ERROR_NONE;
     }
     if (!app_is_book_mode(app) && !app_is_book_preview_mode(app)) {
-        return;
+        return ERROR_NONE;
+    }
+    if (!terminal_output_ready(g_get_monotonic_time())) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
     }
 
     gint term_h = app->term_height > 0 ? app->term_height : 24;
@@ -411,7 +426,12 @@ void app_book_jump_clear_prompt(PixelTermApp *app) {
         app_book_render_page_indicator(app);
     }
 
-    fflush(stdout);
+    if (!terminal_output_flush()) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+    return ERROR_NONE;
 }
 
 static void app_book_preview_clear_cell_border(const PixelTermApp *app,
@@ -784,7 +804,7 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
         return ERROR_INVALID_IMAGE;
     }
 
-    if (!terminal_output_flush()) {
+    if (!terminal_output_ready(g_get_monotonic_time())) {
         app->needs_redraw = TRUE;
         app->needs_screen_clear = TRUE;
         return ERROR_OUTPUT_IO;
@@ -858,12 +878,12 @@ ErrorCode app_render_book_preview(PixelTermApp *app) {
 
     app_book_preview_render_selected_info(app);
     if (app->book.jump_active) {
-        app_book_jump_render_prompt(app);
-        if (!terminal_output_flush()) {
+        ErrorCode prompt_error = app_book_jump_render_prompt(app);
+        if (prompt_error != ERROR_NONE) {
             renderer_destroy(renderer);
             app->needs_redraw = TRUE;
             app->needs_screen_clear = TRUE;
-            return ERROR_OUTPUT_IO;
+            return prompt_error;
         }
     }
 
@@ -903,7 +923,7 @@ ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_i
         return ERROR_INVALID_IMAGE;
     }
 
-    if (!terminal_output_flush()) {
+    if (!terminal_output_ready(g_get_monotonic_time())) {
         app->needs_redraw = TRUE;
         app->needs_screen_clear = TRUE;
         return ERROR_OUTPUT_IO;
@@ -933,7 +953,8 @@ ErrorCode app_render_book_preview_selection_change(PixelTermApp *app, gint old_i
     app_book_preview_render_page_indicator(app);
     app_book_preview_render_selected_info(app);
     if (app->book.jump_active) {
-        app_book_jump_render_prompt(app);
+        ErrorCode prompt_error = app_book_jump_render_prompt(app);
+        if (prompt_error != ERROR_NONE) return prompt_error;
     }
 
     if (!terminal_output_flush()) {

@@ -11,9 +11,14 @@ failed stdio buffer disposal, APC framing, deferred command lifetime and the
 100 ms background retry deadline. `kitty_graphics.c` encodes Kitty commands,
 runs the image-ID allocation probe, and queues deferred deletes and ST recovery
 through this owner; UI/input do not depend on its recovery logic.
+Legacy UI rows still assemble bytes with `printf`/`fwrite`; their checked frame
+boundaries use `terminal_output_flush`. This module owns checking and recovery,
+not every individual formatting call. Remaining legacy prompt flushes require
+their own checked integration; the contract does not make raw stdio checked.
 
-- `terminal_output_write` drains pending work, writes and flushes one payload,
-  and returns the result of that submission even if recovery later succeeds.
+- `terminal_output_write` first drains pending work. If that fails, it returns
+  false without attempting the payload. Otherwise it writes and flushes the
+  payload and returns that submission result even if recovery later succeeds.
 - `terminal_output_defer(..., TERMINAL_OUTPUT_ONCE)` owns unsent destructive
   commands. A failed/ambiguous attempt becomes ST-only; deletion is not replayed.
 - `TERMINAL_OUTPUT_RESTORE` owns idempotent mouse/cursor/alternate-screen/sync-end
