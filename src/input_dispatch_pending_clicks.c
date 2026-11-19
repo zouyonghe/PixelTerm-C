@@ -6,6 +6,10 @@
 
 static const gint64 k_click_threshold_us = 400000;
 
+static void record_output_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+}
+
 void input_dispatch_process_pending_clicks(PixelTermApp *app) {
     if (!app) {
         return;
@@ -25,11 +29,13 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
                 gint page_step = app_book_use_double_page(app) ? 2 : 1;
                 input_dispatch_book_change_page(app, page_step);
             } else {
-                app_next_image(app);
+                ErrorCode result = app_next_image(app);
+                record_output_error(app, result);
+                if (result != ERROR_NONE) return;
                 if (app->needs_redraw) {
                     app->suppress_full_clear = TRUE;
                     app->async.render_request = TRUE;
-                    app_refresh_display(app);
+                    record_output_error(app, app_refresh_display(app));
                     app->needs_redraw = FALSE;
                 }
             }
@@ -54,9 +60,9 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
                                                     NULL);
                 if (redraw_needed) {
                     if (app->book.preview_scroll != old_scroll) {
-                        app_render_book_preview(app);
+                        record_output_error(app, app_render_book_preview(app));
                     } else if (app->book.preview_selected != old_selected) {
-                        app_render_book_preview_selection_change(app, old_selected);
+                        record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
                     }
                 }
             } else if (app_is_preview_mode(app)) {
@@ -69,9 +75,9 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
                                                NULL);
                 if (redraw_needed) {
                     if (app->preview.scroll != old_scroll) {
-                        app_render_preview_grid(app);
+                        record_output_error(app, app_render_preview_grid(app));
                     } else if (app->preview.selected != old_selected) {
-                        app_render_preview_selection_change(app, old_selected);
+                        record_output_error(app, app_render_preview_selection_change(app, old_selected));
                     }
                 }
             }
@@ -90,7 +96,7 @@ void input_dispatch_process_pending_clicks(PixelTermApp *app) {
                                           app->input.file_manager_click.x,
                                           app->input.file_manager_click.y);
             if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-                app_render_file_manager(app);
+                record_output_error(app, app_render_file_manager(app));
             }
         }
     } else if (!app_is_file_manager_mode(app) && app->input.file_manager_click.pending) {

@@ -185,6 +185,9 @@ void video_player_set_show_stats(VideoPlayer *player, gboolean show_stats);
  */
 void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_enhance);
 
+/* Predict cycle_protocol's redraw result without changing protocol or frame. */
+gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player);
+
 /**
  * @brief Advances the renderer protocol override to the next display mode.
  *

@@ -65,6 +65,10 @@ typedef struct {
     ErrorCode display_help_result;
     ErrorCode render_by_mode_result;
     ErrorCode preview_render_result;
+    ErrorCode preview_selection_render_result;
+    ErrorCode exit_preview_result;
+    ErrorCode preview_zoom_result;
+    gboolean preview_move_scroll;
 } InputDispatchTestStubState;
 
 extern InputDispatchTestStubState g_input_dispatch_stub_state;

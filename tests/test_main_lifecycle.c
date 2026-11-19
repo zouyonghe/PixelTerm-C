@@ -13,6 +13,11 @@
 
 static gint startup_failure_stage;
 static gboolean resize_test;
+static gboolean resize_pause_failure;
+static ErrorCode lifecycle_gif_pause(GifPlayer *player) {
+    if (resize_pause_failure) { player->is_playing = FALSE; return ERROR_OUTPUT_IO; }
+    return gif_player_pause(player);
+}
 static guint resume_calls;
 static guint initialize_calls;
 static guint raw_mode_calls;
@@ -112,6 +117,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #define input_enable_mouse lifecycle_enable_mouse
 #define input_update_terminal_size lifecycle_update_size
 #define video_player_play lifecycle_play
+#define gif_player_pause lifecycle_gif_pause
 
 #define main pixelterm_main_for_lifecycle_test
 #include "../src/main.c"
@@ -124,6 +130,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #undef input_enable_mouse
 #undef input_update_terminal_size
 #undef video_player_play
+#undef gif_player_pause
 
 typedef struct {
     gint failures;
@@ -398,8 +405,14 @@ static void test_raw_setup_failure_preserves_shell_output(void) {
 }
 #endif
 
-static void test_resize_render_failure_does_not_resume(void) {
+static void test_resize_render_failure_does_not_resume(gconstpointer data) {
     PixelTermApp app = {.running = TRUE};
+    resize_pause_failure = GPOINTER_TO_INT(data);
+    if (resize_pause_failure) {
+        app.gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+        g_assert_nonnull(app.gif_player);
+        app.gif_player->is_playing = TRUE;
+    }
     /* The playback call is intercepted: no real player is needed. */
     app.video_player = (VideoPlayer *)&app;
     resize_test = TRUE;
@@ -420,9 +433,29 @@ static void test_resize_render_failure_does_not_resume(void) {
     close(saved_input);
     fclose(input);
     resize_test = FALSE;
+    gboolean pause_failure = resize_pause_failure;
+    resize_pause_failure = FALSE;
+    if (app.gif_player) gif_player_destroy(app.gif_player);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_cmpuint(resume_calls, ==, 0);
-    g_assert_cmpuint(render_calls, ==, 2);
+    g_assert_cmpuint(render_calls, ==, pause_failure ? 1 : 2);
+}
+
+static void test_already_raw_retries_pending_probe_restore(void) {
+    CleanupTerminal terminal = {.failures = 100};
+    TerminalProbeTransportHooks hooks = {.tcsetattr_fn = cleanup_setattr};
+    terminal_probe_set_transport_hooks_for_test(&hooks, &terminal);
+    InputHandler handler = {.raw_mode_enabled = TRUE};
+    struct termios original = {0};
+    g_assert_false(terminal_probe_restore_original(&original));
+    gint before = terminal.calls;
+    ErrorCode result = input_enable_raw_mode(&handler);
+    gint after = terminal.calls;
+    terminal.failures = 0;
+    g_assert_true(terminal_probe_retry_restore());
+    terminal_probe_reset_transport_hooks_for_test();
+    g_assert_cmpint(result, ==, ERROR_TERMINAL_SIZE);
+    g_assert_cmpint(after, >, before);
 }
 
 static void test_dispatch_output_error_reaches_application(void) {
@@ -453,6 +486,7 @@ static void test_dispatch_output_error_reaches_application(void) {
 }
 
 void register_main_lifecycle_tests(void) {
+    g_test_add_func("/main/startup/already_raw_retries_restore", test_already_raw_retries_pending_probe_restore);
     g_test_add_func("/main/output/dispatch_error_reaches_application", test_dispatch_output_error_reaches_application);
 #if defined(__GLIBC__) || defined(__APPLE__)
     g_test_add_func("/main/startup/raw_setup_failure_preserves_shell", test_raw_setup_failure_preserves_shell_output);
@@ -462,7 +496,8 @@ void register_main_lifecycle_tests(void) {
     g_test_add_data_func("/main/output/blocks_startup", NULL, test_pending_framing_blocks_startup_and_cleanup);
     g_test_add_data_func("/main/output/blocks_cleanup", GINT_TO_POINTER(1), test_pending_framing_blocks_startup_and_cleanup);
 #endif
-    g_test_add_func("/main/resize/render_failure_does_not_resume", test_resize_render_failure_does_not_resume);
+    g_test_add_data_func("/main/resize/render_failure_does_not_resume", NULL, test_resize_render_failure_does_not_resume);
+    g_test_add_data_func("/main/resize/gif_pause_failure_aborts", GINT_TO_POINTER(TRUE), test_resize_render_failure_does_not_resume);
     g_test_add_data_func("/main/output/waits_for_framing_recovery", NULL, test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_dispatch", GINT_TO_POINTER(1), test_main_waits_for_framing_recovery);
     g_test_add_data_func("/main/output/rechecks_after_animation", GINT_TO_POINTER(2), test_main_waits_for_framing_recovery);

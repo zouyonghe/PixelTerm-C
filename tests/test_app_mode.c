@@ -21,6 +21,13 @@ static void test_transition_same_mode_no_side_effects(void) {
     g_assert_true(app.input.single_click.pending);
 }
 
+static void test_mode_entry_does_not_consume_previous_error(void) {
+    PixelTermApp app = {.mode = APP_MODE_PREVIEW, .last_error = ERROR_OUTPUT_IO};
+    g_assert_cmpint(app_transition_mode(&app, APP_MODE_SINGLE), ==, ERROR_NONE);
+    g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+}
+
 static void test_transition_resets_pending_clicks(void) {
     PixelTermApp app = {0};
 
@@ -164,6 +171,7 @@ static void test_mode_transition_clears_overlays(void) {
 }
 
 void register_app_mode_tests(void) {
+    g_test_add_func("/app_mode/transition/previous_error_is_preserved", test_mode_entry_does_not_consume_previous_error);
     g_test_add_func("/app_mode/transition/null_app", test_transition_null_app);
     g_test_add_func("/app_mode/transition/invalid_mode", test_transition_invalid_mode);
     g_test_add_func("/app_mode/transition/same_mode_no_side_effects", test_transition_same_mode_no_side_effects);

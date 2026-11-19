@@ -36,6 +36,6 @@ void ui_clear_screen_for_refresh(const PixelTermApp *app);
 gboolean ui_clear_kitty_images(const PixelTermApp *app);
 void ui_clear_single_view_lines(const PixelTermApp *app);
 void ui_clear_area(const PixelTermApp *app, gint top_row, gint height);
-void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel);
+ErrorCode ui_render_panel(gint term_width, gint term_height, const UIPanel *panel);
 
 #endif

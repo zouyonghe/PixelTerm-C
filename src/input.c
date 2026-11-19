@@ -163,12 +163,13 @@ ErrorCode input_enable_raw_mode(InputHandler *handler) {
                                                   g_input_enable_raw_mode_observer_user_data);
     }
 
-    if (!handler || handler->raw_mode_enabled) {
+    if (!handler) {
         return ERROR_NONE;
     }
 
     // Check if stdin is a terminal
     if (!terminal_probe_retry_restore()) return ERROR_TERMINAL_SIZE;
+    if (handler->raw_mode_enabled) return ERROR_NONE;
     if (!isatty(STDIN_FILENO)) {
         return ERROR_NONE;
     }

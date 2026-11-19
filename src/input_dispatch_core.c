@@ -11,7 +11,7 @@
 #include "common.h"
 
 static void record_dispatch_error(PixelTermApp *app, ErrorCode result) {
-    if (result != ERROR_NONE) app->last_error = result;
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
 }
 
 typedef void (*ModeKeyPressHandler)(PixelTermApp *app,
@@ -112,7 +112,10 @@ static void handle_mouse_double_click_book_toc(PixelTermApp *app, const InputEve
     }
     gint page = app_book_toc_get_selected_page(app);
     app->book.toc_visible = FALSE;
-    if (page >= 0 && app_enter_book_page(app, page) == ERROR_NONE) {
+    if (page >= 0) {
+        ErrorCode result = app_enter_book_page(app, page);
+        record_dispatch_error(app, result);
+        if (result != ERROR_NONE) return;
         record_dispatch_error(app, app_render_book_page(app));
     } else if (app_is_book_preview_mode(app)) {
         record_dispatch_error(app, app_render_book_preview(app));

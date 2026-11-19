@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <errno.h>
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <stdio.h>
@@ -8,6 +12,8 @@
 
 #include "browser.h"
 #include "preload_control.h"
+#include "terminal_output.h"
+#include "test_output_stream.h"
 
 static const guint8 k_png_data[] = {
     0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A
@@ -105,6 +111,10 @@ ErrorCode app_preloader_enable(PixelTermApp *app, gboolean queue_tasks) {
 }
 
 void app_preloader_reset(PixelTermApp *app) {
+    (void)app;
+}
+
+void app_preloader_clear_queue(PixelTermApp *app) {
     (void)app;
 }
 
@@ -624,8 +634,109 @@ static void test_render_marks_directory_containing_media(void) {
     g_free(dir);
 }
 
+typedef struct {
+    gboolean fail;
+    GString *attempted;
+} FileManagerOutput;
+
+static ssize_t file_manager_output_write(void *data, const char *bytes, size_t length) {
+    FileManagerOutput *sink = data;
+    g_string_append_len(sink->attempted, bytes, length);
+    if (sink->fail) {
+        errno = EIO;
+        return -1;
+    }
+    return (ssize_t)length;
+}
+
+static void test_enter_output_failure_preserves_state(void) {
+    gchar *dir = create_temp_dir();
+    PixelTermApp app = {0};
+    init_file_manager_app(&app, dir, 24);
+    g_assert_cmpint(app_file_manager_refresh(&app), ==, ERROR_NONE);
+    app.mode = APP_MODE_PREVIEW;
+    app.info_visible = TRUE;
+    app.show_hidden_files = TRUE;
+    app.file_manager.selected_entry = 7;
+    app.file_manager.scroll_offset = 3;
+    gchar *directory = app.file_manager.directory;
+    GList *entries = app.file_manager.entries;
+    gint entries_count = app.file_manager.entries_count;
+
+    FileManagerOutput sink = {.fail = TRUE, .attempted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, file_manager_output_write);
+    g_assert_nonnull(stream);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    ErrorCode result = app_enter_file_manager(&app);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    g_assert_cmpint(app.mode, ==, APP_MODE_PREVIEW);
+    g_assert_true(app.info_visible);
+    g_assert_true(app.show_hidden_files);
+    g_assert_true(app.file_manager.directory == directory);
+    g_assert_true(app.file_manager.entries == entries);
+    g_assert_cmpint(app.file_manager.entries_count, ==, entries_count);
+    g_assert_cmpint(app.file_manager.selected_entry, ==, 7);
+    g_assert_cmpint(app.file_manager.scroll_offset, ==, 3);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    g_string_free(sink.attempted, TRUE);
+    cleanup_file_manager_app(&app);
+    g_free(dir);
+}
+
+static void test_render_output_failure(gconstpointer data) {
+    gboolean pending = GPOINTER_TO_INT(data);
+    PixelTermApp app = {0};
+    init_file_manager_app(&app, "/", 24);
+    app.file_manager.scroll_offset = 7;
+    FileManagerOutput sink = {.fail = TRUE, .attempted = g_string_new(NULL)};
+    FILE *stream = test_output_stream(&sink, file_manager_output_write);
+    g_assert_nonnull(stream);
+    char buffer[65536];
+    g_assert_cmpint(setvbuf(stream, buffer, _IOFBF, sizeof(buffer)), ==, 0);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    if (pending) terminal_output_defer("pending-control", TERMINAL_OUTPUT_RESTORE);
+    ErrorCode result = app_render_file_manager(&app);
+    gchar *attempted = g_strdup(sink.attempted->str);
+    sink.fail = FALSE;
+    gboolean recovered = terminal_output_flush();
+    fclose(stream);
+    stdout = saved;
+
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(recovered);
+    g_assert_true(app.needs_redraw);
+    g_assert_true(app.needs_screen_clear);
+    if (pending) {
+        g_assert_cmpstr(attempted, ==, "\033\\pending-control");
+        g_assert_cmpint(app.file_manager.scroll_offset, ==, 7);
+    } else {
+        g_assert_nonnull(strstr(attempted, "PixelTerm File Manager"));
+    }
+    g_free(attempted);
+    g_string_free(sink.attempted, TRUE);
+    cleanup_file_manager_app(&app);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
+
+    g_test_add_func("/app_file_manager/entry/output_failure_preserves_state",
+                    test_enter_output_failure_preserves_state);
+    g_test_add_data_func("/app_file_manager/render/final_flush_failure", GINT_TO_POINTER(FALSE),
+                         test_render_output_failure);
+    g_test_add_data_func("/app_file_manager/render/pending_output_failure", GINT_TO_POINTER(TRUE),
+                         test_render_output_failure);
 
     g_test_add_func("/app_file_manager/refresh/handles_empty_directory",
                     test_refresh_handles_empty_directory);

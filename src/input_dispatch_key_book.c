@@ -5,6 +5,11 @@
 
 #include "input_dispatch_book_internal.h"
 
+static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
+}
+
 static const gint k_book_jump_max_digits = 12;
 static const KeyCode g_nav_keys_lr[] = {
     KEY_LEFT, (KeyCode)'h', KEY_UP, KEY_DOWN, KEY_RIGHT, (KeyCode)'l', KEY_PAGE_UP, KEY_PAGE_DOWN
@@ -97,9 +102,9 @@ static void book_jump_commit(PixelTermApp *app) {
         book_jump_cancel(app);
         app_book_preview_jump_to_page(app, value - 1);
         if (app->book.preview_scroll != old_scroll) {
-            app_render_book_preview(app);
+            record_output_error(app, app_render_book_preview(app));
         } else if (app->book.preview_selected != old_selected) {
-            app_render_book_preview_selection_change(app, old_selected);
+            record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
         }
     } else if (app_is_book_mode(app)) {
         if (value - 1 == app->book.page) {
@@ -107,9 +112,9 @@ static void book_jump_commit(PixelTermApp *app) {
             return;
         }
         book_jump_cancel(app);
-        if (app_enter_book_page(app, value - 1) == ERROR_NONE) {
+        if (record_output_error(app, app_enter_book_page(app, value - 1)) == ERROR_NONE) {
             app->suppress_full_clear = TRUE;
-            app_render_book_page(app);
+            record_output_error(app, app_render_book_page(app));
         }
     }
 }
@@ -207,12 +212,13 @@ static void handle_key_press_book_toc(PixelTermApp *app,
         case 13: {
             gint page = app_book_toc_get_selected_page(app);
             app->book.toc_visible = FALSE;
-            if (page >= 0 && app_enter_book_page(app, page) == ERROR_NONE) {
-                app_render_book_page(app);
+            if (page >= 0) {
+                if (record_output_error(app, app_enter_book_page(app, page)) != ERROR_NONE) return;
+                record_output_error(app, app_render_book_page(app));
             } else if (app_is_book_preview_mode(app)) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else {
-                app_render_book_page(app);
+                record_output_error(app, app_render_book_page(app));
             }
             return;
         }
@@ -221,9 +227,9 @@ static void handle_key_press_book_toc(PixelTermApp *app,
         case (KeyCode)'T':
             app->book.toc_visible = FALSE;
             if (app_is_book_preview_mode(app)) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else {
-                app_render_book_page(app);
+                record_output_error(app, app_render_book_page(app));
             }
             return;
         default:
@@ -232,7 +238,7 @@ static void handle_key_press_book_toc(PixelTermApp *app,
 
     if (app->book.toc_visible &&
         (app->book.toc_selected != old_selected || app->book.toc_scroll != old_scroll)) {
-        app_render_book_toc(app);
+        record_output_error(app, app_render_book_toc(app));
     }
 }
 
@@ -253,9 +259,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_move_selection(app, 0, -1);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -266,9 +272,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_move_selection(app, 0, 1);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -279,9 +285,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_move_selection(app, -1, 0);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -292,9 +298,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_move_selection(app, 1, 0);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -304,9 +310,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_page_move(app, 1);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
@@ -316,9 +322,9 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
             gint old_scroll = app->book.preview_scroll;
             app_book_preview_page_move(app, -1);
             if (app->book.preview_scroll != old_scroll) {
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             } else if (app->book.preview_selected != old_selected) {
-                app_render_book_preview_selection_change(app, old_selected);
+                record_output_error(app, app_render_book_preview_selection_change(app, old_selected));
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
@@ -330,25 +336,22 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
         case (KeyCode)'+':
         case (KeyCode)'=':
             app_book_preview_change_zoom(app, 1);
-            app_render_book_preview(app);
+            record_output_error(app, app_render_book_preview(app));
             break;
         case (KeyCode)'-':
             app_book_preview_change_zoom(app, -1);
-            app_render_book_preview(app);
+            record_output_error(app, app_render_book_preview(app));
             break;
         case KEY_ENTER:
         case 13:
-            if (app_enter_book_page(app, app->book.preview_selected) == ERROR_NONE) {
-                app_render_book_page(app);
-            } else {
-                app_refresh_display(app);
-            }
-            break;
         case KEY_TAB:
-            if (app_enter_book_page(app, app->book.preview_selected) == ERROR_NONE) {
-                app_render_book_page(app);
-            } else {
-                app_refresh_display(app);
+            {
+                ErrorCode entry = record_output_error(app, app_enter_book_page(app, app->book.preview_selected));
+                if (entry == ERROR_NONE) {
+                    record_output_error(app, app_render_book_page(app));
+                } else if (entry != ERROR_OUTPUT_IO) {
+                    record_output_error(app, app_refresh_display(app));
+                }
             }
             break;
         case (KeyCode)'t':
@@ -357,13 +360,13 @@ void input_dispatch_handle_key_press_book_preview(PixelTermApp *app,
                 app->book.toc_visible = !app->book.toc_visible;
                 if (app->book.toc_visible) {
                     app_book_toc_sync_to_page(app, app->book.preview_selected);
-                    app_render_book_toc(app);
+                    record_output_error(app, app_render_book_toc(app));
                 } else {
-                    app_render_book_preview(app);
+                    record_output_error(app, app_render_book_preview(app));
                 }
             } else {
                 app->book.toc_visible = FALSE;
-                app_render_book_preview(app);
+                record_output_error(app, app_render_book_preview(app));
             }
             break;
         default:
@@ -417,21 +420,28 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
             break;
         case KEY_ENTER:
         case 13:
-            if (app_enter_book_preview(app) == ERROR_NONE) {
-                app_render_book_preview(app);
-            } else {
-                app_refresh_display(app);
+            {
+                ErrorCode entry = record_output_error(app, app_enter_book_preview(app));
+                if (entry == ERROR_NONE) {
+                    record_output_error(app, app_render_book_preview(app));
+                } else if (entry != ERROR_OUTPUT_IO) {
+                    record_output_error(app, app_refresh_display(app));
+                }
             }
             break;
         case KEY_TAB: {
             gchar *book_path = app->book.path ? g_strdup(app->book.path) : NULL;
             app_close_book(app);
-            app_enter_file_manager(app);
+            ErrorCode entry = record_output_error(app, app_enter_file_manager(app));
+            if (entry != ERROR_NONE) {
+                g_free(book_path);
+                break;
+            }
             if (book_path) {
                 app_file_manager_select_path(app, book_path);
                 g_free(book_path);
             }
-            app_render_file_manager(app);
+            record_output_error(app, app_render_file_manager(app));
             break;
         }
         case (KeyCode)'t':
@@ -440,13 +450,13 @@ void input_dispatch_handle_key_press_book(PixelTermApp *app,
                 app->book.toc_visible = !app->book.toc_visible;
                 if (app->book.toc_visible) {
                     app_book_toc_sync_to_page(app, app->book.page);
-                    app_render_book_toc(app);
+                    record_output_error(app, app_render_book_toc(app));
                 } else {
-                    app_render_book_page(app);
+                    record_output_error(app, app_render_book_page(app));
                 }
             } else {
                 app->book.toc_visible = FALSE;
-                app_render_book_page(app);
+                record_output_error(app, app_render_book_page(app));
             }
             break;
         default:

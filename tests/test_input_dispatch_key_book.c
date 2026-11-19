@@ -74,7 +74,21 @@ static void test_tab_opens_reader_from_book_preview(void) {
     g_assert_cmpint(app.book.page, ==, 6);
 }
 
+static void test_preview_entry_error_boundary(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    PixelTermApp app = make_book_preview_app();
+    InputEvent event = make_key_event(KEY_ENTER);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.enter_book_page_result = result;
+    input_dispatch_handle_key_press_book_preview(&app, NULL, &event);
+    g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_assert_cmpint(g_input_dispatch_stub_state.book_page_render_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, result != ERROR_OUTPUT_IO);
+}
+
 void register_input_dispatch_key_book_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_book/errors/preview_output", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_preview_entry_error_boundary);
+    g_test_add_data_func("/input_dispatch_key_book/errors/preview_validation", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_preview_entry_error_boundary);
     g_test_add_func("/input_dispatch_key_book/reader/enter_opens_book_preview",
                     test_enter_opens_book_preview_from_reader);
     g_test_add_func("/input_dispatch_key_book/reader/tab_returns_to_file_manager",

@@ -285,7 +285,7 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
     (void)app;
     (void)old_index;
     g_input_dispatch_stub_state.preview_selection_render_calls++;
-    return ERROR_NONE;
+    return g_input_dispatch_stub_state.preview_selection_render_result;
 }
 
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
@@ -404,13 +404,27 @@ gboolean app_has_images(const PixelTermApp *app) {
     return app && app->total_images > 0;
 }
 
-void input_dispatch_handle_key_press_preview(PixelTermApp *app,
-                                             InputHandler *input_handler,
-                                             const InputEvent *event) {
-    (void)app;
-    (void)input_handler;
-    (void)event;
+ErrorCode app_preview_move_selection(PixelTermApp *app, gint row, gint col) {
+    app->preview.selected += row + col;
+    if (g_input_dispatch_stub_state.preview_move_scroll) app->preview.scroll++;
+    return ERROR_NONE;
 }
+
+ErrorCode app_preview_change_zoom(PixelTermApp *app, gint delta) {
+    (void)app;
+    (void)delta;
+    return g_input_dispatch_stub_state.preview_zoom_result;
+}
+
+ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
+    (void)app;
+    (void)open_selected;
+    return g_input_dispatch_stub_state.exit_preview_result;
+}
+
+/* The preview handler is omitted from TEST_INPUT_LINK_OBJECTS. Exercise its
+ * actual dispatch boundaries here instead of replacing them with a no-op. */
+#include "../src/input_dispatch_key_modes.c"
 
 ErrorCode app_render_by_mode(PixelTermApp *app) {
     (void)app;

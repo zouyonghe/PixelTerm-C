@@ -1,5 +1,6 @@
 #include "app.h"
 #include "app_file_manager_internal.h"
+#include "terminal_output.h"
 
 gint app_file_manager_compare_names(gconstpointer a, gconstpointer b) {
     const gchar *path_a = (const gchar*)a;
@@ -352,6 +353,14 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
         return ERROR_MEMORY_ALLOC;
     }
 
+    // Finish fallible output before changing mode or directory state.
+    const char clear_screen[] = "\033[2J\033[H\033[0m";
+    if (!terminal_output_write(clear_screen, sizeof(clear_screen) - 1)) {
+        app->needs_redraw = TRUE;
+        app->needs_screen_clear = TRUE;
+        return ERROR_OUTPUT_IO;
+    }
+
     app_prepare_mode_entry(app, FALSE);
     if (app->last_error != ERROR_NONE) return app->last_error;
 
@@ -374,10 +383,6 @@ ErrorCode app_enter_file_manager(PixelTermApp *app) {
 
     // Always start with hidden files hidden
     app->show_hidden_files = FALSE;
-
-    // Clear screen on mode entry to avoid ghosting
-    printf("\033[2J\033[H\033[0m");
-    fflush(stdout);
 
     return app_file_manager_refresh(app);
 }

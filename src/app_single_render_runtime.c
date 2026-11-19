@@ -6,8 +6,6 @@
 #include "app_single_render_internal.h"
 #include "ui_render_utils.h"
 
-void app_render_help_overlay(PixelTermApp *app);
-
 ErrorCode app_display_image_info(PixelTermApp *app) {
     if (!app || !app_has_images(app)) {
         return ERROR_INVALID_IMAGE;
@@ -33,8 +31,9 @@ ErrorCode app_display_help(PixelTermApp *app) {
         app->help_visible = help_was_visible;
         return err;
     }
-    if (app->help_visible) app_render_help_overlay(app);
-    return ERROR_NONE;
+    if (app->help_visible) err = app_render_help_overlay(app);
+    if (err != ERROR_NONE) app->help_visible = help_was_visible;
+    return err;
 }
 
 ErrorCode app_refresh_display(PixelTermApp *app) {
@@ -96,7 +95,8 @@ void app_process_async_render(PixelTermApp *app) {
     app_get_image_target_dimensions(app, &target_width, &target_height);
     gint cached_width = 0, cached_height = 0;
     if (!preloader_get_cached_image_dimensions(app->preloader, filepath, target_width, target_height,
-                                               &cached_width, &cached_height)) {
+                                               &cached_width, &cached_height) &&
+        !app->async.render_force_sync) {
         return;
     }
     (void)cached_width;
@@ -106,6 +106,7 @@ void app_process_async_render(PixelTermApp *app) {
     app->suppress_full_clear = TRUE;
     app_clear_async_render_state(app);
     if (app_render_current_image(app) == ERROR_OUTPUT_IO) {
+        app->async.render_force_sync = TRUE;
         app->async.image_pending = TRUE;
         app->async.image_index = app->current_index;
         app->async.image_path = g_strdup(filepath);

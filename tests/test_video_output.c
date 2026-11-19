@@ -32,6 +32,9 @@ static void test_failed_area_clear_preserves_cache(void) {
         strcmp(g_ptr_array_index(player->last_frame_lines, 0), "cached row") == 0;
     stdout = recovery;
     gboolean recovered = terminal_output_flush();
+    rewind(recovery);
+    char bytes[8];
+    gsize length = fread(bytes, 1, sizeof(bytes), recovery);
     fclose(stream);
     stdout = saved;
     fclose(recovery);
@@ -39,6 +42,7 @@ static void test_failed_area_clear_preserves_cache(void) {
     g_assert_true(retained);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_true(recovered);
+    g_assert_cmpmem(bytes, length, "\033\\", 2);
 }
 
 void register_video_output_tests(void) {

@@ -54,21 +54,23 @@ static void app_mode_on_exit_file_manager(PixelTermApp *app) {
     }
 }
 
-static void app_mode_on_enter_single(PixelTermApp *app) {
+static ErrorCode app_mode_on_enter_single(PixelTermApp *app) {
     (void)app;
+    return ERROR_NONE;
 }
 
-static void app_mode_on_enter_non_single(PixelTermApp *app) {
+static ErrorCode app_mode_on_enter_non_single(PixelTermApp *app) {
     if (!app) {
-        return;
+        return ERROR_MEMORY_ALLOC;
     }
     ErrorCode stopped = app_media_stop_inactive_players(app, MEDIA_KIND_IMAGE);
     if (stopped != ERROR_NONE) app->last_error = stopped;
+    return stopped;
 }
 
 typedef struct {
     const char *name;
-    AppModeHook on_enter;
+    ErrorCode (*on_enter)(PixelTermApp *app);
     AppModeHook on_exit;
 } AppModeDef;
 
@@ -138,8 +140,8 @@ ErrorCode app_transition_mode(PixelTermApp *app, AppMode mode) {
 
     /* Entry hooks stop media before mode or input state is committed. */
     if (k_modes[mode].on_enter) {
-        k_modes[mode].on_enter(app);
-        if (app->last_error != ERROR_NONE) return app->last_error;
+        ErrorCode entered = k_modes[mode].on_enter(app);
+        if (entered != ERROR_NONE) return entered;
     }
     app->info_visible = FALSE;
     app->help_visible = FALSE;

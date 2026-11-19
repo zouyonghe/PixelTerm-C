@@ -8,6 +8,11 @@
 
 static const gdouble k_image_zoom_step = 0.2;
 
+static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
+}
+
 static gboolean image_get_mouse_anchor(PixelTermApp *app, gdouble *rel_px_x, gdouble *rel_px_y) {
     if (!app || !rel_px_x || !rel_px_y) {
         return FALSE;
@@ -84,7 +89,7 @@ static void image_adjust_zoom(PixelTermApp *app, gdouble delta) {
     }
 
     app->suppress_full_clear = TRUE;
-    app_render_current_image(app);
+    record_output_error(app, app_render_current_image(app));
 }
 
 void input_dispatch_handle_mouse_press_single(PixelTermApp *app, const InputEvent *event) {
@@ -124,8 +129,8 @@ void input_dispatch_handle_mouse_double_click_single(PixelTermApp *app, const In
     if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
         app->return_to_mode = RETURN_MODE_PREVIEW;
     }
-    if (app_enter_preview(app) == ERROR_NONE) {
-        app_render_preview_grid(app);
+    if (record_output_error(app, app_enter_preview(app)) == ERROR_NONE) {
+        record_output_error(app, app_render_preview_grid(app));
     }
 }
 
@@ -134,7 +139,7 @@ void input_dispatch_handle_mouse_double_click_preview(PixelTermApp *app, const I
 
     gboolean redraw_needed = FALSE;
     gboolean hit = FALSE;
-    app_handle_mouse_click_preview(app, event->mouse_x, event->mouse_y, &redraw_needed, &hit);
+    if (record_output_error(app, app_handle_mouse_click_preview(app, event->mouse_x, event->mouse_y, &redraw_needed, &hit)) != ERROR_NONE) return;
     if (!hit) {
         return;
     }
@@ -142,8 +147,8 @@ void input_dispatch_handle_mouse_double_click_preview(PixelTermApp *app, const I
     if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
         app->return_to_mode = RETURN_MODE_PREVIEW;
     }
-    (void)app_transition_mode(app, APP_MODE_SINGLE);
-    app_render_current_image(app);
+    if (record_output_error(app, app_transition_mode(app, APP_MODE_SINGLE)) != ERROR_NONE) return;
+    record_output_error(app, app_render_current_image(app));
 }
 
 void input_dispatch_handle_mouse_double_click_book_preview(PixelTermApp *app, const InputEvent *event) {
@@ -154,24 +159,24 @@ void input_dispatch_handle_mouse_double_click_book_preview(PixelTermApp *app, co
     if (!hit) {
         return;
     }
-    if (app_enter_book_page(app, app->book.preview_selected) == ERROR_NONE) {
-        app_render_book_page(app);
+    if (record_output_error(app, app_enter_book_page(app, app->book.preview_selected)) == ERROR_NONE) {
+        record_output_error(app, app_render_book_page(app));
     }
 }
 
 void input_dispatch_handle_mouse_double_click_file_manager(PixelTermApp *app, const InputEvent *event) {
     app->input.file_manager_click.pending = FALSE;
-    ErrorCode err = app_file_manager_enter_at_position(app, event->mouse_x, event->mouse_y);
+    ErrorCode err = record_output_error(app, app_file_manager_enter_at_position(app, event->mouse_x, event->mouse_y));
     if (err == ERROR_NONE && app_is_file_manager_mode(app)) {
-        app_render_file_manager(app);
+        record_output_error(app, app_render_file_manager(app));
     }
 }
 
 void input_dispatch_handle_mouse_double_click_book(PixelTermApp *app, const InputEvent *event) {
     (void)event;
     app->input.single_click.pending = FALSE;
-    if (app_enter_book_preview(app) == ERROR_NONE) {
-        app_render_book_preview(app);
+    if (record_output_error(app, app_enter_book_preview(app)) == ERROR_NONE) {
+        record_output_error(app, app_render_book_preview(app));
     }
 }
 
@@ -203,9 +208,9 @@ void input_dispatch_handle_mouse_scroll_preview(PixelTermApp *app, const InputEv
         app_preview_page_move(app, 1);
     }
     if (app->preview.scroll != old_scroll) {
-        app_render_preview_grid(app);
+        record_output_error(app, app_render_preview_grid(app));
     } else if (app->preview.selected != old_selected) {
-        app_render_preview_selection_change(app, old_selected);
+        record_output_error(app, app_render_preview_selection_change(app, old_selected));
     }
 }
 
@@ -217,7 +222,7 @@ void input_dispatch_handle_mouse_scroll_book_preview(PixelTermApp *app, const In
         app_book_preview_scroll_pages(app, 1);
     }
     if (app->book.preview_scroll != old_scroll) {
-        app_render_book_preview(app);
+        record_output_error(app, app_render_book_preview(app));
     }
 }
 
@@ -230,7 +235,7 @@ void input_dispatch_handle_mouse_scroll_file_manager(PixelTermApp *app, const In
         app_file_manager_down(app);
     }
     if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-        app_render_file_manager(app);
+        record_output_error(app, app_render_file_manager(app));
     }
 }
 

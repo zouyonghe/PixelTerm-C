@@ -879,6 +879,25 @@ void video_player_set_color_enhance(VideoPlayer *player, ColorEnhanceMode color_
     g_mutex_unlock(&player->state_mutex);
 }
 
+static gboolean protocol_cycle_needs_redraw(const ImageRenderer *renderer) {
+    if (!renderer) return FALSE;
+    const RendererConfig *config = &renderer->config;
+    gboolean was_text = config->force_text || !renderer->canvas_config ||
+        chafa_canvas_config_get_pixel_mode(renderer->canvas_config) == CHAFA_PIXEL_MODE_SYMBOLS;
+    gboolean next_graphics = config->force_iterm2 || config->force_sixel ||
+        config->force_text || (!config->force_text && !config->force_sixel &&
+                               !config->force_iterm2 && !config->force_kitty);
+    return was_text || !next_graphics;
+}
+
+gboolean video_player_protocol_cycle_needs_redraw(VideoPlayer *player) {
+    if (!player) return FALSE;
+    g_mutex_lock(&player->render_mutex);
+    gboolean redraw = protocol_cycle_needs_redraw(player->renderer);
+    g_mutex_unlock(&player->render_mutex);
+    return redraw;
+}
+
 gboolean video_player_cycle_protocol(VideoPlayer *player) {
     if (!player) {
         return FALSE;
@@ -908,11 +927,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     gboolean force_kitty = renderer->config.force_kitty;
     gboolean force_iterm2 = renderer->config.force_iterm2;
     gboolean force_sixel = renderer->config.force_sixel;
-    ChafaPixelMode current_mode = CHAFA_PIXEL_MODE_SYMBOLS;
-    if (renderer->canvas_config) {
-        current_mode = chafa_canvas_config_get_pixel_mode(renderer->canvas_config);
-    }
-    gboolean was_text = force_text || current_mode == CHAFA_PIXEL_MODE_SYMBOLS;
+    gboolean redraw = protocol_cycle_needs_redraw(renderer);
 
     renderer->config.force_text = force_kitty;
     renderer->config.force_sixel = force_text ||
@@ -921,9 +936,6 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
     renderer->config.force_iterm2 = force_sixel;
     renderer->config.force_kitty = force_iterm2;
 
-    gboolean next_graphics = renderer->config.force_kitty ||
-                              renderer->config.force_iterm2 ||
-                              renderer->config.force_sixel;
     gboolean next_kitty = renderer->config.force_kitty;
     renderer_update_terminal_size(renderer);
     g_mutex_lock(&player->state_mutex);
@@ -939,7 +951,7 @@ gboolean video_player_cycle_protocol(VideoPlayer *player) {
 
     /* Re-render when entering graphics mode or when leaving it so stale
      * graphics placements do not remain behind the next text frame. */
-    return was_text || !next_graphics;
+    return redraw;
 }
 
 gboolean video_player_get_last_frame_bounds(VideoPlayer *player,

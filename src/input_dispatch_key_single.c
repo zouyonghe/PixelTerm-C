@@ -9,6 +9,11 @@ static ErrorCode record_dispatch_error(PixelTermApp *app, ErrorCode result) {
     return result;
 }
 
+static ErrorCode record_output_error(PixelTermApp *app, ErrorCode result) {
+    if (result == ERROR_OUTPUT_IO) app->last_error = result;
+    return result;
+}
+
 static const gint64 k_protocol_toggle_debounce_us = 150000;
 static gint64 g_last_protocol_toggle_us = 0;
 static const gdouble k_video_scale_step = 0.1;
@@ -66,7 +71,7 @@ static void handle_single_media_navigation(PixelTermApp *app,
     if (old_index != app_get_current_index(app)) {
         app->suppress_full_clear = TRUE;
         app->async.render_request = TRUE;
-        if (record_dispatch_error(app, app_refresh_display(app)) != ERROR_NONE) return;
+        if (record_output_error(app, app_refresh_display(app)) != ERROR_NONE) return;
     }
     skip_queued_navigation(input_handler, keys, key_count);
 }
@@ -179,7 +184,7 @@ static void handle_video_scale_change(PixelTermApp *app, gdouble delta) {
     if (app->video_player) {
         if (record_dispatch_error(app, video_player_stop(app->video_player)) != ERROR_NONE) return;
     }
-    if (record_dispatch_error(app, app_render_current_image(app)) != ERROR_NONE) return;
+    if (record_output_error(app, app_render_current_image(app)) != ERROR_NONE) return;
     if (was_playing && app->video_player) {
         record_dispatch_error(app, video_player_play(app->video_player));
     }
@@ -191,7 +196,9 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
     }
 
     gboolean was_playing = video_player_is_playing(app->video_player);
-    if (app->force_kitty && !ui_clear_kitty_images(app)) {
+    VideoPlayer *player = app->video_player;
+    gboolean redraw = video_player_protocol_cycle_needs_redraw(player);
+    if ((was_playing || redraw) && app->force_kitty && !ui_clear_kitty_images(app)) {
         app->last_error = ERROR_OUTPUT_IO;
         return;
     }
@@ -200,8 +207,9 @@ static void handle_video_protocol_toggle(PixelTermApp *app) {
             return;
         }
     }
-    if (record_dispatch_error(app, video_player_clear_render_area(app->video_player)) != ERROR_NONE) return;
-    video_player_cycle_protocol(app->video_player);
+    if ((was_playing || redraw) &&
+        record_dispatch_error(app, video_player_clear_render_area(player)) != ERROR_NONE) return;
+    video_player_cycle_protocol(player);
 
     if (was_playing) {
         record_dispatch_error(app, video_player_play(app->video_player));
@@ -316,16 +324,16 @@ void input_dispatch_handle_key_press_single(PixelTermApp *app,
         }
         case KEY_TAB:
             app->return_to_mode = RETURN_MODE_SINGLE;
-            if (record_dispatch_error(app, app_enter_file_manager(app)) == ERROR_NONE)
-                record_dispatch_error(app, app_render_file_manager(app));
+            if (record_output_error(app, app_enter_file_manager(app)) == ERROR_NONE)
+                record_output_error(app, app_render_file_manager(app));
             break;
         case KEY_ENTER:
         case 13:
             if (app->return_to_mode == RETURN_MODE_PREVIEW_VIRTUAL) {
                 app->return_to_mode = RETURN_MODE_PREVIEW;
             }
-            if (record_dispatch_error(app, app_enter_preview(app)) == ERROR_NONE) {
-                record_dispatch_error(app, app_render_preview_grid(app));
+            if (record_output_error(app, app_enter_preview(app)) == ERROR_NONE) {
+                record_output_error(app, app_render_preview_grid(app));
             }
             break;
         default:

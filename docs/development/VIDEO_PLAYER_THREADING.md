@@ -29,6 +29,15 @@ through this owner; UI/input do not depend on its recovery logic.
   GIF timers wait during recovery backoff; failed frame submissions stop playback
   and report the error instead of scheduling another frame.
 
+Recovery assumes the same terminal session and image-ownership namespace. An
+external terminal reset or reconnect is not detected by a local retry deadline;
+cross-session queued-ID validation requires a separate continuity protocol.
+Shared-memory frames with failed/ambiguous submissions are discarded and their
+local resources reclaimed. A terminal that received the command but has not yet
+opened its name may lose that failed frame; no delivery success is reported.
+Guaranteeing its display would require acknowledgement-based resource lifetime,
+which this recovery contract does not provide.
+
 GIF/video build a presentation payload and submit once through this owner.
 Workers never write to stdout or mutate deferred restoration. This adds a
 command-buffer copy compared with incremental stdout assembly; end-to-end CPU,

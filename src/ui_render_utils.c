@@ -297,10 +297,11 @@ static void ui_panel_pair_row(gint row,
     g_free(left);
 }
 
-void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
+ErrorCode ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
     if (!panel || term_width < 8 || term_height < 4) {
-        return;
+        return ERROR_NONE;
     }
+    if (!terminal_output_flush()) return ERROR_OUTPUT_IO;
 
     const char *title = panel->title ? panel->title : "";
     gsize line_count = panel->lines ? panel->line_count : 0;
@@ -359,5 +360,5 @@ void ui_render_panel(gint term_width, gint term_height, const UIPanel *panel) {
         ui_panel_pair_row(row, start_col, inner_width, left_width, &panel->rows[i]);
     }
     ui_panel_border(start_row + panel_height - 1, start_col, inner_width);
-    fflush(stdout);
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }

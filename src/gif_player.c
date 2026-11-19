@@ -740,7 +740,7 @@ void gif_player_set_renderer(GifPlayer *player, ImageRenderer *renderer) {
 }
 
 // Set the render area to avoid overwriting UI
-void gif_player_set_render_area(GifPlayer *player,
+ErrorCode gif_player_set_render_area(GifPlayer *player,
                                 gint term_width,
                                 gint term_height,
                                 gint area_top_row,
@@ -748,7 +748,7 @@ void gif_player_set_render_area(GifPlayer *player,
                                 gint max_width,
                                 gint max_height) {
     if (!player) {
-        return;
+        return ERROR_NONE;
     }
 
     gboolean layout_changed = (player->render_term_width != term_width ||
@@ -780,8 +780,7 @@ void gif_player_set_render_area(GifPlayer *player,
         player->last_frame_height = 0;
         gif_player_clear_line_cache(player);
         if (!cleanup_ok) {
-            gif_player_output_failure(player);
-            return;
+            return gif_player_output_failure(player);
         }
         if (restart_native) {
             ErrorCode output_error = ERROR_NONE;
@@ -791,7 +790,7 @@ void gif_player_set_render_area(GifPlayer *player,
             }
             if (output_error != ERROR_NONE) {
                 gif_player_output_failure(player);
-                return;
+                return output_error;
             }
             if (player->timer_id != 0) {
                 g_source_remove(player->timer_id);
@@ -801,6 +800,7 @@ void gif_player_set_render_area(GifPlayer *player,
                                              player);
         }
     }
+    return ERROR_NONE;
 }
 
 // Destroy GIF player
@@ -1101,9 +1101,9 @@ ErrorCode gif_player_play(GifPlayer *player) {
     return ERROR_NONE;
 }
 
-void gif_player_prepare_for_redraw(GifPlayer *player) {
+ErrorCode gif_player_prepare_for_redraw(GifPlayer *player) {
     if (!player || !player->is_playing) {
-        return;
+        return ERROR_NONE;
     }
 
     gint64 animation_elapsed_ms = player->kitty_animation_elapsed_ms;
@@ -1122,7 +1122,8 @@ void gif_player_prepare_for_redraw(GifPlayer *player) {
     }
     player->resume_from_current_frame = player->iter != NULL;
     gif_player_clear_line_cache(player);
-    if (!cleanup_ok) gif_player_output_failure(player);
+    if (!cleanup_ok) return gif_player_output_failure(player);
+    return ERROR_NONE;
 }
 
 // Pause playback

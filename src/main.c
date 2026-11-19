@@ -146,7 +146,8 @@ static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled)
 
             input_dispatch_pause_video_for_resize(app);
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
-                gif_player_pause(app->gif_player);
+                error = gif_player_pause(app->gif_player);
+                if (error != ERROR_NONE) break;
             }
             if (!terminal_output_ready(g_get_monotonic_time())) {
                 resize_pending = TRUE;
