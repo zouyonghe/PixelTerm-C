@@ -954,14 +954,15 @@ ErrorCode video_player_cycle_protocol_checked(VideoPlayer *player, gboolean *nee
     g_mutex_unlock(&player->state_mutex);
     g_mutex_unlock(&player->render_mutex);
 
+    /* Re-render when entering graphics mode or when leaving it so stale
+     * graphics placements do not remain behind the next text frame. */
+    if (needs_redraw) *needs_redraw = redraw;
+
     if (was_playing) {
         ErrorCode error = video_player_resume_playback_loop(player);
         if (error != ERROR_NONE) return error;
     }
 
-    /* Re-render when entering graphics mode or when leaving it so stale
-     * graphics placements do not remain behind the next text frame. */
-    if (needs_redraw) *needs_redraw = redraw;
     return ERROR_NONE;
 }
 
