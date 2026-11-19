@@ -43,8 +43,9 @@ static gboolean seek_preview_hook_return_value = TRUE;
 static gboolean seek_preview_hook_enqueue_frame = FALSE;
 static gint64 seek_preview_hook_frame_pts_offset_ms = 0;
 
+/* Six 2x2 keyframes at 1 fps: red, green, blue, yellow, cyan, white. */
 static const gchar *k_seek_preview_video_fixture_base64 =
-    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAuxtZGF0AAACUQYF//9N"
+    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAuNtZGF0AAACUQYF//9N"
     "3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBF"
     "Ry00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4u"
     "b3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTEgZGVibG9jaz0wOjA6MCBhbmFs"
@@ -55,23 +56,23 @@ static const gchar *k_seek_preview_video_fixture_base64 =
     "MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0w"
     "IGtleWludD0xIGtleWludF9taW49MSBzY2VuZWN1dD0wIGludHJhX3JlZnJlc2g9MCByYz1jcmYg"
     "bWJ0cmVlPTAgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlw"
-    "X3JhdGlvPTEuNDAgYXE9MACAAAAAE2WIhDoRigACGPHAAED2OAAIeWAAAAAUZYiCAToRigACt/HA"
-    "AEjmOAALa2AAAAAUZYiEBOhGKAAK38cAASOY4AAtrYAAAAAUZYiCAToRigACt/HAAEjmOAALa2AA"
-    "AAAUZYiEBOhGKAAK38cAASOY4AAtrYAAAAAUZYiCAToRigACt/HAAEjmOAALa2AAAAMnbW9vdgAA"
-    "AGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAF3AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAA"
-    "AAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlF0cmFr"
-    "AAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAF3AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAA"
-    "AAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAIAAAACAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAA"
-    "AAEAABdwAAAAAAABAAAAAAHJbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAABgABVxAAAAAAA"
-    "LWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABdG1pbmYAAAAUdm1o"
-    "ZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAATRzdGJs"
-    "AAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAIAAgBIAAAA"
-    "SAAAAAAAAAABFUxhdmM2Mi4yOC4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK"
-    "/+EAF2dCwArd+IiMBEAAAAMAQAAAAwCDxIngAQAEaM4PyAAAABBwYXNwAAAAAQAAAAEAAAAUYnRy"
-    "dAAAAAAAAAPaAAAAAAAAABhzdHRzAAAAAAAAAAEAAAAGAABAAAAAABxzdHNjAAAAAAAAAAEAAAAB"
-    "AAAABgAAAAEAAAAsc3RzegAAAAAAAAAAAAAABgAAAmwAAAAYAAAAGAAAABgAAAAYAAAAGAAAABRz"
-    "dGNvAAAAAAAAAAEAAAAwAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFw"
-    "cGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDA=";
+    "X3JhdGlvPTEuNDAgYXE9MACAAAAAE2WIhDoRigACGPHAAED2OAAIeWAAAAAUZYiCAToRigACP9HA"
+    "AFHmOAAK3OAAAAAUZYiEBOhGKAANX8cAAW1o4AAh84AAAAAUZYiCAToRigADQ9HAAFtmOAAIe2AA"
+    "AAAUZYiEBOhGKAAKj0cAASNo4AAts4AAAAALZYiCATomKAAOn2AAAAMVbW9vdgAAAGxtdmhkAAAA"
+    "AAAAAAAAAAAAAAAD6AAAF3AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAA"
+    "AAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAkB0cmFrAAAAXHRraGQA"
+    "AAADAAAAAAAAAAAAAAABAAAAAAAAF3AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAB"
+    "AAAAAAAAAAAAAAAAAABAAAAAAAIAAAACAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAABdwAAAA"
+    "AAABAAAAAAG4bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAABgABVxAAAAAAALWhkbHIAAAAA"
+    "AAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABY21pbmYAAAAUdm1oZAAAAAEAAAAA"
+    "AAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASNzdGJsAAAAp3N0c2QA"
+    "AAAAAAAAAQAAAJdhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAIAAgBIAAAASAAAAAAAAAAB"
+    "FExhdmM2My4xLjEwMiBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAALWF2Y0MBQsAK/+EAFmdCwArd"
+    "+IiIQAAAAwBAAAADAIPEieABAARozg/IAAAAFGJ0cnQAAAAAAAADzgAAAAAAAAAYc3R0cwAAAAAA"
+    "AAABAAAABgAAQAAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAYAAAABAAAALHN0c3oAAAAAAAAAAAAA"
+    "AAYAAAJsAAAAGAAAABgAAAAYAAAAGAAAAA8AAAAUc3RjbwAAAAAAAAABAAAAMAAAAGF1ZHRhAAAA"
+    "WW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALGlsc3QAAAAkqXRv"
+    "bwAAABxkYXRhAAAAAQAAAABMYXZmNjMuMS4xMDI=";
 
 typedef struct {
     GMutex *mutex;
@@ -1289,7 +1290,7 @@ static void test_play_after_eof_rewinds_explicitly_to_start(void) {
     player->render_workers[0] = start_parked_worker_for_test("parked-render-a-play-test", &render_a_call, player);
     player->render_workers[1] = start_parked_worker_for_test("parked-render-b-play-test", &render_b_call, player);
     player->render_workers_started = TRUE;
-    video_player_set_renderer(player, NULL);
+    g_assert_cmpint(video_player_set_renderer(player, NULL), ==, ERROR_NONE);
 
     seek_hook_call_count = 0;
     seek_hook_result = 0;
@@ -1340,7 +1341,7 @@ static void test_set_renderer_restarts_workers_when_replacing_during_playback(vo
     player->render_workers[1] = start_parked_worker_for_test("parked-render-b-renderer-test", &render_b_call, player);
     player->render_workers_started = TRUE;
 
-    video_player_set_renderer(player, replacement);
+    g_assert_cmpint(video_player_set_renderer(player, replacement), ==, ERROR_NONE);
 
     wait_for_flag_or_fail(&decode_call.mutex,
                           &decode_call.cond,
@@ -1381,7 +1382,7 @@ static void test_set_renderer_null_stops_playback_and_timer(void) {
     g_mutex_unlock(&player->state_mutex);
     g_assert_cmpuint(active_timer_id, !=, 0);
 
-    video_player_set_renderer(player, NULL);
+    g_assert_cmpint(video_player_set_renderer(player, NULL), ==, ERROR_NONE);
 
     g_assert_false(video_player_is_playing(player));
     g_mutex_lock(&player->state_mutex);
@@ -1440,7 +1441,7 @@ static void test_schedule_tick_skips_without_renderer(void) {
         return;
     }
 
-    video_player_set_renderer(player, NULL);
+    g_assert_cmpint(video_player_set_renderer(player, NULL), ==, ERROR_NONE);
     g_mutex_lock(&player->state_mutex);
     player->is_playing = TRUE;
     player->eof_ended = FALSE;
@@ -1677,13 +1678,25 @@ static void assert_converted_fixture_pixels(const DecodedFrame *frame) {
     g_assert_cmpint(frame->width, ==, 2);
     g_assert_cmpint(frame->height, ==, 2);
     g_assert_cmpint(frame->rowstride, >=, 8);
-    /* Six solid-red fixture frames; allow YUV rounding across FFmpeg versions. */
+    static const guint8 colors[][3] = {
+        {255, 0, 0}, {0, 255, 0}, {0, 0, 255},
+        {255, 255, 0}, {0, 255, 255}, {255, 255, 255}
+    };
+    g_assert_cmpint(frame->pts_ms, >=, 0);
+    g_assert_cmpint(frame->pts_ms % 1000, ==, 0);
+    guint index = frame->pts_ms / 1000;
+    g_assert_cmpuint(index, <, G_N_ELEMENTS(colors));
+    /* Allow YUV rounding across FFmpeg versions. */
     for (gint y = 0; y < frame->height; y++) {
         for (gint x = 0; x < frame->width; x++) {
             const guint8 *pixel = frame->pixels + y * frame->rowstride + 4 * x;
-            g_assert_cmpuint(pixel[0], >=, 250);
-            g_assert_cmpuint(pixel[1], <=, 3);
-            g_assert_cmpuint(pixel[2], <=, 3);
+            for (guint channel = 0; channel < 3; channel++) {
+                if (colors[index][channel] == 255) {
+                    g_assert_cmpuint(pixel[channel], >=, 250);
+                } else {
+                    g_assert_cmpuint(pixel[channel], <=, 3);
+                }
+            }
             g_assert_cmpuint(pixel[3], ==, 255);
         }
     }
@@ -3137,6 +3150,64 @@ static void test_checked_protocol_cycle_reports_resume_failure(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_set_renderer_cleanup_failure_preserves_renderer(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    VideoPlayer *player = video_player_new(4, FALSE, FALSE, TRUE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    ImageRenderer *original = player->renderer;
+    gboolean owned = !(mode & 2);
+    player->owns_renderer = owned;
+    ImageRenderer *replacement = mode & 1 ? renderer_create() : NULL;
+    if (mode & 1) {
+        g_assert_nonnull(replacement);
+        replacement->config.force_text = TRUE;
+    }
+    player->kitty_direct_image_id = 42;
+    player->kitty_direct_image_present = TRUE;
+    ParkedWorkerCall workers[3];
+    player->worker_thread = start_parked_worker_for_test("failed-swap-decode", &workers[0], player);
+    player->render_workers[0] = start_parked_worker_for_test("failed-swap-render-0", &workers[1], player);
+    player->render_workers[1] = start_parked_worker_for_test("failed-swap-render-1", &workers[2], player);
+    player->render_workers_started = TRUE;
+    player->is_playing = TRUE;
+    player->timer_id = g_timeout_add(10, timeout_source_noop, NULL);
+    guint timer_id = player->timer_id;
+    DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
+    FILE *capture = test_output_stream(&output, delete_output_write);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    ErrorCode result = video_player_set_renderer(player, replacement);
+    gboolean recovered = terminal_output_flush();
+    fclose(capture);
+    stdout = saved;
+    g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_true(player->renderer == original);
+    g_assert_cmpint(player->owns_renderer, ==, owned);
+    assert_renderer_protocol(player, FALSE, FALSE, FALSE, TRUE);
+    g_assert_false(video_player_is_playing(player));
+    g_assert_null(player->worker_thread);
+    g_assert_false(player->render_workers_started);
+    g_assert_null(player->render_workers[0]);
+    g_assert_null(player->render_workers[1]);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_null(g_main_context_find_source_by_id(NULL, timer_id));
+    for (guint i = 0; i < G_N_ELEMENTS(workers); i++) {
+        g_assert_true(g_atomic_int_get(&workers[i].finished));
+        clear_parked_worker_for_test(&workers[i]);
+    }
+    g_assert_true(recovered);
+    g_assert_cmpuint(player->kitty_direct_image_id, ==, 0);
+    g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
+    video_player_destroy(player);
+    if (!owned) renderer_destroy(original);
+    renderer_destroy(replacement);
+    g_string_free(output.output, TRUE);
+}
+
 static void test_hide_failure_does_not_emit_frame(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -3329,9 +3400,9 @@ static void test_direct_kitty_output_errors_and_detach(gconstpointer data) {
         rendered = mode == 6 ? video_player_render_frame_for_test(player) :
             video_player_resume_playback_loop_for_test(player) == ERROR_NONE;
     } else if (mode == 1) {
-        video_player_set_renderer(player, NULL);
+        g_assert_cmpint(video_player_set_renderer(player, NULL), ==, ERROR_NONE);
     } else if (mode == 3) {
-        video_player_set_renderer(player, replacement);
+        g_assert_cmpint(video_player_set_renderer(player, replacement), ==, ERROR_NONE);
     } else {
         g_assert_cmpint(video_player_stop(player), ==, ERROR_OUTPUT_IO);
     }
@@ -3478,8 +3549,20 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
     g_assert_nonnull(player);
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
-    player->last_presented_pts_ms = 100;
-    player->fallback_pts_ms = 100;
+    video_player_set_render_area(player, 1, 1, 1, 1, 1, 1);
+    player->renderer->config.preserve_aspect_ratio = FALSE;
+    player->last_presented_pts_ms = 2100;
+    player->fallback_pts_ms = 2100;
+    ImageRenderer *expected_renderer = renderer_create();
+    g_assert_nonnull(expected_renderer);
+    RendererConfig config = player->renderer->config;
+    config.max_width = config.max_height = 1;
+    g_assert_cmpint(renderer_initialize(expected_renderer, &config), ==, ERROR_NONE);
+    /* Independently decoded fixture pixel: the 2-second keyframe is solid blue. */
+    const guint8 blue[] = {0, 0, 253, 255};
+    GString *expected = renderer_render_image_data(expected_renderer, blue, 1, 1, 4, 4);
+    g_assert_nonnull(expected);
+    g_assert_cmpuint(expected->len, >, 0);
     FILE *capture = tmpfile();
     g_assert_nonnull(capture);
     FILE *saved = stdout;
@@ -3501,15 +3584,21 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     g_assert_false(read_failed);
     g_assert_false(playing);
     g_assert_cmpuint(timer, ==, 0);
-    g_assert_cmpint(position, ==, 100);
-    g_assert_cmpuint(length, >, 2);
-    g_assert_nonnull(strstr(bytes, "\033["));
+    g_assert_cmpint(position, ==, 2100);
+    g_assert_cmpuint(length, >, expected->len);
+    g_assert_nonnull(g_strstr_len(bytes, length, expected->str));
+    g_string_free(expected, TRUE);
+    renderer_destroy(expected_renderer);
 }
 
 void register_video_player_tests(void) {
     g_test_add_func("/video_player/paused_refresh/submits_without_playing", test_refresh_paused_frame_submits_without_playing);
     g_test_add_func("/video_player/seek_relative/paused_output_failure", test_paused_seek_reports_output_failure);
 #if defined(__GLIBC__) || defined(__APPLE__)
+    g_test_add_data_func("/video_player/set_renderer/cleanup_failure_owned_detach", GINT_TO_POINTER(0), test_set_renderer_cleanup_failure_preserves_renderer);
+    g_test_add_data_func("/video_player/set_renderer/cleanup_failure_owned_replace", GINT_TO_POINTER(1), test_set_renderer_cleanup_failure_preserves_renderer);
+    g_test_add_data_func("/video_player/set_renderer/cleanup_failure_borrowed_detach", GINT_TO_POINTER(2), test_set_renderer_cleanup_failure_preserves_renderer);
+    g_test_add_data_func("/video_player/set_renderer/cleanup_failure_borrowed_replace", GINT_TO_POINTER(3), test_set_renderer_cleanup_failure_preserves_renderer);
     g_test_add_data_func("/video_player/load/cleanup_failure_preserves_media", NULL, test_cleanup_failure_aborts_media_change);
     g_test_add_data_func("/video_player/public_api/protocol_cycle_cleanup_failure", GINT_TO_POINTER(1), test_cleanup_failure_aborts_media_change);
     g_test_add_func("/video_player/public_api/protocol_cycle_resume_failure", test_checked_protocol_cycle_reports_resume_failure);

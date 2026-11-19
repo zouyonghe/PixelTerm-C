@@ -1141,8 +1141,12 @@ ErrorCode gif_player_pause(GifPlayer *player) {
     }
 
     if (player->kitty_animation_prepared) {
-        if (!gif_player_write_kitty_command(
-                kitty_graphics_build_animation_stop_command(player->kitty_animation_id)))
+        GString *command = kitty_graphics_build_animation_stop_command(player->kitty_animation_id);
+        if (!command) return ERROR_OUTPUT_IO;
+        /* Locally paused even on failure; the idempotent native STOP must survive recovery. */
+        terminal_output_defer(command->str, TERMINAL_OUTPUT_RESTORE);
+        g_string_free(command, TRUE);
+        if (!terminal_output_ready(g_get_monotonic_time()))
             return ERROR_OUTPUT_IO;
     }
     
