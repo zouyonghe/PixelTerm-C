@@ -562,7 +562,7 @@ static void test_full_pipe_initial_flush_is_bounded(void) {
     close(descriptors[0]);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
     g_assert_cmpuint(initialize_calls, ==, 0);
-    g_assert_cmpint(elapsed, <, 5 * G_TIME_SPAN_SECOND);
+    g_assert_cmpint(elapsed, <, 2 * G_TIME_SPAN_SECOND);
 }
 
 static void test_raw_setup_failure_restores_stdout(void) {

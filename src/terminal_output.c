@@ -28,14 +28,42 @@ static FILE *session_stdout;
 static FILE *session_stream;
 static int session_fd;
 static gboolean session_write_failed;
+static gboolean session_write_attempted;
+static gboolean recovery_pending;
+static int restore_fd = -1;
+static int restore_flags;
+static int (*fcntl_hook)(int, int, int);
 
-static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length) {
-    int flags = fcntl(fd, F_GETFL);
+void terminal_output_set_fcntl_for_test(int (*hook)(int, int, int)) {
+    fcntl_hook = hook;
+}
+
+static int output_fcntl(int fd, int operation, int flags) {
+    return fcntl_hook ? fcntl_hook(fd, operation, flags) : fcntl(fd, operation, flags);
+}
+
+static gboolean restore_descriptor_flags(void) {
+    if (restore_fd < 0) return TRUE;
+    if (output_fcntl(restore_fd, F_SETFL, restore_flags) < 0) return FALSE;
+    restore_fd = -1;
+    return TRUE;
+}
+
+static gboolean restore_descriptor(int fd, int flags) {
+    restore_fd = fd;
+    restore_flags = flags;
+    return restore_descriptor_flags();
+}
+
+static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize length, gboolean *attempted) {
+    if (!restore_descriptor_flags()) return -1;
+    int flags = output_fcntl(fd, F_GETFL, 0);
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
-    if (flags < 0 || (changed && fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)) return -1;
+    if (flags < 0 || (changed && output_fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)) return -1;
     gsize written = 0;
     gint64 deadline = g_get_monotonic_time() + 100000;
     while (written < length) {
+        if (attempted) *attempted = TRUE;
         ssize_t count = write(fd, bytes + written, length - written);
         if (count > 0) {
             written += (gsize)count;
@@ -50,7 +78,8 @@ static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize
         } else break;
         if (g_get_monotonic_time() >= deadline) break;
     }
-    if (changed && fcntl(fd, F_SETFL, flags) < 0) return -1;
+    /* Preserve exact progress even when restoring flags needs a later retry. */
+    if (changed) restore_descriptor(fd, flags);
     return written || !length ? (ssize_t)written : -1;
 }
 
@@ -58,16 +87,16 @@ static ssize_t terminal_output_descriptor_write(int fd, const char *bytes, gsize
 static int terminal_output_session_write(void *data, const char *bytes, int length) {
     (void)data;
     if (session_write_failed) return -1;
-    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, (gsize)length);
-    if (written != length) session_write_failed = TRUE;
+    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, (gsize)length, &session_write_attempted);
+    if (written != length || restore_fd >= 0) session_write_failed = TRUE;
     return (int)written;
 }
 #else
 static ssize_t terminal_output_session_write(void *data, const char *bytes, size_t length) {
     (void)data;
     if (session_write_failed) return 0;
-    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, length);
-    if (written < 0 || (gsize)written != length) session_write_failed = TRUE;
+    ssize_t written = terminal_output_descriptor_write(session_fd, bytes, length, &session_write_attempted);
+    if (written < 0 || (gsize)written != length || restore_fd >= 0) session_write_failed = TRUE;
     return written < 0 ? 0 : written;
 }
 #endif
@@ -102,26 +131,32 @@ gboolean terminal_output_end_session(void) {
 }
 
 /* Bound kernel writes without changing descriptor flags between submissions. */
-static gboolean terminal_output_submit(const char *bytes, gsize length) {
+static gboolean terminal_output_submit(const char *bytes, gsize length, gboolean *attempted) {
+    if (attempted) *attempted = FALSE;
+    if (!restore_descriptor_flags()) return FALSE;
     int fd = fileno(stdout);
-    int flags = fd >= 0 ? fcntl(fd, F_GETFL) : -1;
+    int flags = fd >= 0 ? output_fcntl(fd, F_GETFL, 0) : -1;
     gboolean changed = flags >= 0 && !(flags & O_NONBLOCK);
-    if (fd >= 0 && (flags < 0 || (changed && fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)))
+    if (fd >= 0 && (flags < 0 || (changed && output_fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)))
         return FALSE;
     gsize written = 0;
     int flushed = fflush(stdout);
     if (flushed == 0 && !ferror(stdout)) {
         if (fd < 0) {
+            session_write_attempted = FALSE;
+            if (attempted) *attempted = length > 0;
             written = length ? fwrite(bytes, 1, length, stdout) : 0;
             flushed = fflush(stdout);
+            if (attempted && stdout == session_stream) *attempted = session_write_attempted;
         } else {
-            ssize_t count = terminal_output_descriptor_write(fd, bytes, length);
+            ssize_t count = terminal_output_descriptor_write(fd, bytes, length, attempted);
             if (count > 0) written = (gsize)count;
             if (count < 0) flushed = -1;
         }
     }
-    gboolean success = written == length && flushed == 0 && !ferror(stdout);
-    if (changed && fcntl(fd, F_SETFL, flags) < 0) success = FALSE;
+    gboolean success = written == length && flushed == 0 && !ferror(stdout) &&
+        !(stdout == session_stream && session_write_failed);
+    if (changed && !restore_descriptor(fd, flags)) success = FALSE;
     return success;
 }
 
@@ -148,8 +183,9 @@ gboolean terminal_output_ready(gint64 now_us) {
 }
 
 gboolean terminal_output_flush(void) {
+    if (recovery_pending) terminal_output_discard();
     /* Check buffered UI bytes before clearing errors or submitting queued controls. */
-    if (ferror(stdout) || !terminal_output_submit(NULL, 0)) {
+    if (ferror(stdout) || !terminal_output_submit(NULL, 0, NULL)) {
         terminal_output_discard();
         terminal_output_defer_recovery();
         next_cleanup_retry_us = g_get_monotonic_time() + 100000;
@@ -159,10 +195,12 @@ gboolean terminal_output_flush(void) {
         PendingOutput *pending = g_queue_peek_head(&pending_output);
         GString *command = pending->bytes;
         clearerr(stdout);
-        if (!terminal_output_submit(command->str, command->len)) {
+        gboolean attempted;
+        if (!terminal_output_submit(command->str, command->len, &attempted)) {
             terminal_output_discard();
+            recovery_pending = TRUE;
             /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
-            if (!pending->replay_safe) {
+            if (attempted && !pending->replay_safe) {
                 g_string_assign(command, "\033\\");
                 pending->replay_safe = TRUE;
             }
@@ -174,6 +212,7 @@ gboolean terminal_output_flush(void) {
         g_free(pending);
     }
     next_cleanup_retry_us = 0;
+    recovery_pending = FALSE;
     return TRUE;
 }
 
@@ -188,7 +227,7 @@ static void terminal_output_cleanup_at_exit(void) {
         /* A blocked head must not starve later independently ST-framed restores.
          * Already-attempted ambiguous releases have become ST-only above. */
         terminal_output_discard();
-        if (!terminal_output_submit(pending->bytes->str, pending->bytes->len))
+        if (!terminal_output_submit(pending->bytes->str, pending->bytes->len, NULL))
             terminal_output_discard();
         g_string_free(pending->bytes, TRUE);
         g_free(pending);
@@ -219,6 +258,7 @@ void terminal_output_defer(const char *controls, TerminalOutputPolicy policy) {
 }
 
 void terminal_output_defer_recovery(void) {
+    recovery_pending = TRUE;
     PendingOutput *tail = g_queue_peek_tail(&pending_output);
     if (tail && tail->bytes->len == 2 && memcmp(tail->bytes->str, "\033\\", 2) == 0) return;
     terminal_output_queue(g_string_new("\033\\"), TRUE);
@@ -228,7 +268,7 @@ void terminal_output_defer_recovery(void) {
 gboolean terminal_output_write(const char *bytes, gsize length) {
     if (!terminal_output_flush()) return FALSE;
     clearerr(stdout);
-    if (terminal_output_submit(bytes, length)) return TRUE;
+    if (terminal_output_submit(bytes, length, NULL)) return TRUE;
     terminal_output_recover();
     return FALSE;
 }

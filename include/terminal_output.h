@@ -18,9 +18,11 @@ gboolean terminal_output_begin_session(void);
 gboolean terminal_output_end_session(void);
 /* Checked payload submission. Descriptor writes temporarily use O_NONBLOCK so
  * a full pipe or flow-controlled terminal cannot stall cleanup. Poll for up to
- * 100 ms without progress, then restore flags. Failed payloads are never replayed. */
+ * 100 ms without progress, then restore flags (retry before later submissions if
+ * restoration fails). Failed payloads are never replayed. */
 gboolean terminal_output_write(const char *bytes, gsize length);
-/* Copies bytes and prefixes ST. ONCE becomes ST-only after uncertain delivery;
+/* Copies bytes and prefixes ST. ONCE stays queued if no write was attempted,
+ * and becomes ST-only after uncertain delivery;
  * RESTORE is retained until success or process exit (one final attempt).
  * Identical restores coalesce. */
 void terminal_output_defer(const char *bytes, TerminalOutputPolicy policy);
@@ -29,5 +31,7 @@ gboolean terminal_output_recover(void);
 /* Purge all unsent stdout bytes and clear its error state; do not queue or drain ST. */
 void terminal_output_discard(void);
 void terminal_output_defer_recovery(void);
+/* Main-owner test seam; NULL restores the system fcntl implementation. */
+void terminal_output_set_fcntl_for_test(int (*hook)(int fd, int operation, int flags));
 
 #endif
