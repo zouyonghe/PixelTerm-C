@@ -3491,12 +3491,14 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
     rewind(capture);
     gchar bytes[4096] = {0};
     gsize length = fread(bytes, 1, sizeof(bytes) - 1, capture);
+    gboolean read_failed = ferror(capture) != 0;
     gboolean playing = video_player_is_playing(player);
     guint timer = player->timer_id;
     gint64 position = video_player_current_position_ms_for_test(player);
     fclose(capture);
     video_player_destroy(player);
     g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_false(read_failed);
     g_assert_false(playing);
     g_assert_cmpuint(timer, ==, 0);
     g_assert_cmpint(position, ==, 100);
