@@ -1855,6 +1855,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         /* Keep ownership even if a later write is partial, so stop can clean up. */
         player->kitty_direct_image_present = TRUE;
     }
+    if (!output_success) goto output_finished;
     g_mutex_lock(&player->state_mutex);
     if (player->render_layout_valid && player->render_area_top_row > 0 && player->render_area_height > 0) {
         gint term_w = player->render_term_width > 0 ? player->render_term_width : player->render_max_width;
@@ -2031,6 +2032,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     }
     g_mutex_unlock(&player->state_mutex);
 
+output_finished:;
     gint flush_result = fflush(stdout);
     output_success = output_success && flush_result == 0 && !ferror(stdout);
     if (output_success && kitty_shm_written) {

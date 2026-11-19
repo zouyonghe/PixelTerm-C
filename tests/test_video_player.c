@@ -11,6 +11,7 @@
 
 #include "process_env.h"
 #include "kitty_graphics.h"
+#include "gif_player.h"
 #include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
 #include "video_player_test_internal.h"
@@ -2970,6 +2971,7 @@ typedef struct {
     GString *output;
     gboolean partial;
     gboolean delivered_but_failed;
+    gboolean fail_recovery;
 } DeleteOutput;
 
 static ssize_t delete_output_write(void *data, const char *bytes, size_t length) {
@@ -2984,6 +2986,10 @@ static ssize_t delete_output_write(void *data, const char *bytes, size_t length)
             g_string_append_len(output->output, bytes, length / 2);
             return (ssize_t)(length / 2);
         }
+        errno = EIO;
+        return -1;
+    }
+    if (output->fail_recovery && output->attempts == 2) {
         errno = EIO;
         return -1;
     }
@@ -3034,6 +3040,53 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_assert_cmpuint(before_deadline, ==, 1);
     g_assert_cmpuint(output.attempts, ==, 2);
     g_assert_cmpstr(output.output->str, ==, "\033\\\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
+    g_string_free(output.output, TRUE);
+}
+
+static void test_hide_failure_does_not_emit_frame(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE,
+        TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
+    player->kitty_direct_image_id = 42;
+    player->kitty_direct_image_present = TRUE;
+    video_player_queue_push(player, make_test_frame_with_generation(0, player->playback_generation));
+    DeleteOutput output = {.output = g_string_new(NULL), .partial = TRUE, .fail_recovery = TRUE};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    gboolean rendered = video_player_render_frame_for_test(player);
+    kitty_graphics_retry_pending_deletes();
+    fclose(capture);
+    stdout = saved;
+    player->kitty_direct_image_id = 0;
+    video_player_destroy(player);
+    g_assert_false(rendered);
+    g_assert_null(strstr(output.output->str, "frame"));
+    g_string_free(output.output, TRUE);
+}
+
+static void test_gif_delete_failure_discards_buffer(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    player->kitty_animation_prepared = TRUE;
+    player->kitty_animation_id = 42;
+    DeleteOutput output = {.output = g_string_new(NULL), .delivered_but_failed = TRUE};
+    cookie_io_functions_t hooks = {.write = delete_output_write};
+    FILE *capture = fopencookie(&output, "w", hooks);
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = capture;
+    gif_player_stop(player);
+    kitty_graphics_retry_pending_deletes();
+    fclose(capture);
+    stdout = saved;
+    gif_player_destroy(player);
+    g_assert_cmpstr(output.output->str, ==, "\033_Ga=d,d=I,i=42,q=2\033\\\033\\");
     g_string_free(output.output, TRUE);
 }
 
@@ -3272,6 +3325,8 @@ void register_video_player_tests(void) {
 #ifdef __GLIBC__
     g_test_add_func("/video_player/direct_kitty/deferred_cleanup_retry_deadline", test_deferred_cleanup_retry_deadline);
     g_test_add_func("/video_player/direct_kitty/discard_failed_delete_buffer", test_failed_delete_buffer_is_discarded);
+    g_test_add_func("/video_player/direct_kitty/hide_failure_blocks_frame", test_hide_failure_does_not_emit_frame);
+    g_test_add_func("/gif_player/native_animation/delete_failure_discards_buffer", test_gif_delete_failure_discards_buffer);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_failed_flush", NULL,
                          test_direct_kitty_destroy_retries_failed_flush);
     g_test_add_data_func("/video_player/direct_kitty/destroy_retries_partial_delete", GINT_TO_POINTER(1),

@@ -41,16 +41,22 @@ static ErrorCode run_application_cleanup(InputHandler *input_handler) {
         return ERROR_NONE;
     }
 
-    gboolean probe_restored = terminal_probe_retry_restore();
+    terminal_probe_retry_restore();
     kitty_graphics_retry_pending_deletes();
     printf("\033[2J\033[H\033[0m");
     printf("\033[?25h");
     fflush(stdout);
 
     input_disable_mouse(input_handler);
+    gboolean original_known = input_handler->has_orig_termios;
     ErrorCode restore_error = input_disable_raw_mode(input_handler);
     input_handler_destroy(input_handler);
-    return !probe_restored || restore_error != ERROR_NONE ? ERROR_TERMINAL_SIZE : ERROR_NONE;
+    gboolean restored = terminal_probe_retry_restore();
+    if (!restored || (!original_known && restore_error != ERROR_NONE)) {
+        fprintf(stderr, "Terminal restoration failed: %s\n", error_code_to_string(ERROR_TERMINAL_SIZE));
+        return ERROR_TERMINAL_SIZE;
+    }
+    return ERROR_NONE;
 }
 
 static ErrorCode run_application(PixelTermApp *app, gboolean alt_screen_enabled) {
@@ -293,6 +299,9 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         error = run_application(g_app, config.alt_screen_enabled);
+        if (error != ERROR_NONE) {
+            fprintf(stderr, "Application error: %s\n", error_code_to_string(error));
+        }
         app_destroy(g_app);
         g_free(path);
         g_app = NULL;

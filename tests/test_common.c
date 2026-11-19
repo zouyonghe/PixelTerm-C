@@ -27,6 +27,7 @@ void register_kitty_graphics_tests(void);
 void register_app_cli_tests(void);
 void register_app_startup_tests(void);
 void register_book_tests(void);
+void register_main_lifecycle_tests(void);
 gboolean video_player_debug_should_log_for_test(const gchar *event);
 
 static void test_video_player_debug_filter_covers_logged_events(void) {
@@ -366,6 +367,7 @@ int main(int argc, char **argv) {
     register_app_cli_tests();
     register_app_startup_tests();
     register_book_tests();
+    register_main_lifecycle_tests();
     register_video_player_tests();
     register_app_media_session_tests();
     register_app_single_render_integration_tests();

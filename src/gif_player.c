@@ -47,6 +47,11 @@ static gboolean gif_player_write_kitty_command(GString *command) {
     }
     size_t written = command->len > 0 ? fwrite(command->str, 1, command->len, stdout) : 0;
     gboolean success = written == command->len && fflush(stdout) == 0;
+    if (!success) {
+        kitty_graphics_discard_failed_output();
+        kitty_graphics_defer_output_recovery();
+        kitty_graphics_retry_pending_deletes();
+    }
     g_string_free(command, TRUE);
     return success;
 }
