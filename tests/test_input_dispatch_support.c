@@ -301,8 +301,8 @@ ErrorCode app_render_preview_selection_change(PixelTermApp *app, gint old_index)
 }
 
 ErrorCode app_preview_page_move(PixelTermApp *app, gint direction) {
-    (void)app;
-    (void)direction;
+    app->preview.selected += direction;
+    if (g_input_dispatch_stub_state.preview_move_scroll) app->preview.scroll++;
     return ERROR_NONE;
 }
 

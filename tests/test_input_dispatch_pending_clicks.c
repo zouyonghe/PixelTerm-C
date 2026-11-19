@@ -105,7 +105,8 @@ static void test_pending_single_output_failure_preserves_other_clicks(void) {
 
 static void test_pending_book_current_result(gconstpointer data) {
     ErrorCode result = GPOINTER_TO_INT(data);
-    PixelTermApp app = {.mode = APP_MODE_BOOK, .last_error = ERROR_OUTPUT_IO};
+    PixelTermApp app = {.mode = APP_MODE_BOOK,
+                       .last_error = result == ERROR_NONE ? ERROR_OUTPUT_IO : ERROR_NONE};
     input_dispatch_test_reset_stubs();
     g_input_dispatch_stub_state.book_change_page_result = result;
     app.input.single_click.pending = TRUE;
@@ -117,7 +118,8 @@ static void test_pending_book_current_result(gconstpointer data) {
     g_assert_false(app.input.single_click.pending);
     g_assert_cmpint(app.input.preview_click.pending, ==, result == ERROR_OUTPUT_IO);
     g_assert_cmpint(app.input.file_manager_click.pending, ==, result == ERROR_OUTPUT_IO);
-    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(app.last_error, ==,
+                    result == ERROR_INVALID_IMAGE ? ERROR_NONE : ERROR_OUTPUT_IO);
 }
 
 void register_input_dispatch_pending_clicks_tests(void) {

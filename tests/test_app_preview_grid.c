@@ -235,6 +235,7 @@ static void test_enter_preview_transition_failure_retains_list(void) {
     stdout = saved;
     fclose(capture);
     g_assert_cmpint(result, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(g_preview_grid_stub_state.transition_calls, ==, 1);
     g_assert_true(app.image_files == images);
     g_assert_cmpint(app.mode, ==, APP_MODE_SINGLE);
     g_assert_true(app.needs_redraw);

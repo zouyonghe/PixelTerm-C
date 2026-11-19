@@ -132,7 +132,7 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             gint old_scroll = app->file_manager.scroll_offset;
             if (record_output_error(app, app_file_manager_up(app)) == ERROR_OUTPUT_IO) break;
             if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-                record_output_error(app, app_render_file_manager(app));
+                if (record_output_error(app, app_render_file_manager(app)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -142,7 +142,7 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
             gint old_scroll = app->file_manager.scroll_offset;
             if (record_output_error(app, app_file_manager_down(app)) == ERROR_OUTPUT_IO) break;
             if (app->file_manager.selected_entry != old_selected || app->file_manager.scroll_offset != old_scroll) {
-                record_output_error(app, app_render_file_manager(app));
+                if (record_output_error(app, app_render_file_manager(app)) == ERROR_OUTPUT_IO) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -150,24 +150,39 @@ void input_dispatch_handle_key_press_file_manager(PixelTermApp *app,
         case KEY_TAB: {
             const gchar *selected_path = file_manager_selected_path(app);
             if (selected_path && is_valid_book_file(selected_path)) {
+                gchar *previous_directory = g_strdup(app->current_directory);
+                gboolean info_visible = app->info_visible;
+                gboolean help_visible = app->help_visible;
                 ErrorCode book_error = record_output_error(app, app_open_book(app, selected_path));
                 /* Opening a book can reset mode; retain the listing until entry succeeds. */
                 app_set_mode(app, APP_MODE_FILE_MANAGER);
-                if (book_error == ERROR_OUTPUT_IO) break;
+                if (book_error == ERROR_OUTPUT_IO) {
+                    g_free(previous_directory);
+                    break;
+                }
                 if (book_error == ERROR_NONE) {
                     ErrorCode entry = record_output_error(app, app_enter_book_preview(app));
                     if (entry == ERROR_NONE) {
+                        g_free(previous_directory);
+                        previous_directory = NULL;
                         ErrorCode exited = record_output_error(app, app_exit_file_manager(app));
                         app_set_mode(app, APP_MODE_BOOK_PREVIEW);
                         if (exited != ERROR_NONE) break;
                         record_output_error(app, app_render_book_preview(app));
                     } else {
+                        app_close_book(app);
+                        g_free(app->current_directory);
+                        app->current_directory = previous_directory;
+                        previous_directory = NULL;
                         app_set_mode(app, APP_MODE_FILE_MANAGER);
+                        app->info_visible = info_visible;
+                        app->help_visible = help_visible;
                         app->needs_redraw = TRUE;
                     }
                 } else {
                     record_output_error(app, app_render_file_manager(app));
                 }
+                g_free(previous_directory);
                 break;
             }
 

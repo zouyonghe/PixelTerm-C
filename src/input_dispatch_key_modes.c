@@ -52,9 +52,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 0, -1);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -65,9 +65,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 0, 1);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_lr, G_N_ELEMENTS(g_nav_keys_lr));
             break;
@@ -78,9 +78,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, -1, 0);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -91,9 +91,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_move_selection(app, 1, 0);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_ud, G_N_ELEMENTS(g_nav_keys_ud));
             break;
@@ -103,9 +103,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_page_move(app, 1);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;
@@ -115,9 +115,9 @@ void input_dispatch_handle_key_press_preview(PixelTermApp *app,
             gint old_scroll = app->preview.scroll;
             app_preview_page_move(app, -1);
             if (app->preview.scroll != old_scroll) {
-                record_output_error(app, app_render_preview_grid(app));
+                if (record_output_error(app, app_render_preview_grid(app)) != ERROR_NONE) break;
             } else if (app->preview.selected != old_selected) {
-                record_output_error(app, app_render_preview_selection_change(app, old_selected));
+                if (record_output_error(app, app_render_preview_selection_change(app, old_selected)) != ERROR_NONE) break;
             }
             skip_queued_navigation(input_handler, g_nav_keys_page, G_N_ELEMENTS(g_nav_keys_page));
             break;

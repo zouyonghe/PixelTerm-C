@@ -377,7 +377,51 @@ static void test_preview_key_output_errors(gconstpointer data) {
     }
 }
 
+static void test_preview_navigation_queue(gconstpointer data) {
+    static const KeyCode keys[] = {
+        KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN, KEY_PAGE_UP, KEY_PAGE_DOWN
+    };
+    gint scenario = GPOINTER_TO_INT(data);
+    gboolean grid = (scenario / G_N_ELEMENTS(keys)) % 2 == 0;
+    gboolean failure = scenario / (2 * G_N_ELEMENTS(keys)) == 0;
+    PixelTermApp app = {.mode = APP_MODE_PREVIEW,
+                        .last_error = failure ? ERROR_NONE : ERROR_OUTPUT_IO};
+    InputHandler handler = {.has_pending_byte = TRUE, .pending_byte = 'q'};
+    InputEvent event = make_key_event(keys[scenario % G_N_ELEMENTS(keys)]);
+    InputEvent queued = make_key_event(KEY_RIGHT);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.preview_move_scroll = grid;
+    g_input_dispatch_stub_state.preview_render_result = failure ? ERROR_OUTPUT_IO : ERROR_NONE;
+    g_input_dispatch_stub_state.preview_selection_render_result = failure ? ERROR_OUTPUT_IO : ERROR_NONE;
+    g_assert_cmpint(input_unget_event(&handler, &queued), ==, ERROR_NONE);
+
+    input_dispatch_core_handle_event(&app, &handler, &event);
+
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, grid ? 1 : 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.preview_selection_render_calls, ==, grid ? 0 : 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_true(handler.has_pending_event);
+    g_assert_cmpint(handler.has_pending_byte, ==, failure);
+    InputEvent remaining = {0};
+    g_assert_cmpint(input_get_event(&handler, &remaining), ==, ERROR_NONE);
+    g_assert_cmpint(remaining.type, ==, INPUT_KEY_PRESS);
+    g_assert_cmpint(remaining.key_code, ==, failure ? queued.key_code : (KeyCode)'q');
+}
+
 void register_input_dispatch_core_tests(void) {
+    static const gchar *keys[] = {"left", "right", "up", "down", "page_up", "page_down"};
+    for (guint result = 0; result < 2; result++) {
+        for (guint render = 0; render < 2; render++) {
+            for (guint key = 0; key < G_N_ELEMENTS(keys); key++) {
+                gchar *path = g_strdup_printf("/input_dispatch_core/preview_queue/%s/%s/%s",
+                                              result == 0 ? "failure" : "sticky_success",
+                                              render == 0 ? "grid" : "selection", keys[key]);
+                g_test_add_data_func(path, GUINT_TO_POINTER((result * 2 + render) * G_N_ELEMENTS(keys) + key),
+                                     test_preview_navigation_queue);
+                g_free(path);
+            }
+        }
+    }
     g_test_add_data_func("/input_dispatch_core/preview_errors/grid", GINT_TO_POINTER(0), test_preview_key_output_errors);
     g_test_add_data_func("/input_dispatch_core/preview_errors/selection", GINT_TO_POINTER(1), test_preview_key_output_errors);
     g_test_add_data_func("/input_dispatch_core/preview_errors/refresh", GINT_TO_POINTER(2), test_preview_key_output_errors);

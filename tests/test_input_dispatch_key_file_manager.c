@@ -139,21 +139,23 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
     ErrorCode results[] = {ERROR_OUTPUT_IO, ERROR_INVALID_IMAGE, ERROR_NONE};
     for (guint i = 0; i < G_N_ELEMENTS(results); i++) {
         PixelTermApp app = make_file_manager_app(path);
-        app.return_to_mode = RETURN_MODE_NONE;
-        app.current_index = 1;
-        app.file_manager.previous_selected_entry = 9;
-        app.image_files = g_list_append(NULL, g_strdup(path));
-        app.image_files = g_list_append(app.image_files, g_strdup("/original/second.jpg"));
-        app.total_images = 2;
         app.current_directory = g_strdup("/original");
-        app.preview.selected = 1;
-        app.preview.selected_link = app.image_files->next;
-        app.preview.selected_link_index = 1;
+        if (kind != 0) {
+            app.return_to_mode = RETURN_MODE_NONE;
+            app.current_index = 1;
+            app.file_manager.previous_selected_entry = 9;
+            app.image_files = g_list_append(NULL, g_strdup(path));
+            app.image_files = g_list_append(app.image_files, g_strdup("/original/second.jpg"));
+            app.total_images = 2;
+            app.preview.selected = 1;
+            app.preview.selected_link = app.image_files->next;
+            app.preview.selected_link_index = 1;
+        }
         GList *entries = app.file_manager.entries;
         InputEvent event = make_key_event(KEY_TAB);
         input_dispatch_test_reset_stubs();
         g_input_dispatch_stub_state.file_manager_has_images = TRUE;
-        g_input_dispatch_stub_state.load_directory_replaces_media = TRUE;
+        g_input_dispatch_stub_state.load_directory_replaces_media = kind != 0;
         g_input_dispatch_stub_state.enter_book_preview_result = results[i];
         g_input_dispatch_stub_state.enter_preview_result = results[i];
         input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
@@ -163,20 +165,25 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
         g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, success && kind == 0);
         g_assert_cmpint(g_input_dispatch_stub_state.preview_render_calls, ==, success && kind != 0);
         g_assert_cmpint(g_input_dispatch_stub_state.refresh_display_calls, ==, 0);
+        if (kind == 0) {
+            g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, !success);
+        }
         if (!success) {
             g_assert_true(app.needs_redraw);
             g_assert_true(app.file_manager.entries == entries);
             g_assert_cmpstr(app.file_manager.entries->data, ==, path);
-            g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_NONE);
-            g_assert_cmpint(app.current_index, ==, 1);
-            g_assert_cmpint(app.file_manager.previous_selected_entry, ==, 9);
-            g_assert_cmpint(app.total_images, ==, 2);
+            if (kind != 0) {
+                g_assert_cmpint(app.return_to_mode, ==, RETURN_MODE_NONE);
+                g_assert_cmpint(app.current_index, ==, 1);
+                g_assert_cmpint(app.file_manager.previous_selected_entry, ==, 9);
+                g_assert_cmpint(app.total_images, ==, 2);
+                g_assert_cmpstr(app.image_files->data, ==, path);
+                g_assert_cmpstr(app.image_files->next->data, ==, "/original/second.jpg");
+                g_assert_cmpint(app.preview.selected, ==, 1);
+                g_assert_true(app.preview.selected_link == app.image_files->next);
+                g_assert_cmpint(app.preview.selected_link_index, ==, 1);
+            }
             g_assert_cmpstr(app.current_directory, ==, "/original");
-            g_assert_cmpstr(app.image_files->data, ==, path);
-            g_assert_cmpstr(app.image_files->next->data, ==, "/original/second.jpg");
-            g_assert_cmpint(app.preview.selected, ==, 1);
-            g_assert_true(app.preview.selected_link == app.image_files->next);
-            g_assert_cmpint(app.preview.selected_link_index, ==, 1);
         }
         g_assert_cmpint(app.last_error, ==, results[i] == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
         g_list_free_full(app.image_files, g_free);
@@ -189,7 +196,65 @@ static void test_tab_preserves_source_until_destination_entry(gconstpointer data
     g_free(dir);
 }
 
+static void test_navigation_render_result_controls_queue(gconstpointer data) {
+    gint scenario = GPOINTER_TO_INT(data);
+    KeyCode key = scenario & 1 ? KEY_DOWN : KEY_UP;
+    gboolean failure = (scenario & 2) != 0;
+    PixelTermApp app = make_file_manager_list_app();
+    app.file_manager.selected_entry = key == KEY_DOWN ? 0 : 1;
+    app.last_error = ERROR_OUTPUT_IO;
+    InputHandler handler = {0};
+    InputEvent event = make_key_event(key);
+    input_unget_event(&handler, &event);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.file_manager_render_result = failure ? ERROR_OUTPUT_IO : ERROR_NONE;
+    input_dispatch_handle_key_press_file_manager(&app, &handler, &event);
+    g_assert_cmpint(g_input_dispatch_stub_state.file_manager_render_calls, ==, 1);
+    g_assert_cmpint(app.last_error, ==, ERROR_OUTPUT_IO);
+    g_assert_cmpint(handler.has_pending_event, ==, failure);
+    if (failure) g_assert_cmpint(handler.pending_event.key_code, ==, key);
+    cleanup_file_manager_app(&app);
+}
+
+static void test_tab_book_open_failure_keeps_existing_book(gconstpointer data) {
+    ErrorCode result = GPOINTER_TO_INT(data);
+    gchar *dir = create_temp_dir();
+    gchar *path = write_book_fixture(dir);
+    PixelTermApp app = make_file_manager_app(path);
+    app.current_directory = g_strdup("/original");
+    app.book.doc = (BookDocument *)0x1;
+    app.book.path = g_strdup("/original/old.pdf");
+    GList *entries = app.file_manager.entries;
+    InputEvent event = make_key_event(KEY_TAB);
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.open_book_result = result;
+    input_dispatch_handle_key_press_file_manager(&app, NULL, &event);
+    g_assert_cmpint(g_input_dispatch_stub_state.open_book_calls, ==, 1);
+    g_assert_cmpint(g_input_dispatch_stub_state.close_book_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.enter_book_preview_calls, ==, 0);
+    g_assert_cmpint(g_input_dispatch_stub_state.exit_file_manager_calls, ==, 0);
+    g_assert_true(app.book.doc == (BookDocument *)0x1);
+    g_assert_cmpstr(app.book.path, ==, "/original/old.pdf");
+    g_assert_cmpstr(app.current_directory, ==, "/original");
+    g_assert_true(app.file_manager.entries == entries);
+    g_assert_cmpint(app.mode, ==, APP_MODE_FILE_MANAGER);
+    g_assert_cmpint(app.last_error, ==, result == ERROR_OUTPUT_IO ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_free(app.book.path);
+    g_free(app.current_directory);
+    cleanup_file_manager_app(&app);
+    g_remove(path);
+    g_free(path);
+    g_rmdir(dir);
+    g_free(dir);
+}
+
 void register_input_dispatch_key_file_manager_tests(void) {
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_output_keeps_existing_book", GINT_TO_POINTER(ERROR_OUTPUT_IO), test_tab_book_open_failure_keeps_existing_book);
+    g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_open_invalid_keeps_existing_book", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_tab_book_open_failure_keeps_existing_book);
+    g_test_add_data_func("/input_dispatch_key_file_manager/navigation/up_render_failure", GINT_TO_POINTER(2), test_navigation_render_result_controls_queue);
+    g_test_add_data_func("/input_dispatch_key_file_manager/navigation/down_render_failure", GINT_TO_POINTER(3), test_navigation_render_result_controls_queue);
+    g_test_add_data_func("/input_dispatch_key_file_manager/navigation/up_previous_error", GINT_TO_POINTER(0), test_navigation_render_result_controls_queue);
+    g_test_add_data_func("/input_dispatch_key_file_manager/navigation/down_previous_error", GINT_TO_POINTER(1), test_navigation_render_result_controls_queue);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/book_entry_preserves_source", GINT_TO_POINTER(0), test_tab_preserves_source_until_destination_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/media_entry_preserves_source", GINT_TO_POINTER(1), test_tab_preserves_source_until_destination_entry);
     g_test_add_data_func("/input_dispatch_key_file_manager/tab/virtual_entry_preserves_source", GINT_TO_POINTER(2), test_tab_preserves_source_until_destination_entry);

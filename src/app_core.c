@@ -46,7 +46,39 @@ static GList* app_get_current_image_link(const PixelTermApp *app) {
     return (cursor && idx == app->current_index) ? cursor : NULL;
 }
 
-ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
+static gint app_find_file_index(GList *files, const char *filepath) {
+    gchar *target_canonical = g_canonicalize_filename(filepath, NULL);
+    gchar *target_basename = g_path_get_basename(filepath);
+    gint found_index = -1;
+    gint idx = 0;
+    for (GList *cur = files; cur; cur = cur->next, idx++) {
+        gchar *current_canonical = g_canonicalize_filename(cur->data, NULL);
+        gboolean match = g_strcmp0(current_canonical, target_canonical) == 0;
+        g_free(current_canonical);
+        if (match) {
+            found_index = idx;
+            break;
+        }
+    }
+    if (found_index < 0) {
+        idx = 0;
+        for (GList *cur = files; cur; cur = cur->next, idx++) {
+            gchar *current_basename = g_path_get_basename(cur->data);
+            gboolean match = g_strcmp0(current_basename, target_basename) == 0;
+            g_free(current_basename);
+            if (match) {
+                found_index = idx;
+                break;
+            }
+        }
+    }
+    g_free(target_canonical);
+    g_free(target_basename);
+    return found_index;
+}
+
+static ErrorCode app_load_directory_selected(PixelTermApp *app, const char *directory,
+                                             const char *filepath) {
     if (!app || !directory) {
         return ERROR_FILE_NOT_FOUND;
     }
@@ -77,6 +109,13 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     image_files = g_list_sort(image_files, (GCompareFunc)app_file_manager_compare_names);
     browser_destroy(browser);
 
+    gint selected_index = filepath ? app_find_file_index(image_files, filepath) : 0;
+    if (selected_index < 0) {
+        g_list_free_full(image_files, g_free);
+        g_free(normalized_dir);
+        return ERROR_FILE_NOT_FOUND;
+    }
+
     /* Commit only after scanning and copying succeed; directory may alias current_directory. */
     app_preloader_reset(app);
     g_list_free_full(app->image_files, g_free);
@@ -84,7 +123,7 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     app->current_directory = normalized_dir;
     app->image_files = image_files;
     app->total_images = browser_total;
-    app->current_index = 0;
+    app->current_index = selected_index;
     app->preview.selected_link = app->image_files;
     app->preview.selected_link_index = app->image_files ? 0 : -1;
 
@@ -97,6 +136,10 @@ ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
     }
 
     return ERROR_NONE;
+}
+
+ErrorCode app_load_directory(PixelTermApp *app, const char *directory) {
+    return app_load_directory_selected(app, directory, NULL);
 }
 
 ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
@@ -120,66 +163,21 @@ ErrorCode app_load_single_file(PixelTermApp *app, const char *filepath) {
     }
 
     // Load the directory
-    ErrorCode error = app_load_directory(app, directory);
+    ErrorCode error = app_load_directory_selected(app, directory, filepath);
     g_free(directory); // Free early to avoid memory leak
 
     if (error != ERROR_NONE) {
         return error;
     }
 
-    // Find the specific file in the list by full canonical path first.
-    gchar *target_canonical = g_canonicalize_filename(filepath, NULL);
-    gchar *target_basename = g_path_get_basename(filepath);
-    gboolean found = FALSE;
-    gint idx = 0;
-    for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
-        gchar *current_path = (gchar*)cur->data;
-        gboolean full_path_match = g_strcmp0(current_path, target_canonical) == 0;
+    app->needs_redraw = TRUE;
+    app->info_visible = FALSE;
+    app->return_to_mode = RETURN_MODE_SINGLE;
+    app->image_zoom = 1.0;
+    app->image_pan_x = 0.0;
+    app->image_pan_y = 0.0;
 
-        if (!full_path_match) {
-            gchar *current_basename = g_path_get_basename(current_path);
-            if (g_strcmp0(current_basename, target_basename) == 0) {
-                gchar *current_canonical = g_canonicalize_filename(current_path, NULL);
-                full_path_match = g_strcmp0(current_canonical, target_canonical) == 0;
-                g_free(current_canonical);
-            }
-            g_free(current_basename);
-        }
-
-        if (full_path_match) {
-            app->current_index = idx;
-            found = TRUE;
-            break;
-        }
-    }
-
-    if (!found) {
-        idx = 0;
-        for (GList *cur = app->image_files; cur; cur = cur->next, idx++) {
-            gchar *current_basename = g_path_get_basename((gchar*)cur->data);
-            if (g_strcmp0(current_basename, target_basename) == 0) {
-                app->current_index = idx;
-                found = TRUE;
-                g_free(current_basename);
-                break;
-            }
-            g_free(current_basename);
-        }
-    }
-    g_free(target_canonical);
-    g_free(target_basename);
-
-    // If file was found and loaded successfully, mark for redraw
-    if (found) {
-        app->needs_redraw = TRUE;
-        app->info_visible = FALSE;
-        app->return_to_mode = RETURN_MODE_SINGLE;
-        app->image_zoom = 1.0;
-        app->image_pan_x = 0.0;
-        app->image_pan_y = 0.0;
-    }
-
-    return found ? ERROR_NONE : ERROR_FILE_NOT_FOUND;
+    return ERROR_NONE;
 }
 
 ErrorCode app_open_book(PixelTermApp *app, const char *filepath) {

@@ -57,8 +57,7 @@ static void test_failed_stop_is_reported_before_render(gconstpointer data) {
     if (mode == 2) {
         result = app_transition_mode(&app, APP_MODE_PREVIEW);
     } else if (mode == 3) {
-        app_prepare_mode_entry(&app, TRUE);
-        result = app.last_error;
+        result = app_prepare_mode_entry(&app, TRUE);
     } else {
         result = app_render_current_image(&app);
     }

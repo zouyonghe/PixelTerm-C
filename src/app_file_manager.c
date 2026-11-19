@@ -590,14 +590,16 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             g_free(child_dir);
             return ERROR_FILE_NOT_FOUND;
         }
-        g_free(app->file_manager.directory);
+        gchar *previous_directory = app->file_manager.directory;
         app->file_manager.directory = new_directory;
-        // Reset selection to first entry when changing directory
-        app->file_manager.selected_entry = 0;
-        app_file_manager_invalidate_selection_cache(app);
-        app->file_manager.scroll_offset = 0;
-        // Refresh file manager with new directory
+        // Refresh resets selection only after the new directory is readable.
         ErrorCode err = app_file_manager_refresh(app);
+        if (err != ERROR_NONE) {
+            g_free(app->file_manager.directory);
+            app->file_manager.directory = previous_directory;
+        } else {
+            g_free(previous_directory);
+        }
         if (err == ERROR_NONE && child_dir) {
             (void)app_file_manager_select_path(app, child_dir);
         }
@@ -622,13 +624,22 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
         /* Entries own selected_path until loading finishes and the list is released below. */
         gboolean info_visible = app->info_visible;
         gboolean help_visible = app->help_visible;
+        gchar *previous_directory = is_book ? g_strdup(app->current_directory) : NULL;
         error = is_book ? app_open_book(app, selected_path)
                         : app_load_single_file(app, selected_path);
+        gboolean opened_book = is_book && error == ERROR_NONE;
         if (error == ERROR_NONE) {
             error = is_book ? app_enter_book_preview(app)
                             : app_transition_mode(app, APP_MODE_SINGLE);
         }
         if (error != ERROR_NONE) {
+            if (opened_book) {
+                app_close_book(app);
+                g_free(app->current_directory);
+                app->current_directory = previous_directory;
+                previous_directory = NULL;
+            }
+            g_free(previous_directory);
             /* Book cleanup or preview entry can change mode before failing. */
             app_set_mode(app, APP_MODE_FILE_MANAGER);
             app->info_visible = info_visible;
@@ -641,6 +652,7 @@ ErrorCode app_file_manager_enter(PixelTermApp *app) {
             }
             return error;
         }
+        g_free(previous_directory);
         g_list_free_full(app->file_manager.entries, g_free);
         app->file_manager.entries = NULL;
         app->file_manager.entries_count = 0;
