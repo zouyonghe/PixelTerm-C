@@ -17,15 +17,16 @@ static int track_probe_fcntl(int fd, int operation, int flags) {
 }
 
 static void test_default_probe_blocked_terminal(gconstpointer data) {
+    (void)data;
     if (g_test_subprocess()) {
-        gboolean stopped = GPOINTER_TO_INT(data);
         int master = posix_openpt(O_RDWR | O_NOCTTY);
         g_assert_cmpint(master, >=, 0);
         g_assert_cmpint(grantpt(master), ==, 0);
         g_assert_cmpint(unlockpt(master), ==, 0);
         int slave = open(ptsname(master), O_RDWR | O_NOCTTY);
         g_assert_cmpint(slave, >=, 0);
-        if (stopped) g_assert_cmpint(tcflow(slave, TCOOFF), ==, 0);
+        /* Linux can drain a filled PTY asynchronously; stop output before filling. */
+        g_assert_cmpint(tcflow(slave, TCOOFF), ==, 0);
         int flags = fcntl(slave, F_GETFL);
         g_assert_cmpint(flags, >=, 0);
         g_assert_cmpint(fcntl(slave, F_SETFL, flags | O_NONBLOCK), ==, 0);
@@ -69,7 +70,7 @@ static void test_default_probe_blocked_terminal(gconstpointer data) {
         g_assert_cmpint(ftell(capture), ==, 0);
         stdout = saved;
         fclose(capture);
-        if (stopped) g_assert_cmpint(tcflow(slave, TCOON), ==, 0);
+        g_assert_cmpint(tcflow(slave, TCOON), ==, 0);
         close(slave);
         close(master);
         return;
