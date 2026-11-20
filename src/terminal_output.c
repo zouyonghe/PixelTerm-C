@@ -30,6 +30,10 @@ static int session_fd;
 static gboolean session_write_failed;
 static gboolean session_write_attempted;
 static gboolean recovery_pending;
+static GString *pending_chunk;
+static gboolean chunk_failed;
+static gsize pending_chunk_offset;
+static gint64 pending_chunk_progress_us;
 static int restore_fd = -1;
 static int restore_flags;
 static int (*fcntl_hook)(int, int, int);
@@ -201,7 +205,65 @@ gboolean terminal_output_ready(gint64 now_us) {
     return terminal_output_flush();
 }
 
+gint64 terminal_output_chunk_progress_us(void) {
+    return pending_chunk_progress_us;
+}
+
+gboolean terminal_output_take_chunk_error(void) {
+    gboolean failed = chunk_failed;
+    chunk_failed = FALSE;
+    return failed;
+}
+
+gboolean terminal_output_write_chunk(const char *bytes, gsize length) {
+    if (!bytes || length > 8192 || !terminal_output_flush()) return FALSE;
+    pending_chunk = g_string_new_len(bytes, length);
+    pending_chunk_offset = 0;
+    pending_chunk_progress_us = g_get_monotonic_time();
+    /* The next ready/flush owns transmission, never the caller's buffer. */
+    return TRUE;
+}
+
+static gboolean terminal_output_drain_chunk(void) {
+    if (!pending_chunk) return TRUE;
+    int fd = stdout == session_stream ? session_fd : fileno(stdout);
+    if (fd < 0) {
+        if (!terminal_output_submit(pending_chunk->str + pending_chunk_offset,
+                                   pending_chunk->len - pending_chunk_offset, NULL))
+            goto failed;
+        pending_chunk_offset = pending_chunk->len;
+    } else {
+        errno = 0;
+        ssize_t count = terminal_output_descriptor_write_until(fd,
+            pending_chunk->str + pending_chunk_offset,
+            pending_chunk->len - pending_chunk_offset, NULL,
+            g_get_monotonic_time() + 2000);
+        if (count > 0) {
+            pending_chunk_offset += (gsize)count;
+            pending_chunk_progress_us = g_get_monotonic_time();
+        } else if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            goto failed;
+        }
+    }
+    if (pending_chunk_offset < pending_chunk->len) {
+        if (g_get_monotonic_time() - pending_chunk_progress_us >= 2 * G_TIME_SPAN_SECOND)
+            goto failed;
+        return FALSE;
+    }
+    g_string_free(pending_chunk, TRUE);
+    pending_chunk = NULL;
+    return TRUE;
+failed:
+    chunk_failed = TRUE;
+    g_string_free(pending_chunk, TRUE);
+    pending_chunk = NULL;
+    terminal_output_defer_recovery();
+    next_cleanup_retry_us = g_get_monotonic_time() + 100000;
+    return FALSE;
+}
+
 gboolean terminal_output_flush(void) {
+    if (!terminal_output_drain_chunk()) return FALSE;
     if (recovery_pending) terminal_output_discard();
     /* Check buffered UI bytes before clearing errors or submitting queued controls. */
     if (ferror(stdout) || !terminal_output_submit(NULL, 0, NULL)) {
@@ -236,6 +298,11 @@ gboolean terminal_output_flush(void) {
 }
 
 static void terminal_output_cleanup_at_exit(void) {
+    if (pending_chunk) {
+        g_string_free(pending_chunk, TRUE);
+        pending_chunk = NULL;
+        terminal_output_defer_recovery();
+    }
     if (!terminal_output_flush()) {
         /* A sticky/buffered frame error must not consume the final restore attempt. */
         terminal_output_flush();

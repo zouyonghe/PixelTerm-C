@@ -41,6 +41,11 @@ KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
                                                         gint display_width_cells,
                                                         gint display_height_cells,
                                                         guint32 image_id);
+/* delay_ms == 0 creates/displays the root; positive values append full RGBA frames. */
+KittyGraphicsFrame *kitty_graphics_animation_new_direct_rgba(const guint8 *pixels,
+                                                             gint width, gint height, gint rowstride,
+                                                             gint display_width_cells, gint display_height_cells,
+                                                             guint32 image_id, gint delay_ms);
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,
                                                                gint width,
                                                                gint height,

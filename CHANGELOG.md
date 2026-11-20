@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.8.11: Buffered SSH animations and pause-preserving window resizing.
+    - **SSH Animations**: Upload eligible native Kitty GIF/WebP loops through inline RGBA chunks and let the terminal own playback timing after buffering, without requiring local shared memory. Scale frames to the display area before checking the per-frame and loop memory budgets.
+    - **Responsive Uploads**: Send bounded batches, retain exact partial-write progress under backpressure, and preserve recovery/control ordering. Refresh the outer idle timeout on actual progress and keep Escape cancellation responsive behind queued navigation input. Pause/resume reuses an uploaded loop instead of resending frames. tmux/screen and unsupported terminals retain the existing renderer.
+    - **Resize Behavior**: Keep paused GIFs and videos paused across repeated window resizes while allowing previously playing media to continue. Refresh the paused frame without starting a playback timer. Keep preload and displayed playback positions separate so resizing/resuming does not show the last preloaded frame or restart at frame one.
+    - **Verification**: Add chunk encoding/padding, slow-output continuation, scaled upload, paused-frame refresh, and repeated-resize regressions. Validate strict builds, complete C/Python tests, sanitizer suites, and cross-platform CI; terminal visual behavior remains environment-dependent.
+
 - v1.8.10: Fix graphics output exiting during temporary SSH backpressure.
     - **SSH Graphics**: Allow two seconds without write progress instead of 100 milliseconds, resetting the idle deadline after each successful write. Fix `Terminal output failed` exits while displaying images in Warp over SSH, while retaining explicit protocol-probe deadlines and bounded failure for permanently blocked output.
     - **Verification**: Add byte-exact direct and stdio output regressions with repeated 250-millisecond stalls. Validate all 15 terminal-output tests on Arch Linux, the full 842 C and 74 Python tests on macOS, and image display in a Warp SSH session.

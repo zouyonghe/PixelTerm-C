@@ -92,3 +92,25 @@ the command for a later attempt.
 - Each probe establishes a bounded, non-flushing input boundary before sending its query: already queued replies and frames begun before the query cannot confirm it, while ordinary keys are retained. DA/XTVERSION replies carry no request ID, so a reply that starts arriving only after a new query cannot be perfectly correlated to its originating request.
 - If your terminal works better with an explicit protocol than with `auto`, prefer a local config override for that terminal.
 - Shared-memory kitty transfer is local-only by design. Avoid forcing it through SSH, tmux, or screen unless you are deliberately testing a setup that supports it.
+
+### Animated images over direct SSH
+
+On native Kitty, eligible animated GIF/WebP files use inline RGBA frame uploads over
+SSH instead of shared memory. PixelTerm-C scales frames to the display area, keeps
+the animation stopped while uploading, and starts terminal-side playback after the
+complete loop is submitted. Large uploads yield in bounded batches and retain
+partial writes across terminal backpressure. Pausing and resuming an uploaded loop
+does not resend its frames. Resizing preserves whether the current media was paused.
+
+This path requires native Kitty identification and Kitty output, unmodified gamma
+and colors, 2–512 known frames, at most 8 MiB per scaled frame, and at most 256 MiB
+of scaled RGBA pixels per loop. Other cases retain the existing frame-by-frame
+renderer. tmux/screen passthrough is not supported. Initial upload time still depends
+on link speed; the terminal owns playback timing only after upload completes.
+
+Native pause/redraw snapshots use a separate displayed-playback clock rather than
+the preload iterator. A resumed upload retains the full loop and selects the saved
+frame. Position is estimated from command submission time, so real terminal/SSH
+latency can introduce drift; no exact presentation acknowledgement is claimed.
+While a chunk is pending, positive write progress refreshes the idle deadline and
+Escape can cancel without losing earlier queued input events.

@@ -29,6 +29,14 @@ typedef struct {
     gboolean kitty_animation_complete;
     gboolean kitty_animation_disabled;
     guint kitty_animation_frame_count;
+    /* Native preload and displayed playback have independent clocks. */
+    GdkPixbufAnimationIter *kitty_animation_iter;
+    GArray *kitty_animation_delays;
+    guint kitty_animation_resume_frame;
+    gint64 kitty_animation_play_started_us;
+    gint64 kitty_animation_play_position_us;
+    gboolean kitty_animation_hidden;
+    gboolean synthetic_timeline;
     gint64 kitty_animation_elapsed_ms;
     gint kitty_animation_current_delay_ms;
     gint kitty_animation_source_width;
@@ -37,6 +45,10 @@ typedef struct {
     gint kitty_animation_display_height;
     guint kitty_animation_unchanged_ticks;
     GPtrArray *kitty_animation_shm_names;
+    GString *kitty_animation_upload;
+    gsize kitty_animation_upload_offset;
+    gint kitty_animation_transfer_width;
+    gint kitty_animation_transfer_height;
     
     // Renderer reference
     ImageRenderer *renderer;
@@ -138,6 +150,8 @@ ErrorCode gif_player_play(GifPlayer *player);
  *         if native animation cleanup fails.
  */
 ErrorCode gif_player_prepare_for_redraw(GifPlayer *player);
+/* Render the iterator's current frame without advancing or starting playback. */
+ErrorCode gif_player_refresh_paused_frame(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 

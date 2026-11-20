@@ -376,20 +376,27 @@ static void test_kitty_graphics_shm_command_rejects_invalid_input(void) {
     g_assert_null(kitty_graphics_build_shm_command("/x", 16, 8, 4, 2, 0));
 }
 
-static void test_kitty_graphics_direct_rgb_command_roundtrips_chunks(void) {
+static void test_kitty_graphics_direct_rgb_command_roundtrips_chunks(gconstpointer data) {
+    gint delay = GPOINTER_TO_INT(data);
+    gint channels = delay >= 0 ? 4 : 3;
     const gsize pixel_bytes = 6000;
     guint8 *pixels = g_malloc(pixel_bytes);
     for (gsize i = 0; i < pixel_bytes; i++) {
         pixels[i] = (guint8)(i * 17);
     }
 
-    KittyGraphicsFrame *frame = kitty_graphics_frame_new_direct_rgb(
-        pixels, 1000, 2, 3000, 64, 18, 42);
+    KittyGraphicsFrame *frame = channels == 3 ? kitty_graphics_frame_new_direct_rgb(
+        pixels, 1000, 2, 3000, 64, 18, 42) :
+        kitty_graphics_animation_new_direct_rgba(pixels, 750, 2, 3000, 64, 18, 42, delay);
     g_assert_nonnull(frame);
     g_assert_null(frame->shm_name);
     g_assert_cmpint(frame->display_width_cells, ==, 64);
     g_assert_cmpint(frame->display_height_cells, ==, 18);
-    g_assert_nonnull(strstr(frame->command->str, "a=T,f=24,s=1000,v=2,c=64,r=18,i=42,C=1,m=1,q=2;"));
+    const gchar *header = channels == 3 ?
+        "a=T,f=24,s=1000,v=2,c=64,r=18,i=42,C=1,m=1,q=2;" : delay == 0 ?
+        "a=T,f=32,s=750,v=2,c=64,r=18,i=42,C=1,m=1,q=2;" :
+        "a=f,f=32,s=750,v=2,i=42,z=80,X=1,m=1,q=2;";
+    g_assert_nonnull(strstr(frame->command->str, header));
 
     GByteArray *decoded = g_byte_array_new();
     gchar **commands = g_strsplit(frame->command->str, "\033\\", -1);
@@ -410,11 +417,11 @@ static void test_kitty_graphics_direct_rgb_command_roundtrips_chunks(void) {
         if (i == 0) {
             g_assert_nonnull(strstr(commands[i], "m=1"));
         } else {
-            g_assert_true(g_str_has_prefix(commands[i], "\033_Gm="));
+            g_assert_true(g_str_has_prefix(commands[i], delay > 0 ? "\033_Ga=f,m=" : "\033_Gm="));
         }
     }
     g_assert_cmpuint(chunks, ==, 2);
-    g_assert_true(g_str_has_prefix(commands[1], "\033_Gm=0;"));
+    g_assert_true(g_str_has_prefix(commands[1], delay > 0 ? "\033_Ga=f,m=0;" : "\033_Gm=0;"));
     g_assert_cmpuint(decoded->len, ==, pixel_bytes);
     g_assert_cmpmem(decoded->data, decoded->len, pixels, pixel_bytes);
 
@@ -441,6 +448,23 @@ static void test_kitty_graphics_direct_rgb_omits_row_padding(void) {
     g_assert_cmpstr(frame->command->str, ==,
                     "\033_Ga=T,f=24,s=1,v=2,c=1,r=2,i=42,C=1,m=0,q=2;AQIDBAUG\033\\");
     kitty_graphics_frame_free(frame);
+}
+
+static void test_kitty_animation_direct_padding_and_validation(void) {
+    const guint8 pixels[] = {1, 2, 3, 4, 99, 5, 6, 7, 8};
+    KittyGraphicsFrame *frame = kitty_graphics_animation_new_direct_rgba(
+        pixels, 1, 2, 5, 1, 2, 42, 80);
+    g_assert_nonnull(frame);
+    g_assert_cmpstr(frame->command->str, ==,
+        "\033_Ga=f,f=32,s=1,v=2,i=42,z=80,X=1,m=0,q=2;AQIDBAUGBwg=\033\\");
+    kitty_graphics_frame_free(frame);
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(NULL, 1, 1, 4, 1, 1, 42, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, 2, 1, 4, 1, 1, 42, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, G_MAXINT, 1, G_MAXINT, 1, 1, 42, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, 4096, 4096, 16384, 1, 1, 42, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, 1, 1, 4, 0, 1, 42, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, 1, 1, 4, 1, 1, 0, 80));
+    g_assert_null(kitty_graphics_animation_new_direct_rgba(pixels, 1, 1, 4, 1, 1, 42, -1));
 }
 
 static void test_kitty_direct_size_preserves_aspect_and_budget(void) {
@@ -608,6 +632,7 @@ static void test_kitty_graphics_frame_rejects_large_payload(void) {
 }
 
 void register_kitty_graphics_tests(void) {
+    g_test_add_func("/kitty_graphics/animation/direct_padding_and_validation", test_kitty_animation_direct_padding_and_validation);
     g_test_add_func("/kitty_graphics/allocation/terminal_ids_and_keys", test_kitty_allocates_terminal_ids_and_preserves_keys);
     g_test_add_func("/kitty_graphics/allocation/bad_replies", test_kitty_allocation_rejects_bad_replies);
     g_test_add_func("/kitty_graphics/allocation/persistent_restore_recovery", test_probe_persistent_restore_failure_recovers);
@@ -621,7 +646,11 @@ void register_kitty_graphics_tests(void) {
                     test_kitty_direct_size_preserves_aspect_and_budget);
     g_test_add_func("/kitty_graphics/shm_command/controls", test_kitty_graphics_shm_command_contains_expected_controls);
     g_test_add_func("/kitty_graphics/shm_command/rejects_invalid_input", test_kitty_graphics_shm_command_rejects_invalid_input);
-    g_test_add_func("/kitty_graphics/direct_rgb/roundtrips_chunks",
+    g_test_add_data_func("/kitty_graphics/direct_rgb/roundtrips_chunks", GINT_TO_POINTER(-1),
+                    test_kitty_graphics_direct_rgb_command_roundtrips_chunks);
+    g_test_add_data_func("/kitty_graphics/animation/direct_root_chunks", GINT_TO_POINTER(0),
+                    test_kitty_graphics_direct_rgb_command_roundtrips_chunks);
+    g_test_add_data_func("/kitty_graphics/animation/direct_frame_chunks", GINT_TO_POINTER(80),
                     test_kitty_graphics_direct_rgb_command_roundtrips_chunks);
     g_test_add_func("/kitty_graphics/direct_rgb/rejects_oversized_layout",
                     test_kitty_graphics_direct_rgb_rejects_oversized_layout);

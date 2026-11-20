@@ -16,6 +16,8 @@ typedef struct {
     ErrorCode (*gif_player_play)(GifPlayer *player);
     ErrorCode (*video_player_load)(VideoPlayer *player, const gchar *filepath);
     ErrorCode (*video_player_play)(VideoPlayer *player);
+    ErrorCode (*video_player_refresh_paused_frame)(VideoPlayer *player);
+    ErrorCode (*gif_player_refresh_paused_frame)(GifPlayer *player);
     ImageRenderer *(*renderer_create)(void);
     void (*renderer_destroy)(ImageRenderer *renderer);
     ErrorCode (*renderer_initialize)(ImageRenderer *renderer, const RendererConfig *config);

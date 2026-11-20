@@ -17,6 +17,7 @@
 #include "input_dispatch.h"
 #include "common.h"
 #include "terminal_output.h"
+#include "media_utils.h"
 #include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
@@ -112,6 +113,7 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
 
     // Main event loop
     InputEvent event;
+    GQueue deferred_events = G_QUEUE_INIT;
     static gint last_term_width = 0, last_term_height = 0;
     gboolean resize_pending = FALSE;
     gint64 output_blocked_since_us = 0;
@@ -133,6 +135,22 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
         gint64 now_us = g_get_monotonic_time();
         if (!terminal_output_ready(now_us)) {
             if (!output_blocked_since_us) output_blocked_since_us = now_us;
+            output_blocked_since_us = MAX(output_blocked_since_us, terminal_output_chunk_progress_us());
+            if (input_has_pending_input(input_handler)) {
+                InputEvent deferred_event;
+                error = input_get_event(input_handler, &deferred_event);
+                if (error != ERROR_NONE) break;
+                if (deferred_event.type == INPUT_KEY_PRESS && deferred_event.key_code == KEY_ESCAPE) {
+                    app->running = FALSE;
+                    input_handler->should_exit = TRUE;
+                    break;
+                }
+                if (deferred_event.type != INPUT_KEY_PRESS || deferred_event.key_code != KEY_UNKNOWN) {
+                    InputEvent *queued = g_new(InputEvent, 1);
+                    *queued = deferred_event;
+                    g_queue_push_tail(&deferred_events, queued);
+                }
+            }
             if (now_us - output_blocked_since_us >= 2 * G_TIME_SPAN_SECOND) {
                 error = ERROR_OUTPUT_IO;
                 break;
@@ -152,6 +170,15 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
             app->term_width = last_term_width;
             app->term_height = last_term_height;
 
+            if (!resize_pending) {
+                const gchar *path = app_get_current_filepath(app);
+                MediaKind kind = path ? media_classify(path) : MEDIA_KIND_IMAGE;
+                app->preserve_media_pause_on_redraw =
+                    (media_is_video(kind) && app->video_player &&
+                     !video_player_is_playing(app->video_player)) ||
+                    (media_is_animated_image(kind) && app->gif_player &&
+                     !gif_player_is_playing(app->gif_player));
+            }
             input_dispatch_pause_video_for_resize(app);
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
                 error = gif_player_pause(app->gif_player);
@@ -185,6 +212,7 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
             get_terminal_size(&app->term_width, &app->term_height);
             app->suppress_full_clear = FALSE;
             error = app_render_by_mode(app);
+            app->preserve_media_pause_on_redraw = FALSE;
             if (error != ERROR_NONE) break;
             if (resume_video_after_resize && app->video_player) {
                 error = video_player_play(app->video_player);
@@ -199,8 +227,13 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
         if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
 
-        if (input_has_pending_input(input_handler)) {
-            error = input_get_event(input_handler, &event);
+        if (!g_queue_is_empty(&deferred_events) || input_has_pending_input(input_handler)) {
+            if (!g_queue_is_empty(&deferred_events)) {
+                InputEvent *queued = g_queue_pop_head(&deferred_events);
+                event = *queued;
+                g_free(queued);
+                error = ERROR_NONE;
+            } else error = input_get_event(input_handler, &event);
             if (error != ERROR_NONE) {
                 break;
             }
@@ -235,6 +268,7 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
         input_dispatch_handle_event(app, input_handler, &event);
     }
 
+    g_queue_clear_full(&deferred_events, g_free);
     if (error == ERROR_NONE) error = app->last_error;
     return finish_application(input_handler, error);
 }

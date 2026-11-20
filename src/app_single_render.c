@@ -574,7 +574,9 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
                 return overlay_error;
             }
         } else if (app->video_player) {
-            ErrorCode play_result = APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
+            ErrorCode play_result = app->preserve_media_pause_on_redraw ?
+                APP_SINGLE_RENDER_CALL(video_player_refresh_paused_frame, video_player_refresh_paused_frame, app->video_player) :
+                APP_SINGLE_RENDER_CALL(video_player_play, video_player_play, app->video_player);
             app->needs_redraw = play_result != ERROR_NONE;
             if (play_result != ERROR_NONE) {
                 APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
@@ -598,9 +600,9 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     gint image_height = 0;
 
     if (gif_is_animated && app->gif_player && !overlay_visible) {
-        ErrorCode play_result = APP_SINGLE_RENDER_CALL(gif_player_play,
-                                                       gif_player_play,
-                                                       app->gif_player);
+        ErrorCode play_result = app->preserve_media_pause_on_redraw ?
+            APP_SINGLE_RENDER_CALL(gif_player_refresh_paused_frame, gif_player_refresh_paused_frame, app->gif_player) :
+            APP_SINGLE_RENDER_CALL(gif_player_play, gif_player_play, app->gif_player);
         if (play_result == ERROR_OUTPUT_IO) {
             APP_SINGLE_RENDER_CALL(ui_end_sync_update, ui_end_sync_update);
             return play_result;

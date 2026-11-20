@@ -338,6 +338,8 @@ static void test_gif_output_failure(gconstpointer data) {
         player->kitty_animation_id = g_strcmp0(operation, "layout_presentation") == 0 ? 0 : 4242;
         player->kitty_animation_prepared = TRUE;
         player->kitty_animation_complete = TRUE;
+        player->kitty_animation_iter = g_object_ref(player->iter);
+        player->kitty_animation_delays = g_array_new(FALSE, FALSE, sizeof(gint));
         if (g_strcmp0(operation, "native_loading") == 0)
             player->kitty_animation_complete = FALSE;
     }
@@ -620,6 +622,133 @@ static void test_gif_player_native_animation_starts_with_root_frame(void) {
 #endif
 }
 
+static void test_gif_player_ssh_animation_preloads_before_play(gconstpointer data) {
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_unset_for_test("SSH_CONNECTION");
+    pixelterm_env_unset_for_test("SSH_CLIENT");
+    pixelterm_env_set_for_test((const gchar *)data, "host 1 host 2");
+    pixelterm_env_unset_for_test("PIXELTERM_KITTY_SHM");
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
+                                      TEXT_SYMBOL_MODE_AUTO, 1.0);
+    g_assert_nonnull(player);
+    GdkPixbuf *red = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    GdkPixbuf *blue = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    gdk_pixbuf_fill(red, 0xff0000ff);
+    gdk_pixbuf_fill(blue, 0x0000ffff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, red);
+    gdk_pixbuf_simple_anim_add_frame(animation, blue);
+    g_object_unref(red);
+    g_object_unref(blue);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    player->total_frames = 2;
+
+    gchar *output = capture_output(play_capture, player);
+    g_assert_true(player->kitty_animation_prepared);
+    g_assert_false(player->kitty_animation_complete);
+    g_assert_cmpuint(player->kitty_animation_frame_count, ==, 1);
+    g_assert_cmpuint(player->kitty_animation_shm_names->len, ==, 0);
+    g_assert_nonnull(strstr(output, "\033_Ga=T,f=32"));
+    g_assert_nonnull(strstr(output, ";/wAA/w==\033\\"));
+    g_assert_nonnull(strstr(output, ",s=1,q=2\033\\"));
+    g_assert_null(strstr(output, "t=s"));
+    g_assert_null(strstr(output, ",s=2,"));
+    g_assert_null(strstr(output, ",s=3,"));
+    g_free(output);
+
+    GSource *source = g_main_context_find_source_by_id(NULL, player->timer_id);
+    g_assert_nonnull(source);
+    /* Upload scheduling must not wait for the GIF's 100 ms frame interval. */
+    g_assert_cmpint(g_source_get_ready_time(source) - g_get_monotonic_time(), <=, 20000);
+    g_free(capture_output(pause_capture, player));
+    output = capture_output(play_capture, player);
+    g_assert_null(strstr(output, "a=T"));
+    g_assert_null(strstr(output, ",s=2,"));
+    g_assert_null(strstr(output, ",s=3,"));
+    g_free(output);
+
+    g_source_remove(player->timer_id);
+    player->timer_id = 0;
+    output = capture_output(next_frame_capture, player);
+    const gchar *frame = strstr(output, "\033_Ga=f,f=32");
+    const gchar *play = strstr(output, ",s=3,v=1,q=2\033\\");
+    g_assert_nonnull(frame);
+    g_assert_nonnull(strstr(output, ";AAD//w==\033\\"));
+    g_assert_nonnull(strstr(output, ",z=100,"));
+    g_assert_nonnull(play);
+    g_assert_true(frame < play);
+    g_assert_null(strstr(output, "t=s"));
+    g_assert_true(player->kitty_animation_complete);
+    g_assert_cmpuint(player->kitty_animation_frame_count, ==, 2);
+    g_assert_cmpint(player->timer_id != 0, ==, player->kitty_animation_resume_frame != 0);
+    g_free(output);
+
+    g_free(capture_output(pause_capture, player));
+    output = capture_output(play_capture, player);
+    g_assert_null(strstr(output, "a=T"));
+    g_assert_null(strstr(output, "a=f"));
+    g_assert_nonnull(strstr(output, ",s=3,v=1,q=2\033\\"));
+    g_assert_cmpint(player->timer_id != 0, ==, player->kitty_animation_resume_frame != 0);
+    g_free(output);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_gif_player_ssh_upload_yields(gconstpointer data) {
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("SSH_CONNECTION", "host 1 host 2");
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    gboolean scaled = GPOINTER_TO_INT(data);
+    gint size = scaled ? 1500 : 512;
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    GdkPixbuf *pixel = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, size, size);
+    gdk_pixbuf_fill(pixel, 0xff0000ff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(size, size, 10.0);
+    gdk_pixbuf_simple_anim_set_loop(animation, TRUE);
+    gdk_pixbuf_simple_anim_add_frame(animation, pixel);
+    gdk_pixbuf_simple_anim_add_frame(animation, pixel);
+    g_object_unref(pixel);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    player->is_animated = TRUE;
+    player->total_frames = 2;
+    g_assert_cmpint(gif_player_set_render_area(player, 80, 40, 2, 36, 40, 20), ==, ERROR_NONE);
+    gchar *output = capture_output(play_capture, player);
+    g_assert_true(player->kitty_animation_prepared);
+    g_assert_cmpuint(strlen(output), <=, 73728);
+    g_free(output);
+    if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+    output = capture_output(next_frame_capture, player);
+    g_assert_cmpuint(strlen(output), <=, 73728);
+    g_assert_cmpuint(player->kitty_animation_frame_count, ==, 1);
+    /* A preempted 2 ms batch may make no progress; the loop below must finish. */
+    g_assert_false(player->kitty_animation_complete);
+    g_free(output);
+    GString *all = g_string_new(NULL);
+    for (guint i = 0; i < 2000 && !player->kitty_animation_complete; i++) {
+        if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+        output = capture_output(next_frame_capture, player);
+        g_assert_cmpuint(strlen(output), <=, 73728);
+        g_string_append(all, output); g_free(output);
+    }
+    g_assert_true(player->kitty_animation_complete);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_cmpint(player->kitty_animation_transfer_width, <=, 400);
+    g_assert_cmpint(player->kitty_animation_transfer_height, <=, 400);
+    g_assert_nonnull(strstr(all->str, ",s=3,v=1,q=2"));
+    g_string_free(all, TRUE);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
 static void test_gif_player_native_animation_rejects_geometry_changes(void) {
     GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE,
                                       TEXT_SYMBOL_MODE_AUTO, 1.0);
@@ -874,6 +1003,31 @@ static void test_gif_player_prepare_for_redraw_preserves_iterator(void) {
     gif_player_destroy(player);
 }
 
+static void refresh_paused_capture(gpointer data) {
+    g_assert_cmpint(gif_player_refresh_paused_frame(data), ==, ERROR_NONE);
+}
+
+static void test_paused_refresh_keeps_iterator_and_timer_stopped(void) {
+    GifPlayer *player = gif_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    GdkPixbuf *pixel = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 1, 1);
+    gdk_pixbuf_fill(pixel, 0xff0000ff);
+    GdkPixbufSimpleAnim *animation = gdk_pixbuf_simple_anim_new(1, 1, 10.0);
+    gdk_pixbuf_simple_anim_add_frame(animation, pixel);
+    gdk_pixbuf_simple_anim_add_frame(animation, pixel);
+    g_object_unref(pixel);
+    player->animation = GDK_PIXBUF_ANIMATION(animation);
+    player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+    GdkPixbufAnimationIter *iter = player->iter;
+    gchar *output = capture_output(refresh_paused_capture, player);
+    g_assert_cmpuint(strlen(output), >, 0);
+    g_assert_false(player->is_playing);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_assert_true(player->iter == iter);
+    g_assert_cmpint(gif_player_refresh_paused_frame(NULL), ==, ERROR_INVALID_ARGS);
+    g_free(output);
+    gif_player_destroy(player);
+}
+
 static void test_gif_player_redraw_and_layout_noops(void) {
     g_assert_cmpint(gif_player_prepare_for_redraw(NULL), ==, ERROR_NONE);
     g_assert_cmpint(gif_player_set_render_area(NULL, 80, 24, 2, 20, 80, 20), ==, ERROR_NONE);
@@ -961,7 +1115,168 @@ static void test_gif_player_layout_change_repaints_cached_text_frame(void) {
     gif_player_destroy(player);
 }
 
+
+static GifPlayer *real_ssh_gif_for_test(void) {
+    pixelterm_env_set_for_test("TERM", "xterm-kitty");
+    pixelterm_env_set_for_test("SSH_CONNECTION", "host 1 host 2");
+    pixelterm_env_unset_for_test("TMUX");
+    pixelterm_env_unset_for_test("STY");
+    GifPlayer *player = gif_player_new(4, FALSE, FALSE, TRUE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+    gsize length;
+    /* Real GIF: red 100 ms, blue 200 ms, green 300 ms, looping. */
+    guchar *bytes = g_base64_decode("R0lGODlhQABAAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAQABAAAAIaQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izagUQEAAh+QQBFAABACwAAAAAQABAAIEAAP8AAAAAAAAAAAAIaQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izagUQEAAh+QQBHgABACwAAAAAQABAAIEA/wAAAAAAAAAAAAAIaQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izagUQEAA7", &length);
+    gchar *path = NULL;
+    gint fd = g_file_open_tmp("pixelterm-real-gif-XXXXXX", &path, NULL);
+    g_assert_cmpint(fd, >=, 0);
+    close(fd);
+    g_assert_true(g_file_set_contents(path, (gchar *)bytes, length, NULL));
+    g_assert_cmpint(gif_player_load(player, path), ==, ERROR_NONE);
+    g_unlink(path);
+    g_free(path);
+    g_free(bytes);
+    return player;
+}
+
+static void drain_real_ssh_gif(GifPlayer *player) {
+    for (guint i = 0; i < 100 && !player->kitty_animation_complete; i++) {
+        if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+        g_free(capture_output(next_frame_capture, player));
+    }
+    g_assert_true(player->kitty_animation_complete);
+    g_assert_true(player->is_playing);
+}
+
+static void assert_gif_rgb(GifPlayer *player, guint32 rgb) {
+    GdkPixbuf *frame = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
+    const guchar *pixels = gdk_pixbuf_get_pixels(frame);
+    g_assert_cmphex(((guint32)pixels[0] << 16) | ((guint32)pixels[1] << 8) | pixels[2], ==, rgb);
+}
+
+static void test_real_gif_paused_refresh_submits(void) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    drain_real_ssh_gif(player);
+    g_free(capture_output(pause_capture, player));
+    gchar *output = capture_output(refresh_paused_capture, player);
+    g_assert_nonnull(strstr(output, "a=T"));
+    g_assert_null(player->kitty_animation_upload);
+    g_assert_false(player->is_playing);
+    g_assert_cmpuint(player->timer_id, ==, 0);
+    g_free(output);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_real_gif_native_pause_snapshot(gconstpointer data) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    drain_real_ssh_gif(player);
+    if (GPOINTER_TO_INT(data)) {
+        g_assert_cmpint(gif_player_prepare_for_redraw(player), ==, ERROR_NONE);
+    } else g_free(capture_output(pause_capture, player));
+    assert_gif_rgb(player, 0xff0000);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_real_gif_resize_resumes_snapshot(void) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    drain_real_ssh_gif(player);
+    player->kitty_animation_play_started_us = g_get_monotonic_time() - 130000;
+    g_free(capture_output(pause_capture, player));
+    for (gint width = 80; width < 82; width++) {
+        g_assert_cmpint(gif_player_set_render_area(player, width, 40, 5, 30, 40, 20), ==, ERROR_NONE);
+        g_free(capture_output(refresh_paused_capture, player));
+        assert_gif_rgb(player, 0x0000ff);
+    }
+    g_usleep(250000);
+    g_free(capture_output(play_capture, player));
+    assert_gif_rgb(player, 0x0000ff);
+    drain_real_ssh_gif(player);
+    g_assert_cmpuint(player->kitty_animation_resume_frame, ==, 2);
+    g_assert_cmpint(g_array_index(player->kitty_animation_delays, gint, 1), ==, 200);
+    if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+    gchar *restore = capture_output(next_frame_capture, player);
+    g_assert_nonnull(strstr(restore, ",r=2,z=200,"));
+    g_assert_cmpuint(player->kitty_animation_resume_frame, ==, 0);
+    g_free(restore);
+    g_free(capture_output(pause_capture, player));
+    assert_gif_rgb(player, 0x0000ff);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_real_gif_pause_during_preload(void) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    for (guint i = 0; i < 100 && player->kitty_animation_frame_count < 2; i++) {
+        if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+        g_free(capture_output(next_frame_capture, player));
+    }
+    g_assert_false(player->kitty_animation_complete);
+    g_free(capture_output(pause_capture, player));
+    assert_gif_rgb(player, 0xff0000);
+    g_assert_cmpint(player->kitty_animation_play_position_us, ==, 0);
+    g_free(capture_output(refresh_paused_capture, player));
+    g_assert_null(player->kitty_animation_upload);
+    g_free(capture_output(play_capture, player));
+    drain_real_ssh_gif(player);
+    g_free(capture_output(pause_capture, player));
+    assert_gif_rgb(player, 0xff0000);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_real_gif_resume_software_clock(void) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    drain_real_ssh_gif(player);
+    player->kitty_animation_play_started_us = g_get_monotonic_time() - 130000;
+    g_free(capture_output(pause_capture, player));
+    g_free(capture_output(refresh_paused_capture, player));
+    player->renderer->config.force_kitty = FALSE;
+    player->renderer->config.force_text = TRUE;
+    g_free(capture_output(play_capture, player));
+    g_assert_cmpint(player->kitty_animation_play_started_us, >, 0);
+    player->kitty_animation_play_started_us -= 200000;
+    if (player->timer_id) { g_source_remove(player->timer_id); player->timer_id = 0; }
+    g_free(capture_output(next_frame_capture, player));
+    assert_gif_rgb(player, 0x00ff00);
+    g_free(capture_output(pause_capture, player));
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
+static void test_real_gif_upload_trailing_control(void) {
+    GifPlayer *player = real_ssh_gif_for_test();
+    g_free(capture_output(play_capture, player));
+    g_assert_false(player->render_layout_valid);
+    g_assert_nonnull(player->kitty_animation_upload);
+    /* No-layout presentation already ends in ESC[J, before delay/stop controls. */
+    g_string_append(player->kitty_animation_upload, "\033[J");
+    drain_real_ssh_gif(player);
+    g_free(capture_output(stop_capture, player));
+    gif_player_destroy(player);
+    pixelterm_env_reset_for_test();
+}
+
 void register_gif_player_tests(void) {
+    g_test_add_func("/gif_player/regression/preload_pause_snapshot", test_real_gif_pause_during_preload);
+    g_test_add_func("/gif_player/regression/software_resume_clock", test_real_gif_resume_software_clock);
+    g_test_add_func("/gif_player/regression/real_paused_refresh", test_real_gif_paused_refresh_submits);
+    g_test_add_data_func("/gif_player/regression/real_pause_snapshot", NULL, test_real_gif_native_pause_snapshot);
+    g_test_add_data_func("/gif_player/regression/real_redraw_snapshot", GINT_TO_POINTER(1), test_real_gif_native_pause_snapshot);
+    g_test_add_func("/gif_player/regression/real_resize_resume", test_real_gif_resize_resumes_snapshot);
+    g_test_add_func("/gif_player/regression/trailing_control", test_real_gif_upload_trailing_control);
+    g_test_add_func("/gif_player/paused_refresh_preserves_state", test_paused_refresh_keeps_iterator_and_timer_stopped);
+    g_test_add_data_func("/gif_player/native_animation/ssh_large_upload_yields", NULL, test_gif_player_ssh_upload_yields);
+    g_test_add_data_func("/gif_player/native_animation/ssh_scales_before_budget", GINT_TO_POINTER(1), test_gif_player_ssh_upload_yields);
 #if defined(__GLIBC__) || defined(__APPLE__)
     const gchar *operations[] = {"stop", "load", "pause", "redraw", "layout", "layout_presentation",
                                  "redraw_backoff", "layout_backoff",
@@ -990,6 +1305,8 @@ void register_gif_player_tests(void) {
     g_test_add_func("/gif_player/native_animation/count_gif_frames", test_gif_player_counts_gif_image_blocks);
     g_test_add_func("/gif_player/native_animation/count_webp_frames", test_gif_player_counts_webp_animation_frames);
     g_test_add_func("/gif_player/native_animation/starts_with_root_frame", test_gif_player_native_animation_starts_with_root_frame);
+    g_test_add_data_func("/gif_player/native_animation/ssh_connection_preloads", "SSH_CONNECTION", test_gif_player_ssh_animation_preloads_before_play);
+    g_test_add_data_func("/gif_player/native_animation/ssh_client_preloads", "SSH_CLIENT", test_gif_player_ssh_animation_preloads_before_play);
     g_test_add_func("/gif_player/native_animation/rejects_geometry_changes", test_gif_player_native_animation_rejects_geometry_changes);
     g_test_add_func("/gif_player/native_animation/hands_complete_loop_to_kitty", test_gif_player_native_animation_hands_complete_loop_to_kitty);
     g_test_add_func("/gif_player/native_animation/waits_when_frame_is_unchanged", test_gif_player_native_animation_waits_when_frame_is_unchanged);
