@@ -2,8 +2,8 @@
 
 - v1.8.11: Buffered SSH animations and pause-preserving window resizing.
     - **SSH Animations**: Upload eligible native Kitty GIF/WebP loops through inline RGBA chunks and let the terminal own playback timing after buffering, without requiring local shared memory. Scale frames to the display area before checking the per-frame and loop memory budgets.
-    - **Responsive Uploads**: Send bounded batches, retain exact partial-write progress under backpressure, and preserve recovery/control ordering. Pause/resume reuses an uploaded loop instead of resending frames. tmux/screen and unsupported terminals retain the existing renderer.
-    - **Resize Behavior**: Keep paused GIFs and videos paused across repeated window resizes while allowing previously playing media to continue. Refresh the paused frame without starting a playback timer.
+    - **Responsive Uploads**: Send bounded batches, retain exact partial-write progress under backpressure, and preserve recovery/control ordering. Refresh the outer idle timeout on actual progress and keep Escape cancellation responsive behind queued navigation input. Pause/resume reuses an uploaded loop instead of resending frames. tmux/screen and unsupported terminals retain the existing renderer.
+    - **Resize Behavior**: Keep paused GIFs and videos paused across repeated window resizes while allowing previously playing media to continue. Refresh the paused frame without starting a playback timer. Keep preload and displayed playback positions separate so resizing/resuming does not show the last preloaded frame or restart at frame one.
     - **Verification**: Add chunk encoding/padding, slow-output continuation, scaled upload, paused-frame refresh, and repeated-resize regressions. Validate strict builds, complete C/Python tests, sanitizer suites, and cross-platform CI; terminal visual behavior remains environment-dependent.
 
 - v1.8.10: Fix graphics output exiting during temporary SSH backpressure.

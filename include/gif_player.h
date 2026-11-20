@@ -29,6 +29,14 @@ typedef struct {
     gboolean kitty_animation_complete;
     gboolean kitty_animation_disabled;
     guint kitty_animation_frame_count;
+    /* Native preload and displayed playback have independent clocks. */
+    GdkPixbufAnimationIter *kitty_animation_iter;
+    GArray *kitty_animation_delays;
+    guint kitty_animation_resume_frame;
+    gint64 kitty_animation_play_started_us;
+    gint64 kitty_animation_play_position_us;
+    gboolean kitty_animation_hidden;
+    gboolean synthetic_timeline;
     gint64 kitty_animation_elapsed_ms;
     gint kitty_animation_current_delay_ms;
     gint kitty_animation_source_width;

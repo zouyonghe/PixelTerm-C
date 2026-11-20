@@ -18,6 +18,28 @@
 
 static gboolean render_next_frame(gpointer user_data);
 static ErrorCode render_current_frame_internal(GifPlayer *player);
+static gboolean gif_player_start_native_playback(GifPlayer *player);
+
+static void gif_player_snapshot_native(GifPlayer *player) {
+    if (!player->animation || (!player->synthetic_timeline &&
+        !player->kitty_animation_iter)) return;
+    if (player->kitty_animation_play_started_us) {
+        player->kitty_animation_play_position_us +=
+            g_get_monotonic_time() - player->kitty_animation_play_started_us;
+        player->kitty_animation_play_started_us = 0;
+    }
+    GTimeVal origin = {0, 0};
+    gint64 position = player->kitty_animation_play_position_us;
+    GTimeVal time = {position / G_USEC_PER_SEC, position % G_USEC_PER_SEC};
+    GdkPixbufAnimationIter *snapshot = gdk_pixbuf_animation_get_iter(player->animation, &origin);
+    if (snapshot) {
+        gdk_pixbuf_animation_iter_advance(snapshot, &time);
+        g_clear_object(&player->iter);
+        player->iter = snapshot;
+        player->synthetic_timeline = TRUE;
+        player->resume_from_current_frame = TRUE;
+    }
+}
 static GifPlayerAdvanceHook gif_player_advance_hook = NULL;
 #define KITTY_ANIMATION_MAX_UNCHANGED_TICKS 8
 
@@ -77,6 +99,10 @@ static gboolean gif_player_reset_kitty_animation(GifPlayer *player, gboolean del
         kitty_graphics_defer_image_delete(player->kitty_animation_id);
         success = terminal_output_ready(g_get_monotonic_time());
     }
+    g_clear_object(&player->kitty_animation_iter);
+    g_clear_pointer(&player->kitty_animation_delays, g_array_unref);
+    player->kitty_animation_hidden = FALSE;
+    player->kitty_animation_resume_frame = 0;
     player->kitty_animation_id = 0;
     player->kitty_animation_prepared = FALSE;
     player->kitty_animation_complete = FALSE;
@@ -428,6 +454,65 @@ static GdkPixbuf *gif_player_ensure_rgba(GdkPixbuf *pixbuf) {
     return gdk_pixbuf_add_alpha(pixbuf, FALSE, 0, 0, 0);
 }
 
+static gboolean gif_player_start_native_playback(GifPlayer *player) {
+    if (player->kitty_animation_play_started_us) {
+        player->kitty_animation_play_position_us +=
+            g_get_monotonic_time() - player->kitty_animation_play_started_us;
+        player->kitty_animation_play_started_us = 0;
+    }
+    gint remaining_ms = 0;
+    if (player->kitty_animation_resume_frame) {
+        guint frame = player->kitty_animation_resume_frame;
+        if (!gif_player_write_kitty_command(kitty_graphics_build_animation_frame_delay_command(
+                player->kitty_animation_id, frame,
+                g_array_index(player->kitty_animation_delays, gint, frame - 1)))) return FALSE;
+        player->kitty_animation_resume_frame = 0;
+    }
+    if (player->kitty_animation_delays && player->kitty_animation_delays->len) {
+        gint64 cycle_ms = 0;
+        for (guint i = 0; i < player->kitty_animation_delays->len; i++)
+            cycle_ms += g_array_index(player->kitty_animation_delays, gint, i);
+        gint64 position_ms = player->kitty_animation_play_position_us / 1000;
+        if (cycle_ms) position_ms %= cycle_ms;
+        guint frame = 0;
+        while (frame + 1 < player->kitty_animation_delays->len &&
+               position_ms >= g_array_index(player->kitty_animation_delays, gint, frame)) {
+            position_ms -= g_array_index(player->kitty_animation_delays, gint, frame);
+            frame++;
+        }
+        if (player->kitty_animation_play_position_us / 1000 > 0) {
+            GString *select = g_string_new(NULL);
+            g_string_printf(select, "\033_Ga=a,i=%u,c=%u,q=2\033\\", player->kitty_animation_id, frame + 1);
+            if (!gif_player_write_kitty_command(select)) return FALSE;
+            remaining_ms = MAX(1, g_array_index(player->kitty_animation_delays, gint, frame) - position_ms);
+            if (!gif_player_write_kitty_command(kitty_graphics_build_animation_frame_delay_command(
+                    player->kitty_animation_id, frame + 1, remaining_ms))) return FALSE;
+            player->kitty_animation_resume_frame = frame + 1;
+        }
+    }
+    if (player->kitty_animation_hidden) {
+        gint width = player->kitty_animation_display_width;
+        gint height = player->kitty_animation_display_height;
+        gint row = player->render_layout_valid ? player->render_area_top_row : 1;
+        if (player->render_layout_valid && player->render_area_height > height)
+            row += (player->render_area_height - height) / 2;
+        gint col = player->render_layout_valid ? MAX(1, (player->render_term_width - width) / 2 + 1) : 1;
+        GString *place = g_string_new(NULL);
+        g_string_printf(place, "\033_Ga=d,q=2\033\\\033[%d;%dH\033_Ga=p,i=%u,c=%d,r=%d,C=1,q=2\033\\",
+                        row, col, player->kitty_animation_id, width, height);
+        if (!gif_player_write_kitty_command(place)) return FALSE;
+        player->kitty_animation_hidden = FALSE;
+    }
+    if (!gif_player_write_kitty_command(
+            kitty_graphics_build_animation_play_command(player->kitty_animation_id))) return FALSE;
+    player->kitty_animation_play_started_us = g_get_monotonic_time();
+    if (remaining_ms) {
+        if (player->timer_id) g_source_remove(player->timer_id);
+        player->timer_id = g_timeout_add(remaining_ms, render_next_frame, player);
+    }
+    return TRUE;
+}
+
 static gboolean gif_player_drain_upload(GifPlayer *player) {
     GString *upload = player->kitty_animation_upload;
     if (!upload) return TRUE;
@@ -437,8 +522,9 @@ static gboolean gif_player_drain_upload(GifPlayer *player) {
     while (offset < upload->len && offset - batch_start < 64 * 1024 &&
            g_get_monotonic_time() < deadline) {
         const gchar *end = g_strstr_len(upload->str + offset, upload->len - offset, "\033\\");
-        if (!end) return FALSE;
-        gsize length = (gsize)(end - (upload->str + offset)) + 2;
+        /* Cursor/erase suffixes after the final ST are ordinary bounded output. */
+        gsize length = end ? (gsize)(end - (upload->str + offset)) + 2 :
+                            MIN((gsize)8192, upload->len - offset);
         if (!terminal_output_write_chunk(upload->str + offset, length)) return TRUE;
         offset += length;
         player->kitty_animation_upload_offset = offset;
@@ -448,8 +534,7 @@ static gboolean gif_player_drain_upload(GifPlayer *player) {
     player->kitty_animation_upload = NULL;
     player->kitty_animation_upload_offset = 0;
     if (player->kitty_animation_frame_count >= (guint)player->total_frames) {
-        if (!gif_player_write_kitty_command(
-                kitty_graphics_build_animation_play_command(player->kitty_animation_id))) return FALSE;
+        if (!gif_player_start_native_playback(player)) return FALSE;
         player->kitty_animation_complete = TRUE;
     }
     return TRUE;
@@ -523,7 +608,8 @@ static gint gif_player_iter_delay_ms(GdkPixbufAnimationIter *iter) {
 }
 
 static gint gif_player_current_delay_ms(GifPlayer *player) {
-    return gif_player_iter_delay_ms(player->iter);
+    return gif_player_iter_delay_ms(player->kitty_animation_iter ?
+                                    player->kitty_animation_iter : player->iter);
 }
 
 static gboolean gif_player_native_geometry_matches(const GifPlayer *player,
@@ -571,13 +657,15 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
         return FALSE;
     }
 
-    GdkPixbufAnimationIter *native_iter = NULL;
-    if (player->resume_from_current_frame && player->iter) {
-        native_iter = g_object_ref(player->iter);
-    } else {
-        GTimeVal start_time = {0, 0};
-        native_iter = gdk_pixbuf_animation_get_iter(player->animation, &start_time);
+    gboolean resume = player->resume_from_current_frame;
+    if (resume) {
+        *output_error = render_current_frame_internal(player);
+        if (*output_error != ERROR_NONE) return FALSE;
     }
+    /* Upload the original full cycle; a partial first frame would shorten every loop. */
+    GTimeVal start_time = {0, 0};
+    GdkPixbufAnimationIter *native_iter =
+        gdk_pixbuf_animation_get_iter(player->animation, &start_time);
     if (!native_iter) {
         player->kitty_animation_disabled = TRUE;
         return FALSE;
@@ -648,6 +736,12 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
         g_object_unref(native_iter);
         return FALSE;
     }
+    if (resume) {
+        /* Keep the paused snapshot visible until replacement frames arrive. */
+        gchar *action = strstr(root->command->str, "a=T");
+        if (action) action[2] = 't';
+    }
+    player->kitty_animation_hidden = resume;
     /* Own the image before submission: a failed write may still deliver it. */
     player->kitty_animation_id = image_id;
     player->kitty_animation_prepared = TRUE;
@@ -677,7 +771,7 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
     } else if (!gif_player_write_kitty_command(
             kitty_graphics_build_animation_frame_delay_command(image_id, 1, delay)) ||
         !gif_player_write_kitty_command(
-            (gif_player_kitty_uses_direct_transfer() ?
+            ((gif_player_kitty_uses_direct_transfer() || resume) ?
                 kitty_graphics_build_animation_stop_command(image_id) :
                 kitty_graphics_build_animation_loading_command(image_id)))) {
         *output_error = ERROR_OUTPUT_IO;
@@ -687,11 +781,14 @@ static gboolean gif_player_prepare_kitty_animation(GifPlayer *player, ErrorCode 
         return FALSE;
     }
 
-    g_object_unref(player->iter);
-    player->iter = native_iter;
-    if (!player->resume_from_current_frame) {
-        player->kitty_animation_elapsed_ms = 0;
-    }
+    g_clear_object(&player->kitty_animation_iter);
+    player->kitty_animation_iter = native_iter;
+    player->kitty_animation_elapsed_ms = 0;
+    player->kitty_animation_delays = g_array_new(FALSE, FALSE, sizeof(gint));
+    g_array_append_val(player->kitty_animation_delays, delay);
+    if (!resume) player->kitty_animation_play_position_us = 0;
+    player->kitty_animation_play_started_us =
+        (!gif_player_kitty_uses_direct_transfer() && !resume) ? g_get_monotonic_time() : 0;
     player->kitty_animation_current_delay_ms = delay;
     player->resume_from_current_frame = FALSE;
     return TRUE;
@@ -702,7 +799,7 @@ static gboolean gif_player_append_kitty_animation_frame(GifPlayer *player, Error
         return FALSE;
     }
 
-    GdkPixbuf *pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(player->iter);
+    GdkPixbuf *pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(player->kitty_animation_iter);
     if (!pixbuf) {
         return FALSE;
     }
@@ -741,10 +838,11 @@ static gboolean gif_player_append_kitty_animation_frame(GifPlayer *player, Error
 
     player->kitty_animation_frame_count++;
     player->kitty_animation_current_delay_ms = gif_player_current_delay_ms(player);
+    gint delay = player->kitty_animation_current_delay_ms;
+    g_array_append_val(player->kitty_animation_delays, delay);
     if (!player->kitty_animation_upload &&
         player->kitty_animation_frame_count >= (guint)player->total_frames) {
-        if (!gif_player_write_kitty_command(
-                kitty_graphics_build_animation_play_command(player->kitty_animation_id))) {
+        if (!gif_player_start_native_playback(player)) {
             *output_error = ERROR_OUTPUT_IO;
             return FALSE;
         }
@@ -881,6 +979,7 @@ ErrorCode gif_player_set_render_area(GifPlayer *player,
     player->render_layout_valid = (area_top_row > 0 && area_height > 0 && max_width > 0 && max_height > 0);
     if (layout_changed) {
         gboolean restart_native = player->kitty_animation_prepared && player->is_playing;
+        gif_player_snapshot_native(player);
         gboolean preserve_native_timeline = player->resume_from_current_frame;
         gint64 animation_elapsed_ms = player->kitty_animation_elapsed_ms;
         gint animation_delay_ms = player->kitty_animation_current_delay_ms;
@@ -1096,9 +1195,21 @@ static gboolean render_next_frame(gpointer user_data) {
     if (!terminal_output_ready(g_get_monotonic_time())) return G_SOURCE_CONTINUE;
     ErrorCode output_error = ERROR_NONE;
     if (terminal_output_take_chunk_error()) goto output_failed;
+    if (player->kitty_animation_complete && player->kitty_animation_resume_frame) {
+        guint frame = player->kitty_animation_resume_frame;
+        if (!gif_player_write_kitty_command(kitty_graphics_build_animation_frame_delay_command(
+                player->kitty_animation_id, frame,
+                g_array_index(player->kitty_animation_delays, gint, frame - 1)))) goto output_failed;
+        player->kitty_animation_resume_frame = 0;
+        player->timer_id = 0;
+        return G_SOURCE_REMOVE;
+    }
     if (player->kitty_animation_upload) {
         if (!gif_player_drain_upload(player)) goto output_failed;
-        if (player->kitty_animation_complete) { player->timer_id = 0; return G_SOURCE_REMOVE; }
+        if (player->kitty_animation_complete) {
+            if (!player->kitty_animation_resume_frame) player->timer_id = 0;
+            return G_SOURCE_REMOVE;
+        }
         player->timer_id = g_timeout_add(1, render_next_frame, player);
         return G_SOURCE_REMOVE;
     }
@@ -1113,7 +1224,7 @@ static gboolean render_next_frame(gpointer user_data) {
             frame_time.tv_sec++;
             frame_time.tv_usec -= 1000000;
         }
-        gboolean advanced = gif_player_advance_iter(player->iter, &frame_time);
+        gboolean advanced = gif_player_advance_iter(player->kitty_animation_iter, &frame_time);
         if (!advanced) {
             player->kitty_animation_unchanged_ticks++;
         } else {
@@ -1125,15 +1236,23 @@ static gboolean render_next_frame(gpointer user_data) {
                 output_error = ERROR_OUTPUT_IO;
             if (output_error != ERROR_NONE) goto output_failed;
             player->kitty_animation_disabled = TRUE;
-            g_object_unref(player->iter);
-            player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+            if (!player->synthetic_timeline) {
+                g_object_unref(player->iter);
+                player->iter = gdk_pixbuf_animation_get_iter(player->animation, NULL);
+            } else player->kitty_animation_play_started_us = g_get_monotonic_time();
             output_error = render_current_frame_internal(player);
         } else if (player->kitty_animation_complete) {
-            player->timer_id = 0;
+            if (!player->kitty_animation_resume_frame) player->timer_id = 0;
             return G_SOURCE_REMOVE;
         }
     } else if (!player->kitty_animation_prepared) {
-        gdk_pixbuf_animation_iter_advance(player->iter, NULL);
+        if (player->synthetic_timeline) {
+            gint64 position = player->kitty_animation_play_position_us;
+            if (player->kitty_animation_play_started_us)
+                position += g_get_monotonic_time() - player->kitty_animation_play_started_us;
+            GTimeVal time = {position / G_USEC_PER_SEC, position % G_USEC_PER_SEC};
+            gdk_pixbuf_animation_iter_advance(player->iter, &time);
+        } else gdk_pixbuf_animation_iter_advance(player->iter, NULL);
         if (!gif_player_prepare_kitty_animation(player, &output_error) &&
             output_error == ERROR_NONE) {
             output_error = render_current_frame_internal(player);
@@ -1189,8 +1308,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
     gif_player_clear_line_cache(player);
 
     if (player->kitty_animation_prepared && player->kitty_animation_complete) {
-        if (gif_player_write_kitty_command(
-                kitty_graphics_build_animation_play_command(player->kitty_animation_id))) {
+        if (gif_player_start_native_playback(player)) {
             return ERROR_NONE;
         }
         return gif_player_output_failure(player);
@@ -1198,7 +1316,7 @@ ErrorCode gif_player_play(GifPlayer *player) {
 
     if (player->kitty_animation_prepared && !player->kitty_animation_upload) {
         if (!gif_player_write_kitty_command(
-                (gif_player_kitty_uses_direct_transfer() ?
+                ((gif_player_kitty_uses_direct_transfer() || player->kitty_animation_hidden) ?
                 kitty_graphics_build_animation_stop_command(player->kitty_animation_id) :
                 kitty_graphics_build_animation_loading_command(player->kitty_animation_id)))) {
             return gif_player_output_failure(player);
@@ -1212,6 +1330,8 @@ ErrorCode gif_player_play(GifPlayer *player) {
         output_error = render_current_frame_internal(player);
     }
     if (output_error != ERROR_NONE) return gif_player_output_failure(player);
+    if (!player->kitty_animation_prepared && player->synthetic_timeline)
+        player->kitty_animation_play_started_us = g_get_monotonic_time();
     
     // Schedule the next frame
     int delay = gif_player_next_tick_ms(player);
@@ -1226,6 +1346,12 @@ ErrorCode gif_player_play(GifPlayer *player) {
 
 ErrorCode gif_player_refresh_paused_frame(GifPlayer *player) {
     if (!player || !player->iter || player->is_playing) return ERROR_INVALID_ARGS;
+    /* No playback source exists while paused: never leave this frame deferred. */
+    gint64 elapsed = player->kitty_animation_elapsed_ms;
+    gint delay = player->kitty_animation_current_delay_ms;
+    if (!gif_player_reset_kitty_animation(player, TRUE)) return gif_player_output_failure(player);
+    player->kitty_animation_elapsed_ms = elapsed;
+    player->kitty_animation_current_delay_ms = delay;
     return render_current_frame_internal(player);
 }
 
@@ -1234,6 +1360,7 @@ ErrorCode gif_player_prepare_for_redraw(GifPlayer *player) {
         return ERROR_NONE;
     }
 
+    gif_player_snapshot_native(player);
     gint64 animation_elapsed_ms = player->kitty_animation_elapsed_ms;
     gint animation_delay_ms = player->kitty_animation_current_delay_ms;
     gboolean had_native_animation = player->kitty_animation_prepared;
@@ -1260,6 +1387,7 @@ ErrorCode gif_player_pause(GifPlayer *player) {
         return ERROR_INVALID_IMAGE;
     }
     
+    gif_player_snapshot_native(player);
     player->is_playing = FALSE;
     
     if (player->timer_id != 0) {
@@ -1287,6 +1415,10 @@ ErrorCode gif_player_stop(GifPlayer *player) {
     }
     
     player->is_playing = FALSE;
+    player->kitty_animation_play_started_us = 0;
+    player->kitty_animation_play_position_us = 0;
+    player->synthetic_timeline = FALSE;
+    player->resume_from_current_frame = FALSE;
     
     if (player->timer_id != 0) {
         g_source_remove(player->timer_id);

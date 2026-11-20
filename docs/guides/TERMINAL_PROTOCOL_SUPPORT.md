@@ -107,3 +107,10 @@ and colors, 2–512 known frames, at most 8 MiB per scaled frame, and at most 25
 of scaled RGBA pixels per loop. Other cases retain the existing frame-by-frame
 renderer. tmux/screen passthrough is not supported. Initial upload time still depends
 on link speed; the terminal owns playback timing only after upload completes.
+
+Native pause/redraw snapshots use a separate displayed-playback clock rather than
+the preload iterator. A resumed upload retains the full loop and selects the saved
+frame. Position is estimated from command submission time, so real terminal/SSH
+latency can introduce drift; no exact presentation acknowledgement is claimed.
+While a chunk is pending, positive write progress refreshes the idle deadline and
+Escape can cancel without losing earlier queued input events.
