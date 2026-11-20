@@ -295,6 +295,10 @@ static void test_partial_session_preserves_progress(void) {
 static void test_graphics_chunk_resumes_without_blocking(gconstpointer data) {
     int pipefd[2];
     g_assert_cmpint(pipe(pipefd), ==, 0);
+    /* Darwin records the first write in F_GETFL; snapshot after warming the pipe. */
+    gchar warmup;
+    g_assert_cmpint(write(pipefd[1], "x", 1), ==, 1);
+    g_assert_cmpint(read(pipefd[0], &warmup, 1), ==, 1);
     int flags = fcntl(pipefd[1], F_GETFL);
     g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
     g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
