@@ -27,6 +27,8 @@ gboolean terminal_output_write(const char *bytes, gsize length);
 gboolean terminal_output_write_chunk(const char *bytes, gsize length);
 /* Consume a failed asynchronous chunk; the owner must abort the incomplete image. */
 gboolean terminal_output_take_chunk_error(void);
+/* Monotonic timestamp of latest accepted chunk/progress; zero before any chunk. */
+gint64 terminal_output_chunk_progress_us(void);
 /* Internal main-owner transport: bounded write to an explicit descriptor,
  * independent of stdout sessions/queues. Returns exact progress or -1/errno.
  * Main owner only: callers must serialize all output on shared descriptors.

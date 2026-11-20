@@ -56,11 +56,20 @@ static gboolean async_completed;
 static gboolean persistent_block;
 static gboolean terminate_block;
 static gint64 blocked_clock;
+static gboolean healthy_chunk_progress;
+static gboolean blocked_escape;
+static gboolean blocked_navigation_first;
+static gboolean blocked_unknown_first;
+static guint blocked_events;
+static gint64 lifecycle_chunk_progress(void) {
+    return healthy_chunk_progress ? blocked_clock : 0;
+}
 static void request_termination_for_test(void);
 static gint64 lifecycle_monotonic_time(void) {
     return persistent_block ? blocked_clock : g_get_monotonic_time();
 }
 static gboolean lifecycle_has_pending(InputHandler *handler) {
+    if (blocked_escape && gate_attempts >= 2) return TRUE;
     if (!gate_test) return input_has_pending_input(handler);
     return (inject_stage == 1 && recovery_injected) || (inject_stage == 3 && async_completed);
 }
@@ -121,6 +130,12 @@ static void lifecycle_event(PixelTermApp *app, InputHandler *input, const InputE
     }
 }
 static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
+    if (blocked_escape) {
+        event->type = INPUT_KEY_PRESS;
+        event->key_code = (blocked_navigation_first || blocked_unknown_first) && blocked_events++ == 0 ?
+            (blocked_unknown_first ? KEY_UNKNOWN : KEY_RIGHT) : KEY_ESCAPE;
+        return ERROR_NONE;
+    }
     return gate_test ? ERROR_NONE : input_get_event(handler, event);
 }
 #define input_dispatch_process_pending lifecycle_dispatch
@@ -132,6 +147,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #define input_has_pending_input lifecycle_has_pending
 #define input_get_event lifecycle_get_event
 #define terminal_output_ready lifecycle_cleanup_due
+#define terminal_output_chunk_progress_us lifecycle_chunk_progress
 #define g_get_monotonic_time lifecycle_monotonic_time
 #define input_enable_raw_mode lifecycle_enable_raw_mode
 #define input_handler_initialize lifecycle_initialize
@@ -146,6 +162,7 @@ static ErrorCode lifecycle_get_event(InputHandler *handler, InputEvent *event) {
 #undef app_render_by_mode
 #undef app_process_async_render
 #undef terminal_output_ready
+#undef terminal_output_chunk_progress_us
 #undef g_get_monotonic_time
 #undef input_enable_raw_mode
 #undef input_handler_initialize
@@ -318,13 +335,46 @@ static void test_main_waits_for_framing_recovery(gconstpointer data) {
     fclose(input);
     gate_test = FALSE;
     inject_stage = 0;
-    g_assert_cmpint(result, ==, persistent_block && !terminate_block ? ERROR_OUTPUT_IO : ERROR_NONE);
+    g_assert_cmpint(result, ==, persistent_block && !terminate_block && !healthy_chunk_progress && !blocked_escape ? ERROR_OUTPUT_IO : ERROR_NONE);
     g_assert_cmpuint(premature_dispatches, ==, 0);
-    if (persistent_block) {
+    if (blocked_escape) {
+        g_assert_cmpuint(gate_attempts, <=, blocked_navigation_first || blocked_unknown_first ? 4 : 3);
+    } else if (healthy_chunk_progress) {
+        g_assert_cmpuint(gate_attempts, >=, 26);
+    } else if (persistent_block) {
         g_assert_cmpuint(gate_attempts, <=, terminate_block ? 4 : 22);
         g_assert_cmpuint(gate_attempts, >=, terminate_block ? 4 : 21);
         g_assert_cmpint(blocked_clock, <=, 2200001);
     } else g_assert_cmpuint(gate_attempts, ==, 3);
+}
+
+static void test_main_blocked_output_escape(void) {
+    blocked_events = 0;
+    persistent_block = blocked_escape = TRUE;
+    terminate_block = FALSE;
+    blocked_clock = 1;
+    test_main_waits_for_framing_recovery(NULL);
+    persistent_block = blocked_escape = FALSE;
+}
+
+static void test_main_blocked_navigation_then_escape(void) {
+    blocked_navigation_first = TRUE;
+    test_main_blocked_output_escape();
+    blocked_navigation_first = FALSE;
+}
+
+static void test_main_blocked_unknown_then_escape(void) {
+    blocked_unknown_first = TRUE;
+    test_main_blocked_output_escape();
+    blocked_unknown_first = FALSE;
+}
+
+static void test_main_healthy_chunk_progress(void) {
+    persistent_block = healthy_chunk_progress = TRUE;
+    terminate_block = FALSE;
+    blocked_clock = 1;
+    test_main_waits_for_framing_recovery(NULL);
+    persistent_block = healthy_chunk_progress = FALSE;
 }
 
 static void test_main_persistent_output_block(gconstpointer terminate) {
@@ -633,6 +683,10 @@ static void test_raw_setup_failure_restores_stdout(void) {
 }
 
 void register_main_lifecycle_tests(void) {
+    g_test_add_func("/main/output/unknown_then_escape_exits", test_main_blocked_unknown_then_escape);
+    g_test_add_func("/main/output/navigation_then_escape_exits", test_main_blocked_navigation_then_escape);
+    g_test_add_func("/main/output/pending_chunk_escape_exits", test_main_blocked_output_escape);
+    g_test_add_func("/main/output/healthy_chunk_progress_survives", test_main_healthy_chunk_progress);
     g_test_add_func("/main/startup/raw_setup_failure_restores_stdout", test_raw_setup_failure_restores_stdout);
     g_test_add_func("/main/output/full_pipe_initial_flush_is_bounded", test_full_pipe_initial_flush_is_bounded);
     g_test_add_data_func("/main/output/persistent_block_times_out", NULL, test_main_persistent_output_block);

@@ -949,7 +949,34 @@ static void test_resize_preserves_paused_media(gconstpointer data) {
     destroy_render_test_app(&app);
 }
 
+static void test_resize_resumes_playing_media(gconstpointer data) {
+    PixelTermApp app = {0};
+    g_assert_true(init_render_test_app(&app));
+    app_single_render_reset_stubs();
+    app.current_index = GPOINTER_TO_INT(data);
+    g_free(capture_render_output(render_current_image_capture, &app));
+    g_assert_cmpint(app.video_player->is_playing, ==, app.current_index == 0);
+    g_assert_cmpint(app.gif_player->is_playing, ==, app.current_index == 1);
+
+    /* Resize pauses active media before redrawing with its original play intent. */
+    if (app.current_index == 0) video_player_pause(app.video_player);
+    else g_assert_cmpint(gif_player_pause(app.gif_player), ==, ERROR_NONE);
+    g_assert_false(app.video_player->is_playing);
+    g_assert_false(app.gif_player->is_playing);
+    app.preserve_media_pause_on_redraw = FALSE;
+    app.term_width = 80;
+    app.term_height = 24;
+    g_free(capture_render_output(render_current_image_capture, &app));
+    g_assert_cmpint(g_app_single_render_stub_state.video_play_calls, ==, app.current_index == 0 ? 2 : 0);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, app.current_index == 1 ? 2 : 0);
+    g_assert_cmpint(app.video_player->is_playing, ==, app.current_index == 0);
+    g_assert_cmpint(app.gif_player->is_playing, ==, app.current_index == 1);
+    destroy_render_test_app(&app);
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/resize/playing_video", GINT_TO_POINTER(0), test_resize_resumes_playing_media);
+    g_test_add_data_func("/app_single_render/resize/playing_gif", GINT_TO_POINTER(1), test_resize_resumes_playing_media);
     g_test_add_data_func("/app_single_render/resize/paused_video", GINT_TO_POINTER(0), test_resize_preserves_paused_media);
     g_test_add_data_func("/app_single_render/resize/paused_gif", GINT_TO_POINTER(1), test_resize_preserves_paused_media);
     g_test_add_data_func("/app_single_render/output/real_begin_retains_sync_end", NULL, test_single_frame_retains_sync_end);

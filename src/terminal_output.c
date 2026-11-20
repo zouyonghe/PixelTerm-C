@@ -205,6 +205,10 @@ gboolean terminal_output_ready(gint64 now_us) {
     return terminal_output_flush();
 }
 
+gint64 terminal_output_chunk_progress_us(void) {
+    return pending_chunk_progress_us;
+}
+
 gboolean terminal_output_take_chunk_error(void) {
     gboolean failed = chunk_failed;
     chunk_failed = FALSE;

@@ -330,7 +330,76 @@ static void test_graphics_chunk_resumes_without_blocking(gconstpointer data) {
     g_free(expected); stdout = saved; fclose(stream); close(pipefd[0]);
 }
 
+static void test_graphics_chunk_partial_progress_then_cleanup(void) {
+#ifdef __linux__
+    int fds[2];
+    g_assert_cmpint(pipe(fds), ==, 0);
+    int flags = fcntl(fds[1], F_GETFL);
+    g_assert_cmpint(fcntl(fds[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
+    g_assert_cmpint(fcntl(fds[0], F_SETFL, O_NONBLOCK), ==, 0);
+    gchar bytes[4096]; memset(bytes, 'F', sizeof(bytes));
+    gsize fill = 0; ssize_t n;
+    while ((n = write(fds[1], bytes, sizeof(bytes))) > 0) fill += n;
+    g_assert_cmpint(read(fds[0], bytes, sizeof(bytes)), ==, sizeof(bytes));
+    fill -= sizeof(bytes);
+    g_assert_cmpint(fcntl(fds[1], F_SETFL, flags), ==, 0);
+    FILE *saved = stdout, *stream = fdopen(fds[1], "w"); stdout = stream;
+    gchar payload[8192];
+    for (guint i = 0; i < sizeof(payload); i++) payload[i] = (gchar)(i % 127);
+    g_assert_true(terminal_output_write_chunk(payload, sizeof(payload)));
+    gint64 start = g_get_monotonic_time();
+    g_assert_false(terminal_output_flush());
+    g_assert_cmpint(g_get_monotonic_time() - start, <, 100000);
+    terminal_output_defer("DELETE", TERMINAL_OUTPUT_ONCE);
+    GByteArray *received = g_byte_array_new();
+    while ((n = read(fds[0], bytes, sizeof(bytes))) > 0)
+        g_byte_array_append(received, (guint8 *)bytes, n);
+    g_assert_cmpuint(received->len, >, fill);
+    g_assert_cmpuint(received->len - fill, <, sizeof(payload));
+    g_assert_true(terminal_output_flush());
+    while ((n = read(fds[0], bytes, sizeof(bytes))) > 0)
+        g_byte_array_append(received, (guint8 *)bytes, n);
+    g_assert_cmpuint(received->len, ==, fill + sizeof(payload) + 8);
+    g_assert_cmpmem(received->data + fill, sizeof(payload), payload, sizeof(payload));
+    g_assert_cmpmem(received->data + fill + sizeof(payload), 8, "\033\\DELETE", 8);
+    g_assert_cmpint(fcntl(fileno(stream), F_GETFL), ==, flags);
+    stdout = saved; fclose(stream); close(fds[0]); g_byte_array_unref(received);
+#else
+    g_test_skip("Linux pipe partial-write semantics regression");
+#endif
+}
+
+static void test_graphics_chunk_idle_timeout_reports_failure(void) {
+    int fds[2]; g_assert_cmpint(pipe(fds), ==, 0);
+    int flags = fcntl(fds[1], F_GETFL);
+    g_assert_cmpint(fcntl(fds[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
+    g_assert_cmpint(fcntl(fds[0], F_SETFL, O_NONBLOCK), ==, 0);
+    gchar bytes[4096]; memset(bytes, 'F', sizeof(bytes));
+    while (write(fds[1], bytes, sizeof(bytes)) > 0) {}
+    g_assert_cmpint(fcntl(fds[1], F_SETFL, flags), ==, 0);
+    FILE *saved = stdout, *stream = fdopen(fds[1], "w"); stdout = stream;
+    g_assert_true(terminal_output_write_chunk("DATA", 4));
+    gint64 start = g_get_monotonic_time();
+    gboolean failed = FALSE;
+    while (g_get_monotonic_time() - start < 5 * G_TIME_SPAN_SECOND) {
+        g_assert_false(terminal_output_flush());
+        if (terminal_output_take_chunk_error()) { failed = TRUE; break; }
+        g_usleep(10000);
+    }
+    g_assert_true(failed);
+    g_assert_cmpint(g_get_monotonic_time() - start, >=, 2 * G_TIME_SPAN_SECOND);
+    g_assert_cmpint(g_get_monotonic_time() - start, <, 10 * G_TIME_SPAN_SECOND);
+    while (read(fds[0], bytes, sizeof(bytes)) > 0) {}
+    g_assert_true(terminal_output_flush());
+    g_assert_cmpint(read(fds[0], bytes, sizeof(bytes)), ==, 2);
+    g_assert_cmpmem(bytes, 2, "\033\\", 2);
+    g_assert_false(terminal_output_take_chunk_error());
+    stdout = saved; fclose(stream); close(fds[0]);
+}
+
 void register_terminal_output_blocking_tests(void) {
+    g_test_add_func("/terminal_output/chunk/idle_timeout", test_graphics_chunk_idle_timeout_reports_failure);
+    g_test_add_func("/terminal_output/chunk/partial_packet_cleanup", test_graphics_chunk_partial_progress_then_cleanup);
     g_test_add_data_func("/terminal_output/chunk/full_pipe", NULL, test_graphics_chunk_resumes_without_blocking);
     g_test_add_data_func("/terminal_output/chunk/full_pipe_session", GINT_TO_POINTER(1), test_graphics_chunk_resumes_without_blocking);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
