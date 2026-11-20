@@ -14,6 +14,9 @@
 
 static gint startup_failure_stage;
 static gboolean resize_test;
+static gboolean resize_state_test;
+static gboolean resize_expected_pause;
+static guint resize_updates;
 static gboolean resize_pause_failure;
 static ErrorCode lifecycle_gif_pause(GifPlayer *player) {
     if (resize_pause_failure) { player->is_playing = FALSE; return ERROR_OUTPUT_IO; }
@@ -31,6 +34,10 @@ static ErrorCode lifecycle_initialize(InputHandler *handler) {
 static ErrorCode lifecycle_enable_raw_mode(InputHandler *handler);
 static ErrorCode lifecycle_enable_mouse(InputHandler *handler);
 static void lifecycle_update_size(InputHandler *handler) {
+    if (resize_state_test) {
+        handler->terminal_width = ++resize_updates == 1 ? 123 : 124;
+        return;
+    }
     if (resize_test) handler->terminal_width = 123;
     else input_update_terminal_size(handler);
 }
@@ -161,6 +168,11 @@ static ErrorCode render_result;
 static guint render_calls;
 static ErrorCode lifecycle_render(PixelTermApp *app) {
     render_calls++;
+    if (resize_state_test && render_calls > 1) {
+        g_assert_cmpint(app->preserve_media_pause_on_redraw, ==, resize_expected_pause);
+        app->running = FALSE;
+        return ERROR_NONE;
+    }
     if (resize_test) {
         app->video_was_playing_before_resize = TRUE;
         if (render_calls > 2) app->running = FALSE;
@@ -482,6 +494,44 @@ static void test_resize_render_failure_does_not_resume(gconstpointer data) {
     g_assert_cmpuint(render_calls, ==, pause_failure ? 1 : 2);
 }
 
+static void test_repeated_resize_preserves_playback_intent(gconstpointer data) {
+    gint mode = GPOINTER_TO_INT(data);
+    PixelTermApp app = {.running = TRUE, .mode = APP_MODE_SINGLE};
+    app.image_files = g_list_append(NULL, g_strdup(mode < 2 ? "clip.mp4" : "anim.gif"));
+    app.total_images = 1;
+    resize_expected_pause = mode % 2 == 0;
+    if (mode < 2) {
+        app.video_player = video_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+        app.video_player->is_playing = !resize_expected_pause;
+    } else {
+        app.gif_player = gif_player_new(1, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0);
+        app.gif_player->is_playing = !resize_expected_pause;
+    }
+    resize_state_test = TRUE;
+    render_result = ERROR_NONE;
+    resize_updates = render_calls = 0;
+    g_terminate_requested = 0;
+    FILE *saved = stdout, *capture = tmpfile();
+    g_assert_nonnull(capture);
+    int saved_input = dup(STDIN_FILENO);
+    FILE *input = fopen("/dev/null", "r");
+    g_assert_nonnull(input);
+    g_assert_cmpint(dup2(fileno(input), STDIN_FILENO), >=, 0);
+    stdout = capture;
+    ErrorCode result = run_application(&app, FALSE);
+    stdout = saved; fclose(capture);
+    g_assert_cmpint(dup2(saved_input, STDIN_FILENO), >=, 0);
+    close(saved_input); fclose(input);
+    resize_state_test = FALSE;
+    g_assert_cmpint(result, ==, ERROR_NONE);
+    g_assert_cmpuint(render_calls, ==, 2);
+    g_assert_cmpuint(resize_updates, >=, 3);
+    g_assert_false(app.preserve_media_pause_on_redraw);
+    if (app.video_player) video_player_destroy(app.video_player);
+    if (app.gif_player) gif_player_destroy(app.gif_player);
+    g_list_free_full(app.image_files, g_free);
+}
+
 static void test_already_raw_retries_pending_probe_restore(void) {
     CleanupTerminal terminal = {.failures = 100};
     TerminalProbeTransportHooks hooks = {.tcsetattr_fn = cleanup_setattr};
@@ -597,6 +647,10 @@ void register_main_lifecycle_tests(void) {
     g_test_add_data_func("/main/output/blocks_startup", NULL, test_pending_framing_blocks_startup_and_cleanup);
     g_test_add_data_func("/main/output/blocks_cleanup", GINT_TO_POINTER(1), test_pending_framing_blocks_startup_and_cleanup);
 #endif
+    g_test_add_data_func("/main/resize/paused_video_stays_paused", GINT_TO_POINTER(0), test_repeated_resize_preserves_playback_intent);
+    g_test_add_data_func("/main/resize/playing_video_resumes", GINT_TO_POINTER(1), test_repeated_resize_preserves_playback_intent);
+    g_test_add_data_func("/main/resize/paused_gif_stays_paused", GINT_TO_POINTER(2), test_repeated_resize_preserves_playback_intent);
+    g_test_add_data_func("/main/resize/playing_gif_resumes", GINT_TO_POINTER(3), test_repeated_resize_preserves_playback_intent);
     g_test_add_data_func("/main/resize/render_failure_does_not_resume", NULL, test_resize_render_failure_does_not_resume);
     g_test_add_data_func("/main/resize/gif_pause_failure_aborts", GINT_TO_POINTER(TRUE), test_resize_render_failure_does_not_resume);
     g_test_add_data_func("/main/output/waits_for_framing_recovery", NULL, test_main_waits_for_framing_recovery);

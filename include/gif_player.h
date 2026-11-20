@@ -37,6 +37,10 @@ typedef struct {
     gint kitty_animation_display_height;
     guint kitty_animation_unchanged_ticks;
     GPtrArray *kitty_animation_shm_names;
+    GString *kitty_animation_upload;
+    gsize kitty_animation_upload_offset;
+    gint kitty_animation_transfer_width;
+    gint kitty_animation_transfer_height;
     
     // Renderer reference
     ImageRenderer *renderer;
@@ -138,6 +142,8 @@ ErrorCode gif_player_play(GifPlayer *player);
  *         if native animation cleanup fails.
  */
 ErrorCode gif_player_prepare_for_redraw(GifPlayer *player);
+/* Render the iterator's current frame without advancing or starting playback. */
+ErrorCode gif_player_refresh_paused_frame(GifPlayer *player);
 /**
  * @brief Pauses playback of the loaded animated GIF.
  * 

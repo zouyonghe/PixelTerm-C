@@ -550,22 +550,23 @@ void kitty_graphics_get_direct_size(gint width, gint height, gint64 bound_width,
     *height_out = MAX(1, (gint)(height * scale));
 }
 
-KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
+static KittyGraphicsFrame *kitty_graphics_frame_new_direct(const guint8 *pixels,
                                                         gint width,
                                                         gint height,
                                                         gint rowstride,
                                                         gint display_width_cells,
                                                         gint display_height_cells,
-                                                        guint32 image_id) {
+                                                        guint32 image_id, gint channels, gint delay_ms) {
     gsize min_rowstride = 0;
     gsize payload_size = 0;
     if (!pixels || width <= 0 || height <= 0 || rowstride <= 0 ||
         display_width_cells <= 0 || display_height_cells <= 0 || image_id == 0 ||
-        !g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)3) ||
+        (channels != 3 && channels != 4) || delay_ms < 0 ||
+        !g_size_checked_mul(&min_rowstride, (gsize)width, (gsize)channels) ||
         min_rowstride > G_MAXINT || (gsize)rowstride < min_rowstride ||
         !g_size_checked_mul(&payload_size, min_rowstride, (gsize)height) ||
         payload_size > KITTY_GRAPHICS_DIRECT_MAX_BYTES ||
-        !media_buffer_validate_layout(width, height, rowstride, 3, 1, NULL)) {
+        !media_buffer_validate_layout(width, height, rowstride, channels, 1, NULL)) {
         return NULL;
     }
 
@@ -594,12 +595,18 @@ KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
         }
 
         if (offset == 0) {
-            g_string_append_printf(command,
-                                   "\033_Ga=T,f=24,s=%d,v=%d,c=%d,r=%d,i=%u,C=1,m=%d,q=2;",
-                                   width, height, display_width_cells,
-                                   display_height_cells, image_id, more ? 1 : 0);
+            if (delay_ms > 0) {
+                g_string_append_printf(command,
+                                       "\033_Ga=f,f=32,s=%d,v=%d,i=%u,z=%d,X=1,m=%d,q=2;",
+                                       width, height, image_id, delay_ms, more ? 1 : 0);
+            } else {
+                g_string_append_printf(command,
+                                       "\033_Ga=T,f=%d,s=%d,v=%d,c=%d,r=%d,i=%u,C=1,m=%d,q=2;",
+                                       channels * 8, width, height, display_width_cells,
+                                       display_height_cells, image_id, more ? 1 : 0);
+            }
         } else {
-            g_string_append_printf(command, "\033_Gm=%d;", more ? 1 : 0);
+            g_string_append_printf(command, delay_ms > 0 ? "\033_Ga=f,m=%d;" : "\033_Gm=%d;", more ? 1 : 0);
         }
         g_string_append_len(command, encoded + offset, chunk_size);
         g_string_append(command, "\033\\");
@@ -616,6 +623,22 @@ KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
     frame->display_width_cells = display_width_cells;
     frame->display_height_cells = display_height_cells;
     return frame;
+}
+
+KittyGraphicsFrame *kitty_graphics_frame_new_direct_rgb(const guint8 *pixels,
+                                                        gint width, gint height, gint rowstride,
+                                                        gint display_width_cells, gint display_height_cells,
+                                                        guint32 image_id) {
+    return kitty_graphics_frame_new_direct(pixels, width, height, rowstride,
+        display_width_cells, display_height_cells, image_id, 3, 0);
+}
+
+KittyGraphicsFrame *kitty_graphics_animation_new_direct_rgba(const guint8 *pixels,
+                                                             gint width, gint height, gint rowstride,
+                                                             gint display_width_cells, gint display_height_cells,
+                                                             guint32 image_id, gint delay_ms) {
+    return kitty_graphics_frame_new_direct(pixels, width, height, rowstride,
+        display_width_cells, display_height_cells, image_id, 4, delay_ms);
 }
 
 KittyGraphicsFrame *kitty_graphics_animation_root_new_shm_rgba(const guint8 *pixels,

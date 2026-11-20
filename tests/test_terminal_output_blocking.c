@@ -292,7 +292,43 @@ static void test_partial_session_preserves_progress(void) {
     g_test_trap_assert_passed();
 }
 
+static void test_graphics_chunk_resumes_without_blocking(gconstpointer data) {
+    int pipefd[2];
+    g_assert_cmpint(pipe(pipefd), ==, 0);
+    int flags = fcntl(pipefd[1], F_GETFL);
+    g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK), ==, 0);
+    g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
+    gchar fill[4096]; memset(fill, 'F', sizeof(fill));
+    gsize prefix = 0; ssize_t count;
+    while ((count = write(pipefd[1], fill, sizeof(fill))) > 0) prefix += count;
+    g_assert_cmpint(fcntl(pipefd[1], F_SETFL, flags), ==, 0);
+    FILE *saved = stdout;
+    FILE *stream = fdopen(pipefd[1], "w"); stdout = stream;
+    gboolean session = GPOINTER_TO_INT(data);
+    if (session) g_assert_true(terminal_output_begin_session());
+    const gchar *chunk = "\033_Ga=f,m=0;AQIDBA==\033\\";
+    g_assert_true(terminal_output_write_chunk(chunk, strlen(chunk)));
+    gint64 start = g_get_monotonic_time();
+    g_assert_false(terminal_output_flush());
+    g_assert_cmpint(g_get_monotonic_time() - start, <, 100000);
+    /* Cancellation cleanup must follow the retained partial packet, never overtake it. */
+    terminal_output_defer("DELETE", TERMINAL_OUTPUT_ONCE);
+    while (prefix) {
+        count = read(pipefd[0], fill, MIN(prefix, sizeof(fill)));
+        g_assert_cmpint(count, >, 0); prefix -= count;
+    }
+    g_assert_true(terminal_output_flush());
+    if (session) g_assert_true(terminal_output_end_session());
+    count = read(pipefd[0], fill, sizeof(fill));
+    gchar *expected = g_strconcat(chunk, "\033\\DELETE", NULL);
+    g_assert_cmpmem(fill, count, expected, strlen(expected));
+    g_assert_cmpint(fcntl(fileno(stream), F_GETFL), ==, flags);
+    g_free(expected); stdout = saved; fclose(stream); close(pipefd[0]);
+}
+
 void register_terminal_output_blocking_tests(void) {
+    g_test_add_data_func("/terminal_output/chunk/full_pipe", NULL, test_graphics_chunk_resumes_without_blocking);
+    g_test_add_data_func("/terminal_output/chunk/full_pipe_session", GINT_TO_POINTER(1), test_graphics_chunk_resumes_without_blocking);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/session", GUINT_TO_POINTER(1), test_once_preflight_retained);

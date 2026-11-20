@@ -99,7 +99,18 @@ static gboolean test_ui_clear_kitty_images(const PixelTermApp *app);
 static void test_ui_clear_single_view_lines(const PixelTermApp *app);
 static void test_ui_clear_area(const PixelTermApp *app, gint top_row, gint height);
 
+static ErrorCode test_video_refresh_paused(VideoPlayer *player) {
+    g_assert_false(player->is_playing);
+    return ERROR_NONE;
+}
+static ErrorCode test_gif_refresh_paused(GifPlayer *player) {
+    g_assert_false(player->is_playing);
+    return ERROR_NONE;
+}
+
 static const AppSingleRenderTestHooks k_app_single_render_test_hooks = {
+    .video_player_refresh_paused_frame = test_video_refresh_paused,
+    .gif_player_refresh_paused_frame = test_gif_refresh_paused,
     .media_classify = test_media_classify,
     .get_terminal_cell_geometry = test_get_terminal_cell_geometry,
     .gif_player_load = test_gif_player_load,
@@ -919,7 +930,28 @@ static void test_single_help_has_one_submission(void) {
     input_dispatch_test_reset_stubs();
 }
 
+static void test_resize_preserves_paused_media(gconstpointer data) {
+    PixelTermApp app = {0};
+    g_assert_true(init_render_test_app(&app));
+    app_single_render_reset_stubs();
+    app.current_index = GPOINTER_TO_INT(data);
+    g_free(capture_render_output(render_current_image_capture, &app));
+    if (app.current_index == 0) video_player_pause(app.video_player);
+    else g_assert_cmpint(gif_player_pause(app.gif_player), ==, ERROR_NONE);
+    app.preserve_media_pause_on_redraw = TRUE;
+    app.term_width = 80;
+    app.term_height = 24;
+    g_free(capture_render_output(render_current_image_capture, &app));
+    g_assert_cmpint(g_app_single_render_stub_state.video_play_calls, ==, app.current_index == 0 ? 1 : 0);
+    g_assert_cmpint(g_app_single_render_stub_state.gif_play_calls, ==, app.current_index == 1 ? 1 : 0);
+    g_assert_false(app.video_player->is_playing);
+    g_assert_false(app.gif_player->is_playing);
+    destroy_render_test_app(&app);
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_data_func("/app_single_render/resize/paused_video", GINT_TO_POINTER(0), test_resize_preserves_paused_media);
+    g_test_add_data_func("/app_single_render/resize/paused_gif", GINT_TO_POINTER(1), test_resize_preserves_paused_media);
     g_test_add_data_func("/app_single_render/output/real_begin_retains_sync_end", NULL, test_single_frame_retains_sync_end);
     g_test_add_data_func("/app_single_render/output/real_clear_retains_sync_end", GINT_TO_POINTER(TRUE), test_single_frame_retains_sync_end);
     g_test_add_func("/app_single_render/runtime/single_help_one_submission", test_single_help_has_one_submission);

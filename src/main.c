@@ -17,6 +17,7 @@
 #include "input_dispatch.h"
 #include "common.h"
 #include "terminal_output.h"
+#include "media_utils.h"
 #include "terminal_probe.h"
 #include "ui_render_utils.h"
 #include "text_utils.h"
@@ -152,6 +153,15 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
             app->term_width = last_term_width;
             app->term_height = last_term_height;
 
+            if (!resize_pending) {
+                const gchar *path = app_get_current_filepath(app);
+                MediaKind kind = path ? media_classify(path) : MEDIA_KIND_IMAGE;
+                app->preserve_media_pause_on_redraw =
+                    (media_is_video(kind) && app->video_player &&
+                     !video_player_is_playing(app->video_player)) ||
+                    (media_is_animated_image(kind) && app->gif_player &&
+                     !gif_player_is_playing(app->gif_player));
+            }
             input_dispatch_pause_video_for_resize(app);
             if (app->gif_player && gif_player_is_playing(app->gif_player)) {
                 error = gif_player_pause(app->gif_player);
@@ -185,6 +195,7 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
             get_terminal_size(&app->term_width, &app->term_height);
             app->suppress_full_clear = FALSE;
             error = app_render_by_mode(app);
+            app->preserve_media_pause_on_redraw = FALSE;
             if (error != ERROR_NONE) break;
             if (resume_video_after_resize && app->video_player) {
                 error = video_player_play(app->video_player);

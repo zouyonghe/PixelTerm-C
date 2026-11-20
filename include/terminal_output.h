@@ -22,6 +22,11 @@ gboolean terminal_output_end_session(void);
  * 2 seconds without progress, then restore flags (retry before later submissions if
  * restoration fails). Failed payloads are never replayed. */
 gboolean terminal_output_write(const char *bytes, gsize length);
+/* Accept one <= 8 KiB graphics chunk. flush/ready resume exact partial progress
+ * in <= 2 ms slices before any other output; TRUE means ownership was accepted. */
+gboolean terminal_output_write_chunk(const char *bytes, gsize length);
+/* Consume a failed asynchronous chunk; the owner must abort the incomplete image. */
+gboolean terminal_output_take_chunk_error(void);
 /* Internal main-owner transport: bounded write to an explicit descriptor,
  * independent of stdout sessions/queues. Returns exact progress or -1/errno.
  * Main owner only: callers must serialize all output on shared descriptors.
