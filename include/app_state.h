@@ -128,6 +128,10 @@ typedef struct {
     // Animation support
     GifPlayer *gif_player;
     VideoPlayer *video_player;
+    gint64 video_progress_until_us;
+    gint64 video_progress_seconds;
+    gboolean video_progress_drawn;
+    gboolean video_progress_dirty;
 
     // Application state
     gboolean running;

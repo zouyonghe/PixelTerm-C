@@ -272,6 +272,8 @@ gboolean video_player_is_playing(const VideoPlayer *player);
  * @note Thread-safe; do not call while already holding state_mutex.
  */
 gboolean video_player_has_video(const VideoPlayer *player);
+/* Main-context snapshot. A zero duration means unknown. */
+void video_player_get_progress(VideoPlayer *player, gint64 *position_ms, gint64 *duration_ms);
 
 /**
  * @brief Returns whether the player currently owns the requested media path.

@@ -11,6 +11,7 @@ gboolean input_dispatch_key_modes_handle_book_jump_input(PixelTermApp *app, cons
 typedef ErrorCode (*InputDispatchVideoSeekFunc)(VideoPlayer *player, gint64 delta_ms);
 
 void input_dispatch_key_modes_toggle_video_playback(PixelTermApp *app);
+void input_dispatch_scroll_video_seek(PixelTermApp *app, gint direction);
 void input_dispatch_key_modes_toggle_video_fps(PixelTermApp *app);
 void input_dispatch_key_single_set_video_seek_for_test(InputDispatchVideoSeekFunc func);
 gint64 input_dispatch_key_single_get_video_seek_step_ms_for_test(void);

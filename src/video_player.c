@@ -2400,12 +2400,8 @@ ErrorCode video_player_seek_relative_ms(VideoPlayer *player, gint64 delta_ms) {
         return ERROR_INVALID_ARGS;
     }
 
-    gint64 duration_ms = 0;
-    if (player->format_context->duration != AV_NOPTS_VALUE && player->format_context->duration > 0) {
-        duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
-    }
-
-    gint64 current_ms = video_player_current_position_ms(player);
+    gint64 current_ms, duration_ms;
+    video_player_get_progress(player, &current_ms, &duration_ms);
     gint64 target_ms = video_player_seek_target_ms(current_ms, delta_ms, duration_ms);
     if (target_ms == current_ms) {
         if (was_playing) {
@@ -2472,6 +2468,14 @@ gboolean video_player_has_video(const VideoPlayer *player) {
     gboolean has_video = mutable_player->has_video;
     g_mutex_unlock(&mutable_player->state_mutex);
     return has_video;
+}
+
+void video_player_get_progress(VideoPlayer *player, gint64 *position_ms, gint64 *duration_ms) {
+    *position_ms = video_player_current_position_ms(player);
+    *duration_ms = 0;
+    if (player && player->format_context && player->format_context->duration > 0) {
+        *duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
+    }
 }
 
 gboolean video_player_is_loaded_file(const VideoPlayer *player,
