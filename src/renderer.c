@@ -308,10 +308,10 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
         envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
     }
-    renderer->term_info = chafa_term_db_detect(term_db, envp);
+    ChafaTermInfo *term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
 
-    if (!renderer->term_info) {
+    if (!term_info) {
         return ERROR_CHAFA_INIT;
     }
 
@@ -322,7 +322,7 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     if (force_sixel_mode || force_kitty_mode || force_iterm2_mode) {
         ChafaTermInfo *fallback = chafa_term_db_get_fallback_info(term_db);
         if (fallback) {
-            chafa_term_info_supplement(renderer->term_info, fallback);
+            chafa_term_info_supplement(term_info, fallback);
             chafa_term_info_unref(fallback);
         }
     }
@@ -330,12 +330,13 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     // Create canvas configuration
     ChafaCanvasConfig *canvas_config = chafa_canvas_config_new();
     if (!canvas_config) {
+        chafa_term_info_unref(term_info);
         return ERROR_CHAFA_INIT;
     }
 
     // Configure canvas with terminal-adaptive settings
-    ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
-    ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
+    ChafaCanvasMode mode = renderer_get_best_canvas_mode(term_info);
+    ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(term_info);
     if (force_text_mode) {
         pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
@@ -361,8 +362,8 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
 
     // Set symbol map with safe symbols for the terminal
     ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-    renderer->canvas_symbol_tags = renderer_get_text_symbol_tags(renderer, renderer->term_info);
-    chafa_symbol_map_add_by_tags(symbol_map, renderer->canvas_symbol_tags);
+    ChafaSymbolTags tags = renderer_get_text_symbol_tags(renderer, term_info);
+    chafa_symbol_map_add_by_tags(symbol_map, tags);
     chafa_canvas_config_set_symbol_map(canvas_config, symbol_map);
     chafa_symbol_map_unref(symbol_map);
 
@@ -392,12 +393,16 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     ChafaCanvas *canvas = chafa_canvas_new(canvas_config);
     if (!canvas) {
         chafa_canvas_config_unref(canvas_config);
+        chafa_term_info_unref(term_info);
         return ERROR_CHAFA_INIT;
     }
     if (renderer->canvas) chafa_canvas_unref(renderer->canvas);
     if (renderer->canvas_config) chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
+    if (renderer->term_info) chafa_term_info_unref(renderer->term_info);
     renderer->canvas = canvas;
     renderer->canvas_config = canvas_config;
+    renderer->term_info = term_info;
+    renderer->canvas_symbol_tags = tags;
     renderer->canvas_config_dirty = FALSE;
     renderer->canvas_config_override = FALSE;
     g_mutex_lock(&renderer->cache_mutex);
