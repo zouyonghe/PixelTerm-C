@@ -268,7 +268,10 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
     if (GPOINTER_TO_INT(data)) {
         player->renderer->config.force_kitty = FALSE;
-        chafa_canvas_config_set_pixel_mode(player->renderer->canvas_config, CHAFA_PIXEL_MODE_KITTY);
+        ChafaCanvasConfig *canvas_config = chafa_canvas_config_copy(player->renderer->canvas_config);
+        chafa_canvas_config_set_pixel_mode(canvas_config, CHAFA_PIXEL_MODE_KITTY);
+        renderer_set_canvas_config(player->renderer, canvas_config);
+        chafa_canvas_config_unref(canvas_config);
     }
     player->worker_thread = g_thread_new("allocation-stale-worker", allocation_stale_worker, NULL);
     g_atomic_int_set(&player->worker_stop, TRUE);

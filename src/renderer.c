@@ -268,7 +268,7 @@ void renderer_destroy(ImageRenderer *renderer) {
     }
 
     if (renderer->canvas_config) {
-        chafa_canvas_config_unref(renderer->canvas_config);
+        chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
     }
 
     if (renderer->term_info) {
@@ -328,8 +328,8 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     }
 
     // Create canvas configuration
-    renderer->canvas_config = chafa_canvas_config_new();
-    if (!renderer->canvas_config) {
+    ChafaCanvasConfig *canvas_config = chafa_canvas_config_new();
+    if (!canvas_config) {
         return ERROR_CHAFA_INIT;
     }
 
@@ -352,17 +352,18 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         mode = CHAFA_CANVAS_MODE_TRUECOLOR;
     }
 
-    chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
-    chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
-    chafa_canvas_config_set_geometry(renderer->canvas_config,
+    chafa_canvas_config_set_canvas_mode(canvas_config, mode);
+    chafa_canvas_config_set_pixel_mode(canvas_config, pixel_mode);
+    chafa_canvas_config_set_geometry(canvas_config,
                                     renderer->config.max_width,
                                     renderer->config.max_height);
-    chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
+    chafa_canvas_config_set_color_space(canvas_config, renderer->config.color_space);
 
     // Set symbol map with safe symbols for the terminal
     ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-    chafa_symbol_map_add_by_tags(symbol_map, renderer_get_text_symbol_tags(renderer, renderer->term_info));
-    chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
+    renderer->canvas_symbol_tags = renderer_get_text_symbol_tags(renderer, renderer->term_info);
+    chafa_symbol_map_add_by_tags(symbol_map, renderer->canvas_symbol_tags);
+    chafa_canvas_config_set_symbol_map(canvas_config, symbol_map);
     chafa_symbol_map_unref(symbol_map);
 
     // Apply quality settings
@@ -372,11 +373,11 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
         dither_mode = renderer_get_sixel_default_dither_mode();
     }
-    chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
+    chafa_canvas_config_set_dither_mode(canvas_config, dither_mode);
     if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
-        chafa_canvas_config_set_dither_grain_size(renderer->canvas_config, 1, 1);
+        chafa_canvas_config_set_dither_grain_size(canvas_config, 1, 1);
     }
-    chafa_canvas_config_set_color_extractor(renderer->canvas_config, renderer->config.color_extractor);
+    chafa_canvas_config_set_color_extractor(canvas_config, renderer->config.color_extractor);
     gint work_factor = renderer->config.work_factor;
     if (work_factor < 1) {
         work_factor = 1;
@@ -384,16 +385,35 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
         work_factor = 9;
     }
     // Normalize 1-9 input to chafa's 0.0-1.0 scale.
-    chafa_canvas_config_set_work_factor(renderer->canvas_config, (float)(work_factor - 1) / 8.0f);
-    chafa_canvas_config_set_optimizations(renderer->canvas_config, renderer->config.optimizations);
+    chafa_canvas_config_set_work_factor(canvas_config, (float)(work_factor - 1) / 8.0f);
+    chafa_canvas_config_set_optimizations(canvas_config, renderer->config.optimizations);
 
     // Create canvas from the configured settings
-    renderer->canvas = chafa_canvas_new(renderer->canvas_config);
-    if (!renderer->canvas) {
+    ChafaCanvas *canvas = chafa_canvas_new(canvas_config);
+    if (!canvas) {
+        chafa_canvas_config_unref(canvas_config);
         return ERROR_CHAFA_INIT;
     }
+    if (renderer->canvas) chafa_canvas_unref(renderer->canvas);
+    if (renderer->canvas_config) chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
+    renderer->canvas = canvas;
+    renderer->canvas_config = canvas_config;
+    renderer->canvas_config_dirty = FALSE;
 
     return ERROR_NONE;
+}
+
+void renderer_set_canvas_config(ImageRenderer *renderer, const ChafaCanvasConfig *config) {
+    if (!renderer || !config) return;
+    ChafaCanvasConfig *copy = chafa_canvas_config_copy(config);
+    if (renderer->canvas_config) {
+        chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
+    }
+    renderer->canvas_config = copy;
+    renderer->canvas_config_dirty = TRUE;
+    g_mutex_lock(&renderer->cache_mutex);
+    g_hash_table_remove_all(renderer->cache);
+    g_mutex_unlock(&renderer->cache_mutex);
 }
 
 // Render an image file
@@ -531,21 +551,21 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
         chafa_canvas_config_get_geometry(active, &active_width, &active_height);
         chafa_canvas_config_get_cell_geometry(active, &active_cell_w, &active_cell_h);
         if (output_width == active_width && output_height == active_height &&
-            cell_w == active_cell_w && cell_h == active_cell_h &&
-            chafa_canvas_config_get_pixel_mode(active) ==
-                chafa_canvas_config_get_pixel_mode(renderer->canvas_config)) {
+            cell_w == active_cell_w && cell_h == active_cell_h) {
             return ERROR_NONE;
         }
     }
 
-    // Update canvas geometry
-    chafa_canvas_config_set_geometry(renderer->canvas_config, output_width, output_height);
-    if (cell_w > 0 && cell_h > 0) {
-        chafa_canvas_config_set_cell_geometry(renderer->canvas_config, cell_w, cell_h);
+    ChafaCanvasConfig *config = chafa_canvas_config_copy(renderer->canvas_config);
+    chafa_canvas_config_set_geometry(config, output_width, output_height);
+    chafa_canvas_config_set_cell_geometry(config, cell_w, cell_h);
+    ChafaCanvas *replacement = chafa_canvas_new(config);
+    if (!replacement) {
+        chafa_canvas_config_unref(config);
+        return ERROR_CHAFA_INIT;
     }
-
-    ChafaCanvas *replacement = chafa_canvas_new(renderer->canvas_config);
-    if (!replacement) return ERROR_CHAFA_INIT;
+    chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
+    renderer->canvas_config = config;
     if (renderer->canvas) {
         chafa_canvas_unref(renderer->canvas);
     }
@@ -628,7 +648,6 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
     // Apply best modes from the new terminal info
     if (renderer->canvas_config) {
-        renderer->canvas_config_dirty = TRUE;
         ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
         if (force_text_mode) {
@@ -647,27 +666,33 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
             mode = CHAFA_CANVAS_MODE_TRUECOLOR;
         }
 
-        chafa_canvas_config_set_canvas_mode(renderer->canvas_config, mode);
-        chafa_canvas_config_set_pixel_mode(renderer->canvas_config, pixel_mode);
-
-        // Ensure color space is maintained
-        chafa_canvas_config_set_color_space(renderer->canvas_config, renderer->config.color_space);
-
-        // Refresh symbol map based on new terminal capabilities
-        ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
-        chafa_symbol_map_add_by_tags(symbol_map, renderer_get_text_symbol_tags(renderer, renderer->term_info));
-        chafa_canvas_config_set_symbol_map(renderer->canvas_config, symbol_map);
-        chafa_symbol_map_unref(symbol_map);
-
-        ChafaDitherMode dither_mode = CHAFA_DITHER_MODE_NONE;
-        if (renderer->config.dither) {
-            dither_mode = renderer->config.dither_mode;
-        } else if (pixel_mode == CHAFA_PIXEL_MODE_SIXELS) {
-            dither_mode = renderer_get_sixel_default_dither_mode();
-        }
-        chafa_canvas_config_set_dither_mode(renderer->canvas_config, dither_mode);
-        if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
-            chafa_canvas_config_set_dither_grain_size(renderer->canvas_config, 1, 1);
+        ChafaDitherMode dither_mode = renderer->config.dither ? renderer->config.dither_mode :
+            pixel_mode == CHAFA_PIXEL_MODE_SIXELS ? renderer_get_sixel_default_dither_mode() : CHAFA_DITHER_MODE_NONE;
+        ChafaSymbolTags tags = renderer_get_text_symbol_tags(renderer, renderer->term_info);
+        ChafaCanvasConfig *config = (ChafaCanvasConfig *)renderer->canvas_config;
+        gint grain_w, grain_h;
+        chafa_canvas_config_get_dither_grain_size(config, &grain_w, &grain_h);
+        if (mode != chafa_canvas_config_get_canvas_mode(config) ||
+            pixel_mode != chafa_canvas_config_get_pixel_mode(config) ||
+            renderer->config.color_space != chafa_canvas_config_get_color_space(config) ||
+            dither_mode != chafa_canvas_config_get_dither_mode(config) ||
+            tags != renderer->canvas_symbol_tags ||
+            (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS && (grain_w != 1 || grain_h != 1))) {
+            renderer->canvas_config_dirty = TRUE;
+            chafa_canvas_config_set_canvas_mode(config, mode);
+            chafa_canvas_config_set_pixel_mode(config, pixel_mode);
+            chafa_canvas_config_set_color_space(config, renderer->config.color_space);
+            chafa_canvas_config_set_dither_mode(config, dither_mode);
+            if (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS) {
+                chafa_canvas_config_set_dither_grain_size(config, 1, 1);
+            }
+            if (tags != renderer->canvas_symbol_tags) {
+                ChafaSymbolMap *symbol_map = chafa_symbol_map_new();
+                chafa_symbol_map_add_by_tags(symbol_map, tags);
+                chafa_canvas_config_set_symbol_map(config, symbol_map);
+                chafa_symbol_map_unref(symbol_map);
+                renderer->canvas_symbol_tags = tags;
+            }
         }
     }
 
@@ -736,7 +761,7 @@ void renderer_get_rendered_dimensions(ImageRenderer *renderer, gint *width, gint
     }
 
     if (renderer->canvas) {
-        chafa_canvas_config_get_geometry(renderer->canvas_config, width, height);
+        chafa_canvas_config_get_geometry(chafa_canvas_peek_config(renderer->canvas), width, height);
     } else {
         *width = renderer->config.max_width;
         *height = renderer->config.max_height;

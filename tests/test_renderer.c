@@ -416,13 +416,16 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
     guint8 pixels[] = {255, 0, 0, 255, 0, 0, 255, 255};
     GString *result = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
     g_assert_nonnull(result);
-    g_string_free(result, TRUE);
+    g_assert_cmpuint(result->len, >, 0);
     ChafaCanvas *previous = renderer->canvas;
     chafa_canvas_ref(previous);
 
     pixels[3] = 0;
     GString *reused = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
     g_assert_nonnull(reused);
+    g_assert_cmpuint(reused->len, >, 0);
+    g_assert_cmpstr(reused->str, !=, result->str);
+    g_string_free(result, TRUE);
     g_assert_true(renderer->canvas == previous);
 
     g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
@@ -430,7 +433,14 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
     renderer->config.max_height = 4;
     GString *fresh = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
     g_assert_nonnull(fresh);
-    g_assert_true(renderer->canvas != previous);
+    g_assert_true(renderer->canvas == previous);
+    g_string_free(fresh, TRUE);
+    ChafaCanvas *reference = chafa_canvas_new(chafa_canvas_peek_config(previous));
+    g_assert_nonnull(reference);
+    chafa_canvas_draw_all_pixels(reference, CHAFA_PIXEL_RGBA8_UNASSOCIATED, pixels, 2, 1, 8);
+    fresh = chafa_canvas_print(reference, renderer->term_info);
+    g_assert_nonnull(fresh);
+    chafa_canvas_unref(reference);
     g_assert_cmpmem(reused->str, reused->len, fresh->str, fresh->len);
     chafa_canvas_unref(previous);
     g_string_free(reused, TRUE);
@@ -438,6 +448,27 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
 
     previous = renderer->canvas;
     chafa_canvas_ref(previous);
+    ChafaCanvasConfig *changed = chafa_canvas_config_copy(renderer->canvas_config);
+    chafa_canvas_config_set_bg_color(changed, 0x123456);
+    renderer_set_canvas_config(renderer, changed);
+    chafa_canvas_config_unref(changed);
+    g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_NONE);
+    g_assert_true(renderer->canvas != previous);
+    g_assert_cmpuint(chafa_canvas_config_get_bg_color(chafa_canvas_peek_config(renderer->canvas)), ==, 0x123456);
+    chafa_canvas_unref(previous);
+
+    previous = renderer->canvas;
+    chafa_canvas_ref(previous);
+    renderer->config.max_width = 0;
+    g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_CHAFA_INIT);
+    gint width, height;
+    renderer_get_rendered_dimensions(renderer, &width, &height);
+    g_assert_cmpint(width, ==, 8);
+    g_assert_cmpint(height, ==, 4);
+    renderer->config.max_width = 8;
+    g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_NONE);
+    g_assert_true(renderer->canvas == previous);
+
     renderer->config.max_width = 9;
     g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_NONE);
     g_assert_true(renderer->canvas != previous);
