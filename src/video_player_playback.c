@@ -56,18 +56,6 @@ gboolean video_player_is_eof_ended(VideoPlayer *player) {
     return eof_ended;
 }
 
-/* ───── Frame queue length ───── */
-
-guint video_player_queue_length(VideoPlayer *player) {
-    if (!player || !player->frame_queue) {
-        return 0;
-    }
-    g_mutex_lock(&player->queue_mutex);
-    guint length = g_queue_get_length(player->frame_queue);
-    g_mutex_unlock(&player->queue_mutex);
-    return length;
-}
-
 /* ───── Calc delay ───── */
 
 gint video_player_calc_delay_ms(VideoPlayer *player) {

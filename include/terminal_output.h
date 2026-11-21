@@ -9,8 +9,9 @@ typedef enum {
     TERMINAL_OUTPUT_RESTORE
 } TerminalOutputPolicy;
 
-/* Main-context stdout owner. FALSE means output is pending; callers must not
- * emit UI bytes until ready/flush succeeds. Background failures wait 100 ms. */
+/* Main-context stdout owner. FALSE means current output is pending; callers
+ * must not emit UI bytes until ready/flush succeeds. Detached cleanup retries
+ * independently. Background failures wait 100 ms. */
 gboolean terminal_output_ready(gint64 now_us);
 gboolean terminal_output_flush(void);
 /* Scope legacy stdio rendering through the same bounded descriptor writer.

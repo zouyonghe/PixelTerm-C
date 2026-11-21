@@ -445,7 +445,15 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_cmpint(retained, !=, slave);
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
     terminal_output_set_fcntl_for_test(NULL);
-    if (GPOINTER_TO_INT(data) == 3) {
+    if (GPOINTER_TO_INT(data) == 4) {
+        terminal_output_set_fcntl_for_test(failing_fcntl);
+        fail_get_fd = retained;
+        g_assert_true(terminal_output_write("normal output", 13));
+        g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
+        fail_get_fd = -1;
+        terminal_output_set_fcntl_for_test(NULL);
+        g_usleep(110000); /* Detached cleanup has independent retry backoff. */
+    } else if (GPOINTER_TO_INT(data) == 3) {
         terminal_output_set_fcntl_for_test(failing_fcntl);
         fail_get_fd = slave;
         g_assert_false(terminal_output_flush());
@@ -496,6 +504,8 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/session_restore_drops_failed_chunk", GINT_TO_POINTER(2),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/session_restore_survives_stdout_failure", GINT_TO_POINTER(3),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_does_not_block_stdout", GINT_TO_POINTER(4),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);

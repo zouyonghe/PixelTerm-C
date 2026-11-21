@@ -54,7 +54,7 @@ static void test_browser_scan_directory_filters_and_sorts(void) {
     static const guint8 k_invalid[] = {0x00, 0x01, 0x02, 0x03};
 
     gchar *dir = create_temp_dir();
-    gchar *a_jpg = write_file_in_dir(dir, "a.jpg", k_jpeg, sizeof(k_jpeg));
+    gchar *a_jpg = write_file_in_dir(dir, "C.jpg", k_jpeg, sizeof(k_jpeg));
     gchar *b_png = write_file_in_dir(dir, "b.png", k_png, sizeof(k_png));
     gchar *noext = write_file_in_dir(dir, "noext", k_png, sizeof(k_png));
     gchar *c_png = write_file_in_dir(dir, "c.png", k_invalid, sizeof(k_invalid));
@@ -73,8 +73,8 @@ static void test_browser_scan_directory_filters_and_sorts(void) {
     gchar *second = g_path_get_basename(files->next->data);
     gchar *third = g_path_get_basename(files->next->next->data);
 
-    g_assert_cmpstr(first, ==, "a.jpg");
-    g_assert_cmpstr(second, ==, "b.png");
+    g_assert_cmpstr(first, ==, "b.png");
+    g_assert_cmpstr(second, ==, "C.jpg");
     g_assert_cmpstr(third, ==, "noext");
 
     g_free(first);
@@ -82,7 +82,7 @@ static void test_browser_scan_directory_filters_and_sorts(void) {
     g_free(third);
 
     g_assert_cmpstr(browser_get_directory(browser), ==, dir);
-    g_assert_cmpstr(browser_get_current_file(browser), ==, a_jpg);
+    g_assert_cmpstr(browser_get_current_file(browser), ==, b_png);
 
     browser_destroy(browser);
     g_free(a_jpg);

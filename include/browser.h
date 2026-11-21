@@ -37,7 +37,7 @@ void browser_destroy(FileBrowser *browser);
 /**
  * @brief Scans a specified directory for image files and populates the browser's list.
  *
- * On success, replaces the previous contents with an alphabetically sorted
+ * On success, replaces the previous contents with an AaBb-sorted
  * list and selects the first file, if any. Failure preserves the existing
  * directory, list, and selection.
  *

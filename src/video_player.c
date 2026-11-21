@@ -371,6 +371,15 @@ static gboolean video_player_queue_admit_locked(VideoPlayer *player, VideoFrame 
            !video_player_should_reject_rendered_frame_locked(player, frame, check_stale_pts);
 }
 
+guint video_player_queue_length(VideoPlayer *player) {
+    if (!player || !player->frame_queue) return 0;
+    g_mutex_lock(&player->queue_mutex);
+    video_player_queue_prune_locked(player);
+    guint length = g_queue_get_length(player->frame_queue);
+    g_mutex_unlock(&player->queue_mutex);
+    return length;
+}
+
 void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
     if (!player || !player->frame_queue || !frame) {
         video_frame_destroy(frame);

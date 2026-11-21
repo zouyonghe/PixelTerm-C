@@ -25,6 +25,7 @@ typedef struct {
 } PendingOutput;
 static gboolean cleanup_registered = FALSE;
 static gint64 next_cleanup_retry_us = 0;
+static gint64 next_detached_retry_us = 0;
 static FILE *session_stdout;
 static FILE *session_stream;
 static int session_fd = -1;
@@ -310,7 +311,7 @@ static gboolean terminal_output_drain_pending(gboolean detached_only) {
         PendingOutput *pending = link->data;
         GList *next = link->next;
         gboolean uses_stdout = terminal_output_pending_uses_stdout(pending);
-        if (detached_only && uses_stdout) {
+        if (detached_only == uses_stdout) {
             link = next;
             continue;
         }
@@ -325,7 +326,8 @@ static gboolean terminal_output_drain_pending(gboolean detached_only) {
                 g_string_assign(pending->bytes, "\033\\");
                 pending->replay_safe = TRUE;
             }
-            next_cleanup_retry_us = g_get_monotonic_time() + 100000;
+            if (detached_only) next_detached_retry_us = g_get_monotonic_time() + 100000;
+            else next_cleanup_retry_us = g_get_monotonic_time() + 100000;
             return FALSE;
         }
         g_queue_delete_link(&pending_output, link);
@@ -337,7 +339,9 @@ static gboolean terminal_output_drain_pending(gboolean detached_only) {
 
 gboolean terminal_output_flush(void) {
     /* Old endpoints must not wait for unrelated stdout output or failures. */
-    gboolean detached_ok = !session_pending || stdout == session_stream || terminal_output_drain_pending(TRUE);
+    if (session_pending && stdout != session_stream && g_get_monotonic_time() >= next_detached_retry_us) {
+        if (terminal_output_drain_pending(TRUE)) next_detached_retry_us = 0;
+    }
     if (!terminal_output_drain_chunk()) return FALSE;
     if (recovery_pending) terminal_output_discard();
     /* Check buffered UI bytes before clearing errors or submitting queued controls. */
@@ -347,7 +351,7 @@ gboolean terminal_output_flush(void) {
         next_cleanup_retry_us = g_get_monotonic_time() + 100000;
         return FALSE;
     }
-    if (!detached_ok || !terminal_output_drain_pending(FALSE)) return FALSE;
+    if (!terminal_output_drain_pending(FALSE)) return FALSE;
     next_cleanup_retry_us = 0;
     recovery_pending = FALSE;
     terminal_output_release_session_fd();

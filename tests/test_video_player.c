@@ -1746,6 +1746,8 @@ static void test_should_drop_late_frame_when_backlog_is_deep(void) {
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 5);
     g_assert_true(video_player_should_drop_late_frame(player, 10));
     g_assert_true(video_player_should_drop_late_frame(player, G_MININT64 + 1));
+    video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
+    g_assert_false(video_player_should_drop_late_frame(player, 10));
 
     video_player_destroy(player);
 }

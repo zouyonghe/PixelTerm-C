@@ -2,7 +2,6 @@
 
 #include "app.h"
 
-#include "text_utils.h"
 #include "book.h"
 #include "browser.h"
 #include "preload_control.h"
@@ -77,6 +76,11 @@ static gint app_find_file_index(GList *files, const char *filepath) {
     return found_index;
 }
 
+static gpointer app_copy_file_path(gconstpointer path, gpointer unused) {
+    (void)unused;
+    return g_strdup(path);
+}
+
 static ErrorCode app_load_directory_selected(PixelTermApp *app, const char *directory,
                                              const char *filepath) {
     if (!app || !directory) {
@@ -98,15 +102,7 @@ static ErrorCode app_load_directory_selected(PixelTermApp *app, const char *dire
     GList *file_list_from_browser = browser_get_all_files(browser);
     gint browser_total = browser_get_total_files(browser);
     gchar *normalized_dir = g_canonicalize_filename(directory, NULL);
-    GList *image_files = NULL;
-
-    // Copy and duplicate file paths from browser's list to app's list
-    for (GList *current_node = file_list_from_browser; current_node; current_node = g_list_next(current_node)) {
-        gchar *filepath = (gchar*)current_node->data;
-        image_files = g_list_prepend(image_files, g_strdup(filepath));
-    }
-
-    image_files = g_list_sort(image_files, compare_path_basenames_aabb);
+    GList *image_files = g_list_copy_deep(file_list_from_browser, app_copy_file_path, NULL);
     browser_destroy(browser);
 
     gint selected_index = filepath ? app_find_file_index(image_files, filepath) : 0;
