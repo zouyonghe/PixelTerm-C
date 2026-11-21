@@ -56,8 +56,8 @@ The Python version of PixelTerm suffers from several performance bottlenecks:
   - `FileBrowser.current_index`
   This reduces repeated linear random-access calls in high-frequency render/input paths.
 - Video playback internals now use focused internal seams:
-  - `include/video_player_clock_internal.h` / `src/video_player_clock.c` for fallback PTS tracking and current-position clock helpers.
-  - `include/video_player_seek_internal.h` / `src/video_player_seek.c` for seek-target calculation, seek-preview decode/render flow, and preview-related test hooks.
+  - `include/video_player_clock_internal.h` / `src/video_player_clock.c` for current-position snapshots, fallback PTS tracking, and timing reset/paused-position restoration.
+  - `include/video_player_seek_internal.h` / `src/video_player_seek.c` for calculating a seek target from a supplied position, seek-preview decode/render flow, and preview-related test hooks. The player coordinates the seek using one position snapshot for both the target and direction.
   - `include/video_player_debug_internal.h` / `src/video_player_debug.c` for debug-log filtering/output, stream lifecycle, queue-wait test hooks, and seek test hooks.
 
 ### Main Application Structure

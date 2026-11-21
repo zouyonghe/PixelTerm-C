@@ -1,6 +1,5 @@
 #include "video_player_seek_internal.h"
 
-#include "video_player_clock_internal.h"
 #include "video_player_decode_internal.h"
 
 #include <libavcodec/avcodec.h>
@@ -30,8 +29,9 @@ gint video_player_get_max_preview_decode_attempts_for_test(void) {
     return k_video_player_default_preview_decode_attempts;
 }
 
-gint64 video_player_seek_target_ms(VideoPlayer *player, gint64 delta_ms, gint64 duration_ms) {
-    gint64 target_ms = video_player_current_position_ms(player) + delta_ms;
+gint64 video_player_seek_target_ms(gint64 current_ms, gint64 delta_ms, gint64 duration_ms) {
+    current_ms = MAX(current_ms, 0);
+    gint64 target_ms = delta_ms > G_MAXINT64 - current_ms ? G_MAXINT64 : current_ms + delta_ms;
     if (target_ms < 0) {
         target_ms = 0;
     }
@@ -228,19 +228,4 @@ gboolean video_player_render_seek_preview(VideoPlayer *player, gint64 target_ms)
     }
     video_player_queue_push(player, frame);
     return TRUE;
-}
-
-void video_player_restore_paused_seek_target(VideoPlayer *player, gint64 target_ms) {
-    if (!player) {
-        return;
-    }
-
-    g_mutex_lock(&player->state_mutex);
-    player->clock_started = FALSE;
-    player->rewind_needs_resync = TRUE;
-    player->clock_start_us = 0;
-    player->clock_start_pts_ms = 0;
-    player->last_presented_pts_ms = G_MININT64;
-    player->fallback_pts_ms = target_ms;
-    g_mutex_unlock(&player->state_mutex);
 }

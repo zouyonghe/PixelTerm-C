@@ -15,7 +15,6 @@ gchar *write_seek_preview_video_fixture(void);
 void decoded_frame_destroy(DecodedFrame *frame);
 void video_frame_destroy(RenderedFrame *frame);
 
-void video_player_reset_timing_state(VideoPlayer *player);
 void video_player_set_fallback_pts_ms(VideoPlayer *player, gint64 pts_ms);
 gint64 video_player_resolve_and_advance_fallback_pts_ms(VideoPlayer *player,
                                                         gint64 raw_pts_ms,

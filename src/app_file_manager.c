@@ -4,59 +4,7 @@
 #include "media_utils.h"
 #include "preload_control.h"
 #include "terminal_output.h"
-
-gint app_file_manager_compare_names(gconstpointer a, gconstpointer b) {
-    const gchar *path_a = (const gchar*)a;
-    const gchar *path_b = (const gchar*)b;
-    if (!path_a || !path_b) {
-        return path_a ? 1 : (path_b ? -1 : 0);
-    }
-
-    // Compare basenames using an AaBb… ordering: uppercase letters first,
-    // then lowercase letters of the same alphabet, while still sorting by
-    // alphabetical order within each case group.
-    gchar *base_a = g_path_get_basename(path_a);
-    gchar *base_b = g_path_get_basename(path_b);
-
-    const gchar *pa = base_a;
-    const gchar *pb = base_b;
-    while (*pa && *pb) {
-        gboolean a_is_alpha = g_ascii_isalpha(*pa);
-        gboolean b_is_alpha = g_ascii_isalpha(*pb);
-
-        gint weight_a;
-        gint weight_b;
-
-        if (a_is_alpha) {
-            weight_a = (g_ascii_tolower(*pa) - 'a') * 2 + (g_ascii_isupper(*pa) ? 0 : 1);
-        } else {
-            weight_a = 1000 + (guchar)(*pa); // Non-letters sort after letters
-        }
-
-        if (b_is_alpha) {
-            weight_b = (g_ascii_tolower(*pb) - 'a') * 2 + (g_ascii_isupper(*pb) ? 0 : 1);
-        } else {
-            weight_b = 1000 + (guchar)(*pb);
-        }
-
-        if (weight_a != weight_b) {
-            gint diff = weight_a - weight_b;
-            g_free(base_a);
-            g_free(base_b);
-            return diff;
-        }
-
-        pa++;
-        pb++;
-    }
-
-    // All compared characters matched; shorter string wins
-    gint result = (gint)(*pa) - (gint)(*pb);
-
-    g_free(base_a);
-    g_free(base_b);
-    return result;
-}
+#include "text_utils.h"
 
 // Hide system-like entries that start with special prefixes (e.g., $RECYCLE.BIN)
 static gboolean app_file_manager_is_special_entry(const gchar *name) {
@@ -843,12 +791,12 @@ ErrorCode app_file_manager_refresh(PixelTermApp *app) {
             files = g_list_prepend(files, path);
         }
     }
-    dirs = g_list_sort(dirs, (GCompareFunc)app_file_manager_compare_names);
+    dirs = g_list_sort(dirs, compare_path_basenames_aabb);
     if (parent_entry) {
         dirs = g_list_remove(dirs, parent_entry);
         dirs = g_list_prepend(dirs, parent_entry);
     }
-    files = g_list_sort(files, (GCompareFunc)app_file_manager_compare_names);
+    files = g_list_sort(files, compare_path_basenames_aabb);
     app->file_manager.entries = g_list_concat(dirs, files);
     g_list_free(entries); // pointers moved into dirs/files concatenated list
     app->file_manager.entries_count = entries_count;

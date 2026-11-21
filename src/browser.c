@@ -1,5 +1,9 @@
 #include "browser.h"
 #include "renderer.h"
+#include "text_utils.h"
+
+#include <dirent.h>
+#include <errno.h>
 
 static GList* browser_find_link_with_hint(const FileBrowser *browser, gint target_index) {
     if (!browser || !browser->image_files || target_index < 0 || target_index >= browser->total_files) {
@@ -71,25 +75,7 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Check if directory exists
-    if (!g_file_test(directory, G_FILE_TEST_IS_DIR)) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    // Cleanup existing data
-    g_free(browser->directory_path);
-    if (browser->image_files) {
-        g_list_free_full(browser->image_files, (GDestroyNotify)g_free);
-        browser->image_files = NULL;
-    }
-
-    browser->directory_path = g_strdup(directory);
-    browser->current = NULL;
-    browser->current_index = -1;
-    browser->total_files = 0;
-
-    // Open directory
-    GDir *dir = g_dir_open(directory, 0, NULL);
+    DIR *dir = opendir(directory);
     if (!dir) {
         return ERROR_FILE_NOT_FOUND;
     }
@@ -97,10 +83,16 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
     // Collect all files
     GList *all_files = NULL;
     gint media_count = 0;
-    const gchar *filename;
-
-    while ((filename = g_dir_read_name(dir)) != NULL) {
-        gchar *full_path = g_build_filename(directory, filename, NULL);
+    int read_error;
+    for (;;) {
+        errno = 0;
+        struct dirent *entry = readdir(dir);
+        if (!entry) {
+            read_error = errno;
+            break;
+        }
+        if (g_str_equal(entry->d_name, ".") || g_str_equal(entry->d_name, "..")) continue;
+        gchar *full_path = g_build_filename(directory, entry->d_name, NULL);
 
         // Check if it's a regular file and a valid image
         if (g_file_test(full_path, G_FILE_TEST_IS_REGULAR) &&
@@ -112,12 +104,20 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         }
     }
 
-    g_dir_close(dir);
+    closedir(dir);
+    if (read_error) {
+        g_list_free_full(all_files, g_free);
+        return ERROR_FILE_NOT_FOUND;
+    }
 
     // Sort files alphabetically
-    all_files = g_list_sort(all_files, (GCompareFunc)g_strcmp0);
+    all_files = g_list_sort(all_files, compare_path_basenames_aabb);
 
-    // Store the filtered and sorted list
+    /* The input path may be borrowed from the existing browser state. */
+    gchar *new_directory = g_strdup(directory);
+    g_free(browser->directory_path);
+    g_list_free_full(browser->image_files, g_free);
+    browser->directory_path = new_directory;
     browser->image_files = all_files;
     browser->current = browser->image_files;
     browser->current_index = browser->current ? 0 : -1;

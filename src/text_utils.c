@@ -2,6 +2,59 @@
 
 #include <string.h>
 
+gint compare_path_basenames_aabb(gconstpointer a, gconstpointer b) {
+    const gchar *path_a = (const gchar*)a;
+    const gchar *path_b = (const gchar*)b;
+    if (!path_a || !path_b) {
+        return path_a ? 1 : (path_b ? -1 : 0);
+    }
+
+    // Compare basenames using an AaBb… ordering: uppercase letters first,
+    // then lowercase letters of the same alphabet, while still sorting by
+    // alphabetical order within each case group.
+    gchar *base_a = g_path_get_basename(path_a);
+    gchar *base_b = g_path_get_basename(path_b);
+
+    const gchar *pa = base_a;
+    const gchar *pb = base_b;
+    while (*pa && *pb) {
+        gboolean a_is_alpha = g_ascii_isalpha(*pa);
+        gboolean b_is_alpha = g_ascii_isalpha(*pb);
+
+        gint weight_a;
+        gint weight_b;
+
+        if (a_is_alpha) {
+            weight_a = (g_ascii_tolower(*pa) - 'a') * 2 + (g_ascii_isupper(*pa) ? 0 : 1);
+        } else {
+            weight_a = 1000 + (guchar)(*pa); // Non-letters sort after letters
+        }
+
+        if (b_is_alpha) {
+            weight_b = (g_ascii_tolower(*pb) - 'a') * 2 + (g_ascii_isupper(*pb) ? 0 : 1);
+        } else {
+            weight_b = 1000 + (guchar)(*pb);
+        }
+
+        if (weight_a != weight_b) {
+            gint diff = weight_a - weight_b;
+            g_free(base_a);
+            g_free(base_b);
+            return diff;
+        }
+
+        pa++;
+        pb++;
+    }
+
+    // All compared characters matched; shorter string wins
+    gint result = (gint)(*pa) - (gint)(*pb);
+
+    g_free(base_a);
+    g_free(base_b);
+    return result;
+}
+
 gchar* sanitize_for_terminal(const gchar *text) {
     if (!text) {
         return g_strdup("");
