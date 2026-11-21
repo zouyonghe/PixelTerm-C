@@ -883,6 +883,7 @@ void video_player_set_render_area(VideoPlayer *player,
 
     if (layout_changed) {
         player->fixed_frame_valid = FALSE;
+        player->visible_frame_width = 0;
         /* Layout describes future output; retain delivered/uncertain coverage until clear. */
         video_player_generation_bump(player);
         player->render_layout_generation++;
@@ -1116,6 +1117,7 @@ ErrorCode video_player_clear_render_area(VideoPlayer *player) {
         player->last_frame_top_row = 0;
         player->last_frame_height = 0;
     }
+    player->visible_frame_width = 0;
     g_mutex_unlock(&player->state_mutex);
     return cleared ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
@@ -1901,6 +1903,7 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     gboolean kitty_shm_written = FALSE;
     gint next_frame_top_row = 0;
     gint next_frame_height = 0;
+    gint next_frame_col = 1, next_frame_width = rendered_w;
     video_player_debug_log(player, "render-frame", frame->pts_ms, rendered_w, rendered_h, graphics_mode ? 1 : 0);
 
     gint64 io_start_us = g_get_monotonic_time();
@@ -1929,6 +1932,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
         }
         gint left_pad = (term_w > effective_w) ? (term_w - effective_w) / 2 : 0;
         if (left_pad < 0) left_pad = 0;
+        next_frame_col = left_pad + 1;
+        next_frame_width = effective_w;
 
         gint image_top_row = area_top;
         if (player->fixed_frame_valid) {
@@ -2088,6 +2093,10 @@ output_finished:;
     if (output_success) {
         player->last_frame_top_row = next_frame_top_row;
         player->last_frame_height = next_frame_height;
+        player->visible_frame_row = next_frame_top_row;
+        player->visible_frame_height = next_frame_height;
+        player->visible_frame_col = next_frame_col;
+        player->visible_frame_width = next_frame_width;
     } else if (next_frame_top_row > 0 && next_frame_height > 0) {
         /* Partial output can leave both the previous and attempted frame visible. */
         gboolean old_valid = player->last_frame_top_row > 0 && player->last_frame_height > 0;
@@ -2097,6 +2106,7 @@ output_finished:;
             MIN(player->last_frame_top_row, next_frame_top_row) : next_frame_top_row;
         player->last_frame_height = bottom - player->last_frame_top_row;
     }
+    if (!output_success) player->visible_frame_width = 0;
     g_mutex_unlock(&player->state_mutex);
     if (output_success && kitty_shm_written) {
         video_frame_mark_kitty_shm_submitted(frame);
@@ -2137,6 +2147,7 @@ ErrorCode video_player_load(VideoPlayer *player, const gchar *filepath) {
     video_player_reset_media_state(player);
 
     g_mutex_lock(&player->state_mutex);
+    player->visible_frame_width = 0;
     g_clear_pointer(&player->filepath, g_free);
     g_mutex_unlock(&player->state_mutex);
 
@@ -2471,11 +2482,22 @@ gboolean video_player_has_video(const VideoPlayer *player) {
 }
 
 void video_player_get_progress(VideoPlayer *player, gint64 *position_ms, gint64 *duration_ms) {
-    *position_ms = video_player_current_position_ms(player);
+    if (position_ms) *position_ms = video_player_current_position_ms(player);
+    if (!duration_ms) return;
     *duration_ms = 0;
     if (player && player->format_context && player->format_context->duration > 0) {
         *duration_ms = av_rescale_q(player->format_context->duration, AV_TIME_BASE_Q, (AVRational){1, 1000});
     }
+}
+
+gboolean video_player_contains_frame_cell(VideoPlayer *player, gint col, gint row) {
+    if (!player || col <= 0 || row <= 0) return FALSE;
+    g_mutex_lock(&player->state_mutex);
+    gboolean inside = col >= player->visible_frame_col && row >= player->visible_frame_row &&
+        col - player->visible_frame_col < player->visible_frame_width &&
+        row - player->visible_frame_row < player->visible_frame_height;
+    g_mutex_unlock(&player->state_mutex);
+    return inside;
 }
 
 gboolean video_player_is_loaded_file(const VideoPlayer *player,
