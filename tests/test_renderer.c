@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
 #include <glib.h>
 #include <gio/gio.h>
 #include <glib/gstdio.h>
