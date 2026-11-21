@@ -178,6 +178,9 @@ void input_dispatch_handle_mouse_double_click_book(PixelTermApp *app, const Inpu
 
 void input_dispatch_handle_mouse_scroll_single(PixelTermApp *app, const InputEvent *event) {
     if (input_dispatch_current_is_video(app)) {
+        gboolean inside = video_player_contains_frame_cell(app->video_player, event->mouse_x, event->mouse_y);
+        if (inside && event->mouse_button == MOUSE_SCROLL_UP) input_dispatch_scroll_video_seek(app, -1);
+        if (inside && event->mouse_button == MOUSE_SCROLL_DOWN) input_dispatch_scroll_video_seek(app, 1);
         return;
     }
     if (input_dispatch_current_is_animated_image(app)) {

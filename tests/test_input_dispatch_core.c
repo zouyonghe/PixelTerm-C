@@ -323,6 +323,23 @@ static void test_toc_double_click_entry_failure_aborts_render(gconstpointer data
     g_assert_cmpint(g_input_dispatch_stub_state.book_preview_render_calls, ==, 0);
 }
 
+static void test_zen_keeps_paused_video_paused(void) {
+    VideoPlayer player = {.has_video = TRUE};
+    g_mutex_init(&player.state_mutex);
+    PixelTermApp app = {.mode = APP_MODE_SINGLE, .video_player = &player};
+    InputHandler handler = {0};
+    InputEvent event = make_key_event((KeyCode)'~');
+    input_dispatch_test_reset_stubs();
+    g_input_dispatch_stub_state.current_is_video = TRUE;
+    for (guint i = 0; i < 2; i++) {
+        input_dispatch_core_handle_event(&app, &handler, &event);
+        g_assert_cmpint(app.ui_text_hidden, ==, i == 0);
+        g_assert_true(g_input_dispatch_stub_state.render_by_mode_preserved_pause);
+        g_assert_false(app.preserve_media_pause_on_redraw);
+    }
+    g_mutex_clear(&player.state_mutex);
+}
+
 static void test_common_key_render_error(gconstpointer data) {
     gint key = GPOINTER_TO_INT(data);
     PixelTermApp app = {.mode = APP_MODE_SINGLE};
@@ -492,6 +509,7 @@ void register_input_dispatch_core_tests(void) {
     g_test_add_data_func("/input_dispatch_core/errors/toc_double_click_validation", GINT_TO_POINTER(ERROR_INVALID_IMAGE), test_toc_double_click_entry_failure_aborts_render);
     g_test_add_data_func("/input_dispatch_core/errors/dither", GINT_TO_POINTER('d'), test_common_key_render_error);
     g_test_add_data_func("/input_dispatch_core/errors/zen", GINT_TO_POINTER('~'), test_common_key_render_error);
+    g_test_add_func("/input_dispatch_core/zen/keeps_video_paused", test_zen_keeps_paused_video_paused);
     g_test_add_data_func("/input_dispatch_core/errors/help_open", GINT_TO_POINTER('?'), test_common_key_render_error);
     g_test_add_data_func("/input_dispatch_core/errors/info_open", GINT_TO_POINTER('i'), test_common_key_render_error);
     g_test_add_data_func("/input_dispatch_core/errors/help_close", GINT_TO_POINTER('x'), test_common_key_render_error);

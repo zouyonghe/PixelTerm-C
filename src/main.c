@@ -250,6 +250,8 @@ static ErrorCode run_application_loop(PixelTermApp *app, gboolean alt_screen_ena
         app_process_async_render(app);
         if (app->last_error != ERROR_NONE) break;
         if (!terminal_output_ready(g_get_monotonic_time())) continue;
+        error = app_update_video_progress(app);
+        if (error != ERROR_NONE) break;
 
         if (handled_input) {
             continue;

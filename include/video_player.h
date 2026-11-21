@@ -79,6 +79,8 @@ typedef struct {
     gboolean render_layout_valid;
     gint last_frame_top_row;
     gint last_frame_height;
+    gint visible_frame_col, visible_frame_row;
+    gint visible_frame_width, visible_frame_height;
     gint fixed_frame_top_row;
     gboolean fixed_frame_valid;
     GPtrArray *last_frame_lines;
@@ -272,6 +274,10 @@ gboolean video_player_is_playing(const VideoPlayer *player);
  * @note Thread-safe; do not call while already holding state_mutex.
  */
 gboolean video_player_has_video(const VideoPlayer *player);
+/* Main-context snapshot. Either output can be NULL; zero duration means unknown. */
+void video_player_get_progress(VideoPlayer *player, gint64 *position_ms, gint64 *duration_ms);
+/* Hit-test the last successfully displayed frame in 1-based terminal cells. */
+gboolean video_player_contains_frame_cell(VideoPlayer *player, gint col, gint row);
 
 /**
  * @brief Returns whether the player currently owns the requested media path.

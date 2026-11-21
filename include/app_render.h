@@ -10,6 +10,7 @@ ErrorCode app_render_help_overlay(PixelTermApp *app);
 ErrorCode app_refresh_display(PixelTermApp *app);
 ErrorCode app_render_by_mode(PixelTermApp *app);
 void app_process_async_render(PixelTermApp *app);
+ErrorCode app_update_video_progress(PixelTermApp *app);
 void app_get_image_target_dimensions(const PixelTermApp *app, gint *max_width, gint *max_height);
 
 #endif // APP_RENDER_H

@@ -229,7 +229,15 @@ static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms, ErrorCode 
     if (!g_video_seek_func) return FALSE;
 
     *result = record_output_error(app, g_video_seek_func(app->video_player, delta_ms));
+    if (*result == ERROR_NONE) {
+        app->video_progress_dirty = TRUE;
+    }
     return *result == ERROR_NONE || *result == ERROR_OUTPUT_IO;
+}
+
+void input_dispatch_scroll_video_seek(PixelTermApp *app, gint direction) {
+    ErrorCode result;
+    handle_video_seek(app, direction > 0 ? k_video_seek_step_ms : -k_video_seek_step_ms, &result);
 }
 
 void input_dispatch_handle_key_press_single(PixelTermApp *app,

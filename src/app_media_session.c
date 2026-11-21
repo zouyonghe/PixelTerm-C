@@ -15,6 +15,10 @@ ErrorCode app_media_stop_inactive_players(PixelTermApp *app, MediaKind active_ki
 
     gboolean keep_gif = media_is_animated_image(active_kind);
     gboolean keep_video = media_is_video(active_kind);
+    if (!keep_video) {
+        app->video_progress_active = FALSE;
+        app->video_progress_drawn = app->video_progress_dirty = FALSE;
+    }
 
     ErrorCode result = ERROR_NONE;
     if (app->gif_player && !keep_gif) {

@@ -15,6 +15,73 @@
 #include <math.h>
 
 static const AppSingleRenderTestHooks *app_single_render_test_hooks = NULL;
+enum { VIDEO_TIMELINE_ROWS = 2 };
+
+static void app_print_video_footer(PixelTermApp *app) {
+    const HelpSegment segments[] = {
+        {"←/→", "Seek"}, {"Space", "Pause/Play"}, {"F", "FPS"}, {"P", "Protocol"},
+        {"+/-", "Scale"}, {"Enter", "Preview"}, {"TAB", "Toggle"},
+        {"?", "Help"}, {"r", "Delete"}, {"~", "Zen"}, {"ESC", "Exit"}
+    };
+    printf("\033[%d;1H\033[2K", app->term_height);
+    ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
+}
+
+ErrorCode app_update_video_progress(PixelTermApp *app) {
+    if (!app || !app_is_single_mode(app) || app->help_visible || app->info_visible ||
+        !app->video_player || app->term_width < 2) return ERROR_NONE;
+    gint bar_row = app->term_height - ui_single_view_bottom_reserved_lines(app) - VIDEO_TIMELINE_ROWS + 1;
+    if (bar_row <= ui_single_view_content_top_row(app)) return ERROR_NONE;
+    gboolean visible = app->video_progress_active && !app->ui_text_hidden;
+    if (!visible && !app->video_progress_drawn) {
+        app->video_progress_dirty = FALSE;
+        return ERROR_NONE;
+    }
+
+    gint64 position = 0, duration = 0;
+    gint cells = 0, filled = 0;
+    if (visible) {
+        video_player_get_progress(app->video_player, &position, &duration);
+        if (duration > 0) {
+            position = MIN(position, duration);
+            /* The track, including brackets, spans two thirds of the terminal. */
+            cells = MAX(0, MIN(app->term_width - app->term_width / 3 - 2, app->term_width - 3));
+            filled = (gint)((gdouble)position / duration * cells);
+        }
+        if (app->video_progress_drawn && !app->video_progress_dirty &&
+            app->video_progress_seconds == position / 1000 &&
+            app->video_progress_filled_cells == filled) return ERROR_NONE;
+    }
+    gint time_row = bar_row + 1;
+    printf("\033[%d;1H\033[2K\033[%d;1H\033[2K", bar_row, time_row);
+    if (visible) {
+        gint64 current_s = position / 1000, total_s = duration / 1000;
+        GString *line = g_string_new(NULL);
+        g_string_append_printf(line, "%02" G_GINT64_FORMAT ":%02" G_GINT64_FORMAT,
+                               current_s / 60, current_s % 60);
+        if (duration > 0) {
+            g_string_append_printf(line, " / %02" G_GINT64_FORMAT ":%02" G_GINT64_FORMAT,
+                                   total_s / 60, total_s % 60);
+            if (cells > 0) {
+                gint column = (app->term_width - cells - 2) / 2 + 1;
+                printf("\033[%d;%dH[\033[1;36m", bar_row, column);
+                for (gint i = 0; i < filled; i++) putchar('=');
+                fputs("\033[90m", stdout);
+                for (gint i = filled; i < cells; i++) putchar('-');
+                fputs("\033[0m]", stdout);
+            }
+        }
+        g_string_truncate(line, MIN(line->len, (gsize)app->term_width - 1));
+        gint time_column = (app->term_width - (gint)line->len) / 2 + 1;
+        printf("\033[%d;%dH\033[1;36m%s\033[0m", time_row, time_column, line->str);
+        g_string_free(line, TRUE);
+    }
+    app->video_progress_drawn = visible;
+    app->video_progress_dirty = FALSE;
+    app->video_progress_seconds = position / 1000;
+    app->video_progress_filled_cells = filled;
+    return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
+}
 
 static gboolean app_help_overlay_can_render(gint term_width, gint term_height) {
     return term_width >= 32 && term_height >= 8;
@@ -330,6 +397,8 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
 
     if (is_video && app->video_player) {
         if (!video_player_is_loaded_file(app->video_player, filepath)) {
+            app->video_progress_active = FALSE;
+            app->video_progress_drawn = app->video_progress_dirty = FALSE;
             ErrorCode load_result = APP_SINGLE_RENDER_CALL(video_player_load,
                                                            video_player_load,
                                                            app->video_player,
@@ -373,11 +442,13 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     if (overlay_visible && active_kind == MEDIA_KIND_VIDEO) {
         active_kind = MEDIA_KIND_IMAGE;
     }
+    gboolean leaving_timeline = !is_video && app->video_progress_drawn;
     ErrorCode stopped = app_media_stop_inactive_players(app, active_kind);
     if (stopped != ERROR_NONE) return stopped;
 
     gint target_width = 0, target_height = 0;
     app_get_image_target_dimensions(app, &target_width, &target_height);
+    if (is_video && target_height > VIDEO_TIMELINE_ROWS) target_height -= VIDEO_TIMELINE_ROWS;
     gint image_area_height = target_height;
     if (is_video) {
         gdouble scale = app->video_scale;
@@ -391,9 +462,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
         if (target_width < 1) {
             target_width = 1;
         }
-        if (target_height < 1) {
-            target_height = 1;
-        }
+        target_height = CLAMP(target_height, 1, image_area_height);
     }
 
     gint cell_w = 0, cell_h = 0;
@@ -420,7 +489,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     app->async.render_request = FALSE;
     gboolean use_zoom = (!is_video && !gif_is_animated && image_zoom > 1.0 + 0.001);
     if (!app->async.render_force_sync &&
-        async_request &&
+        async_request && !leaving_timeline &&
         app->preloader &&
         app->preload_enabled &&
         !is_video &&
@@ -469,7 +538,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
         return ERROR_OUTPUT_IO;
     }
     // Clear screen and reset terminal state
-    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->needs_screen_clear &&
+    gboolean allow_partial_clear = app && !leaving_timeline && app->suppress_full_clear && !app->needs_screen_clear &&
                                    !app->info_visible && !app->help_visible;
     if (allow_partial_clear) {
         app->suppress_full_clear = FALSE;
@@ -478,6 +547,11 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
             APP_SINGLE_RENDER_CALL(ui_clear_single_view_lines, ui_clear_single_view_lines, app);
         }
         APP_SINGLE_RENDER_CALL(ui_clear_area, ui_clear_area, app, image_area_top_row, image_area_height);
+        if (is_video && app->term_height - ui_single_view_bottom_reserved_lines(app) >
+            image_area_top_row + VIDEO_TIMELINE_ROWS - 1) {
+            gint row = app->term_height - ui_single_view_bottom_reserved_lines(app);
+            APP_SINGLE_RENDER_CALL(ui_clear_area, ui_clear_area, app, row - VIDEO_TIMELINE_ROWS + 1, VIDEO_TIMELINE_ROWS);
+        }
     } else {
         if (app) {
             app->suppress_full_clear = FALSE;
@@ -548,23 +622,10 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
             }
         }
 
-        if (app->term_height > 0 && !app->ui_text_hidden) {
-            const HelpSegment segments[] = {
-                {"←/→", "Prev/Next"},
-                {"Space", "Pause/Play"},
-                {"F", "FPS"},
-                {"P", "Protocol"},
-                {"+/-", "Scale"},
-                {"Enter", "Preview"},
-                {"TAB", "Toggle"},
-                {"?", "Help"},
-                {"r", "Delete"},
-                {"~", "Zen"},
-                {"ESC", "Exit"}
-            };
-            printf("\033[%d;1H\033[2K", app->term_height);
-            ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
-        }
+        if (app->term_height > 0 && !app->ui_text_hidden) app_print_video_footer(app);
+        app->video_progress_active = !overlay_visible && app->video_player != NULL;
+        app->video_progress_drawn = FALSE;
+        app->video_progress_dirty = FALSE;
 
         if (overlay_visible) {
             ErrorCode overlay_error = app_render_info_overlay(app, filepath, image_area_top_row, target_height);
