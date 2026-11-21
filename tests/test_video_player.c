@@ -17,6 +17,7 @@
 #include "gif_player_test_internal.h"
 #include "video_player_decode_internal.h"
 #include "video_player_clock_internal.h"
+#include "video_player_playback_internal.h"
 #include "video_player_test_internal.h"
 #include "test_output_stream.h"
 
@@ -523,6 +524,27 @@ static gpointer decode_queue_wait_thread_main(gpointer user_data) {
     return NULL;
 }
 
+static void test_decode_queue_stop_preserves_queued_work(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    DecodedFrame *frame = g_new0(DecodedFrame, 1);
+    decoded_frame_fill(frame, 233, 1);
+    video_player_decode_queue_push(player, frame);
+
+    g_atomic_int_set(&player->worker_stop, TRUE);
+    DecodedFrame *taken = video_player_decode_queue_wait_and_take(player);
+    g_assert_null(taken);
+    g_assert_cmpint(player->render_in_flight, ==, 0);
+    g_assert_cmpuint(g_queue_get_length(player->decode_queue), ==, 1);
+
+    g_atomic_int_set(&player->worker_stop, FALSE);
+    taken = video_player_decode_queue_wait_and_take(player);
+    g_assert_true(taken == frame);
+    decoded_frame_destroy(taken);
+    video_player_render_work_finished_for_test(player);
+    video_player_destroy(player);
+}
+
 static void test_decode_queue_sixel_mode_waits_instead_of_replacing_oldest(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -930,6 +952,63 @@ static void test_current_position_clamps_negative_fallback_pts_to_zero(void) {
     video_player_destroy(player);
 }
 
+static void test_frame_delay_from_rate_bounds(void) {
+    g_assert_cmpint(video_player_frame_delay_from_rate(30, 1), ==, 33);
+    g_assert_cmpint(video_player_frame_delay_from_rate(0, 1), ==, 33);
+    g_assert_cmpint(video_player_frame_delay_from_rate(2000, 1), ==, 1);
+    g_assert_cmpint(video_player_frame_delay_from_rate(1, G_MAXINT), ==, G_MAXINT);
+}
+
+static void test_timing_arithmetic_boundaries(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_cmpint(video_player_smooth_pts_ms(player, G_MININT64 + 1, 33), ==, G_MININT64 + 1);
+    g_assert_cmpint(video_player_smooth_pts_ms(player, G_MAXINT64, 33), ==, G_MININT64 + 67);
+    g_assert_cmpint(video_player_smooth_pts_ms(player, G_MININT64 + 1, 33), ==, G_MININT64 + 83);
+    player->smooth_valid = FALSE;
+    g_assert_cmpint(video_player_smooth_pts_ms(player, G_MAXINT64 - 1, G_MAXINT), ==, G_MAXINT64 - 1);
+    g_assert_cmpint(video_player_smooth_pts_ms(player, G_MAXINT64, G_MAXINT), ==, G_MAXINT64);
+    video_player_destroy(player);
+}
+
+static void test_generation_crosses_signed_boundary(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_atomic_int_set(&player->playback_generation, G_MAXINT);
+    guint generation = video_player_generation_bump(player);
+    g_assert_cmpuint(generation, ==, (guint)G_MAXINT + 1u);
+    g_assert_cmpuint(video_player_generation_get(player), ==, generation);
+    video_player_destroy(player);
+}
+
+static void test_clock_saturates_elapsed_pts(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->is_playing = TRUE;
+    player->clock_started = TRUE;
+    player->clock_start_us = g_get_monotonic_time() - G_TIME_SPAN_SECOND;
+    player->clock_start_pts_ms = G_MAXINT64 - 1;
+
+    g_assert_cmpint(video_player_current_position_ms(player), ==, G_MAXINT64);
+    gint64 target_ms = 0;
+    g_assert_true(video_player_get_target_pts_ms(player, &target_ms));
+    g_assert_cmpint(target_ms, ==, G_MAXINT64);
+    video_player_destroy(player);
+}
+
+static void test_clock_saturates_fallback_pts(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    gint64 next_pts = 0;
+    g_assert_cmpint(video_player_resolve_and_advance_fallback_pts_ms(player, G_MAXINT64 - 1, 33, &next_pts),
+                    ==, G_MAXINT64 - 1);
+    g_assert_cmpint(next_pts, ==, G_MAXINT64);
+    g_assert_cmpint(video_player_resolve_and_advance_fallback_pts_ms(player, G_MININT64, 33, &next_pts),
+                    ==, G_MAXINT64);
+    g_assert_cmpint(next_pts, ==, G_MAXINT64);
+    video_player_destroy(player);
+}
+
 static void test_seek_target_clamps_to_zero_and_duration(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -943,6 +1022,9 @@ static void test_seek_target_clamps_to_zero_and_duration(void) {
 
     g_assert_cmpint(video_player_seek_target_ms_for_test(player, -5000, 12000), ==, 0);
     g_assert_cmpint(video_player_seek_target_ms_for_test(player, 5000, 6000), ==, 6000);
+    g_assert_cmpint(video_player_seek_target_ms_for_test(player, G_MAXINT64, 6000), ==, 6000);
+    g_assert_cmpint(video_player_seek_target_ms_for_test(player, G_MAXINT64, 0), ==, G_MAXINT64);
+    g_assert_cmpint(video_player_seek_target_ms_for_test(player, G_MININT64, 0), ==, 0);
 
     video_player_destroy(player);
 }
@@ -1284,6 +1366,7 @@ static void test_play_after_eof_rewinds_explicitly_to_start(void) {
     player->last_presented_pts_ms = 16533;
     g_mutex_unlock(&player->state_mutex);
     video_player_handle_eof_for_test(player);
+    g_assert_true(video_player_finalize_pending_eof_for_test(player));
     g_assert_true(player->eof_ended);
 
     player->worker_thread = start_parked_worker_for_test("parked-decode-play-test", &decode_call, player);
@@ -1477,6 +1560,7 @@ static void test_seek_relative_after_eof_stops_parked_workers_before_preview(voi
     player->last_present_us = 0;
     g_mutex_unlock(&player->state_mutex);
     video_player_handle_eof_for_test(player);
+    g_assert_true(video_player_finalize_pending_eof_for_test(player));
     g_assert_true(player->eof_ended);
 
     player->worker_thread = start_parked_worker_for_test("parked-decode-seek-test", &decode_call, player);
@@ -1545,6 +1629,7 @@ static void test_seek_relative_after_eof_real_preview_does_not_crash(void) {
         player->last_present_us = 0;
         g_mutex_unlock(&player->state_mutex);
         video_player_handle_eof_for_test(player);
+        g_assert_true(video_player_finalize_pending_eof_for_test(player));
         g_assert_true(player->eof_ended);
 
         player->worker_thread = start_parked_worker_for_test("parked-decode-real-preview-test", &decode_call, player);
@@ -1660,6 +1745,9 @@ static void test_should_drop_late_frame_when_backlog_is_deep(void) {
 
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 5);
     g_assert_true(video_player_should_drop_late_frame(player, 10));
+    g_assert_true(video_player_should_drop_late_frame(player, G_MININT64 + 1));
+    video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
+    g_assert_false(video_player_should_drop_late_frame(player, 10));
 
     video_player_destroy(player);
 }
@@ -1779,6 +1867,46 @@ static void test_decode_worker_conversion_gating(gconstpointer data) {
     g_assert_cmpuint(output_frames, ==, late ? 0 : decoded);
 }
 
+static void test_queue_take_discards_frames_from_old_layout(gconstpointer data) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    video_player_queue_push(player, make_test_frame(5000));
+    video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
+    guint generation = (guint)g_atomic_int_get(&player->playback_generation);
+    video_player_queue_push(player, make_test_frame_with_generation(100, generation));
+
+    if (GPOINTER_TO_INT(data) == 2) {
+        gint64 pts = -1;
+        g_assert_true(video_player_queue_peek_pts_ms(player, &pts));
+        g_assert_cmpint(pts, ==, 100);
+        g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 1);
+        video_player_destroy(player);
+        return;
+    }
+    VideoFrame *frame = GPOINTER_TO_INT(data)
+        ? video_player_queue_take_for_playback(player, 100, 20)
+        : video_player_queue_take_first(player);
+    g_assert_nonnull(frame);
+    g_assert_cmpuint(frame->generation, ==, generation);
+    g_assert_cmpint(frame->pts_ms, ==, 100);
+    g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
+    video_frame_destroy(frame);
+    video_player_destroy(player);
+}
+
+static void test_queue_take_skips_extremely_late_frame(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    video_player_queue_push(player, make_test_frame(G_MININT64 + 1));
+    video_player_queue_push(player, make_test_frame(100));
+
+    VideoFrame *frame = video_player_queue_take_for_playback(player, 100, 20);
+    g_assert_nonnull(frame);
+    g_assert_cmpint(frame->pts_ms, ==, 100);
+    video_frame_destroy(frame);
+    video_player_destroy(player);
+}
+
 static void test_queue_take_for_playback_waits_even_when_future_queue_is_full(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -1847,6 +1975,22 @@ static void test_calc_delay_uses_queue_head_even_with_high_io_avg(void) {
     g_assert_cmpint(delay, >=, (gint)min_expected_delay);
     g_assert_cmpint(delay, <=, (gint)max_expected_delay);
 
+    video_player_destroy(player);
+}
+
+static void test_calc_delay_saturates_before_narrowing(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->clock_started = TRUE;
+    player->clock_start_us = g_get_monotonic_time();
+    player->clock_start_pts_ms = 0;
+    video_player_queue_push(player, make_test_frame((gint64)G_MAXINT + 60000));
+    g_assert_cmpint(video_player_calc_delay_ms(player), ==, G_MAXINT);
+
+    video_player_queue_clear(player);
+    player->clock_start_pts_ms = -60000;
+    video_player_queue_push(player, make_test_frame(G_MAXINT64));
+    g_assert_cmpint(video_player_calc_delay_ms(player), ==, G_MAXINT);
     video_player_destroy(player);
 }
 
@@ -1993,6 +2137,71 @@ static void test_update_queue_depth_uses_low_latency_queue_for_sixel_large_geome
     video_player_destroy(player);
 }
 
+static void test_queue_admission_reclaims_old_layout_capacity(gconstpointer data) {
+    if (!g_test_subprocess()) {
+        g_test_trap_subprocess(NULL, 2 * G_TIME_SPAN_SECOND, 0);
+        g_test_trap_assert_passed();
+        return;
+    }
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->max_queue_size = 1;
+    video_player_queue_push(player, make_test_frame(5000));
+    video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
+    guint generation = (guint)g_atomic_int_get(&player->playback_generation);
+    if (GPOINTER_TO_INT(data) == 2) {
+        /* Model a current sorted frame ahead of an obsolete entry. */
+        g_queue_push_head(player->frame_queue, make_test_frame_with_generation(50, generation));
+        player->max_queue_size = 2;
+    }
+    VideoFrame *frame = make_test_frame_with_generation(100, generation);
+    if (GPOINTER_TO_INT(data)) video_player_queue_insert_sorted(player, frame);
+    else video_player_queue_push(player, frame);
+
+    if (GPOINTER_TO_INT(data) == 2) {
+        g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 2);
+        VideoFrame *first = video_player_queue_take_first(player);
+        g_assert_nonnull(first);
+        g_assert_cmpint(first->pts_ms, ==, 50);
+        video_frame_destroy(first);
+    }
+    g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 1);
+    g_assert_cmpint(video_player_queue_head_pts_for_test(player), ==, 100);
+    video_player_destroy(player);
+}
+
+static void test_layout_change_wakes_waiting_render_producer(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->max_queue_size = 1;
+    video_player_queue_push(player, make_test_frame(100));
+
+    GMutex wait_mutex;
+    GCond wait_cond;
+    gint waiting = FALSE;
+    g_mutex_init(&wait_mutex);
+    g_cond_init(&wait_cond);
+    QueueWaitSignal signal = {.mutex = &wait_mutex, .cond = &wait_cond, .flag = &waiting};
+    QueueInsertCall call = {.player = player, .pts_ms = 200};
+    g_mutex_init(&call.mutex);
+    g_cond_init(&call.cond);
+    video_player_set_queue_wait_hook_for_test(player, VIDEO_PLAYER_TEST_QUEUE_RENDER,
+                                              queue_wait_hook_signal, &signal);
+    GThread *producer = g_thread_new("render-layout-wait", queue_push_call_thread_main, &call);
+    wait_for_flag_or_fail(&wait_mutex, &wait_cond, &waiting, "Producer did not wait for capacity");
+
+    video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
+    wait_for_flag_or_fail(&call.mutex, &call.cond, &call.completed, "Layout change did not wake producer");
+    g_thread_join(producer);
+    video_player_set_queue_wait_hook_for_test(NULL, VIDEO_PLAYER_TEST_QUEUE_RENDER, NULL, NULL);
+    g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
+    g_cond_clear(&call.cond);
+    g_mutex_clear(&call.mutex);
+    g_cond_clear(&wait_cond);
+    g_mutex_clear(&wait_mutex);
+    video_player_destroy(player);
+}
+
 static void test_queue_push_waits_for_capacity_instead_of_dropping_new_frame(void) {
     VideoPlayer *player = video_player_new(2, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -2079,6 +2288,53 @@ static void test_rewind_reset_clears_timing_and_queue_state(void) {
     video_player_destroy(player);
 }
 
+static VideoPlayer *eof_during_output_player;
+static guint eof_during_output_observations;
+
+static gpointer report_worker_eof(gpointer player) {
+    video_player_handle_eof_for_test(player);
+    return NULL;
+}
+
+static int report_eof_during_frame_write(int fd, int operation, int flags) {
+    if (operation == F_GETFL &&
+        video_player_queue_length_for_test(eof_during_output_player) == 0 &&
+        eof_during_output_observations++ == 0) {
+        g_thread_join(g_thread_new("video-eof-during-write", report_worker_eof, eof_during_output_player));
+        g_assert_false(eof_during_output_player->eof_ended);
+        g_assert_true(video_player_is_playing(eof_during_output_player));
+    }
+    return fcntl(fd, operation, flags);
+}
+
+static void test_eof_waits_for_final_frame_output(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_true(init_minimal_seek_context(player));
+    player->is_playing = TRUE;
+    video_player_queue_push(player, make_test_frame(16566));
+
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    stdout = capture;
+    eof_during_output_player = player;
+    eof_during_output_observations = 0;
+    terminal_output_set_fcntl_for_test(report_eof_during_frame_write);
+    g_assert_true(video_player_render_frame_for_test(player));
+    terminal_output_set_fcntl_for_test(NULL);
+    eof_during_output_player = NULL;
+    stdout = saved;
+    fclose(capture);
+
+    g_assert_cmpuint(eof_during_output_observations, >, 0);
+    g_assert_false(video_player_render_frame_for_test(player));
+    g_assert_true(player->eof_ended);
+    g_assert_cmpint(player->fallback_pts_ms, ==, 16566);
+    teardown_minimal_seek_context(player);
+    video_player_destroy(player);
+}
+
 static void test_eof_handling_worker_eof_drains_tail_work_to_terminal_stop(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -2141,6 +2397,8 @@ static void test_eof_handling_worker_eof_drains_tail_work_to_terminal_stop(void)
 
     decoded_frame_destroy(in_flight);
     video_player_render_work_finished_for_test(player);
+    g_assert_true(player->eof_pending);
+    g_assert_false(video_player_render_frame_for_test(player));
 
     g_assert_false(player->eof_pending);
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 0);
@@ -2361,6 +2619,7 @@ static void test_debug_logging_stale_drop_completes_after_eof_handling(void) {
     player->last_presented_pts_ms = 16533;
     g_mutex_unlock(&player->state_mutex);
     video_player_handle_eof_for_test(player);
+    g_assert_true(video_player_finalize_pending_eof_for_test(player));
     video_player_debug_close_stream();
     g_assert_false(video_player_debug_has_current_stream_for_test());
 
@@ -3211,6 +3470,32 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_drained_eof_ignores_output_backoff(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_true(init_minimal_seek_context(player));
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    stdout = capture;
+    player->is_playing = TRUE;
+    video_player_handle_eof_for_test(player);
+    terminal_output_defer("restore", TERMINAL_OUTPUT_RESTORE);
+    int fd = fileno(capture), witness = dup(fd);
+    g_assert_cmpint(witness, >=, 0);
+    g_assert_cmpint(close(fd), ==, 0);
+    g_assert_false(terminal_output_flush());
+    g_assert_false(video_player_render_frame_for_test(player));
+    g_assert_true(player->eof_ended);
+    g_assert_cmpint(dup2(witness, fd), ==, fd);
+    close(witness);
+    g_assert_true(terminal_output_flush());
+    stdout = saved;
+    fclose(capture);
+    teardown_minimal_seek_context(player);
+    video_player_destroy(player);
+}
+
 static void test_background_frame_waits_for_restore_deadline(void) {
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, FALSE, TRUE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -3863,6 +4148,28 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/eof_handling/drained_ignores_output_backoff", test_drained_eof_ignores_output_backoff);
+    g_test_add_func("/video_player/clock/frame_delay_from_rate_bounds", test_frame_delay_from_rate_bounds);
+    g_test_add_func("/video_player/clock/timing_arithmetic_boundaries", test_timing_arithmetic_boundaries);
+    g_test_add_func("/video_player/generation/crosses_signed_boundary", test_generation_crosses_signed_boundary);
+    g_test_add_func("/video_player/clock/saturates_elapsed_pts", test_clock_saturates_elapsed_pts);
+    g_test_add_func("/video_player/clock/saturates_fallback_pts", test_clock_saturates_fallback_pts);
+    g_test_add_func("/video_player/render_queue/layout_change_wakes_producer",
+                    test_layout_change_wakes_waiting_render_producer);
+    g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_append", NULL,
+                         test_queue_admission_reclaims_old_layout_capacity);
+    g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_sorted", GINT_TO_POINTER(1),
+                         test_queue_admission_reclaims_old_layout_capacity);
+    g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_behind_current", GINT_TO_POINTER(2),
+                         test_queue_admission_reclaims_old_layout_capacity);
+    g_test_add_data_func("/video_player/render_queue/old_layout_first", NULL,
+                         test_queue_take_discards_frames_from_old_layout);
+    g_test_add_data_func("/video_player/render_queue/old_layout_timed", GINT_TO_POINTER(1),
+                         test_queue_take_discards_frames_from_old_layout);
+    g_test_add_data_func("/video_player/render_queue/old_layout_peek", GINT_TO_POINTER(2),
+                         test_queue_take_discards_frames_from_old_layout);
+    g_test_add_func("/video_player/decode_queue/stop_preserves_queued_work",
+                    test_decode_queue_stop_preserves_queued_work);
     g_test_add_data_func("/video_player/output_bounds/failed_shorter_frame", GINT_TO_POINTER(0), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_moved_frame", GINT_TO_POINTER(1), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_without_layout", GINT_TO_POINTER(2), test_failed_frame_retains_clear_bounds);
@@ -4057,6 +4364,8 @@ void register_video_player_tests(void) {
                     test_rewind_reset_clears_timing_and_queue_state);
     g_test_add_func("/video_player/eof_handling/worker_eof_drains_tail_work_to_terminal_stop",
                     test_eof_handling_worker_eof_drains_tail_work_to_terminal_stop);
+    g_test_add_func("/video_player/eof_handling/waits_for_final_frame_output",
+                    test_eof_waits_for_final_frame_output);
     g_test_add_func("/video_player/render_queue/rechecks_last_presented_after_full_queue_wait",
                     test_queue_insert_sorted_rechecks_last_presented_after_full_queue_wait);
     g_test_add_func("/video_player/render_queue/rejects_old_generation_after_eof_invalidation",
@@ -4077,10 +4386,14 @@ void register_video_player_tests(void) {
                     test_seek_frame_with_test_hook_uses_registered_callback);
     g_test_add_func("/video_player/queue_take_for_playback/waits_even_when_future_queue_is_full",
                     test_queue_take_for_playback_waits_even_when_future_queue_is_full);
+    g_test_add_func("/video_player/queue_take_for_playback/skips_extremely_late_frame",
+                    test_queue_take_skips_extremely_late_frame);
     g_test_add_func("/video_player/queue_take_for_playback/waits_when_future_queue_is_not_full",
                     test_queue_take_for_playback_waits_when_future_queue_is_not_full);
     g_test_add_func("/video_player/calc_delay/uses_queue_head_even_with_high_io_avg",
                     test_calc_delay_uses_queue_head_even_with_high_io_avg);
+    g_test_add_func("/video_player/calc_delay/saturates_before_narrowing",
+                    test_calc_delay_saturates_before_narrowing);
     g_test_add_func("/video_player/calc_delay/retries_quickly_when_playing_and_queue_is_empty",
                     test_calc_delay_retries_quickly_when_playing_and_queue_is_empty);
 }

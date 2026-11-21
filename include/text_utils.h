@@ -3,6 +3,9 @@
 
 #include <glib.h>
 
+/* Compare filename basenames in AaBb order. */
+gint compare_path_basenames_aabb(gconstpointer a, gconstpointer b);
+
 /**
  * @brief Sanitizes text for safe terminal display
  *

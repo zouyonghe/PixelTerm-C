@@ -49,9 +49,15 @@ The descriptor writer temporarily uses nonblocking output and polls for up to
 The two-second readiness limit bounds repeated recovery failures between
 returned readiness checks, not total submission time. Continuous write progress
 resets the 100 ms idle deadline and can keep a submission running longer than
-two seconds; input and signal dispatch wait until it returns. Session
-restoration assumes stdout still names
-the original terminal; redirection during an active session is not reattached.
+two seconds; input and signal dispatch wait until it returns. The output session
+retains the original descriptor for buffered output and queued cleanup. Redirecting
+stdout does not move that cleanup to the new destination, even on retries after
+session teardown. Detached recovery has an independent flag-restore state and
+uses a 2 ms write budget per retry. A newer failed teardown supersedes the old
+endpoint's queued controls, but any outstanding flag restoration retains its
+descriptor and retries independently. A permanent `F_SETFL` failure can still
+leave that endpoint nonblocking when the process exits. Recovery does not purge
+buffered output on the new stdout.
 Probe queries use a separate descriptor transport and require their own bounded
 write handling; stdout session forwarding alone does not bound those queries.
 Shared-memory frames with failed/ambiguous submissions are discarded and their
@@ -146,9 +152,22 @@ Protects:
 - queue capacity and `render_in_flight`;
 - all queue condition-variable wait/broadcast operations.
 
-`worker_stop` is an atomic integer. It is often changed while `queue_mutex` is
-held so condition broadcasts and stop observation form one operation, but every
-read/write of the flag itself must use `g_atomic_int_get/set`.
+Decode workers report pending EOF; render workers only retire in-flight work.
+Only the main playback path finalizes EOF, after any dequeued frame has finished
+terminal submission, both queues are empty, and no render work is in flight.
+Main-thread dequeue and scheduling lookahead discard outdated render-queue heads
+under `queue_mutex` and wake producers when space is freed. A layout change
+therefore cannot display or schedule against a frame from the previous layout.
+Both render-queue insertion paths reclaim outdated frames before waiting for
+capacity; valid queued frames still apply backpressure.
+Layout changes also wake producers already waiting for render-queue space, so
+they can discard invalidated frames without waiting for a playback tick.
+
+`worker_stop` is an atomic integer. A stop request sets it and wakes queue
+waiters under `queue_mutex`. Render workers stop taking decoded frames even if
+the queue is nonempty. The main thread joins workers before deciding whether to
+discard queued frames or retain them for a failed seek. Every read/write of the
+flag itself must use `g_atomic_int_get/set`.
 
 ### Atomic fields
 
