@@ -1,4 +1,3 @@
-#include "renderer_test_internal.h"
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 #include <glib.h>
@@ -12,6 +11,7 @@
 #include <errno.h>
 
 #include "process_env.h"
+#include "renderer_test_internal.h"
 #include "kitty_graphics.h"
 #include "terminal_output.h"
 #include "gif_player.h"
