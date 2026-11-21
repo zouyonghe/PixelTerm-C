@@ -291,9 +291,12 @@ tsan-suite: $(TEST_TARGET)
 		/video_player/set_renderer/restarts_workers_when_replacing_during_playback \
 		/video_player/set_renderer/null_stops_playback_and_timer \
 		/video_player/render_queue/rechecks_last_presented_after_full_queue_wait \
+		/video_player/render_queue/layout_change_wakes_producer \
 		/video_player/decode_queue/sixel_mode_waits_instead_of_replacing_oldest \
 		/video_player/decode_queue/text_mode_waits_instead_of_replacing_oldest \
 		/video_player/decode_queue/wait_and_take_blocks_until_item_arrives \
+		/video_player/decode_queue/stop_preserves_queued_work \
+		/video_player/eof_handling/waits_for_final_frame_output \
 		/video_player/decode_worker/skips_conversion_for_late_frames \
 		/video_player/decode_worker/converts_frames_without_clock \
 		/video_player/decode_worker/converts_frames_after_silence \
