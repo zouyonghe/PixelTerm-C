@@ -168,9 +168,49 @@ static void video_player_render_work_finished(VideoPlayer *player) {
     g_mutex_unlock(&player->queue_mutex);
 }
 
-static void video_player_schedule_tick(VideoPlayer *player) {
+static gboolean video_player_tick_dispatch(GSource *source, GSourceFunc callback, gpointer data) {
+    (void)source;
+    return callback(data);
+}
+
+static GSourceFuncs video_player_tick_source_funcs = {.dispatch = video_player_tick_dispatch};
+
+static GSource *video_player_tick_source_locked(VideoPlayer *player) {
+    GSource *source = player->timer_id ? g_main_context_find_source_by_id(NULL, player->timer_id) : NULL;
+    return source && g_strcmp0(g_source_get_name(source), "pixelterm-video-tick") == 0 ? source : NULL;
+}
+
+/* state_mutex held; keep deadlines on the original monotonic PTS clock. */
+static gint64 video_player_tick_deadline_locked(VideoPlayer *player, const VideoFrame *head, gint64 now) {
+    if (!player->clock_started) return now + 5000;
+    if (!head) {
+        gint delay = player->last_present_us > 0 ? 5 :
+            player->frame_delay_ms <= 0 ? 10 : MAX(player->frame_delay_ms, 5);
+        return now + (gint64)delay * 1000;
+    }
+    if (head->pts_ms <= player->clock_start_pts_ms) return now + 1000;
+    guint64 delta = (guint64)head->pts_ms - (guint64)player->clock_start_pts_ms;
+    gint64 origin = MAX(player->clock_start_us, 0);
+    gint64 deadline = delta > (guint64)(G_MAXINT64 - origin) / 1000 ? G_MAXINT64 :
+        origin + (gint64)delta * 1000;
+    return MAX(deadline, now + 1000);
+}
+
+/* queue_mutex held; producers only pull an existing deadline forward. */
+static void video_player_wake_tick_locked(VideoPlayer *player) {
+    g_mutex_lock(&player->state_mutex);
+    GSource *source = video_player_tick_source_locked(player);
+    if (source && player->is_playing && !player->eof_ended) {
+        gint64 deadline = video_player_tick_deadline_locked(player, g_queue_peek_head(player->frame_queue),
+                                                            g_get_monotonic_time());
+        if (deadline < g_source_get_ready_time(source)) g_source_set_ready_time(source, deadline);
+    }
+    g_mutex_unlock(&player->state_mutex);
+}
+
+static gboolean video_player_schedule_tick(VideoPlayer *player) {
     if (!player) {
-        return;
+        return FALSE;
     }
 
     g_mutex_lock(&player->state_mutex);
@@ -179,23 +219,36 @@ static void video_player_schedule_tick(VideoPlayer *player) {
     /* video_player_has_renderer() takes render_mutex; keep renderer reads
      * centralized so detach cannot race with tick scheduling. */
     if (!is_playing || !video_player_has_renderer(player)) {
-        return;
+        return FALSE;
     }
 
-    int delay = video_player_calc_delay_ms(player);
-    video_player_debug_log(player, "tick-reschedule", delay, 0, 0, 0);
-
+    g_mutex_lock(&player->queue_mutex);
     g_mutex_lock(&player->state_mutex);
     if (!player->is_playing || player->eof_ended) {
         g_mutex_unlock(&player->state_mutex);
-        return;
+        g_mutex_unlock(&player->queue_mutex);
+        return FALSE;
     }
-    guint old_timer_id = player->timer_id;
-    player->timer_id = g_timeout_add(delay, video_player_tick, player);
+    gint64 now = g_get_monotonic_time();
+    gint64 deadline = video_player_tick_deadline_locked(player, g_queue_peek_head(player->frame_queue), now);
+    GSource *source = video_player_tick_source_locked(player);
+    guint old_timer_id = 0;
+    if (source) {
+        g_source_set_ready_time(source, deadline);
+    } else {
+        old_timer_id = player->timer_id;
+        source = g_source_new(&video_player_tick_source_funcs, sizeof(GSource));
+        g_source_set_name(source, "pixelterm-video-tick");
+        g_source_set_callback(source, video_player_tick, player, NULL);
+        g_source_set_ready_time(source, deadline);
+        player->timer_id = g_source_attach(source, NULL);
+        g_source_unref(source);
+    }
     g_mutex_unlock(&player->state_mutex);
-    if (old_timer_id != 0) {
-        g_source_remove(old_timer_id);
-    }
+    g_mutex_unlock(&player->queue_mutex);
+    if (old_timer_id) g_source_remove(old_timer_id);
+    video_player_debug_log(player, "tick-reschedule", (deadline - now) / 1000, 0, 0, 0);
+    return TRUE;
 }
 
 G_GNUC_INTERNAL void video_player_schedule_tick_for_test(VideoPlayer *player) {
@@ -397,6 +450,7 @@ void video_player_queue_push(VideoPlayer *player, VideoFrame *frame) {
     }
 
     g_queue_push_tail(player->frame_queue, frame);
+    if (g_queue_peek_head(player->frame_queue) == frame) video_player_wake_tick_locked(player);
     g_mutex_unlock(&player->queue_mutex);
 }
 
@@ -498,6 +552,7 @@ void video_player_queue_insert_sorted(VideoPlayer *player, VideoFrame *frame) {
     } else {
         g_queue_push_tail(player->frame_queue, frame);
     }
+    if (g_queue_peek_head(player->frame_queue) == frame) video_player_wake_tick_locked(player);
     g_mutex_unlock(&player->queue_mutex);
 }
 
@@ -1339,12 +1394,15 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
         return;
     }
 
-    renderer_update_terminal_size(renderer);
     renderer->config = config;
+    if (renderer_update_terminal_size(renderer) != ERROR_NONE) return;
 
     if (layout_valid) {
         renderer->config.max_width = max_width;
         renderer->config.max_height = max_height;
+    } else {
+        renderer->config.max_width = config.max_width;
+        renderer->config.max_height = config.max_height;
     }
 
     *layout_generation_inout = current_generation;
@@ -1468,16 +1526,9 @@ static gboolean video_player_tick(gpointer user_data) {
         return G_SOURCE_REMOVE;
     }
 
-    int delay = video_player_calc_delay_ms(player);
-    video_player_debug_log(player, "tick-reschedule", delay, 0, 0, 0);
-
+    if (video_player_schedule_tick(player)) return G_SOURCE_CONTINUE;
     g_mutex_lock(&player->state_mutex);
-    if (!player->is_playing || player->eof_ended) {
-        player->timer_id = 0;
-        g_mutex_unlock(&player->state_mutex);
-        return G_SOURCE_REMOVE;
-    }
-    player->timer_id = g_timeout_add(delay, video_player_tick, player);
+    player->timer_id = 0;
     g_mutex_unlock(&player->state_mutex);
     return G_SOURCE_REMOVE;
 }

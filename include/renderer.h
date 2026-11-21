@@ -25,13 +25,19 @@ typedef struct {
     ChafaOptimizations optimizations;
 } RendererConfig;
 
-// Renderer structure
+/* Canvas, terminal info, and configuration require exclusive renderer ownership.
+ * cache_mutex protects filepath-cache operations, not direct rendering. */
 typedef struct {
     ChafaCanvas *canvas;
-    ChafaCanvasConfig *canvas_config;
+    const ChafaCanvasConfig *canvas_config; /* Renderer-owned; read-only to callers. */
+    gboolean canvas_config_dirty;
+    gboolean canvas_config_override;
+    ChafaSymbolTags canvas_symbol_tags;
     ChafaTermInfo *term_info;
     RendererConfig config;
     GHashTable *cache;
+    gint cache_cell_width, cache_cell_height;
+    gdouble cache_cell_aspect;
     GMutex cache_mutex;
 } ImageRenderer;
 
