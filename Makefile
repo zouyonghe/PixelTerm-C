@@ -288,6 +288,7 @@ tsan-suite: $(TEST_TARGET)
 	@set -e; for path in \
 		/video_player/fallback_pts/set_waits_on_state_mutex \
 		/video_player/fallback_pts/resolve_and_advance_waits_on_state_mutex \
+		/video_player/schedule_tick/reuses_source_and_uses_pts \
 		/video_player/set_renderer/restarts_workers_when_replacing_during_playback \
 		/video_player/set_renderer/null_stops_playback_and_timer \
 		/video_player/render_queue/rechecks_last_presented_after_full_queue_wait \

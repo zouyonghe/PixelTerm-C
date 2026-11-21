@@ -1392,6 +1392,29 @@ static void test_set_renderer_null_stops_playback_and_timer(void) {
     video_player_destroy(player);
 }
 
+static void test_schedule_tick_reuses_source_and_uses_pts(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    player->is_playing = TRUE;
+    player->clock_started = TRUE;
+    player->clock_start_us = g_get_monotonic_time() - 500;
+    player->clock_start_pts_ms = 100;
+    video_player_queue_push(player, make_test_frame(1100));
+    video_player_schedule_tick_for_test(player);
+    guint id = player->timer_id;
+    GSource *source = g_main_context_find_source_by_id(NULL, id);
+    g_assert_nonnull(source);
+    g_assert_cmpint(g_source_get_ready_time(source), ==, player->clock_start_us + G_TIME_SPAN_SECOND);
+
+    video_player_queue_insert_sorted(player, make_test_frame(600));
+    g_assert_cmpint(g_source_get_ready_time(source), ==, player->clock_start_us + 500000);
+    video_player_schedule_tick_for_test(player);
+    g_assert_cmpuint(player->timer_id, ==, id);
+    g_assert_cmpint(video_player_pause(player), ==, ERROR_NONE);
+    g_assert_null(g_main_context_find_source_by_id(NULL, id));
+    video_player_destroy(player);
+}
+
 static void test_schedule_tick_skips_when_eof_already_ended(void) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     if (!player) {
@@ -3239,7 +3262,7 @@ static void test_background_frame_waits_for_restore_deadline(void) {
         g_source_set_ready_time(source, 0);
         g_assert_true(g_main_context_iteration(NULL, FALSE));
         g_assert_cmpuint(player->timer_id, !=, 0);
-        g_assert_cmpuint(player->timer_id, !=, timer_id);
+        g_assert_cmpuint(player->timer_id, ==, timer_id);
         g_assert_cmpuint(output.attempts, ==, attempts);
         g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 1);
         g_assert_true(g_queue_peek_head(player->frame_queue) == frame);
@@ -3866,6 +3889,7 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/schedule_tick/reuses_source_and_uses_pts", test_schedule_tick_reuses_source_and_uses_pts);
     g_test_add_data_func("/video_player/output_bounds/failed_shorter_frame", GINT_TO_POINTER(0), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_moved_frame", GINT_TO_POINTER(1), test_failed_frame_retains_clear_bounds);
     g_test_add_data_func("/video_player/output_bounds/failed_without_layout", GINT_TO_POINTER(2), test_failed_frame_retains_clear_bounds);

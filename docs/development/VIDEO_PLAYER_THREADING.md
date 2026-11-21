@@ -128,8 +128,9 @@ or input modules.
 Protects:
 
 - playback state (`is_playing`, EOF/draining state, timing and PTS fields);
-- `timer_id` bookkeeping (actual GLib source operations remain main-context
-  operations and occur after releasing the mutex);
+- `timer_id` bookkeeping and deadline updates. A producer may advance the
+  attached source under `queue_mutex` → `state_mutex`; it cannot attach a source.
+  Clear the ID under `state_mutex` before removing the source outside the lock;
 - terminal render-area/layout state and line cache;
 - presentation statistics and `show_stats`;
 - last rendered frame bounds.
