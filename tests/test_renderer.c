@@ -402,7 +402,53 @@ static void test_renderer_validate_pixel_data_rejects_large_geometry(void) {
                                                          &buffer_size));
 }
 
+static void test_renderer_canvas_reuse(gconstpointer data) {
+    ImageRenderer *renderer = renderer_create();
+    g_assert_nonnull(renderer);
+    gint mode = GPOINTER_TO_INT(data);
+    renderer->config.force_text = mode == 0;
+    renderer->config.force_kitty = mode == 1;
+    renderer->config.force_sixel = mode == 2;
+    renderer->config.preserve_aspect_ratio = FALSE;
+    renderer->config.max_width = 8;
+    renderer->config.max_height = 4;
+    g_assert_cmpint(renderer_initialize(renderer, NULL), ==, ERROR_NONE);
+    guint8 pixels[] = {255, 0, 0, 255, 0, 0, 255, 255};
+    GString *result = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
+    g_assert_nonnull(result);
+    g_string_free(result, TRUE);
+    ChafaCanvas *previous = renderer->canvas;
+    chafa_canvas_ref(previous);
+
+    pixels[3] = 0;
+    GString *reused = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
+    g_assert_nonnull(reused);
+    g_assert_true(renderer->canvas == previous);
+
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    renderer->config.max_width = 8;
+    renderer->config.max_height = 4;
+    GString *fresh = renderer_render_image_data(renderer, pixels, 2, 1, 8, 4);
+    g_assert_nonnull(fresh);
+    g_assert_true(renderer->canvas != previous);
+    g_assert_cmpmem(reused->str, reused->len, fresh->str, fresh->len);
+    chafa_canvas_unref(previous);
+    g_string_free(reused, TRUE);
+    g_string_free(fresh, TRUE);
+
+    previous = renderer->canvas;
+    chafa_canvas_ref(previous);
+    renderer->config.max_width = 9;
+    g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_NONE);
+    g_assert_true(renderer->canvas != previous);
+    chafa_canvas_unref(previous);
+    renderer_destroy(renderer);
+}
+
 void register_renderer_tests(void) {
+    g_test_add_data_func("/renderer/canvas/reuse_text", NULL, test_renderer_canvas_reuse);
+    g_test_add_data_func("/renderer/canvas/reuse_kitty", GINT_TO_POINTER(1), test_renderer_canvas_reuse);
+    g_test_add_data_func("/renderer/canvas/reuse_sixel", GINT_TO_POINTER(2), test_renderer_canvas_reuse);
     g_test_add_func("/renderer/cache_roundtrip", test_renderer_cache_roundtrip);
     g_test_add_func("/renderer/get_rendered_dimensions", test_renderer_get_rendered_dimensions_defaults);
     g_test_add_func("/renderer/is_graphics_mode/text_mode",

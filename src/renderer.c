@@ -519,20 +519,38 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
                                    font_ratio, TRUE, FALSE);
     }
 
+    if (!renderer->canvas_config || output_width <= 0 || output_height <= 0) {
+        return ERROR_CHAFA_INIT;
+    }
+
+    gint cell_w, cell_h;
+    get_terminal_cell_geometry(&cell_w, &cell_h);
+    if (renderer->canvas && !renderer->canvas_config_dirty) {
+        const ChafaCanvasConfig *active = chafa_canvas_peek_config(renderer->canvas);
+        gint active_width, active_height, active_cell_w, active_cell_h;
+        chafa_canvas_config_get_geometry(active, &active_width, &active_height);
+        chafa_canvas_config_get_cell_geometry(active, &active_cell_w, &active_cell_h);
+        if (output_width == active_width && output_height == active_height &&
+            cell_w == active_cell_w && cell_h == active_cell_h &&
+            chafa_canvas_config_get_pixel_mode(active) ==
+                chafa_canvas_config_get_pixel_mode(renderer->canvas_config)) {
+            return ERROR_NONE;
+        }
+    }
+
     // Update canvas geometry
     chafa_canvas_config_set_geometry(renderer->canvas_config, output_width, output_height);
-    // Set cell geometry so chafa can respect real pixel sizes when available
-    gint cell_w = 0, cell_h = 0;
-    get_terminal_cell_geometry(&cell_w, &cell_h);
     if (cell_w > 0 && cell_h > 0) {
         chafa_canvas_config_set_cell_geometry(renderer->canvas_config, cell_w, cell_h);
     }
 
-    // Re-create canvas with new configuration
+    ChafaCanvas *replacement = chafa_canvas_new(renderer->canvas_config);
+    if (!replacement) return ERROR_CHAFA_INIT;
     if (renderer->canvas) {
         chafa_canvas_unref(renderer->canvas);
     }
-    renderer->canvas = chafa_canvas_new(renderer->canvas_config);
+    renderer->canvas = replacement;
+    renderer->canvas_config_dirty = FALSE;
 
     return ERROR_NONE;
 }
@@ -610,6 +628,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
 
     // Apply best modes from the new terminal info
     if (renderer->canvas_config) {
+        renderer->canvas_config_dirty = TRUE;
         ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
         if (force_text_mode) {

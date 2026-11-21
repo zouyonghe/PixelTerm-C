@@ -29,6 +29,7 @@ typedef struct {
 typedef struct {
     ChafaCanvas *canvas;
     ChafaCanvasConfig *canvas_config;
+    gboolean canvas_config_dirty;
     ChafaTermInfo *term_info;
     RendererConfig config;
     GHashTable *cache;
