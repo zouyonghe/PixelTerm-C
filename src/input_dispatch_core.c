@@ -263,7 +263,13 @@ static gboolean handle_key_press_common(PixelTermApp *app,
                 } else if (!info_was_visible) {
                     app->suppress_full_clear = TRUE;
                 }
+                gboolean preserve_pause = app->preserve_media_pause_on_redraw;
+                if (input_dispatch_current_is_video(app) && app->video_player &&
+                    video_player_has_video(app->video_player) && !video_player_is_playing(app->video_player)) {
+                    app->preserve_media_pause_on_redraw = TRUE;
+                }
                 record_dispatch_error(app, app_render_by_mode(app));
+                app->preserve_media_pause_on_redraw = preserve_pause;
             }
             return TRUE;
         default:

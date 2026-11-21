@@ -23,6 +23,7 @@ typedef struct {
     gint book_change_page_calls;
     gint delete_calls;
     gint render_by_mode_calls;
+    gboolean render_by_mode_preserved_pause;
     gint open_book_calls;
     gint close_book_calls;
     gint enter_file_manager_calls;

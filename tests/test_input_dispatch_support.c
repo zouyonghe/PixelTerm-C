@@ -490,8 +490,8 @@ ErrorCode app_exit_preview(PixelTermApp *app, gboolean open_selected) {
 #include "../src/input_dispatch_key_modes.c"
 
 ErrorCode app_render_by_mode(PixelTermApp *app) {
-    (void)app;
     g_input_dispatch_stub_state.render_by_mode_calls++;
+    g_input_dispatch_stub_state.render_by_mode_preserved_pause = app && app->preserve_media_pause_on_redraw;
     const gchar *payload = g_input_dispatch_stub_state.render_by_mode_payload;
     if (payload && !terminal_output_write(payload, strlen(payload))) return ERROR_OUTPUT_IO;
     if (g_input_dispatch_stub_state.render_by_mode_outputs_help && app->help_visible &&
