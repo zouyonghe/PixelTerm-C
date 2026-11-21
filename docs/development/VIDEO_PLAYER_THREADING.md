@@ -52,8 +52,11 @@ resets the 100 ms idle deadline and can keep a submission running longer than
 two seconds; input and signal dispatch wait until it returns. The output session
 retains the original descriptor for buffered output and queued cleanup. Redirecting
 stdout does not move that cleanup to the new destination, even on retries after
-session teardown. Recovery for the old endpoint does not purge buffered output
-on the new stdout.
+session teardown. Detached recovery has an independent flag-restore state and
+uses a 2 ms write budget per retry. One retired endpoint can coexist with a
+new session; a newer failed teardown replaces that retired endpoint after a
+final flag-restore attempt. Recovery does not purge buffered output on the new
+stdout.
 Probe queries use a separate descriptor transport and require their own bounded
 write handling; stdout session forwarding alone does not bound those queries.
 Shared-memory frames with failed/ambiguous submissions are discarded and their

@@ -13,12 +13,13 @@ static guint get_calls, restore_calls, enable_calls, fail_get, fail_restore, fai
 static int failed_get_fd;
 static int get_failure_errno;
 static int fail_get_fd = -1;
+static int fail_restore_fd = -1;
 
 static int failing_fcntl(int fd, int operation, int flags) {
     if ((operation == F_GETFL && (++get_calls == fail_get || fd == fail_get_fd)) ||
         (operation == F_SETFL && (flags & O_NONBLOCK) && ++enable_calls == fail_enable) ||
         (operation == F_SETFL && !(flags & O_NONBLOCK) &&
-         ++restore_calls >= fail_restore && fail_restore)) {
+         ((++restore_calls >= fail_restore && fail_restore) || fd == fail_restore_fd))) {
         if (operation == F_GETFL) failed_get_fd = fd;
         errno = operation == F_GETFL && get_failure_errno ? get_failure_errno : EIO;
         return -1;
@@ -154,6 +155,14 @@ static void test_full_pipe_returns(gconstpointer data) {
         if (session) {
             g_assert_false(terminal_output_end_session());
             g_assert_true(stdout == stream);
+            if (GPOINTER_TO_INT(data) == 3) {
+                stdout = recovery;
+                gint64 before = g_get_monotonic_time();
+                g_assert_true(terminal_output_flush());
+                g_assert_cmpint(g_get_monotonic_time() - before, <, 250000);
+                stdout = stream;
+                g_usleep(110000);
+            }
             g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
             while (read(pipefd[0], bytes, sizeof(bytes)) > 0) {}
         }
@@ -445,7 +454,17 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_cmpint(retained, !=, slave);
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
     terminal_output_set_fcntl_for_test(NULL);
-    if (GPOINTER_TO_INT(data) == 4) {
+    if (GPOINTER_TO_INT(data) == 5 || GPOINTER_TO_INT(data) == 6) {
+        terminal_output_set_fcntl_for_test(failing_fcntl);
+        if (GPOINTER_TO_INT(data) == 5) fail_restore_fd = retained;
+        else fail_get_fd = retained;
+        g_assert_true(terminal_output_write("normal output", 13));
+        g_assert_true(terminal_output_begin_session());
+        g_assert_true(terminal_output_end_session());
+        fail_get_fd = fail_restore_fd = -1;
+        terminal_output_set_fcntl_for_test(NULL);
+        g_usleep(110000);
+    } else if (GPOINTER_TO_INT(data) == 4) {
         terminal_output_set_fcntl_for_test(failing_fcntl);
         fail_get_fd = retained;
         g_assert_true(terminal_output_write("normal output", 13));
@@ -506,6 +525,10 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/session_restore_survives_stdout_failure", GINT_TO_POINTER(3),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/session_restore_does_not_block_stdout", GINT_TO_POINTER(4),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_flags_isolated", GINT_TO_POINTER(5),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_allows_new_session", GINT_TO_POINTER(6),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);
