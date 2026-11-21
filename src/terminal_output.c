@@ -168,6 +168,12 @@ gboolean terminal_output_end_session(void) {
     if (!session_stream) return TRUE;
     stdout = session_stream;
     gboolean success = terminal_output_flush();
+    if (pending_chunk) {
+        g_string_free(pending_chunk, TRUE);
+        pending_chunk = NULL;
+        chunk_failed = TRUE;
+        terminal_output_defer_recovery();
+    }
     terminal_output_discard();
     /* Purge state belongs to the closing stream, not the restored stdout. */
     recovery_pending = FALSE;

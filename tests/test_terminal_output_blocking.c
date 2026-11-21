@@ -11,6 +11,7 @@
 
 static guint get_calls, restore_calls, enable_calls, fail_get, fail_restore, fail_enable;
 static int failed_get_fd;
+static int get_failure_errno;
 
 static int failing_fcntl(int fd, int operation, int flags) {
     if ((operation == F_GETFL && ++get_calls == fail_get) ||
@@ -18,7 +19,7 @@ static int failing_fcntl(int fd, int operation, int flags) {
         (operation == F_SETFL && !(flags & O_NONBLOCK) &&
          ++restore_calls >= fail_restore && fail_restore)) {
         if (operation == F_GETFL) failed_get_fd = fd;
-        errno = EIO;
+        errno = operation == F_GETFL && get_failure_errno ? get_failure_errno : EIO;
         return -1;
     }
     return fcntl(fd, operation, flags);
@@ -425,13 +426,19 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     fflush(saved);
     stdout = stream;
     g_assert_true(terminal_output_begin_session());
+    if (GPOINTER_TO_INT(data) == 2) {
+        g_assert_true(terminal_output_write_chunk("OLD-CHUNK", 9));
+    }
     terminal_output_defer("RESTORE", TERMINAL_OUTPUT_RESTORE);
     g_assert_cmpint(dup2(fileno(redirected), slave), ==, slave);
 
     get_calls = restore_calls = enable_calls = fail_restore = fail_enable = 0;
     fail_get = 1;
+    get_failure_errno = GPOINTER_TO_INT(data) == 2 ? EAGAIN : 0;
     terminal_output_set_fcntl_for_test(failing_fcntl);
     g_assert_false(terminal_output_end_session());
+    get_failure_errno = 0;
+    if (GPOINTER_TO_INT(data) == 2) g_assert_true(terminal_output_take_chunk_error());
     g_assert_true(stdout == stream);
     int retained = failed_get_fd;
     g_assert_cmpint(retained, !=, slave);
@@ -453,8 +460,11 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     }
     char bytes[32];
     ssize_t count = read(master, bytes, sizeof(bytes));
-    g_assert_cmpint(count, ==, 9);
-    g_assert_cmpmem(bytes, (gsize)count, "\033\\RESTORE", 9);
+    if (GPOINTER_TO_INT(data) == 2) {
+        g_assert_cmpmem(bytes, (gsize)count, "\033\\RESTORE\033\\", 11);
+    } else {
+        g_assert_cmpmem(bytes, (gsize)count, "\033\\RESTORE", 9);
+    }
     g_assert_cmpint(close(master), ==, 0);
     g_assert_cmpint(close(witness), ==, 0);
     stdout = saved;
@@ -470,6 +480,8 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/session_restore_keeps_original_endpoint", NULL,
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/session_restore_preserves_redirected_output", GINT_TO_POINTER(1),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_drops_failed_chunk", GINT_TO_POINTER(2),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);
