@@ -67,6 +67,12 @@ static int output_fcntl(int fd, int operation, int flags) {
     return fcntl_hook ? fcntl_hook(fd, operation, flags) : fcntl(fd, operation, flags);
 }
 
+static void terminal_output_retry_detached_flags(void) {
+    if (detached_needs_restore && output_fcntl(detached_fd, F_SETFL, detached_flags) == 0)
+        detached_needs_restore = FALSE;
+    terminal_output_release_detached_fd();
+}
+
 static gboolean restore_descriptor_flags(void) {
     if (restore_fd < 0) return TRUE;
     if (output_fcntl(restore_fd, F_SETFL, restore_flags) < 0) return FALSE;
@@ -394,9 +400,7 @@ gboolean terminal_output_flush(void) {
     /* Old endpoints must not wait for unrelated stdout output or failures. */
     gint64 now_us = g_get_monotonic_time();
     if (detached_fd >= 0 && now_us >= next_detached_retry_us) {
-        if (detached_needs_restore && output_fcntl(detached_fd, F_SETFL, detached_flags) == 0)
-            detached_needs_restore = FALSE;
-        terminal_output_release_detached_fd();
+        terminal_output_retry_detached_flags();
         if (detached_fd >= 0) {
             terminal_output_drain_pending(TRUE, now_us + 2000);
             if (detached_fd >= 0) next_detached_retry_us = now_us + 100000;
@@ -428,16 +432,19 @@ static void terminal_output_cleanup_at_exit(void) {
         /* A sticky/buffered frame error must not consume the final restore attempt. */
         terminal_output_flush();
     }
+    terminal_output_retry_detached_flags();
     /* Process exit is the last retry opportunity, even if the terminal is gone. */
     while (!g_queue_is_empty(&pending_output)) {
         PendingOutput *pending = g_queue_pop_head(&pending_output);
         /* A blocked head must not starve later independently ST-framed restores.
          * Already-attempted ambiguous releases have become ST-only above. */
-        terminal_output_discard();
-        if (!terminal_output_submit_pending(pending, NULL, g_get_monotonic_time() + 2000))
+        gboolean uses_stdout = terminal_output_pending_uses_stdout(pending);
+        if (uses_stdout) terminal_output_discard();
+        if (!terminal_output_submit_pending(pending, NULL, g_get_monotonic_time() + 2000) && uses_stdout)
             terminal_output_discard();
         terminal_output_free_pending(pending);
     }
+    terminal_output_retry_detached_flags();
 }
 
 static void terminal_output_queue(GString *command, gboolean replay_safe) {

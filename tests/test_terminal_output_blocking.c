@@ -428,6 +428,8 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     /* Keep the PTY readable after the session releases its last writer. */
     int witness = dup(slave);
     g_assert_cmpint(witness, >=, 0);
+    int original_flags = fcntl(witness, F_GETFL);
+    g_assert_cmpint(original_flags, >=, 0);
     FILE *stream = fdopen(slave, "w");
     FILE *redirected = tmpfile();
     g_assert_nonnull(stream);
@@ -487,6 +489,7 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_true(terminal_output_flush());
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, -1);
     g_assert_cmpint(errno, ==, EBADF);
+    g_assert_cmpint(fcntl(witness, F_GETFL) & O_NONBLOCK, ==, original_flags & O_NONBLOCK);
     if (GPOINTER_TO_INT(data) == 3) {
         g_assert_cmpint(ftell(redirected), ==, 2); /* ST for its own failed preflight. */
     } else if (GPOINTER_TO_INT(data)) {
