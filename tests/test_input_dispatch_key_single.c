@@ -349,6 +349,7 @@ static void test_video_wheel_and_arrow_share_seek(void) {
     wheel.mouse_button = MOUSE_SCROLL_DOWN;
     wheel.mouse_y = 8;
     input_dispatch_handle_mouse_scroll_single(&app, &wheel);
+    g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
     g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, 5000);
     g_assert_cmpint(app.video_progress_until_us, >=, wheel_deadline);
     wheel.mouse_y = 24;
@@ -374,6 +375,16 @@ static void test_video_seek_footer_expires_while_paused(gconstpointer data) {
     stdout = capture;
     g_assert_cmpint(app_update_video_progress(&app, 1), ==, ERROR_NONE);
     g_assert_true(app.video_progress_drawn);
+    const char *clear_rows = "\033[20;1H\033[2K\033[21;1H\033[2K";
+    long zen_offset = ftell(capture);
+    app.ui_text_hidden = TRUE;
+    g_assert_cmpint(app_update_video_progress(&app, 2), ==, ERROR_NONE);
+    g_assert_cmpint(ftell(capture) - zen_offset, ==, strlen(clear_rows));
+    app.ui_text_hidden = FALSE;
+    g_assert_cmpint(app_update_video_progress(&app, 3), ==, ERROR_NONE);
+    g_assert_true(app.video_progress_drawn);
+    player->last_presented_pts_ms = 500;
+    g_assert_cmpint(app_update_video_progress(&app, 4), ==, ERROR_NONE);
     player->is_playing = TRUE;
     player->last_presented_pts_ms = 1000;
     g_assert_cmpint(app_update_video_progress(&app, 2000000), ==, ERROR_NONE);
@@ -398,11 +409,20 @@ static void test_video_seek_footer_expires_while_paused(gconstpointer data) {
     g_snprintf(prefix, sizeof(prefix), "\033[20;1H\033[2K\033[21;1H\033[2K\033[20;%dH",
                (app.term_width - track_width) / 2 + 1);
     g_assert_true(g_str_has_prefix(bytes, prefix));
-    g_assert_nonnull(strstr(bytes, "\033[1;36m00:00 /"));
-    g_assert_nonnull(strstr(bytes, "\033[1;36m00:01 /"));
+    g_assert_nonnull(strstr(bytes, "\033[1;36m00:00 / 00:06\033[0m"));
+    g_assert_nonnull(strstr(bytes, "\033[1;36m00:01 / 00:06\033[0m"));
+    g_assert_cmpmem(bytes + zen_offset, strlen(clear_rows), clear_rows, strlen(clear_rows));
     g_assert_nonnull(strstr(bytes, "\033[90m"));
     const char *track = strstr(bytes, "\033[90m") + strlen("\033[90m");
     g_assert_cmpuint(strspn(track, "-"), ==, track_width - 2);
+    const char *changed = strstr(track, "[\033[1;36m=");
+    g_assert_nonnull(changed);
+    changed += strlen("[\033[1;36m");
+    gint filled = (track_width - 2) / 12; /* 500 ms out of six seconds. */
+    g_assert_cmpuint(strspn(changed, "="), ==, filled);
+    changed += filled;
+    g_assert_true(g_str_has_prefix(changed, "\033[90m"));
+    g_assert_cmpuint(strspn(changed + strlen("\033[90m"), "-"), ==, track_width - 2 - filled);
     g_snprintf(time_position, sizeof(time_position), "\033[21;%dH\033[1;36m", (app.term_width - 13) / 2 + 1);
     g_assert_nonnull(strstr(bytes, time_position));
     g_assert_true(g_str_has_suffix(bytes, "\033[20;1H\033[2K\033[21;1H\033[2K"));

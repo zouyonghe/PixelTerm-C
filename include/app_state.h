@@ -130,6 +130,7 @@ typedef struct {
     VideoPlayer *video_player;
     gint64 video_progress_until_us;
     gint64 video_progress_seconds;
+    gint video_progress_filled_cells;
     gboolean video_progress_drawn;
     gboolean video_progress_dirty;
 

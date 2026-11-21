@@ -974,7 +974,27 @@ static void test_resize_resumes_playing_media(gconstpointer data) {
     destroy_render_test_app(&app);
 }
 
+static void test_video_scale_and_timeline_transition(void) {
+    PixelTermApp app = {0};
+    g_assert_true(init_render_test_app(&app));
+    app_single_render_reset_stubs();
+    app.video_scale = 1.5;
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
+    gint timeline_row = app.term_height - ui_single_view_bottom_reserved_lines(&app) - 1;
+    g_assert_cmpint(app.video_player->render_area_top_row + app.video_player->render_area_height, <=, timeline_row);
+
+    app_single_render_reset_stubs();
+    app.current_index = 2;
+    app.suppress_full_clear = TRUE;
+    app.video_progress_drawn = TRUE;
+    g_assert_cmpint(app_render_current_image(&app), ==, ERROR_NONE);
+    g_assert_cmpint(g_app_single_render_stub_state.clear_screen_calls, ==, 1);
+    g_assert_false(app.video_progress_drawn);
+    destroy_render_test_app(&app);
+}
+
 void register_app_single_render_integration_tests(void) {
+    g_test_add_func("/app_single_render/video/scale_and_timeline_transition", test_video_scale_and_timeline_transition);
     g_test_add_data_func("/app_single_render/resize/playing_video", GINT_TO_POINTER(0), test_resize_resumes_playing_media);
     g_test_add_data_func("/app_single_render/resize/playing_gif", GINT_TO_POINTER(1), test_resize_resumes_playing_media);
     g_test_add_data_func("/app_single_render/resize/paused_video", GINT_TO_POINTER(0), test_resize_preserves_paused_media);

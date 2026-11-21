@@ -30,8 +30,6 @@ static void app_print_video_footer(PixelTermApp *app) {
 ErrorCode app_update_video_progress(PixelTermApp *app, gint64 now_us) {
     if (!app || !app_is_single_mode(app) || app->help_visible || app->info_visible ||
         !app->video_player || app->term_width < 2) return ERROR_NONE;
-    if (!app->video_progress_dirty && !app->video_progress_drawn &&
-        (app->ui_text_hidden || !video_player_is_playing(app->video_player))) return ERROR_NONE;
     gint bar_row = app->term_height - ui_single_view_bottom_reserved_lines(app) - VIDEO_TIMELINE_ROWS + 1;
     if (bar_row <= ui_single_view_content_top_row(app)) return ERROR_NONE;
     gboolean visible = !app->ui_text_hidden &&
@@ -42,11 +40,18 @@ ErrorCode app_update_video_progress(PixelTermApp *app, gint64 now_us) {
     }
 
     gint64 position = 0, duration = 0;
+    gint cells = 0, filled = 0;
     if (visible) {
         video_player_get_progress(app->video_player, &position, &duration);
-        if (duration > 0) position = MIN(position, duration);
+        if (duration > 0) {
+            position = MIN(position, duration);
+            /* The track, including brackets, spans two thirds of the terminal. */
+            cells = MAX(0, MIN(app->term_width - app->term_width / 3 - 2, app->term_width - 3));
+            filled = (gint)((gdouble)position / duration * cells);
+        }
         if (app->video_progress_drawn && !app->video_progress_dirty &&
-            app->video_progress_seconds == position / 1000) return ERROR_NONE;
+            app->video_progress_seconds == position / 1000 &&
+            app->video_progress_filled_cells == filled) return ERROR_NONE;
     }
     gint time_row = bar_row + 1;
     printf("\033[%d;1H\033[2K\033[%d;1H\033[2K", bar_row, time_row);
@@ -58,10 +63,7 @@ ErrorCode app_update_video_progress(PixelTermApp *app, gint64 now_us) {
         if (duration > 0) {
             g_string_append_printf(line, " / %02" G_GINT64_FORMAT ":%02" G_GINT64_FORMAT,
                                    total_s / 60, total_s % 60);
-            /* The track, including brackets, spans two thirds of the terminal. */
-            gint cells = MIN(app->term_width - app->term_width / 3 - 2, app->term_width - 3);
             if (cells > 0) {
-                gint filled = (gint)((gdouble)position / duration * cells);
                 gint column = (app->term_width - cells - 2) / 2 + 1;
                 printf("\033[%d;%dH[\033[1;36m", bar_row, column);
                 for (gint i = 0; i < filled; i++) putchar('=');
@@ -78,6 +80,7 @@ ErrorCode app_update_video_progress(PixelTermApp *app, gint64 now_us) {
     app->video_progress_drawn = visible;
     app->video_progress_dirty = FALSE;
     app->video_progress_seconds = position / 1000;
+    app->video_progress_filled_cells = filled;
     return terminal_output_flush() ? ERROR_NONE : ERROR_OUTPUT_IO;
 }
 
@@ -440,6 +443,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     if (overlay_visible && active_kind == MEDIA_KIND_VIDEO) {
         active_kind = MEDIA_KIND_IMAGE;
     }
+    gboolean leaving_timeline = !is_video && app->video_progress_drawn;
     ErrorCode stopped = app_media_stop_inactive_players(app, active_kind);
     if (stopped != ERROR_NONE) return stopped;
 
@@ -459,9 +463,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
         if (target_width < 1) {
             target_width = 1;
         }
-        if (target_height < 1) {
-            target_height = 1;
-        }
+        target_height = CLAMP(target_height, 1, image_area_height);
     }
 
     gint cell_w = 0, cell_h = 0;
@@ -488,7 +490,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
     app->async.render_request = FALSE;
     gboolean use_zoom = (!is_video && !gif_is_animated && image_zoom > 1.0 + 0.001);
     if (!app->async.render_force_sync &&
-        async_request &&
+        async_request && !leaving_timeline &&
         app->preloader &&
         app->preload_enabled &&
         !is_video &&
@@ -537,7 +539,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
         return ERROR_OUTPUT_IO;
     }
     // Clear screen and reset terminal state
-    gboolean allow_partial_clear = app && app->suppress_full_clear && !app->needs_screen_clear &&
+    gboolean allow_partial_clear = app && !leaving_timeline && app->suppress_full_clear && !app->needs_screen_clear &&
                                    !app->info_visible && !app->help_visible;
     if (allow_partial_clear) {
         app->suppress_full_clear = FALSE;
