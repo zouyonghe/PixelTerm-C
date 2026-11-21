@@ -230,7 +230,6 @@ static gboolean handle_video_seek(PixelTermApp *app, gint64 delta_ms, ErrorCode 
 
     *result = record_output_error(app, g_video_seek_func(app->video_player, delta_ms));
     if (*result == ERROR_NONE) {
-        app->video_progress_until_us = g_get_monotonic_time() + 2 * G_TIME_SPAN_SECOND;
         app->video_progress_dirty = TRUE;
     }
     return *result == ERROR_NONE || *result == ERROR_OUTPUT_IO;

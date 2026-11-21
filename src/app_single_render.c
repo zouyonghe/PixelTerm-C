@@ -27,13 +27,12 @@ static void app_print_video_footer(PixelTermApp *app) {
     ui_print_centered_help_line(app->term_height, app->term_width, segments, G_N_ELEMENTS(segments));
 }
 
-ErrorCode app_update_video_progress(PixelTermApp *app, gint64 now_us) {
+ErrorCode app_update_video_progress(PixelTermApp *app) {
     if (!app || !app_is_single_mode(app) || app->help_visible || app->info_visible ||
         !app->video_player || app->term_width < 2) return ERROR_NONE;
     gint bar_row = app->term_height - ui_single_view_bottom_reserved_lines(app) - VIDEO_TIMELINE_ROWS + 1;
     if (bar_row <= ui_single_view_content_top_row(app)) return ERROR_NONE;
-    gboolean visible = !app->ui_text_hidden &&
-        (video_player_is_playing(app->video_player) || now_us < app->video_progress_until_us);
+    gboolean visible = app->video_progress_active && !app->ui_text_hidden;
     if (!visible && !app->video_progress_drawn) {
         app->video_progress_dirty = FALSE;
         return ERROR_NONE;
@@ -398,7 +397,7 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
 
     if (is_video && app->video_player) {
         if (!video_player_is_loaded_file(app->video_player, filepath)) {
-            app->video_progress_until_us = 0;
+            app->video_progress_active = FALSE;
             app->video_progress_drawn = app->video_progress_dirty = FALSE;
             ErrorCode load_result = APP_SINGLE_RENDER_CALL(video_player_load,
                                                            video_player_load,
@@ -624,8 +623,9 @@ static ErrorCode app_render_current_image_frame(PixelTermApp *app) {
         }
 
         if (app->term_height > 0 && !app->ui_text_hidden) app_print_video_footer(app);
+        app->video_progress_active = !overlay_visible && app->video_player != NULL;
         app->video_progress_drawn = FALSE;
-        app->video_progress_dirty = app->video_progress_until_us > g_get_monotonic_time();
+        app->video_progress_dirty = FALSE;
 
         if (overlay_visible) {
             ErrorCode overlay_error = app_render_info_overlay(app, filepath, image_area_top_row, target_height);

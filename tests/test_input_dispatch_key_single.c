@@ -341,7 +341,6 @@ static void test_video_wheel_and_arrow_share_seek(void) {
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 1);
     g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, -5000);
     g_assert_true(app.video_progress_dirty);
-    gint64 wheel_deadline = app.video_progress_until_us;
     InputEvent arrow = make_key_event(KEY_RIGHT);
     input_dispatch_handle_key_press_single(&app, NULL, &arrow);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 2);
@@ -351,7 +350,6 @@ static void test_video_wheel_and_arrow_share_seek(void) {
     input_dispatch_handle_mouse_scroll_single(&app, &wheel);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
     g_assert_cmpint(g_input_dispatch_stub_state.last_video_seek_delta_ms, ==, 5000);
-    g_assert_cmpint(app.video_progress_until_us, >=, wheel_deadline);
     wheel.mouse_y = 24;
     input_dispatch_handle_mouse_scroll_single(&app, &wheel);
     g_assert_cmpint(g_input_dispatch_stub_state.video_seek_calls, ==, 3);
@@ -359,7 +357,7 @@ static void test_video_wheel_and_arrow_share_seek(void) {
     video_player_destroy(player);
 }
 
-static void test_video_seek_footer_expires_while_paused(gconstpointer data) {
+static void test_video_progress_visible_while_paused(gconstpointer data) {
     VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
     g_assert_nonnull(player);
     const gchar *path = write_seek_preview_video_fixture();
@@ -368,36 +366,39 @@ static void test_video_seek_footer_expires_while_paused(gconstpointer data) {
     app.term_width = GPOINTER_TO_INT(data);
     app.term_height = 24;
     app.video_progress_dirty = TRUE;
-    app.video_progress_until_us = 2000000;
+    app.video_progress_active = TRUE;
     FILE *capture = tmpfile();
     g_assert_nonnull(capture);
     FILE *saved = stdout;
     stdout = capture;
-    g_assert_cmpint(app_update_video_progress(&app, 1), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_true(app.video_progress_drawn);
     const char *clear_rows = "\033[20;1H\033[2K\033[21;1H\033[2K";
     long zen_offset = ftell(capture);
     app.ui_text_hidden = TRUE;
-    g_assert_cmpint(app_update_video_progress(&app, 2), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_cmpint(ftell(capture) - zen_offset, ==, strlen(clear_rows));
     app.ui_text_hidden = FALSE;
-    g_assert_cmpint(app_update_video_progress(&app, 3), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_true(app.video_progress_drawn);
     player->last_presented_pts_ms = 500;
-    g_assert_cmpint(app_update_video_progress(&app, 4), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     player->is_playing = TRUE;
     player->last_presented_pts_ms = 1000;
-    g_assert_cmpint(app_update_video_progress(&app, 2000000), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_true(app.video_progress_drawn);
     app.ui_text_hidden = TRUE;
-    g_assert_cmpint(app_update_video_progress(&app, 2000001), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_false(app.video_progress_drawn);
     g_assert_true(video_player_is_playing(player));
     app.ui_text_hidden = FALSE;
-    g_assert_cmpint(app_update_video_progress(&app, 2000002), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_true(app.video_progress_drawn);
     player->is_playing = FALSE;
-    g_assert_cmpint(app_update_video_progress(&app, 2000000), ==, ERROR_NONE);
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
+    g_assert_true(app.video_progress_drawn);
+    app.ui_text_hidden = TRUE;
+    g_assert_cmpint(app_update_video_progress(&app), ==, ERROR_NONE);
     g_assert_false(app.video_progress_drawn);
     g_assert_false(video_player_is_playing(player));
     stdout = saved;
@@ -1226,9 +1227,9 @@ static void test_video_fps_second_toggle_restores_stats_row(void) {
 void register_input_dispatch_key_single_tests(void) {
     g_test_add_func("/input_dispatch_key_single/video/wheel_and_arrow_share_seek", test_video_wheel_and_arrow_share_seek);
     g_test_add_data_func("/input_dispatch_key_single/video/progress_60_columns", GINT_TO_POINTER(60),
-                         test_video_seek_footer_expires_while_paused);
+                         test_video_progress_visible_while_paused);
     g_test_add_data_func("/input_dispatch_key_single/video/progress_120_columns", GINT_TO_POINTER(120),
-                         test_video_seek_footer_expires_while_paused);
+                         test_video_progress_visible_while_paused);
     g_test_add_data_func("/input_dispatch_key_single/video/stop_before_global_clear", GINT_TO_POINTER(0), test_protocol_stop_precedes_global_clear);
     g_test_add_data_func("/input_dispatch_key_single/video/failed_stop_skips_global_clear", GINT_TO_POINTER(1), test_protocol_stop_precedes_global_clear);
     g_test_add_data_func("/input_dispatch_key_single/video/paused_still_clears_global_images", GINT_TO_POINTER(2), test_protocol_stop_precedes_global_clear);
