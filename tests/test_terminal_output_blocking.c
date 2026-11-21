@@ -10,12 +10,14 @@
 #include <string.h>
 
 static guint get_calls, restore_calls, enable_calls, fail_get, fail_restore, fail_enable;
+static int failed_get_fd;
 
 static int failing_fcntl(int fd, int operation, int flags) {
     if ((operation == F_GETFL && ++get_calls == fail_get) ||
         (operation == F_SETFL && (flags & O_NONBLOCK) && ++enable_calls == fail_enable) ||
         (operation == F_SETFL && !(flags & O_NONBLOCK) &&
          ++restore_calls >= fail_restore && fail_restore)) {
+        if (operation == F_GETFL) failed_get_fd = fd;
         errno = EIO;
         return -1;
     }
@@ -150,10 +152,18 @@ static void test_full_pipe_returns(gconstpointer data) {
         if (session) {
             g_assert_false(terminal_output_end_session());
             g_assert_true(stdout == stream);
+            g_assert_cmpint(fcntl(pipefd[0], F_SETFL, O_NONBLOCK), ==, 0);
+            while (read(pipefd[0], bytes, sizeof(bytes)) > 0) {}
         }
         int after = fcntl(pipefd[1], F_GETFL);
         stdout = recovery;
         g_assert_true(terminal_output_flush());
+        if (session) {
+            g_assert_cmpint(ftell(recovery), ==, 0);
+            g_assert_cmpint(read(pipefd[0], bytes, sizeof(bytes)), ==, 2);
+            g_assert_cmpint(bytes[0], ==, 27);
+            g_assert_cmpint(bytes[1], ==, 92);
+        }
         stdout = saved;
         fclose(recovery);
         if (stopped_terminal) g_assert_cmpint(tcflow(pipefd[1], TCOON), ==, 0);
@@ -397,11 +407,70 @@ static void test_graphics_chunk_idle_timeout_reports_failure(void) {
     stdout = saved; fclose(stream); close(fds[0]);
 }
 
+static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
+    int master = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
+    g_assert_cmpint(master, >=, 0);
+    g_assert_cmpint(grantpt(master), ==, 0);
+    g_assert_cmpint(unlockpt(master), ==, 0);
+    int slave = open(ptsname(master), O_RDWR | O_NOCTTY);
+    g_assert_cmpint(slave, >=, 0);
+    /* Keep the PTY readable after the session releases its last writer. */
+    int witness = dup(slave);
+    g_assert_cmpint(witness, >=, 0);
+    FILE *stream = fdopen(slave, "w");
+    FILE *redirected = tmpfile();
+    g_assert_nonnull(stream);
+    g_assert_nonnull(redirected);
+    FILE *saved = stdout;
+    fflush(saved);
+    stdout = stream;
+    g_assert_true(terminal_output_begin_session());
+    terminal_output_defer("RESTORE", TERMINAL_OUTPUT_RESTORE);
+    g_assert_cmpint(dup2(fileno(redirected), slave), ==, slave);
+
+    get_calls = restore_calls = enable_calls = fail_restore = fail_enable = 0;
+    fail_get = 1;
+    terminal_output_set_fcntl_for_test(failing_fcntl);
+    g_assert_false(terminal_output_end_session());
+    g_assert_true(stdout == stream);
+    int retained = failed_get_fd;
+    g_assert_cmpint(retained, !=, slave);
+    g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
+    terminal_output_set_fcntl_for_test(NULL);
+    if (GPOINTER_TO_INT(data)) {
+        g_assert_cmpint(fputs("normal output", stdout), >=, 0);
+    }
+    g_assert_true(terminal_output_flush());
+    g_assert_cmpint(fcntl(retained, F_GETFD), ==, -1);
+    g_assert_cmpint(errno, ==, EBADF);
+    if (GPOINTER_TO_INT(data)) {
+        rewind(redirected);
+        char redirected_bytes[32];
+        gsize length = fread(redirected_bytes, 1, sizeof(redirected_bytes), redirected);
+        g_assert_cmpmem(redirected_bytes, length, "normal output", 13);
+    } else {
+        g_assert_cmpint(ftell(redirected), ==, 0);
+    }
+    char bytes[32];
+    ssize_t count = read(master, bytes, sizeof(bytes));
+    g_assert_cmpint(count, ==, 9);
+    g_assert_cmpmem(bytes, (gsize)count, "\033\\RESTORE", 9);
+    g_assert_cmpint(close(master), ==, 0);
+    g_assert_cmpint(close(witness), ==, 0);
+    stdout = saved;
+    fclose(stream);
+    fclose(redirected);
+}
+
 void register_terminal_output_blocking_tests(void) {
     g_test_add_func("/terminal_output/chunk/idle_timeout", test_graphics_chunk_idle_timeout_reports_failure);
     g_test_add_func("/terminal_output/chunk/partial_packet_cleanup", test_graphics_chunk_partial_progress_then_cleanup);
     g_test_add_data_func("/terminal_output/chunk/full_pipe", NULL, test_graphics_chunk_resumes_without_blocking);
     g_test_add_data_func("/terminal_output/chunk/full_pipe_session", GINT_TO_POINTER(1), test_graphics_chunk_resumes_without_blocking);
+    g_test_add_data_func("/terminal_output/session_restore_keeps_original_endpoint", NULL,
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_preserves_redirected_output", GINT_TO_POINTER(1),
+                         test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/session", GUINT_TO_POINTER(1), test_once_preflight_retained);

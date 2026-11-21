@@ -21,12 +21,14 @@ static GQueue pending_output = G_QUEUE_INIT;
 typedef struct {
     GString *bytes;
     gboolean replay_safe;
+    gboolean session_bound;
 } PendingOutput;
 static gboolean cleanup_registered = FALSE;
 static gint64 next_cleanup_retry_us = 0;
 static FILE *session_stdout;
 static FILE *session_stream;
-static int session_fd;
+static int session_fd = -1;
+static guint session_pending;
 static gboolean session_write_failed;
 static gboolean session_write_attempted;
 static gboolean recovery_pending;
@@ -37,6 +39,20 @@ static gint64 pending_chunk_progress_us;
 static int restore_fd = -1;
 static int restore_flags;
 static int (*fcntl_hook)(int, int, int);
+
+static void terminal_output_release_session_fd(void) {
+    if (session_fd >= 0 && !session_stream && !session_pending && restore_fd != session_fd) {
+        close(session_fd);
+        session_fd = -1;
+    }
+}
+
+static void terminal_output_free_pending(PendingOutput *pending) {
+    if (pending->session_bound) session_pending--;
+    g_string_free(pending->bytes, TRUE);
+    g_free(pending);
+    terminal_output_release_session_fd();
+}
 
 void terminal_output_set_fcntl_for_test(int (*hook)(int, int, int)) {
     fcntl_hook = hook;
@@ -128,14 +144,19 @@ gboolean terminal_output_begin_session(void) {
     if (session_stream) return FALSE;
     if (fileno(stdout) < 0) return TRUE;
     if (!terminal_output_flush()) return FALSE;
-    session_fd = fileno(stdout);
+    if (session_fd >= 0) return FALSE;
+    session_fd = fcntl(fileno(stdout), F_DUPFD_CLOEXEC, 0);
+    if (session_fd < 0) return FALSE;
 #ifdef __APPLE__
     FILE *stream = funopen(NULL, NULL, terminal_output_session_write, NULL, NULL);
 #else
     cookie_io_functions_t hooks = {.write = terminal_output_session_write};
     FILE *stream = fopencookie(NULL, "w", hooks);
 #endif
-    if (!stream) return FALSE;
+    if (!stream) {
+        terminal_output_release_session_fd();
+        return FALSE;
+    }
     session_stdout = stdout;
     session_stream = stream;
     session_write_failed = FALSE;
@@ -145,11 +166,15 @@ gboolean terminal_output_begin_session(void) {
 
 gboolean terminal_output_end_session(void) {
     if (!session_stream) return TRUE;
+    stdout = session_stream;
     gboolean success = terminal_output_flush();
     terminal_output_discard();
+    /* Purge state belongs to the closing stream, not the restored stdout. */
+    recovery_pending = FALSE;
     stdout = session_stdout;
     if (fclose(session_stream) != 0) success = FALSE;
     session_stdout = session_stream = NULL;
+    terminal_output_release_session_fd();
     return success;
 }
 
@@ -181,6 +206,18 @@ static gboolean terminal_output_submit(const char *bytes, gsize length, gboolean
         !(stdout == session_stream && session_write_failed);
     if (changed && !restore_descriptor(fd, flags)) success = FALSE;
     return success;
+}
+
+static gboolean terminal_output_pending_uses_stdout(const PendingOutput *pending) {
+    return !pending->session_bound || stdout == session_stream;
+}
+
+static gboolean terminal_output_submit_pending(const PendingOutput *pending, gboolean *attempted) {
+    const GString *command = pending->bytes;
+    if (terminal_output_pending_uses_stdout(pending))
+        return terminal_output_submit(command->str, command->len, attempted);
+    ssize_t count = terminal_output_descriptor_write(session_fd, command->str, command->len, attempted);
+    return count >= 0 && (gsize)count == command->len && restore_fd < 0;
 }
 
 void terminal_output_discard(void) {
@@ -276,10 +313,12 @@ gboolean terminal_output_flush(void) {
         PendingOutput *pending = g_queue_peek_head(&pending_output);
         GString *command = pending->bytes;
         clearerr(stdout);
-        gboolean attempted;
-        if (!terminal_output_submit(command->str, command->len, &attempted)) {
-            terminal_output_discard();
-            recovery_pending = TRUE;
+        gboolean attempted = FALSE;
+        if (!terminal_output_submit_pending(pending, &attempted)) {
+            if (terminal_output_pending_uses_stdout(pending)) {
+                terminal_output_discard();
+                recovery_pending = TRUE;
+            }
             /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
             if (attempted && !pending->replay_safe) {
                 g_string_assign(command, "\033\\");
@@ -289,11 +328,11 @@ gboolean terminal_output_flush(void) {
             return FALSE;
         }
         g_queue_pop_head(&pending_output);
-        g_string_free(command, TRUE);
-        g_free(pending);
+        terminal_output_free_pending(pending);
     }
     next_cleanup_retry_us = 0;
     recovery_pending = FALSE;
+    terminal_output_release_session_fd();
     return TRUE;
 }
 
@@ -313,10 +352,9 @@ static void terminal_output_cleanup_at_exit(void) {
         /* A blocked head must not starve later independently ST-framed restores.
          * Already-attempted ambiguous releases have become ST-only above. */
         terminal_output_discard();
-        if (!terminal_output_submit(pending->bytes->str, pending->bytes->len, NULL))
+        if (!terminal_output_submit_pending(pending, NULL))
             terminal_output_discard();
-        g_string_free(pending->bytes, TRUE);
-        g_free(pending);
+        terminal_output_free_pending(pending);
     }
 }
 
@@ -327,6 +365,8 @@ static void terminal_output_queue(GString *command, gboolean replay_safe) {
     PendingOutput *pending = g_new0(PendingOutput, 1);
     pending->bytes = command;
     pending->replay_safe = replay_safe;
+    pending->session_bound = session_stream != NULL;
+    if (pending->session_bound) session_pending++;
     g_queue_push_tail(&pending_output, pending);
 }
 
@@ -335,7 +375,9 @@ void terminal_output_defer(const char *controls, TerminalOutputPolicy policy) {
     g_string_append(command, controls);
     for (GList *link = pending_output.head; link; link = link->next) {
         PendingOutput *pending = link->data;
-        if (policy == TERMINAL_OUTPUT_RESTORE && pending->replay_safe && g_strcmp0(pending->bytes->str, command->str) == 0) {
+        if (policy == TERMINAL_OUTPUT_RESTORE && pending->replay_safe &&
+            pending->session_bound == (session_stream != NULL) &&
+            g_strcmp0(pending->bytes->str, command->str) == 0) {
             g_string_free(command, TRUE);
             return;
         }
@@ -346,7 +388,8 @@ void terminal_output_defer(const char *controls, TerminalOutputPolicy policy) {
 void terminal_output_defer_recovery(void) {
     recovery_pending = TRUE;
     PendingOutput *tail = g_queue_peek_tail(&pending_output);
-    if (tail && tail->bytes->len == 2 && memcmp(tail->bytes->str, "\033\\", 2) == 0) return;
+    if (tail && tail->session_bound == (session_stream != NULL) &&
+        tail->bytes->len == 2 && memcmp(tail->bytes->str, "\033\\", 2) == 0) return;
     terminal_output_queue(g_string_new("\033\\"), TRUE);
 }
 
