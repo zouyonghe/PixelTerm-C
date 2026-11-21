@@ -12,9 +12,10 @@
 static guint get_calls, restore_calls, enable_calls, fail_get, fail_restore, fail_enable;
 static int failed_get_fd;
 static int get_failure_errno;
+static int fail_get_fd = -1;
 
 static int failing_fcntl(int fd, int operation, int flags) {
-    if ((operation == F_GETFL && ++get_calls == fail_get) ||
+    if ((operation == F_GETFL && (++get_calls == fail_get || fd == fail_get_fd)) ||
         (operation == F_SETFL && (flags & O_NONBLOCK) && ++enable_calls == fail_enable) ||
         (operation == F_SETFL && !(flags & O_NONBLOCK) &&
          ++restore_calls >= fail_restore && fail_restore)) {
@@ -444,13 +445,24 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_cmpint(retained, !=, slave);
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
     terminal_output_set_fcntl_for_test(NULL);
-    if (GPOINTER_TO_INT(data)) {
+    if (GPOINTER_TO_INT(data) == 3) {
+        terminal_output_set_fcntl_for_test(failing_fcntl);
+        fail_get_fd = slave;
+        g_assert_false(terminal_output_flush());
+        fail_get_fd = -1;
+        g_assert_cmpint(failed_get_fd, ==, slave);
+        g_assert_cmpint(fcntl(retained, F_GETFD), ==, -1);
+        terminal_output_set_fcntl_for_test(NULL);
+        g_assert_true(terminal_output_flush());
+    } else if (GPOINTER_TO_INT(data)) {
         g_assert_cmpint(fputs("normal output", stdout), >=, 0);
     }
     g_assert_true(terminal_output_flush());
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, -1);
     g_assert_cmpint(errno, ==, EBADF);
-    if (GPOINTER_TO_INT(data)) {
+    if (GPOINTER_TO_INT(data) == 3) {
+        g_assert_cmpint(ftell(redirected), ==, 2); /* ST for its own failed preflight. */
+    } else if (GPOINTER_TO_INT(data)) {
         rewind(redirected);
         char redirected_bytes[32];
         gsize length = fread(redirected_bytes, 1, sizeof(redirected_bytes), redirected);
@@ -482,6 +494,8 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/session_restore_preserves_redirected_output", GINT_TO_POINTER(1),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/session_restore_drops_failed_chunk", GINT_TO_POINTER(2),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_survives_stdout_failure", GINT_TO_POINTER(3),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);

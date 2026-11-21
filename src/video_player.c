@@ -333,14 +333,29 @@ void video_player_render_work_finished_for_test(VideoPlayer *player) {
     video_player_render_work_finished(player);
 }
 
-static VideoFrame *video_player_queue_peek_current_locked(VideoPlayer *player);
+static void video_player_queue_prune_locked(VideoPlayer *player) {
+    guint generation = video_player_generation_get(player);
+    gboolean removed = FALSE;
+    for (GList *link = player->frame_queue->head; link;) {
+        GList *next = link->next;
+        VideoFrame *frame = link->data;
+        if (frame->generation != generation) {
+            g_queue_delete_link(player->frame_queue, link);
+            video_frame_destroy(frame);
+            removed = TRUE;
+        }
+        link = next;
+    }
+    if (removed) g_cond_broadcast(&player->frame_queue_has_space);
+}
 
 static gboolean video_player_queue_admit_locked(VideoPlayer *player, VideoFrame *frame, gboolean check_stale_pts) {
     gboolean logged_full = FALSE;
     while (!g_atomic_int_get(&player->worker_stop) &&
            player->max_queue_size > 0 &&
-           video_player_queue_peek_current_locked(player) &&
            g_queue_get_length(player->frame_queue) >= (guint)player->max_queue_size) {
+        video_player_queue_prune_locked(player);
+        if (g_queue_get_length(player->frame_queue) < (guint)player->max_queue_size) break;
         if (!logged_full) {
             gint64 pts_ms = frame->pts_ms;
             g_mutex_unlock(&player->queue_mutex);

@@ -2147,10 +2147,22 @@ static void test_queue_admission_reclaims_old_layout_capacity(gconstpointer data
     video_player_queue_push(player, make_test_frame(5000));
     video_player_set_render_area(player, 80, 24, 1, 24, 80, 24);
     guint generation = (guint)g_atomic_int_get(&player->playback_generation);
+    if (GPOINTER_TO_INT(data) == 2) {
+        /* Model a current sorted frame ahead of an obsolete entry. */
+        g_queue_push_head(player->frame_queue, make_test_frame_with_generation(50, generation));
+        player->max_queue_size = 2;
+    }
     VideoFrame *frame = make_test_frame_with_generation(100, generation);
     if (GPOINTER_TO_INT(data)) video_player_queue_insert_sorted(player, frame);
     else video_player_queue_push(player, frame);
 
+    if (GPOINTER_TO_INT(data) == 2) {
+        g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 2);
+        VideoFrame *first = video_player_queue_take_first(player);
+        g_assert_nonnull(first);
+        g_assert_cmpint(first->pts_ms, ==, 50);
+        video_frame_destroy(first);
+    }
     g_assert_cmpuint(video_player_queue_length_for_test(player), ==, 1);
     g_assert_cmpint(video_player_queue_head_pts_for_test(player), ==, 100);
     video_player_destroy(player);
@@ -4118,6 +4130,8 @@ void register_video_player_tests(void) {
     g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_append", NULL,
                          test_queue_admission_reclaims_old_layout_capacity);
     g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_sorted", GINT_TO_POINTER(1),
+                         test_queue_admission_reclaims_old_layout_capacity);
+    g_test_add_data_func("/video_player/render_queue/reclaims_old_layout_behind_current", GINT_TO_POINTER(2),
                          test_queue_admission_reclaims_old_layout_capacity);
     g_test_add_data_func("/video_player/render_queue/old_layout_first", NULL,
                          test_queue_take_discards_frames_from_old_layout);

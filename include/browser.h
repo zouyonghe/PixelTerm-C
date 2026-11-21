@@ -37,9 +37,9 @@ void browser_destroy(FileBrowser *browser);
 /**
  * @brief Scans a specified directory for image files and populates the browser's list.
  *
- * Clears any previously loaded files, sets the new directory path, and then
- * iterates through the directory, adding all supported image files to an
- * internal list. The list is sorted alphabetically.
+ * On success, replaces the previous contents with an alphabetically sorted
+ * list and selects the first file, if any. Failure preserves the existing
+ * directory, list, and selection.
  *
  * @param browser A pointer to the `FileBrowser` instance.
  * @param directory The path to the directory to scan.

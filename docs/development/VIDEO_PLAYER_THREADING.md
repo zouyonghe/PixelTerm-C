@@ -154,7 +154,7 @@ terminal submission, both queues are empty, and no render work is in flight.
 Main-thread dequeue and scheduling lookahead discard outdated render-queue heads
 under `queue_mutex` and wake producers when space is freed. A layout change
 therefore cannot display or schedule against a frame from the previous layout.
-Both render-queue insertion paths reclaim outdated heads before waiting for
+Both render-queue insertion paths reclaim outdated frames before waiting for
 capacity; valid queued frames still apply backpressure.
 Layout changes also wake producers already waiting for render-queue space, so
 they can discard invalidated frames without waiting for a playback tick.

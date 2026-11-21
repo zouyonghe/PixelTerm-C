@@ -305,7 +305,39 @@ failed:
     return FALSE;
 }
 
+static gboolean terminal_output_drain_pending(gboolean detached_only) {
+    for (GList *link = pending_output.head; link;) {
+        PendingOutput *pending = link->data;
+        GList *next = link->next;
+        gboolean uses_stdout = terminal_output_pending_uses_stdout(pending);
+        if (detached_only && uses_stdout) {
+            link = next;
+            continue;
+        }
+        gboolean attempted = FALSE;
+        if (!terminal_output_submit_pending(pending, &attempted)) {
+            if (uses_stdout) {
+                terminal_output_discard();
+                recovery_pending = TRUE;
+            }
+            /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
+            if (attempted && !pending->replay_safe) {
+                g_string_assign(pending->bytes, "\033\\");
+                pending->replay_safe = TRUE;
+            }
+            next_cleanup_retry_us = g_get_monotonic_time() + 100000;
+            return FALSE;
+        }
+        g_queue_delete_link(&pending_output, link);
+        terminal_output_free_pending(pending);
+        link = next;
+    }
+    return TRUE;
+}
+
 gboolean terminal_output_flush(void) {
+    /* Old endpoints must not wait for unrelated stdout output or failures. */
+    gboolean detached_ok = !session_pending || stdout == session_stream || terminal_output_drain_pending(TRUE);
     if (!terminal_output_drain_chunk()) return FALSE;
     if (recovery_pending) terminal_output_discard();
     /* Check buffered UI bytes before clearing errors or submitting queued controls. */
@@ -315,27 +347,7 @@ gboolean terminal_output_flush(void) {
         next_cleanup_retry_us = g_get_monotonic_time() + 100000;
         return FALSE;
     }
-    while (!g_queue_is_empty(&pending_output)) {
-        PendingOutput *pending = g_queue_peek_head(&pending_output);
-        GString *command = pending->bytes;
-        clearerr(stdout);
-        gboolean attempted = FALSE;
-        if (!terminal_output_submit_pending(pending, &attempted)) {
-            if (terminal_output_pending_uses_stdout(pending)) {
-                terminal_output_discard();
-                recovery_pending = TRUE;
-            }
-            /* Delivery may have succeeded: repeating d=I could delete a reused ID. */
-            if (attempted && !pending->replay_safe) {
-                g_string_assign(command, "\033\\");
-                pending->replay_safe = TRUE;
-            }
-            next_cleanup_retry_us = g_get_monotonic_time() + 100000;
-            return FALSE;
-        }
-        g_queue_pop_head(&pending_output);
-        terminal_output_free_pending(pending);
-    }
+    if (!detached_ok || !terminal_output_drain_pending(FALSE)) return FALSE;
     next_cleanup_retry_us = 0;
     recovery_pending = FALSE;
     terminal_output_release_session_fd();
