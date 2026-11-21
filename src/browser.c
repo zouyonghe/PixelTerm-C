@@ -71,24 +71,6 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
         return ERROR_FILE_NOT_FOUND;
     }
 
-    // Check if directory exists
-    if (!g_file_test(directory, G_FILE_TEST_IS_DIR)) {
-        return ERROR_FILE_NOT_FOUND;
-    }
-
-    // Cleanup existing data
-    g_free(browser->directory_path);
-    if (browser->image_files) {
-        g_list_free_full(browser->image_files, (GDestroyNotify)g_free);
-        browser->image_files = NULL;
-    }
-
-    browser->directory_path = g_strdup(directory);
-    browser->current = NULL;
-    browser->current_index = -1;
-    browser->total_files = 0;
-
-    // Open directory
     GDir *dir = g_dir_open(directory, 0, NULL);
     if (!dir) {
         return ERROR_FILE_NOT_FOUND;
@@ -117,7 +99,11 @@ ErrorCode browser_scan_directory(FileBrowser *browser, const char *directory) {
     // Sort files alphabetically
     all_files = g_list_sort(all_files, (GCompareFunc)g_strcmp0);
 
-    // Store the filtered and sorted list
+    /* The input path may be borrowed from the existing browser state. */
+    gchar *new_directory = g_strdup(directory);
+    g_free(browser->directory_path);
+    g_list_free_full(browser->image_files, g_free);
+    browser->directory_path = new_directory;
     browser->image_files = all_files;
     browser->current = browser->image_files;
     browser->current_index = browser->current ? 0 : -1;

@@ -4,7 +4,6 @@
 #include "app.h"
 #include <glib.h>
 
-gint app_file_manager_compare_names(gconstpointer a, gconstpointer b);
 void app_file_manager_invalidate_selection_cache(PixelTermApp *app);
 GList* app_file_manager_find_link_with_hint(const PixelTermApp *app,
                                             gint target_index,

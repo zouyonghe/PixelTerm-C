@@ -2,7 +2,7 @@
 
 #include "app.h"
 
-#include "app_file_manager_internal.h"
+#include "text_utils.h"
 #include "book.h"
 #include "browser.h"
 #include "preload_control.h"
@@ -106,7 +106,7 @@ static ErrorCode app_load_directory_selected(PixelTermApp *app, const char *dire
         image_files = g_list_prepend(image_files, g_strdup(filepath));
     }
 
-    image_files = g_list_sort(image_files, (GCompareFunc)app_file_manager_compare_names);
+    image_files = g_list_sort(image_files, compare_path_basenames_aabb);
     browser_destroy(browser);
 
     gint selected_index = filepath ? app_find_file_index(image_files, filepath) : 0;
