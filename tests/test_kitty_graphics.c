@@ -1,3 +1,4 @@
+#include "renderer_test_internal.h"
 #include <glib.h>
 #include <string.h>
 
@@ -270,7 +271,7 @@ static void test_kitty_player_uses_and_releases_terminal_reservation(gconstpoint
         player->renderer->config.force_kitty = FALSE;
         ChafaCanvasConfig *canvas_config = chafa_canvas_config_copy(player->renderer->canvas_config);
         chafa_canvas_config_set_pixel_mode(canvas_config, CHAFA_PIXEL_MODE_KITTY);
-        renderer_set_canvas_config(player->renderer, canvas_config);
+        renderer_set_canvas_config_for_test(player->renderer, canvas_config);
         chafa_canvas_config_unref(canvas_config);
     }
     player->worker_thread = g_thread_new("allocation-stale-worker", allocation_stale_worker, NULL);

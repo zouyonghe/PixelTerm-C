@@ -3,6 +3,9 @@
 
 #include "renderer.h"
 
+/* Renderer must be idle and exclusively owned by the caller. */
+void renderer_set_canvas_config_for_test(ImageRenderer *renderer, const ChafaCanvasConfig *config);
+
 /* Test-only declarations for renderer internals.
  * These are not part of the supported production API surface.
  */

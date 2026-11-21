@@ -25,7 +25,8 @@ typedef struct {
     ChafaOptimizations optimizations;
 } RendererConfig;
 
-// Renderer structure
+/* Canvas, terminal info, and configuration require exclusive renderer ownership.
+ * cache_mutex protects filepath-cache operations, not direct rendering. */
 typedef struct {
     ChafaCanvas *canvas;
     const ChafaCanvasConfig *canvas_config; /* Renderer-owned; read-only to callers. */
@@ -35,6 +36,8 @@ typedef struct {
     ChafaTermInfo *term_info;
     RendererConfig config;
     GHashTable *cache;
+    gint cache_cell_width, cache_cell_height;
+    gdouble cache_cell_aspect;
     GMutex cache_mutex;
 } ImageRenderer;
 
@@ -69,9 +72,6 @@ void renderer_destroy(ImageRenderer *renderer);
  * @return `ERROR_NONE` on success, or `ERROR_CHAFA_INIT` if Chafa initialization fails.
  */
 ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *config);
-/* Copies settings and rebuilds on next setup. Overrides terminal-derived canvas
- * settings until reinitialization; geometry still follows the requested layout. */
-void renderer_set_canvas_config(ImageRenderer *renderer, const ChafaCanvasConfig *config);
 
 // Rendering functions
 /**

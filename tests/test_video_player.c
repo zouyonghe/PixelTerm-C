@@ -1,3 +1,4 @@
+#include "renderer_test_internal.h"
 #define _GNU_SOURCE
 #define _DARWIN_C_SOURCE
 #include <glib.h>
@@ -1406,7 +1407,12 @@ static void test_schedule_tick_reuses_source_and_uses_pts(void) {
     g_assert_nonnull(source);
     g_assert_cmpint(g_source_get_ready_time(source), ==, player->clock_start_us + G_TIME_SPAN_SECOND);
 
-    video_player_queue_insert_sorted(player, make_test_frame(600));
+    QueueInsertCall call = {.player = player, .pts_ms = 600};
+    g_mutex_init(&call.mutex);
+    g_cond_init(&call.cond);
+    g_thread_join(g_thread_new("earlier-video-frame", queue_insert_thread_main, &call));
+    g_cond_clear(&call.cond);
+    g_mutex_clear(&call.mutex);
     g_assert_cmpint(g_source_get_ready_time(source), ==, player->clock_start_us + 500000);
     video_player_schedule_tick_for_test(player);
     g_assert_cmpuint(player->timer_id, ==, id);
@@ -3339,7 +3345,7 @@ static void test_checked_protocol_cycle_reports_resume_failure(void) {
     g_assert_cmpint(video_player_load(player, write_seek_preview_video_fixture()), ==, ERROR_NONE);
     ChafaCanvasConfig *canvas_config = chafa_canvas_config_copy(player->renderer->canvas_config);
     chafa_canvas_config_set_pixel_mode(canvas_config, CHAFA_PIXEL_MODE_SYMBOLS);
-    renderer_set_canvas_config(player->renderer, canvas_config);
+    renderer_set_canvas_config_for_test(player->renderer, canvas_config);
     chafa_canvas_config_unref(canvas_config);
     g_assert_true(video_player_protocol_cycle_needs_redraw(player));
     ParkedWorkerCall worker;

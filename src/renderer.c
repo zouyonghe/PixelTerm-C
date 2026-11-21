@@ -400,11 +400,14 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     renderer->canvas_config = canvas_config;
     renderer->canvas_config_dirty = FALSE;
     renderer->canvas_config_override = FALSE;
+    g_mutex_lock(&renderer->cache_mutex);
+    g_hash_table_remove_all(renderer->cache);
+    g_mutex_unlock(&renderer->cache_mutex);
 
     return ERROR_NONE;
 }
 
-void renderer_set_canvas_config(ImageRenderer *renderer, const ChafaCanvasConfig *config) {
+G_GNUC_INTERNAL void renderer_set_canvas_config_for_test(ImageRenderer *renderer, const ChafaCanvasConfig *config) {
     if (!renderer || !config) return;
     g_mutex_lock(&renderer->cache_mutex);
     ChafaCanvasConfig *copy = chafa_canvas_config_copy(config);
@@ -557,7 +560,7 @@ ErrorCode renderer_setup_canvas(ImageRenderer *renderer, gint width, gint height
 
     ChafaCanvasConfig *config = chafa_canvas_config_copy(renderer->canvas_config);
     chafa_canvas_config_set_geometry(config, output_width, output_height);
-    chafa_canvas_config_set_cell_geometry(config, cell_w, cell_h);
+    if (cell_w > 0 && cell_h > 0) chafa_canvas_config_set_cell_geometry(config, cell_w, cell_h);
     ChafaCanvas *replacement = chafa_canvas_new(config);
     if (!replacement) {
         chafa_canvas_config_unref(config);
@@ -700,6 +703,14 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     // Update canvas configuration with new terminal size
     gint width, height;
     get_terminal_size(&width, &height);
+    gint cell_w, cell_h;
+    get_terminal_cell_geometry(&cell_w, &cell_h);
+    gdouble aspect = get_terminal_cell_aspect_ratio();
+    if (cell_w != renderer->cache_cell_width || cell_h != renderer->cache_cell_height ||
+        aspect != renderer->cache_cell_aspect) invalidate_cache = TRUE;
+    renderer->cache_cell_width = cell_w;
+    renderer->cache_cell_height = cell_h;
+    renderer->cache_cell_aspect = aspect;
 
     if (width != renderer->config.max_width || height - 3 != renderer->config.max_height) invalidate_cache = TRUE;
     if (!invalidate_cache && previous_term && g_hash_table_size(renderer->cache)) {

@@ -4,6 +4,9 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
 
 #include "renderer.h"
 #include "renderer_test_internal.h"
@@ -450,7 +453,7 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
     chafa_canvas_ref(previous);
     ChafaCanvasConfig *changed = chafa_canvas_config_copy(renderer->canvas_config);
     chafa_canvas_config_set_bg_color(changed, 0x123456);
-    renderer_set_canvas_config(renderer, changed);
+    renderer_set_canvas_config_for_test(renderer, changed);
     chafa_canvas_config_unref(changed);
     g_assert_cmpint(renderer_setup_canvas(renderer, 2, 1), ==, ERROR_NONE);
     g_assert_true(renderer->canvas != previous);
@@ -476,6 +479,40 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
     renderer_destroy(renderer);
 }
 
+static void test_terminal_refresh_invalidates_on_cell_change(void) {
+    int master = posix_openpt(O_RDWR | O_NOCTTY);
+    g_assert_cmpint(master, >=, 0);
+    g_assert_cmpint(grantpt(master), ==, 0);
+    g_assert_cmpint(unlockpt(master), ==, 0);
+    int slave = open(ptsname(master), O_RDWR | O_NOCTTY);
+    g_assert_cmpint(slave, >=, 0);
+    fflush(stdout);
+    int saved = dup(STDOUT_FILENO);
+    g_assert_cmpint(saved, >=, 0);
+    g_assert_cmpint(dup2(slave, STDOUT_FILENO), ==, STDOUT_FILENO);
+    struct winsize size = {.ws_col = 80, .ws_row = 24, .ws_xpixel = 800, .ws_ypixel = 480};
+    g_assert_cmpint(ioctl(slave, TIOCSWINSZ, &size), ==, 0);
+    ImageRenderer *renderer = renderer_create();
+    g_assert_cmpint(renderer_initialize(renderer, NULL), ==, ERROR_NONE);
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    GString *cached = g_string_new("old output");
+    renderer_cache_add(renderer, "image", cached);
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    gboolean retained = renderer_cache_get(renderer, "image") != NULL;
+    size.ws_xpixel *= 2;
+    size.ws_ypixel *= 2;
+    g_assert_cmpint(ioctl(slave, TIOCSWINSZ, &size), ==, 0);
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    g_assert_cmpint(dup2(saved, STDOUT_FILENO), ==, STDOUT_FILENO);
+    close(saved);
+    close(slave);
+    close(master);
+    g_assert_true(retained);
+    g_assert_null(renderer_cache_get(renderer, "image"));
+    g_string_free(cached, TRUE);
+    renderer_destroy(renderer);
+}
+
 static void test_terminal_refresh_cache_and_override(void) {
     ImageRenderer *renderer = renderer_create();
     g_assert_cmpint(renderer_initialize(renderer, NULL), ==, ERROR_NONE);
@@ -488,15 +525,19 @@ static void test_terminal_refresh_cache_and_override(void) {
 
     ChafaCanvasConfig *config = chafa_canvas_config_copy(renderer->canvas_config);
     chafa_canvas_config_set_pixel_mode(config, CHAFA_PIXEL_MODE_KITTY);
-    renderer_set_canvas_config(renderer, config);
+    renderer_set_canvas_config_for_test(renderer, config);
     chafa_canvas_config_unref(config);
     g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
     g_assert_cmpint(chafa_canvas_config_get_pixel_mode(renderer->canvas_config), ==, CHAFA_PIXEL_MODE_KITTY);
+    renderer_cache_add(renderer, "image", cached);
+    g_assert_cmpint(renderer_initialize(renderer, NULL), ==, ERROR_NONE);
+    g_assert_null(renderer_cache_get(renderer, "image"));
     g_string_free(cached, TRUE);
     renderer_destroy(renderer);
 }
 
 void register_renderer_tests(void) {
+    g_test_add_func("/renderer/canvas/refresh_invalidates_on_cell_change", test_terminal_refresh_invalidates_on_cell_change);
     g_test_add_func("/renderer/canvas/refresh_cache_and_override", test_terminal_refresh_cache_and_override);
     g_test_add_data_func("/renderer/canvas/reuse_text", NULL, test_renderer_canvas_reuse);
     g_test_add_data_func("/renderer/canvas/reuse_kitty", GINT_TO_POINTER(1), test_renderer_canvas_reuse);

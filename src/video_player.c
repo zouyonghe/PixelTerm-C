@@ -209,7 +209,7 @@ static GSource *video_player_tick_source_locked(VideoPlayer *player) {
 
 /* state_mutex held; keep deadlines on the original monotonic PTS clock. */
 static gint64 video_player_tick_deadline_locked(VideoPlayer *player, const VideoFrame *head, gint64 now) {
-    if (!player->clock_started) return now + (head ? 1000 : 5000);
+    if (!player->clock_started) return now + 5000;
     if (!head) {
         gint delay = player->last_present_us > 0 ? 5 :
             player->frame_delay_ms <= 0 ? 10 : MAX(player->frame_delay_ms, 5);
