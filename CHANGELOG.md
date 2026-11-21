@@ -1,5 +1,11 @@
 # Changelog
 
+- v1.8.12: More reliable video playback, terminal recovery, and directory browsing.
+    - **Video Playback**: Reuse a timer source with deadlines based on frame timestamps. Discard frames from outdated layouts, finish playback after the final frame is submitted, and guard seek and scheduling calculations against extreme timestamps.
+    - **Rendering**: Reuse compatible Chafa canvases across frames. Invalidate cached images when terminal dimensions, font geometry, or render settings change. No general frame-rate improvement is claimed.
+    - **Terminal Recovery**: Retry cleanup on the original output endpoint after stdout redirection, without sending old graphics chunks to the new stream or blocking new sessions on old endpoint failures.
+    - **Directory Browsing**: Preserve the previous listing and selection when a scan fails, and use the same case-aware AaBb ordering in the browser and file manager.
+
 - v1.8.11: Buffered SSH animations and pause-preserving window resizing.
     - **SSH Animations**: Upload eligible native Kitty GIF/WebP loops through inline RGBA chunks and let the terminal own playback timing after buffering, without requiring local shared memory. Scale frames to the display area before checking the per-frame and loop memory budgets.
     - **Responsive Uploads**: Send bounded batches, retain exact partial-write progress under backpressure, and preserve recovery/control ordering. Refresh the outer idle timeout on actual progress and keep Escape cancellation responsive behind queued navigation input. Pause/resume reuses an uploaded loop instead of resending frames. tmux/screen and unsupported terminals retain the existing renderer.
