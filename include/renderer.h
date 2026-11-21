@@ -30,6 +30,7 @@ typedef struct {
     ChafaCanvas *canvas;
     const ChafaCanvasConfig *canvas_config; /* Renderer-owned; read-only to callers. */
     gboolean canvas_config_dirty;
+    gboolean canvas_config_override;
     ChafaSymbolTags canvas_symbol_tags;
     ChafaTermInfo *term_info;
     RendererConfig config;
@@ -68,7 +69,8 @@ void renderer_destroy(ImageRenderer *renderer);
  * @return `ERROR_NONE` on success, or `ERROR_CHAFA_INIT` if Chafa initialization fails.
  */
 ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *config);
-/* Copies the settings, invalidates cached output, and rebuilds on next setup. */
+/* Copies settings and rebuilds on next setup. Overrides terminal-derived canvas
+ * settings until reinitialization; geometry still follows the requested layout. */
 void renderer_set_canvas_config(ImageRenderer *renderer, const ChafaCanvasConfig *config);
 
 // Rendering functions

@@ -476,7 +476,28 @@ static void test_renderer_canvas_reuse(gconstpointer data) {
     renderer_destroy(renderer);
 }
 
+static void test_terminal_refresh_cache_and_override(void) {
+    ImageRenderer *renderer = renderer_create();
+    g_assert_cmpint(renderer_initialize(renderer, NULL), ==, ERROR_NONE);
+    GString *cached = g_string_new("old output");
+    renderer_cache_add(renderer, "image", cached);
+    renderer->config.force_text = TRUE;
+    renderer->config.color_space = CHAFA_COLOR_SPACE_DIN99D;
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    g_assert_null(renderer_cache_get(renderer, "image"));
+
+    ChafaCanvasConfig *config = chafa_canvas_config_copy(renderer->canvas_config);
+    chafa_canvas_config_set_pixel_mode(config, CHAFA_PIXEL_MODE_KITTY);
+    renderer_set_canvas_config(renderer, config);
+    chafa_canvas_config_unref(config);
+    g_assert_cmpint(renderer_update_terminal_size(renderer), ==, ERROR_NONE);
+    g_assert_cmpint(chafa_canvas_config_get_pixel_mode(renderer->canvas_config), ==, CHAFA_PIXEL_MODE_KITTY);
+    g_string_free(cached, TRUE);
+    renderer_destroy(renderer);
+}
+
 void register_renderer_tests(void) {
+    g_test_add_func("/renderer/canvas/refresh_cache_and_override", test_terminal_refresh_cache_and_override);
     g_test_add_data_func("/renderer/canvas/reuse_text", NULL, test_renderer_canvas_reuse);
     g_test_add_data_func("/renderer/canvas/reuse_kitty", GINT_TO_POINTER(1), test_renderer_canvas_reuse);
     g_test_add_data_func("/renderer/canvas/reuse_sixel", GINT_TO_POINTER(2), test_renderer_canvas_reuse);

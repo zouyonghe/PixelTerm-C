@@ -399,19 +399,21 @@ ErrorCode renderer_initialize(ImageRenderer *renderer, const RendererConfig *con
     renderer->canvas = canvas;
     renderer->canvas_config = canvas_config;
     renderer->canvas_config_dirty = FALSE;
+    renderer->canvas_config_override = FALSE;
 
     return ERROR_NONE;
 }
 
 void renderer_set_canvas_config(ImageRenderer *renderer, const ChafaCanvasConfig *config) {
     if (!renderer || !config) return;
+    g_mutex_lock(&renderer->cache_mutex);
     ChafaCanvasConfig *copy = chafa_canvas_config_copy(config);
     if (renderer->canvas_config) {
         chafa_canvas_config_unref((ChafaCanvasConfig *)renderer->canvas_config);
     }
     renderer->canvas_config = copy;
     renderer->canvas_config_dirty = TRUE;
-    g_mutex_lock(&renderer->cache_mutex);
+    renderer->canvas_config_override = TRUE;
     g_hash_table_remove_all(renderer->cache);
     g_mutex_unlock(&renderer->cache_mutex);
 }
@@ -425,11 +427,12 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
     // Check cache first
     g_mutex_lock(&renderer->cache_mutex);
     GString *cached = renderer_cache_get(renderer, filepath);
+    if (cached) cached = g_string_new_len(cached->str, cached->len);
     g_mutex_unlock(&renderer->cache_mutex);
 
     if (cached) {
         // Return a copy so callers can own/free it without affecting cache
-        return g_string_new_len(cached->str, cached->len);
+        return cached;
     }
 
     // Load image using stream-based loader to support very long paths
@@ -450,16 +453,12 @@ GString* renderer_render_image_file(ImageRenderer *renderer, const char *filepat
     guchar *pixels = gdk_pixbuf_get_pixels(pixbuf);
 
     // Render the image
+    g_mutex_lock(&renderer->cache_mutex);
     GString *result = renderer_render_image_data(renderer, pixels, width, height, rowstride, n_channels);
+    if (result) renderer_cache_add(renderer, filepath, result);
+    g_mutex_unlock(&renderer->cache_mutex);
 
     g_object_unref(pixbuf);
-
-    if (result) {
-        // Cache the result
-        g_mutex_lock(&renderer->cache_mutex);
-        renderer_cache_add(renderer, filepath, result);
-        g_mutex_unlock(&renderer->cache_mutex);
-    }
 
     return result;
 }
@@ -611,10 +610,6 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
         return ERROR_MEMORY_ALLOC;
     }
 
-    if (renderer->term_info) {
-        chafa_term_info_unref(renderer->term_info);
-    }
-
     ChafaTermDb *term_db = chafa_term_db_get_default();
     if (!term_db) {
         return ERROR_CHAFA_INIT;
@@ -627,12 +622,17 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     if (!term_env || g_strcmp0(term_env, "dumb") == 0) {
         envp = g_environ_setenv(envp, "TERM", "xterm-256color", TRUE);
     }
-    renderer->term_info = chafa_term_db_detect(term_db, envp);
+    ChafaTermInfo *term_info = chafa_term_db_detect(term_db, envp);
     g_strfreev(envp);
 
-    if (!renderer->term_info) {
+    if (!term_info) {
         return ERROR_CHAFA_INIT;
     }
+
+    g_mutex_lock(&renderer->cache_mutex);
+    ChafaTermInfo *previous_term = renderer->term_info;
+    renderer->term_info = term_info;
+    gboolean invalidate_cache = FALSE;
 
     gboolean force_text_mode = renderer->config.force_text;
     gboolean force_kitty_mode = renderer->config.force_kitty && !force_text_mode;
@@ -647,7 +647,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     }
 
     // Apply best modes from the new terminal info
-    if (renderer->canvas_config) {
+    if (renderer->canvas_config && !renderer->canvas_config_override) {
         ChafaCanvasMode mode = renderer_get_best_canvas_mode(renderer->term_info);
         ChafaPixelMode pixel_mode = renderer_get_best_pixel_mode(renderer->term_info);
         if (force_text_mode) {
@@ -679,6 +679,7 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
             tags != renderer->canvas_symbol_tags ||
             (pixel_mode != CHAFA_PIXEL_MODE_SYMBOLS && (grain_w != 1 || grain_h != 1))) {
             renderer->canvas_config_dirty = TRUE;
+            invalidate_cache = TRUE;
             chafa_canvas_config_set_canvas_mode(config, mode);
             chafa_canvas_config_set_pixel_mode(config, pixel_mode);
             chafa_canvas_config_set_color_space(config, renderer->config.color_space);
@@ -700,8 +701,20 @@ ErrorCode renderer_update_terminal_size(ImageRenderer *renderer) {
     gint width, height;
     get_terminal_size(&width, &height);
 
+    if (width != renderer->config.max_width || height - 3 != renderer->config.max_height) invalidate_cache = TRUE;
+    if (!invalidate_cache && previous_term && g_hash_table_size(renderer->cache)) {
+        for (gint seq = 0; seq < CHAFA_TERM_SEQ_MAX; seq++) {
+            if (g_strcmp0(chafa_term_info_get_seq(previous_term, seq), chafa_term_info_get_seq(term_info, seq))) {
+                invalidate_cache = TRUE;
+                break;
+            }
+        }
+    }
+    if (invalidate_cache) g_hash_table_remove_all(renderer->cache);
+    if (previous_term) chafa_term_info_unref(previous_term);
     renderer->config.max_width = width;
     renderer->config.max_height = height - 3; // Leave space for UI
+    g_mutex_unlock(&renderer->cache_mutex);
 
     return ERROR_NONE;
 }

@@ -1403,12 +1403,15 @@ static void video_player_render_worker_refresh_layout(VideoPlayer *player,
         return;
     }
 
-    renderer_update_terminal_size(renderer);
     renderer->config = config;
+    if (renderer_update_terminal_size(renderer) != ERROR_NONE) return;
 
     if (layout_valid) {
         renderer->config.max_width = max_width;
         renderer->config.max_height = max_height;
+    } else {
+        renderer->config.max_width = config.max_width;
+        renderer->config.max_height = config.max_height;
     }
 
     *layout_generation_inout = current_generation;
