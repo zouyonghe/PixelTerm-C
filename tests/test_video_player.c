@@ -3470,6 +3470,32 @@ static void test_deferred_cleanup_retry_deadline(void) {
     g_string_free(output.output, TRUE);
 }
 
+static void test_drained_eof_ignores_output_backoff(void) {
+    VideoPlayer *player = video_player_new(4, TRUE, FALSE, FALSE, FALSE, TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_AUTO);
+    g_assert_nonnull(player);
+    g_assert_true(init_minimal_seek_context(player));
+    FILE *capture = tmpfile();
+    g_assert_nonnull(capture);
+    FILE *saved = stdout;
+    stdout = capture;
+    player->is_playing = TRUE;
+    video_player_handle_eof_for_test(player);
+    terminal_output_defer("restore", TERMINAL_OUTPUT_RESTORE);
+    int fd = fileno(capture), witness = dup(fd);
+    g_assert_cmpint(witness, >=, 0);
+    g_assert_cmpint(close(fd), ==, 0);
+    g_assert_false(terminal_output_flush());
+    g_assert_false(video_player_render_frame_for_test(player));
+    g_assert_true(player->eof_ended);
+    g_assert_cmpint(dup2(witness, fd), ==, fd);
+    close(witness);
+    g_assert_true(terminal_output_flush());
+    stdout = saved;
+    fclose(capture);
+    teardown_minimal_seek_context(player);
+    video_player_destroy(player);
+}
+
 static void test_background_frame_waits_for_restore_deadline(void) {
     VideoPlayer *player = video_player_new(4, FALSE, FALSE, FALSE, TRUE,
         TEXT_SYMBOL_MODE_AUTO, 1.0, KITTY_TRANSFER_DIRECT);
@@ -4122,6 +4148,7 @@ static void test_refresh_paused_frame_submits_without_playing(void) {
 }
 
 void register_video_player_tests(void) {
+    g_test_add_func("/video_player/eof_handling/drained_ignores_output_backoff", test_drained_eof_ignores_output_backoff);
     g_test_add_func("/video_player/clock/frame_delay_from_rate_bounds", test_frame_delay_from_rate_bounds);
     g_test_add_func("/video_player/clock/timing_arithmetic_boundaries", test_timing_arithmetic_boundaries);
     g_test_add_func("/video_player/generation/crosses_signed_boundary", test_generation_crosses_signed_boundary);

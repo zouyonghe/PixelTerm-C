@@ -33,6 +33,8 @@ static int detached_fd = -1;
 static guint detached_pending;
 static gboolean detached_needs_restore;
 static int detached_flags;
+typedef struct { int fd, flags; } RetiredFlags;
+static GQueue retired_flags = G_QUEUE_INIT;
 static gboolean session_write_failed;
 static gboolean session_write_attempted;
 static gboolean recovery_pending;
@@ -71,6 +73,16 @@ static void terminal_output_retry_detached_flags(void) {
     if (detached_needs_restore && output_fcntl(detached_fd, F_SETFL, detached_flags) == 0)
         detached_needs_restore = FALSE;
     terminal_output_release_detached_fd();
+    for (GList *link = retired_flags.head; link;) {
+        GList *next = link->next;
+        RetiredFlags *pending = link->data;
+        if (output_fcntl(pending->fd, F_SETFL, pending->flags) == 0) {
+            close(pending->fd);
+            g_queue_delete_link(&retired_flags, link);
+            g_free(pending);
+        }
+        link = next;
+    }
 }
 
 static gboolean restore_descriptor_flags(void) {
@@ -186,8 +198,6 @@ static void terminal_output_detach_session_fd(void) {
     } else {
         /* Keep at most one retired endpoint; a newer failed teardown supersedes it. */
         if (detached_fd >= 0) {
-            if (detached_needs_restore) output_fcntl(detached_fd, F_SETFL, detached_flags);
-            detached_needs_restore = FALSE;
             for (GList *link = pending_output.head; link;) {
                 GList *next = link->next;
                 PendingOutput *pending = link->data;
@@ -197,7 +207,12 @@ static void terminal_output_detach_session_fd(void) {
                 }
                 link = next;
             }
-            terminal_output_release_detached_fd();
+            if (detached_needs_restore) {
+                RetiredFlags *pending = g_new(RetiredFlags, 1);
+                *pending = (RetiredFlags){detached_fd, detached_flags};
+                g_queue_push_tail(&retired_flags, pending);
+                detached_needs_restore = FALSE;
+            }
         }
         detached_fd = session_fd;
         detached_pending = pending_count;
@@ -224,6 +239,7 @@ gboolean terminal_output_end_session(void) {
     terminal_output_discard();
     /* Purge state belongs to the closing stream, not the restored stdout. */
     recovery_pending = FALSE;
+    next_cleanup_retry_us = 0;
     stdout = session_stdout;
     if (fclose(session_stream) != 0) success = FALSE;
     session_stdout = session_stream = NULL;
@@ -399,12 +415,12 @@ static gboolean terminal_output_drain_pending(gboolean detached_only, gint64 dea
 gboolean terminal_output_flush(void) {
     /* Old endpoints must not wait for unrelated stdout output or failures. */
     gint64 now_us = g_get_monotonic_time();
-    if (detached_fd >= 0 && now_us >= next_detached_retry_us) {
+    if ((detached_fd >= 0 || !g_queue_is_empty(&retired_flags)) && now_us >= next_detached_retry_us) {
         terminal_output_retry_detached_flags();
         if (detached_fd >= 0) {
             terminal_output_drain_pending(TRUE, now_us + 2000);
-            if (detached_fd >= 0) next_detached_retry_us = now_us + 100000;
         }
+        if (detached_fd >= 0 || !g_queue_is_empty(&retired_flags)) next_detached_retry_us = now_us + 100000;
     }
     if (!terminal_output_drain_chunk()) return FALSE;
     if (recovery_pending) terminal_output_discard();

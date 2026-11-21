@@ -15,6 +15,7 @@ gint64 video_player_current_position_ms(VideoPlayer *player);
 /* Returns FALSE until the playback clock starts. */
 gboolean video_player_get_target_pts_ms(VideoPlayer *player, gint64 *target_pts_ms);
 void video_player_reset_timing_state(VideoPlayer *player);
+/* Preview rendering can update the clock; restore the logical seek position. */
 void video_player_restore_paused_seek_target(VideoPlayer *player, gint64 target_ms);
 
 #endif

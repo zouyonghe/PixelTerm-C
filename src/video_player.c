@@ -374,8 +374,12 @@ static gboolean video_player_queue_admit_locked(VideoPlayer *player, VideoFrame 
 guint video_player_queue_length(VideoPlayer *player) {
     if (!player || !player->frame_queue) return 0;
     g_mutex_lock(&player->queue_mutex);
-    video_player_queue_prune_locked(player);
-    guint length = g_queue_get_length(player->frame_queue);
+    guint generation = video_player_generation_get(player);
+    guint length = 0;
+    for (GList *link = player->frame_queue->head; link; link = link->next) {
+        const VideoFrame *frame = link->data;
+        if (frame->generation == generation) length++;
+    }
     g_mutex_unlock(&player->queue_mutex);
     return length;
 }
@@ -1788,7 +1792,8 @@ static gboolean video_player_render_frame(VideoPlayer *player, ErrorCode *output
     }
 
     /* Background ticks retain frames during recovery; checked actions report I/O errors. */
-    if (!output_error && !terminal_output_ready(g_get_monotonic_time())) return TRUE;
+    if (!output_error && !terminal_output_ready(g_get_monotonic_time()))
+        return !video_player_finalize_pending_eof_if_drained(player);
 
     gint64 target_pts_ms = 0;
     gboolean clock_started = video_player_get_target_pts_ms(player, &target_pts_ms);

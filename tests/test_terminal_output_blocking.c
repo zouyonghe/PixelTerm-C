@@ -456,13 +456,21 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_cmpint(retained, !=, slave);
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
     terminal_output_set_fcntl_for_test(NULL);
-    if (GPOINTER_TO_INT(data) == 5 || GPOINTER_TO_INT(data) == 6) {
+    if (GPOINTER_TO_INT(data) == 5 || GPOINTER_TO_INT(data) == 6 || GPOINTER_TO_INT(data) == 7) {
         terminal_output_set_fcntl_for_test(failing_fcntl);
-        if (GPOINTER_TO_INT(data) == 5) fail_restore_fd = retained;
+        if (GPOINTER_TO_INT(data) != 6) fail_restore_fd = retained;
         else fail_get_fd = retained;
+        g_assert_true(terminal_output_ready(g_get_monotonic_time()));
         g_assert_true(terminal_output_write("normal output", 13));
         g_assert_true(terminal_output_begin_session());
-        g_assert_true(terminal_output_end_session());
+        if (GPOINTER_TO_INT(data) == 7) {
+            terminal_output_defer("SECOND", TERMINAL_OUTPUT_RESTORE);
+            fail_get = get_calls + 1;
+            g_assert_false(terminal_output_end_session());
+            g_assert_cmpint(fcntl(retained, F_GETFD), ==, FD_CLOEXEC);
+        } else {
+            g_assert_true(terminal_output_end_session());
+        }
         fail_get_fd = fail_restore_fd = -1;
         terminal_output_set_fcntl_for_test(NULL);
         g_usleep(110000);
@@ -490,7 +498,12 @@ static void test_session_restore_keeps_original_endpoint(gconstpointer data) {
     g_assert_cmpint(fcntl(retained, F_GETFD), ==, -1);
     g_assert_cmpint(errno, ==, EBADF);
     g_assert_cmpint(fcntl(witness, F_GETFL) & O_NONBLOCK, ==, original_flags & O_NONBLOCK);
-    if (GPOINTER_TO_INT(data) == 3) {
+    if (GPOINTER_TO_INT(data) == 7) {
+        rewind(redirected);
+        char redirected_bytes[32];
+        gsize length = fread(redirected_bytes, 1, sizeof(redirected_bytes), redirected);
+        g_assert_cmpmem(redirected_bytes, length, "normal output\033\\SECOND", 21);
+    } else if (GPOINTER_TO_INT(data) == 3) {
         g_assert_cmpint(ftell(redirected), ==, 2); /* ST for its own failed preflight. */
     } else if (GPOINTER_TO_INT(data)) {
         rewind(redirected);
@@ -532,6 +545,8 @@ void register_terminal_output_blocking_tests(void) {
     g_test_add_data_func("/terminal_output/session_restore_flags_isolated", GINT_TO_POINTER(5),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/session_restore_allows_new_session", GINT_TO_POINTER(6),
+                         test_session_restore_keeps_original_endpoint);
+    g_test_add_data_func("/terminal_output/session_restore_survives_second_teardown", GINT_TO_POINTER(7),
                          test_session_restore_keeps_original_endpoint);
     g_test_add_data_func("/terminal_output/preflight/outer", GUINT_TO_POINTER(3), test_once_preflight_retained);
     g_test_add_data_func("/terminal_output/preflight/descriptor", GUINT_TO_POINTER(4), test_once_preflight_retained);
